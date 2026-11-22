@@ -9,8 +9,12 @@ static uint32_t epoch = 7;
 static bool closed = false, finishing = false, fault = false, reject_cancel = false;
 static std::vector<uint64_t> terminal;
 
-extern "C" int bc_moe_remote_admit(BcMoeRemoteTicket* out, int try_only, int ranks) {
-    assert(ranks == 2);
+extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip, uint32_t* shadow, uint32_t* mask) {
+    *rows = 4; *skip = *shadow = *mask = 0;
+    return 0;
+}
+static int plugin_admit(void* self, BcMoeRemoteTicket* out, int try_only, int ranks) {
+    assert(self == &sequence && ranks == 2);
     *out = {};
     if (fault) return -1;
     if (finishing) return 1;
@@ -18,20 +22,32 @@ extern "C" int bc_moe_remote_admit(BcMoeRemoteTicket* out, int try_only, int ran
     *out = BcMoeRemoteTicket{epoch, uint8_t(epoch % 2), {}, ++sequence};
     return 0;
 }
-extern "C" int bc_moe_remote_finish_admission() { finishing = true; return 1; }
-extern "C" int bc_moe_remote_bind(BcMoeRemoteTicket t, int64_t step) {
+static void plugin_finish_admission(void*) { finishing = true; }
+static int plugin_bind(void*, BcMoeRemoteTicket t, int64_t step) {
     assert(t.ticket_id && step >= 40); // scheduler IDs are unrelated to tickets
     return 0;
 }
-extern "C" int bc_moe_remote_cancel(BcMoeRemoteTicket t) {
+static int plugin_cancel(void*, BcMoeRemoteTicket t) {
     if (reject_cancel) return -1;
     cancelled = t.ticket_id;
     return 0;
 }
-extern "C" int bc_moe_remote_host_done(BcMoeRemoteTicket t) { host = t.ticket_id; return 0; }
-extern "C" int bc_moe_remote_rank_done(int rank, BcMoeRemoteTicket t, void* stream) {
+static int plugin_host_done(void*, BcMoeRemoteTicket t) { host = t.ticket_id; return 0; }
+static int plugin_rank_done(void*, int rank, BcMoeRemoteTicket t, void* stream) {
     assert(rank >= 0 && rank < 2 && stream);
     terminal.push_back(t.ticket_id);
+    return 0;
+}
+static int plugin_closed = 0;
+static void plugin_close(void*) { ++plugin_closed; }
+static int plugin_open(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
+    assert(a->ranks == 2 && a->slot_base == 6 && a->capacity_limit == 9);
+    BcMoeRemotePlugin p{};
+    p.struct_size = sizeof p;
+    p.self = &sequence;
+    p.admit = plugin_admit; p.bind = plugin_bind; p.cancel = plugin_cancel; p.host_done = plugin_host_done;
+    p.rank_done = plugin_rank_done; p.finish_admission = plugin_finish_admission; p.close = plugin_close;
+    *out = p;
     return 0;
 }
 struct Batch { int64_t step = 40; };
@@ -47,6 +63,7 @@ struct Rank { int device, index; Ctx ctx; };
 
 int main() {
     BcMoeRemoteAdmission bridge;
+    assert(bridge.open_with(plugin_open, 6, 2, 9) == 0 && bridge.generation() && bc_moe_remote_lookup(6) == bridge.generation());
     Scheduler scheduler;
     const Batch* b = nullptr;
     assert(bridge.step(false, b, scheduler, 2) == 0);
@@ -104,4 +121,16 @@ int main() {
     assert(bridge.step(true, b, scheduler, 2) == 0 && bridge.issued_ticket().ticket_id == issued);
     assert(bridge.seal(ranks) == 0 && bridge.host_done() == 0 && host == issued);
     assert(bridge.step(false, b, scheduler, 2) > 0 && scheduler.steps == steps_before_stop);
+
+    // Closing the bridge closes the plugin once, unbinds the engine's slots, and is safe to repeat.
+    bridge.close();
+    assert(plugin_closed == 1 && !bridge.generation() && !bc_moe_remote_lookup(6) && !bc_moe_remote_lookup(7));
+    bridge.close();
+    assert(plugin_closed == 1);
+    // A bridge without a generation (no hand-off): admission hands out zero tickets and every step runs locally.
+    BcMoeRemoteAdmission local;
+    const Batch* lb = nullptr;
+    Scheduler ls;
+    assert(local.step(false, lb, ls, 2) == 0 && lb && local.issued_ticket().ticket_id == 0);
+    assert(local.seal(ranks) == 0 && local.host_done() == 0 && !local.finish());
 }

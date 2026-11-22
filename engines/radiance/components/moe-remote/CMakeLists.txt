@@ -58,9 +58,9 @@ set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQU
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 
 # Remote-MoE mailbox: its own plugin, for both card families, so the hand-off runs beside libr3 on the XTX ranks
-# and beside libr4d on an R9700 engine. Engine patch rad0002 declares the device ops and exports the extension point
-# bc_moe_remote_register; the hook resolves it dynamically so schema/selftest loaders keep no hard dependency on the
-# engine core.
+# and beside libr4d on an R9700 engine. Engine patch rad0002 declares the device ops and opens one generation per engine
+# through the factory this plugin exports (bc_moe_remote_plugin_open, found with dlsym on the plugin's own handle), so
+# schema/selftest loaders keep no dependency on the engine core and loading the library starts nothing.
 rad_add_plugin(libr3moe kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/moe_remote_hook.cpp
   # BU01: inverse-map device kernel is isolated so edits do not rebuild the

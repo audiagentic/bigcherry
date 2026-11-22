@@ -15,8 +15,6 @@
 
 #include <hip/hip_runtime.h>
 
-#include <dlfcn.h>
-
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -66,25 +64,34 @@ struct RankState {
 };
 
 /* The engine's remote-MoE extension point (patch rad0002, abi/bc_moe_remote.h), mirrored here so libr3moe builds
- * against an unpatched radiance tree. The engine accepts the registration only if struct_size matches its own. */
+ * against an unpatched radiance tree. The engine accepts the table only if struct_size matches its own; the tests
+ * compare both field lists. The engine finds bc_moe_remote_plugin_open on this plugin's own handle and calls it once per
+ * engine generation. */
+constexpr int kOpenRefused = -1;   /* BC_MOE_REMOTE_REFUSED */
+constexpr int kOpenBusy = -3;      /* BC_MOE_REMOTE_BUSY */
+struct EngineOpenArgs {
+    uint32_t struct_size;
+    uint32_t capacity_limit;
+    int32_t slot_base;
+    int32_t ranks;
+};
 struct EnginePlugin {
     uint32_t struct_size;
-    void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
-    int (*owns_expert)(int layer, int expert);
-    void (*burst)(int active);
-    int (*before_pass)(int rank, StepTicket ticket, void* stream);
-    int (*admit)(StepTicket* out, int try_only, int world_size);
-    int (*bind)(StepTicket ticket, int64_t scheduler_step);
-    int (*cancel)(StepTicket ticket);
-    int (*host_done)(StepTicket ticket);
-    int (*rank_done)(int rank, StepTicket ticket, void* stream);
-    void (*poll)(void);
-    void (*shutdown)(void);
-    int (*capacity)(uint32_t parent_limit);
-    void (*finish_admission)(void);
-    int (*wait_finished)(int64_t timeout_ms);
+    void* self;
+    void (*layer_map)(void* self, int layer, int n_expert, const int32_t* slot_of_expert);
+    int (*owns_expert)(void* self, int layer, int expert);
+    void (*burst)(void* self, int active);
+    int (*before_pass)(void* self, int rank, StepTicket ticket, void* stream);
+    int (*admit)(void* self, StepTicket* out, int try_only, int world_size);
+    int (*bind)(void* self, StepTicket ticket, int64_t scheduler_step);
+    int (*cancel)(void* self, StepTicket ticket);
+    int (*host_done)(void* self, StepTicket ticket);
+    int (*rank_done)(void* self, int rank, StepTicket ticket, void* stream);
+    void (*shutdown)(void* self);
+    void (*finish_admission)(void* self);
+    int (*wait_finished)(void* self, int64_t timeout_ms);
+    void (*close)(void* self);
 };
-using RegisterFn = int (*)(const EnginePlugin*);
 
 /* Each admission owns its events; never reuse one global step-end event
  * as evidence of several queued parents. An event is recorded after every
@@ -105,7 +112,7 @@ struct HookState {
     size_t bytes = 0;
     Header* hdr = nullptr;
     bool pinned = false;
-    RegisterFn engine_register = nullptr;
+    bool opened = false;   /* a generation holds this hook: set by the factory, cleared by the generation's close */
     r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
     std::deque<RankCompletion> completion;
     R3MoeDrainSnapshot closed_snapshot{};
@@ -596,22 +603,39 @@ bool allocate_owner_generations(RankState& s, size_t bitmap_bytes) {
 
 void placement_loop();
 
-void register_mailbox() {
-    if (!enabled_env()) return;
+/* Undo a half-finished open: nothing it mapped or pinned stays behind. */
+void abandon_mailbox() {
+    if (g.pinned) (void)hipHostUnregister(g.map);
+    if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
+    if (g.fd >= 0) ::close(g.fd);
+    g.hdr = nullptr;
+    g.rank.clear();
+    g.completion.clear();
+    g.map = MAP_FAILED;
+    g.fd = -1;
+    g.pinned = false;
+}
+
+/* Open the helper hand-off for one engine generation: map and pin the shared segment, watch the helpers, wait for them
+ * to register, initialise the admission ledger to the engine's ceiling and start the placement thread. Returns whether the
+ * hook is live; on failure nothing is left mapped (the caller refuses the generation). */
+bool open_mailbox(uint32_t capacity_limit) {
+    if (!enabled_env()) return false;
     g.fd = ::shm_open(shm_name(), O_RDWR | O_CLOEXEC, 0);
     if (g.fd < 0) {
         // errno tells a segment that is not there (ENOENT: no helper has made it, or something removed it) from one that is
         // there but cannot be opened (EACCES, EMFILE); without the hand-off the engine plans every expert locally.
         std::fprintf(stderr, "libr3: R3_MOE_WORKER shm %s is not ready: %s\n", shm_name(), std::strerror(errno));
-        return;
+        return false;
     }
     struct stat st{};
-    if (::fstat(g.fd, &st) != 0 || st.st_size < (off_t)sizeof(Header)) return;
+    if (::fstat(g.fd, &st) != 0 || st.st_size < (off_t)sizeof(Header)) { abandon_mailbox(); return false; }
     g.bytes = (size_t)st.st_size;
     g.map = ::mmap(nullptr, g.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, g.fd, 0);
     if (g.map == MAP_FAILED || !valid_self(static_cast<Header*>(g.map), g.bytes)) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER shared-memory protocol mismatch\n");
-        return;
+        abandon_mailbox();
+        return false;
     }
     g.hdr = static_cast<Header*>(g.map);
     g.rank.resize(g.hdr->rank_count);
@@ -619,37 +643,24 @@ void register_mailbox() {
     if (!hip_ok(hipHostRegister(g.map, g.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
                 "could not pin/map shared segment")) {
         g.hdr = nullptr;
-        return;
+        abandon_mailbox();
+        return false;
     }
     g.pinned = true;
-    dlerror();
-    g.engine_register = reinterpret_cast<RegisterFn>(dlsym(RTLD_DEFAULT, "bc_moe_remote_register"));
-    if (const char* e = dlerror(); e || !g.engine_register) {
-        std::fprintf(stderr,
-            "libr3: R3_MOE_WORKER engine does not export bc_moe_remote_register (patch rad0002)%s%s\n",
-            e ? ": " : "", e ? e : "");
-        (void)hipHostUnregister(g.map);
-        g.pinned = false;
-        g.hdr = nullptr;
-        return;
-    }
-    /* layer_map: the runtime slot maps (replayed for layers declared before this registration). owns_expert:
+    /* layer_map: the runtime slot maps the engine publishes at declare. owns_expert:
      * ownership for placement (R3_MOE_WORKER_SKIP_OWNED), the helper's bitmap as published before the engine
      * starts. The engine applies the protected-layer and slot tests itself, the same ones the helper uses when
      * it narrows ownership to the runtime maps, so both sides agree on what is never placed here. */
-    /* Watch the helpers before registering: registration replays the layer maps and waits for the helpers to consume
-     * them, and a helper that dies there must fail that wait. No watch, no helpers (fail closed). */
+    /* Watch the helpers before the engine publishes its layer maps: publishing waits for the helpers to consume them, and
+     * a helper that dies there must fail that wait. No watch, no helpers (fail closed). */
     if (!g.watch.start(g.hdr)) {
-        (void)hipHostUnregister(g.map);
-        g.pinned = false;
-        g.hdr = nullptr;
-        g.engine_register = nullptr;
-        return;
+        abandon_mailbox();
+        return false;
     }
-    /* Registration barrier: every helper has published its identity and the watcher holds a validated pidfd for it,
+    /* Open barrier: every helper has published its identity and the watcher holds a validated pidfd for it,
      * before anything waits on the helpers. A helper that died before publishing its pid has no process to watch, so
      * this bounded startup wait (blocking, not polled) is what catches it. On timeout or fault the helpers are failed
-     * (sticky helper_fault): the engine still registers, its map waits return at once and its first remote step
+     * (sticky helper_fault): the generation still opens, its map waits return at once and its first remote step
      * fails, rather than serving with experts it was told the helpers hold. */
     {
         constexpr int kRegisterTimeoutS = 120;   /* helpers attach before the engine starts; this only bounds a failure */
@@ -674,35 +685,19 @@ void register_mailbox() {
     uint8_t slot = 0;
     if (!committed(&epoch, &slot) || !g.ledger.initialize(epoch, slot)) {
         raise_fault(g.hdr);
-        return;
-    }
-    // The block's declaration and plugin admission share ONE typed manifest
-    // policy, exported by the managed engine extension; fail closed if missing.
-    using WantedUpto = int (*)(int64_t);
-    dlerror();
-    const auto wanted = reinterpret_cast<WantedUpto>(
-        dlsym(RTLD_DEFAULT,"bc_moe_remote_wanted_upto"));
-    if (const char* e = dlerror(); e || !wanted) {
-        std::fprintf(stderr,"libr3moe: remote declaration policy missing (%s)\n",
-                     e ? e : "missing symbol");
-        raise_fault(g.hdr);
-        return;
-    }
-    g.remote_possible = wanted(LLONG_MAX) != 0;
-    static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition,
-                                     before_pass, admit_ticket, bind_ticket, cancel_ticket,
-                                     host_done_ticket, rank_done_ticket, poll_tickets,
-                                     [] { g.ledger.interrupt(); },
-                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; },
-                                     [] { (void)g.ledger.finish_admission(); }, wait_finished_tickets};
-    if (g.engine_register(&plugin) != 0) {
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         g.watch.stop();
-        (void)hipHostUnregister(g.map);
-        g.pinned = false;
-        g.hdr = nullptr;
-        g.engine_register = nullptr;
-        return;
+        abandon_mailbox();
+        return false;
+    }
+    /* The block's declaration and plugin admission share ONE typed manifest policy: a generation exists only when
+     * the engine's manifest asks for a hand-off, so every step may use it. */
+    g.remote_possible = true;
+    if (!g.ledger.configure(capacity_limit)) {
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER the engine's admission ceiling %u is refused by the ledger\n",
+                     capacity_limit);
+        g.watch.stop();
+        abandon_mailbox();
+        return false;
     }
 
     /* The engine policy only decides whether the graph contains/uses the two mailbox ops.
@@ -721,6 +716,7 @@ void register_mailbox() {
     if (shadow_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_SHADOW enabled\n");
     if (mask_only_env()) std::fprintf(stderr, "libr3: R3_MOE_WORKER_MASK_ONLY enabled\n");
     g.placement_thread = std::thread(placement_loop);
+    return true;
 }
 
 /* Engine participant of the shared helper-zero placement coordinator.
@@ -913,7 +909,7 @@ void close_mailbox() {
     g.snapshot_stop = true;
     if (g.snapshotter.joinable()) g.snapshotter.join();
     std::lock_guard<std::mutex> lock(g.mu);
-    if (g.engine_register)
+    if (g.opened)
         std::fprintf(stderr, "libr3moe: admission high-water %zu, capacity %zu, outstanding %zu\n",
                      g.ledger.high_water(), g.ledger.capacity(), g.ledger.outstanding());
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
@@ -926,8 +922,6 @@ void close_mailbox() {
         }
         release_rank(s, g.completion[r]);
     }
-    if (g.engine_register) (void)g.engine_register(nullptr);
-    g.engine_register = nullptr;
     if (g.pinned) (void)hipHostUnregister(g.map);
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);
@@ -939,12 +933,43 @@ void close_mailbox() {
     g.pinned = false;
 }
 
-struct HookLifetime {
-    HookLifetime() { register_mailbox(); }
-    ~HookLifetime() { close_mailbox(); }
-} g_lifetime;
+/* Callbacks of the engine's generation: thin adapters from the engine's `self`-carrying table to this hook. Until the
+ * hook state moves into the generation the one live hook is `g`, and `self` names it. */
+void cb_layer_map(void*, int layer, int n, const int32_t* m) { publish_layer_map(layer, n, m); }
+int cb_owns_expert(void*, int layer, int expert) { return owner_query(layer, expert); }
+void cb_burst(void*, int active) { burst_transition(active); }
+int cb_before_pass(void*, int rank, StepTicket t, void* stream) { return before_pass(rank, t, stream); }
+int cb_admit(void*, StepTicket* out, int try_only, int world) { return admit_ticket(out, try_only, world); }
+int cb_bind(void*, StepTicket t, int64_t step) { return bind_ticket(t, step); }
+int cb_cancel(void*, StepTicket t) { return cancel_ticket(t); }
+int cb_host_done(void*, StepTicket t) { return host_done_ticket(t); }
+int cb_rank_done(void*, int rank, StepTicket t, void* stream) { return rank_done_ticket(rank, t, stream); }
+void cb_shutdown(void*) { g.ledger.interrupt(); }
+void cb_finish_admission(void*) { (void)g.ledger.finish_admission(); }
+int cb_wait_finished(void*, int64_t ms) { return wait_finished_tickets(ms); }
+void cb_close(void*) {
+    close_mailbox();
+    g.opened = false;
+}
 
 }  // namespace
+
+/* The engine's explicit factory (abi/bc_moe_remote.h, BC_MOE_REMOTE_OPEN_SYMBOL), found on this plugin's own handle.
+ * One live hook per process until the hook state moves into the generation: a second engine asking while one holds the
+ * hook is refused with BUSY before anything is mapped. */
+extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugin* out) {
+    if (!args || !out || args->struct_size != sizeof(EngineOpenArgs) || args->capacity_limit == 0 || args->ranks < 1)
+        return kOpenRefused;
+    static std::mutex open_mu;
+    std::lock_guard<std::mutex> lock(open_mu);
+    if (g.opened) return kOpenBusy;
+    if (!open_mailbox(args->capacity_limit)) return kOpenRefused;
+    g.opened = true;
+    *out = EnginePlugin{sizeof(EnginePlugin), &g, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
+                        cb_bind, cb_cancel, cb_host_done, cb_rank_done, cb_shutdown, cb_finish_admission,
+                        cb_wait_finished, cb_close};
+    return 0;
+}
 
 extern "C" int r3_moe_close_admission(R3MoeDrainSnapshot* out) {
     if (!out || !g.hdr || !g.pinned || helper_faulted()) return RAD_E_STATE;

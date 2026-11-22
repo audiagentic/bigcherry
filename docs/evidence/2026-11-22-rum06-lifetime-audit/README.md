@@ -44,21 +44,19 @@
 
 - Narrow prior changes: callbacks refuse second register, clear replay maps on unregister and re-read typed settings instead of freezing first generation. This is **not** the owned lifetime.
 - CTest `r3_moe_mailbox_lifetime_test` confirms static rows through disabled → enabled → disabled → enabled. It must remain registered in both CMake and `component.toml`.
-- `tools/tests/patch/test_rum06_registry_lifetime.py` (3 pass) encodes the **old** process-global contract; replace with real behavior test when S1 lands.
+- `test_rum06_registry_lifetime.py` (old process-global contract) is deleted; `engines/radiance/tests/moe_remote_generation_test.cpp` and `admission_bridge_test.cpp` replace it (run by `test_radiance_patch_packages.py`).
 - Prior mixed rank/TP fixtures and installed Gate E tests do not prove a new generation binding.
 - Do not silently complete RUM06 on PR merge; RV4303 remains open until proof.
 
-## S1 implementation sequencing blocker — lead decision required
+## S1 sequencing decision (resolved)
 
-The approved S1 must remove `bc_moe_remote_register`, `g_plugin` and the unscoped callback route **without** leaving a compatibility path, while the approved S2 is assigned removal of DSO constructor registration. These cannot be independently green in that literal order: `moe_remote_hook.cpp::HookLifetime` constructs at dlopen and invokes `register_mailbox()`, which resolves `bc_moe_remote_register` and registers callbacks; upstream `Engine::load_plugins` claims the native owner/group **after** plugin loading. At constructor time there is no Engine generation to receive the new context.
-
-Approve either (a) move removal of DSO callback registration and the exact-handle explicit factory bind into **S1**, leaving per-generation HookState ownership and full teardown for S2, or (b) treat S1+S2 as one atomic source/ABI cutover with one final green gate. A temporary global pending registry, old ABI shim, TLS-selected generation or plugin ABI change would violate the decision. No S1 production code was changed or tests claimed. This is a slice-boundary decision, not a request to narrow any RUM06 acceptance clause.
+The lead chose option (a): S1 removes `bc_moe_remote_register`, `g_plugin`, DSO constructor registration and the unscoped callback route together, and binds through an explicit factory on the already-loaded plugin handle; per-generation HookState ownership and full teardown stay in S2. Implemented as: `bc_moe_remote_open(handle, slot_base, ranks, limit)` (after `rad_engine_claim`, before declare) finds `bc_moe_remote_plugin_open` with `dlsym` on `Registry::plugin("libr3moe")->handle`; the Engine's `BcMoeRemoteAdmission` owns the opaque generation; consumers hold it through `Geom::bc_remote` (found once by `bc_moe_remote_lookup(rad_build_slot(ctx))` in `geom_from`), `Program::ctx` (planner, bring-up) and `Ctx` (rank thread hands generation and ticket in; no thread-local). The slot table holds non-owning pointers, is written only on open/close and read at init time. Publication order: refuse a bound slot before the factory runs, run the factory, publish each slot by compare-and-swap from empty (release); close clears the slots before the plugin close; a closed generation stays allocated until destroy and refuses every call with `BC_MOE_REMOTE_STALE`.
 
 ## Slice results
 
 | Slice | Commit | Deleted/reused | Tests | Hot-path cost |
 | --- | --- | --- | --- | --- |
-| S1 | Blocked: slice-boundary decision | None | No new test | None |
+| S1 | Implemented (see S1 report) | `g_plugin`, `g_mu`, `g_layer_maps`, `g_burst_active`, `bc_moe_remote_register`, `HookLifetime` ctor registration, `bc_moe_remote_poll`, TLS ticket + `rank_ticket/current_ticket` | `moe_remote_generation_test` (bind/unbind x50, stale-after-reclaim, foreign/unclaimed slots, per-generation maps/bursts, concurrent lifetimes, contention), `admission_bridge_test` on a real generation, patch-package tests on a 2.2.0 fixture | Removes a mutex lock/unlock from every admit/bind/cancel/host_done/rank_done/before_pass and the per-query manifest read from every `wanted`; adds one acquire load per call; no new lock or allocation |
 | S2 | Open | — | — | — |
 | S3 | Open | — | — | — |
 | S4 | Open | — | — | — |
