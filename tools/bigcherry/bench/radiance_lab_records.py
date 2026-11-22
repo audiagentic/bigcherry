@@ -1,8 +1,8 @@
 """MRC06 Radiance laboratory producers: snapshot native evidence into MRC01.
 
 Every published value has a verified source. The C++ serving owner writes its
-own facts/receipts and never loads Python; this platform adapter runs after the
-native calibration, or after a lab probe. No historical JSON result is imported.
+own facts/receipts and never loads Python; this platform adapter runs after a
+native lab run or a lab probe. No historical JSON result is imported.
 """
 
 from __future__ import annotations
@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from ..core import (
-    calibration_records,
     engines,
     feature_states,
     host_facts,
@@ -56,7 +55,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
     allowed = (
         {"stopped"}
         if require_stopped
-        else {"running", "calibrating", "healthy", "calibration_completed"}
+        else {"running", "healthy"}
     )
     if session.get("state") not in allowed or session.get("errors"):
         raise run_records.RecordError("native session is not in an admitted state")
@@ -188,189 +187,6 @@ def _native_environment(session: dict) -> dict:
                     and isinstance(v, str)
                 }
     return {}
-
-
-def _selected_calibration(path: Path, key: str) -> dict:
-    rows = [
-        row for row in calibration_records.read_native_toml(path) if row["key"] == key
-    ]
-    if len(rows) != 1 or rows[0]["status"] != "current":
-        raise run_records.RecordError(
-            "calibration key is missing or invalid in MRC04 reader"
-        )
-    if rows[0]["format"] != "native_v1":
-        raise run_records.RecordError(
-            "fresh native calibration-run must produce an MRC04 v1 record"
-        )
-    return rows[0]["record"]
-
-
-def publish_calibration_run(
-    run_dir: Path,
-    *,
-    work_root: Path | None = None,
-    host_snapshot: dict | None = None,
-) -> str:
-    """Ingest only a durable, completed C++ calibration and its pinned TOML."""
-    c = _session_context(run_dir, require_stopped=True)
-    events = {e.get("kind") for e in c["session"].get("events", [])}
-    if "calibration_completed" not in events:
-        raise run_records.RecordError("native calibration completion event is absent")
-    receipt_file = _file(c["run_dir"] / "calibration-evidence.v1.json")
-    receipt = _read_json(receipt_file)
-    key = receipt.get("calibration_store_key")
-    if (
-        receipt.get("schema_version") != 1
-        or receipt.get("session_id") != c["run_id"]
-        or not isinstance(key, str)
-        or not _SHA.fullmatch(key)
-        or c["session"].get("selection", {}).get("calibration_store_key") != key
-        or receipt.get("manifest_sha256") != _digest(c["manifest_bytes"])
-    ):
-        raise run_records.RecordError(
-            "native calibration receipt/manifest key or sha256 mismatch"
-        )
-    store_path = _file(c["run_dir"] / "calibration-store.v1.toml")
-    if receipt.get("calibration_store_sha256") != _digest(store_path.read_bytes()):
-        raise run_records.RecordError(
-            "native calibration store snapshot sha256 mismatch"
-        )
-    helper_name = receipt.get("helper_log")
-    if (
-        not isinstance(helper_name, str)
-        or Path(helper_name).name != helper_name
-        or helper_name in (".", "..")
-    ):
-        raise run_records.RecordError("unsafe native calibration helper log name")
-    helper = _file(c["run_dir"] / helper_name)
-    if receipt.get("helper_log_sha256") != _digest(helper.read_bytes()):
-        raise run_records.RecordError("native helper log sha256 mismatch")
-    # Native-side snapshots are mandatory: no reconstructing missing heat or
-    # prompts from mutable site/config paths after a calibration completes.
-    pinned_inputs = {}
-    for name, role, check in (
-        ("calibration-prompts-a.v1", "calibration_prompts_a", "prompts_a_sha256"),
-        ("calibration-prompts-b.v1", "calibration_prompts_b", "prompts_b_sha256"),
-        ("calibration-heat.v1", "calibration_heat", "heat_sha256"),
-    ):
-        source = _file(c["run_dir"] / name)
-        if receipt.get(check) != _digest(source.read_bytes()):
-            raise run_records.RecordError(f"native {role} sha256 mismatch")
-        pinned_inputs[role] = source
-    expected_heat = (
-        c["manifest"]["spec"].get("handoff", {}).get("placement", {}).get("heat_file")
-    )
-    if not isinstance(expected_heat, str) or not expected_heat:
-        raise run_records.RecordError(
-            "native calibration manifest lacks heat source identity"
-        )
-    selected = _selected_calibration(store_path, key)
-    provenance = selected["provenance"]
-    if (
-        provenance["run_id"] != c["run_id"]
-        or provenance["source_revision"] != c["identity"]["source_revision"]
-    ):
-        raise run_records.RecordError(
-            "MRC04 calibration run/revision differs from native session"
-        )
-    if "facts" in c["manifest"]["spec"]:
-        facts = measurement_producers.canonical_blob(
-            c["manifest"]["spec"]["facts"]
-        ).rstrip(b"\n")
-        if provenance["host_facts_digest"] != _digest(facts):
-            raise run_records.RecordError(
-                "native calibration host facts digest differs from strict manifest"
-            )
-    else:
-        raise run_records.RecordError(
-            "native calibration manifest lacks declared host facts"
-        )
-    if selected["key"]["inputs"]["layout"] != c["identity"]["layout"]:
-        raise run_records.RecordError(
-            "calibration key scope layout differs from measured manifest"
-        )
-    engine_key = (
-        c["manifest"]["spec"]
-        .get("plan", {})
-        .get("engine_memory", {})
-        .get("engine_identity")
-    )
-    if engine_key and provenance["build_id"] != engine_key:
-        raise run_records.RecordError(
-            "calibrated engine identity differs from measured manifest"
-        )
-
-    readings = selected["quantities"]["measurements"]
-    metrics = {"decode": {}, "prefill": {}, "ttft": {}}
-    specs = {"decode": {}, "prefill": {}, "ttft": {}}
-    # These are calibrated decode/handoff quantities, NOT TTFT or prefill
-    # timing. Other quantities and explicit absences are retained in full
-    # in selected_calibration_record.
-    for name, value in readings.items():
-        if type(value) is not int:
-            continue  # effect_window_noise_ladder is a structured observation
-        metrics["decode"][name] = value
-        specs["decode"][name] = {
-            "direction": ("higher" if name.endswith(("_per_s", "_rate")) else "lower"),
-            "gated": False,
-        }
-    inputs = dict(c["inputs"])
-    inputs.update(pinned_inputs)
-    inputs.update(
-        {
-            "native_calibration_receipt": receipt_file,
-            "native_calibration_store": store_path,
-            "calibration_helper_log": helper,
-            "selected_calibration_record": measurement_producers.canonical_blob(
-                selected
-            ),
-        }
-    )
-    # Native calibration receipt is the sole host authority; a caller cannot
-    # substitute end-of-run host readings for a missing start snapshot.
-    if host_snapshot is not None and host_snapshot != c["host_start"]:
-        raise run_records.RecordError("native host facts differ from supplied ingest snapshot")
-    sha = measurement_producers.publish(
-        work_root=work_root,
-        run_id=c["run_id"] + "-calibration",
-        recorded_at=receipt["observed_at"],
-        identity=c["identity"],
-        workload={
-            "name": "live-policy-calibration",
-            "definition": {
-                "kind": "radiance.live_policy",
-                "key": key,
-                "objective": selected["key"]["inputs"]["objective"],
-                "method": "native-finite-ABBA",
-            },
-        },
-        metrics=metrics,
-        metric_specs=specs,
-        effective_config=c["manifest_bytes"],
-        argv=_native_argv(c["session"]),
-        environment=_native_environment(c["session"]),
-        power_settings=c["manifest"]["spec"].get("power", {}),
-        inputs=inputs,
-        host_facts=_host(c["host_start"]),
-        feature_states=c["feature_states"],
-        calibration_selection={
-            "status": "selected", "record": selected,
-            "quantity_blobs": {
-                "native_calibration_quantities": measurement_producers.canonical_blob(
-                    selected["quantities"]
-                )
-            },
-        },
-        validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
-        session_id=c["run_id"],
-    )
-    pointer = c["run_dir"] / "calibration-record.sha256"
-    if pointer.exists() and pointer.read_text().strip() != sha:
-        raise run_records.RecordError(
-            "calibration run already points to another record"
-        )
-    pointer.write_text(sha + "\n")
-    return sha
 
 
 def verify_live_target(run_dir: Path, url: str) -> None:

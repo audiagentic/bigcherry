@@ -10,7 +10,7 @@ PYTHONPATH=tools python3 -m bigcherry build --lane radiance:stock:linux-radiance
 
 ## CI-seeded ccache (BU01)
 
-A successful **main** Radiance CI build publishes a seven-day `radiance-ccache-main` artifact. It includes a compiler fingerprint, compressed ccache entries and `SHA256SUMS`. To use it before a branch kernel edit/build:
+A successful **main** Radiance CI build publishes a two-day `radiance-ccache-main` artifact. It includes a compiler fingerprint, compressed ccache entries and `SHA256SUMS`. To use it before a branch kernel edit/build:
 
 ```sh
 # Requires GitHub CLI access to this repository, ccache, GCC/G++ 14 and ROCm.

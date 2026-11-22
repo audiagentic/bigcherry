@@ -2,7 +2,7 @@
 id: RSC04
 order: 4
 plan: run-serving-configuration
-state: in_progress
+state: superseded
 created-at: '2026-11-02T00:53:10.689343+00:00'
 breadth: ''
 skill: basic
@@ -113,7 +113,7 @@ Critical gap for the installed engine: the release archive holds configs/flashne
 
 S16 classification: MIGRATE only standing-procedure scripts (flashnext-parity.sh for the bump parity gate, pwr01-baseline.sh); ARCHIVE rhp01-coverage.sh at archive/lab-rhp01-coverage (requires the forbidden routing_evidence lab experiment, do not add a native mode) to `bc-serve serve CONFIG --run-dir`; ARCHIVE to immutable tags archive/lab-<name> and delete from the tree: burst-idle.sh, burst-trace.sh, flashnext-probe.sh, pwr03-idle-diag.sh, rad20-burst-profile.sh, rad20-profile.sh, rad20-queue-probe.sh, rad20-helper-kill.sh, rhp20-forced-move.py (each with an immutable-tag historical TOOL_DISPOSITION row); DELETE after S15 and RSP01: launch-flashnext-best.sh, lib/plan-check.sh, lib/sdk-check.sh, serving/supervisor.py, runtime_adapters.py, activation.py, cli/serve.py, serve_v2.py and serving-only Python modules once callers are gone, tools/bigcherry/release/install.py after the installed-tag start gate. Launcher-text tests are deleted with their subjects (test_launch_flashnext_cleanup, test_launch_flashnext_release, test_plan_check_launcher, test_helper_profile_parity, test_rhp16_calibrate, test_rhp18_policy_preflight, test_rhp19_calibration_watchdog, test_mtp_replay_guard; test_runtime_sdk_check after the native SDK negative test): port only an assertion that guards a production behaviour with no native test. Direct blockers from git grep: release/install.py references the launcher; tests/release/test_release_install.py checks the launcher command; tests/campaign/test_rsc03_resources.py reads launcher text. Deletion proof: git grep shows zero executable references. DO NOT MERGE the deletion until the leased S15 A/B (tools/lab/radiance/rsc02_s15_ab.py, runbook docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md) passes on hardware for dense and helper configurations.
 
-
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: S16 retire-legacy-launchers is already the named RSC11 integration slice; there must not be a second owner for v2 cutover cleanup. Canonical remaining owner: RSC11. RSC11 explicitly lists S15 hardware acceptance then S16 retirement (RSC04), and records relevant release and deletion PRs; RSC04 is a duplicate tracking wrapper for the same final integration slice, not another implementation boundary. Exact remaining acceptance and stop/fallback requirements are in the active receiver. This lifecycle state retires duplicate planning ownership only; original source/evidence/negative results are retained and not declared complete.
 
 ## Status 2026-11-19
 
@@ -131,3 +131,9 @@ S15 passed on hardware and S16 landed (#1131): `launch-flashnext-best.sh`, `lib/
 - 2026-11-18T04:42:21.572347+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:37:11.732116+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:37:51.117086+00:00 (state-transition): State: pending → in_progress
+
+## Reviews
+
+- RV4504
+- 2026-11-22T10:36:01.457606+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:43:15.438822+00:00 (state-transition): State: in_progress → superseded

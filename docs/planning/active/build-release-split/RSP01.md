@@ -81,7 +81,7 @@ The host, not the release, supplies GPUs, ROCm SDK/driver, models, site paths/se
 
 #### RSC02, RSC12 and RSC04 dependency gates
 
-Compare [RSC02](../run-serving-configuration/RSC02.md), [RSC12](../run-serving-configuration/RSC12.md) and [RSC04](../run-serving-configuration/RSC04.md). A C++ parser/probe already existing does **not** imply its full start-time workflow has been ported.
+Compare [RSC02](../run-serving-configuration/RSC02.md), [RSC12](../run-serving-configuration/RSC12.md) and [RSC04](../../completed/run-serving-configuration/RSC04.md). A C++ parser/probe already existing does **not** imply its full start-time workflow has been ported.
 
 | Gate | Verified implementation and remaining work |
 |---|---|
@@ -294,3 +294,9 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 - 2026-11-16T06:37:56.515652+00:00 (created-by): Created by claude
 - 2026-11-16T19:22:34.283744+00:00 (updated-by): Updated: section:notes
 - 2026-11-17T03:19:19.707415+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4517
+- RV4520
+- 2026-11-22T10:47:57.333866+00:00 (updated-by): Updated: section:detailed_solution

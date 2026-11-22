@@ -79,6 +79,8 @@ the scope hashes to the record key; production matches the current model/cards/l
 service inputs before enabling. Changing model, physical cards/architectures, layout, histogram
 period, power profile or helper execution behavior still requires compatible evidence.
 
+**Producer status.** The record store is read by every production start (`derive_manifest_live_policy`) and written only by `bc-serve calibration-ingest`, which validates a settled `RHP16_CALIBRATION_JSON` line from a lab helper log against a lab-profile calibration manifest. The foreground `serve --calibration-run` start that produced that manifest and log was removed, and no replacement start produces them: the worker emits the line only for a calibration identity that only that start supplied. Until a native calibration start exists again, no command in this repository creates a new record; existing records stay valid and readable.
+
 **Startup guards (a production start with the policy on).** Right after the start canary `bc-serve` checks the engine's
 histogram stream and the worker's placement control. Two states of a fresh start are healthy and accepted, nothing else is
 loosened: the engine's first snapshot may still hold no route counts (the check waits up to the declared histogram period or

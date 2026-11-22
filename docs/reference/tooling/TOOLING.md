@@ -116,10 +116,7 @@ Old immutable v1 records without the optional field remain readable but do
 not assert which calibration was selected.
 
 Native `bc-serve status --json` reports the selected kind/key or a
-nonselection reason; the native runtime does not run Python. After native
-calibration finishes, `bigcherry results ingest-calibration` stores the
-complete selected record and quantity map through
-`measurement_producers.publish`. The serving CPU test activates a record
+nonselection reason; the native runtime does not run Python. The serving CPU test activates a record
 from build A on build B when the same narrow scope matches; separate leased
 device activation proof must not be inferred from CPU-only testing.
 
@@ -292,22 +289,7 @@ phase-qualified decode/prefill/TTFT metrics. Exact source evidence is pinned to
 one immutable MRC01 record; absent VA25 proof is marked unverified. No metrics
 are inferred from logs, no independent historical results reader is exposed.
 
-**MRC06 slice 3 — Radiance native lab results.** Native `bc-serve serve
---calibration-run` saves admitted manifest, exact process argv, A/B prompt
-and heat bytes, selected native calibration TOML and helper-log hashes
-without loading Python. After a **successfully completed and cleanly
-stopped** native calibration session, invoke the platform ingest:
-
-```sh
-bigcherry results ingest-calibration --run-dir /path/to/run --work-root ROOT --json
-```
-
-The platform's MRC04 reader requires one selected `native_v1` record and
-verifies its key/provenance and all source snapshots before producing an
-MRC01 run record. `RUN/calibration-record.sha256` is a pointer, not a new
-measurement store. Ingest before reusing the run directory. Ingest reads `RUN/host-facts.start.v1.json`, checks the digest sealed in
-the native owner session, and refuses missing, tampered or publication-time
-host facts. No sysfs or ROCm host facts are collected during offline ingest.
+**MRC06 slice 3 — Radiance native lab results.** The native calibration start and `bigcherry results ingest-calibration` were retired together; see LIVE_PLACEMENT.md for how records are produced now.
 
 `needle_probe.py` and `image_probe.py` now require a matching local native
 `--run-dir` and optional `--work-root`. Their `--out` is a digest-pointer
