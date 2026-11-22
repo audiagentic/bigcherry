@@ -231,6 +231,23 @@ class PinVersion:
     label: str
 
 
+def pinned_version_major(version: str) -> PinVersion:
+    """The release major of an upstream release version (pinned-version engines): 1.17.0 -> 1170, 2.2.0 -> 2020."""
+    parts = version.split(".")
+    if int(parts[0]) < 2:
+        # Keep the release numbers already published on Radiance 1.x.
+        return PinVersion(int("".join(parts)), version)
+    # Four digits like the published 1.x numbers: major, two-digit-capable minor, one-digit patch (1.17.0 -> 1170,
+    # 2.2.0 -> 2020). Outside these limits the numbers would collide, so refuse rather than guess.
+    if len(parts) != 3 or not 0 <= int(parts[1]) < 100 or not 0 <= int(parts[2]) < 10:
+        raise ReleaseNotesError(
+            f"upstream release version {version!r} does not fit the four-digit release major "
+            "(major.minor.patch with minor < 100 and patch < 10); change the scheme deliberately"
+        )
+    major, minor, patch = map(int, parts)
+    return PinVersion(major * 1000 + minor * 10 + patch, version)
+
+
 def pin_version(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HEAD") -> PinVersion:
     """The major and label of a pin, by the engine's version source. ``pin`` is the argument of the release commands:
     the upstream build tag (build-tag) or the pinned revision, at least 7 hex digits of it (pinned-version)."""
@@ -247,19 +264,7 @@ def pin_version(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HE
             raise ReleaseNotesError(f"{pin!r} is not the pinned {config.upstream_name} revision {pinned[:12]!r} ({config.recipes})")
         if not re.fullmatch(r"\d+(\.\d+)*", version):
             raise ReleaseNotesError(f"{config.recipes} declares no pinned-version for {config.upstream_name} {pinned[:12]}")
-        parts = version.split(".")
-        if int(parts[0]) < 2:
-            # Keep the release numbers already published on Radiance 1.x.
-            return PinVersion(int("".join(parts)), version)
-        # Four digits like the published 1.x numbers: major, two-digit-capable minor, one-digit patch (1.17.0 -> 1170,
-        # 2.2.0 -> 2020). Outside these limits the numbers would collide, so refuse rather than guess.
-        if len(parts) != 3 or not 0 <= int(parts[1]) < 100 or not 0 <= int(parts[2]) < 10:
-            raise ReleaseNotesError(
-                f"upstream release version {version!r} does not fit the four-digit release major "
-                "(major.minor.patch with minor < 100 and patch < 10); change the scheme deliberately"
-            )
-        major, minor, patch = map(int, parts)
-        return PinVersion(major * 1000 + minor * 10 + patch, version)
+        return pinned_version_major(version)
     raise ReleaseNotesError(f"engine {config.engine}: unknown version-source {config.version_source!r}")
 
 

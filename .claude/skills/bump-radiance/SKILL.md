@@ -87,6 +87,11 @@ nice -n 15 python3 -m bigcherry --engine radiance pin-bump <ref> \
 python3 -m bigcherry --engine radiance pin-bump <ref> --resume
 ```
 
+The declare phase also handles the release line: when the new pin's release major (2.2.0 is 2020) differs from the
+release-please manifest's, it sets the package's `release-as` in the pin commit, and the release-please workflow
+removes it after the release (`tools/bigcherry/release/release_line.py`). Nothing to do by hand; a missing or stale
+key fails `tools/tests/release/test_release_line.py`.
+
 Follow the reported phase failure, rather than bypassing it. The drift gate
 checks component coupling and native rewrites; the compile gate rebuilds
 components, checks exported plugin ABI **and layout fingerprint**, and runs

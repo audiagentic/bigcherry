@@ -173,14 +173,6 @@ the llama.cpp repin/transition procedure below is independent.
 - **Triage at the current pin must be clean.** Run `pin-triage` at the
   pinned commit; a non-clean verdict there is a defect in the check, not
   upstream drift (the patch-owned rule false positives were found this way).
-- **Start the new release line when the upstream major changes.** The release
-  version's major comes from the pin (2.2.0 is 2020), but release-please
-  keeps counting from the old manifest value unless the package carries
-  `release-as`. The 2.2 migration shipped as 1170.37.0 and 1170.38.0 because that
-  step was skipped. When a bump changes the upstream version, set
-  `release-as` (`pin-release notes` does it; it is a package-scoped key in
-  `release-please-config.json`, never a commit footer) in the bump PR, and
-  remove it in a dedicated PR once the first tag exists.
 - **`audiagentic worktree start` names the branch by account prefix**, and
   that prefix fails the forbidden-terms check: rename the branch before the
   first commit (`git branch -m`).
@@ -346,9 +338,18 @@ acceptance before changing the next deployment.
    branch takes current `main` back). `--through <phase>` stops early;
    `--dry-run` reports the concrete PRs and manifest versions without writes.
 
-   The version is carried only by `release-as` on the `engines/llamacpp`
-   package in `release-please-config.json`; it is removed after the release
-   tag exists. Commit-message `Release-As` footers are not used.
+   The version is carried only by the package-scoped `release-as` in
+   `release-please-config.json`. Commit-message `Release-As` footers are not used.
+
+   The release line follows the pin by itself. The `declare` phase of `pin-bump` compares the new pin's release
+   major (the llama.cpp build number; Radiance 2.2.0 is 2020) with the one in `.release-please-manifest.json` and,
+   when they differ, sets `release-as` `<major>.0.0` in the same commit that moves the pin
+   (`tools/bigcherry/release/release_line.py`). Once the release exists (the manifest has reached `release-as`),
+   the release-please workflow opens a pull request that removes the key and queues it to merge; the `unpin`
+   phase above does the same synchronously for a `pin-release` run. The test
+   `tools/tests/release/test_release_line.py::test_this_repository_declares_its_release_line` (and
+   `python -m bigcherry.release.release_line check`) fails when the pin's major differs from the manifest's without
+   a `release-as`, when the key does not name the pin's major, and when it is older than the manifest.
 
    Required PR checks include conventional-title and index-line-endings. Release-please uses RELEASE_PLEASE_TOKEN to trigger workflows; PRs created with GITHUB_TOKEN may not trigger required checks. If no checks run, close and reopen the PR as the account. The pin-release main/release/unpin branches must be updated against main, preserve the released package version, wait for required checks and refuse on failures.
 

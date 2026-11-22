@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_003824_a-pin-bump-now-starts-its-rele_7883",
+  "files": [
+    "tools/bigcherry/release/release_line.py",
+    "tools/bigcherry/release/pin_bump.py",
+    "tools/bigcherry/release/notes.py",
+    ".github/workflows/release-please.yml",
+    "tools/tests/release/test_release_line.py",
+    "docs/reference/build/PIN_BUMP.md",
+    ".claude/skills/bump-radiance/SKILL.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "pin-bump's declare phase sets the package's release-as (<major>.0.0) in the pin commit when the pin's release major differs from the release-please manifest's, for both the llama.cpp and Radiance lines; the release-please workflow opens a self-merging PR that removes the key once the manifest has reached it; a repository test (and release_line check) fails when the pin's major is ahead without a key, the key names another major, or it is older than the manifest.",
+  "timestamp-utc": "2026-11-22T00:38:24.490113Z",
+  "user-summary-candidate": "A pin bump now starts its release line by itself: the release version follows the new pin without a manual release-as, and the key is removed automatically after the release."
+}
