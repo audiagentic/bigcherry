@@ -77,6 +77,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..core.json_io import read_jsonl
+
 
 class Classification(str, Enum):
     """What actually happened to a promoted key, in production terms.
@@ -159,20 +161,11 @@ class AuditRow:
         }
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
-    return rows
-
-
 def load_promoted(path: str | Path) -> list[dict[str, Any]]:
     """Only PROMOTED rows -- tune_promotion.py's own decision that the winner
     differs from native. A row where the tuner itself kept native is not an
     execution question; there is nothing to audit."""
-    rows = _read_jsonl(Path(path))
+    rows = read_jsonl(Path(path))
     out = []
     for row in rows:
         if row.get("kind") == "header":
@@ -194,7 +187,7 @@ def load_hit_log(path: str | Path | None) -> dict[str, HitRecord]:
     if not p.is_file():
         return {}
     out: dict[str, HitRecord] = {}
-    for row in _read_jsonl(p):
+    for row in read_jsonl(p):
         dispatch = row.get("dispatch")
         if not dispatch:
             continue
@@ -362,7 +355,7 @@ def audit_covers_promoted(promoted_path: str | Path, audit_path: str | Path | No
         return False
 
     try:
-        audited_dispatches = {row.get("dispatch") for row in _read_jsonl(ap)}
+        audited_dispatches = {row.get("dispatch") for row in read_jsonl(ap)}
     except (OSError, json.JSONDecodeError):
         return False
 

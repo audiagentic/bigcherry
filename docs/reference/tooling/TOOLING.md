@@ -52,6 +52,16 @@ bigcherry CLI -> cli/main.py parser -> cli/<domain>.py handler
               -> tests, receipts, evidence, or artifacts owned by that workflow
 ```
 
+### JSON persistence
+
+Runtime matrix, patch-build and smoke campaign JSON publications use
+`bigcherry.hardware.power_receipt.write_json_atomic`, the existing receipt
+writer. It preserves sorted, two-space-indented JSON and a trailing newline;
+campaign callers explicitly retain their ASCII/Unicode encoding, newline and
+file-only fsync behavior. Power receipts retain directory fsync by default.
+`bigcherry.core.json_io.read_jsonl` owns the shared execution-audit and rollup
+reader: it skips blank lines and propagates malformed JSON and file errors.
+
 ### Calibration records (MRC04 slice 1)
 
 The engine-agnostic JSON contract is

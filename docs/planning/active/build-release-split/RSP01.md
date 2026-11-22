@@ -175,7 +175,7 @@ PRs 1–4. Never claim the new asset is production-ready until these gates land.
 **Implementation ledger, 2026-11-18 (phase 2):** PR #1072 merged the
 plan and dependency inventory; PR #1077 merged the exact Python-free
 engine payload and two committed RSC12 configs; PR #1079 merged the
-native `bc-release` C++20 install/verify/status/rollback, current/previous
+native `bc-release` C++20 install/verify/rollback, current/previous
 retention, atomic receipt/index, card-free native CTest and real production
 PAX/gzip writer golden. The workflow cutover is the fourth slice: new and
 reused engine archives both pass a mandatory final publish gate against the
@@ -211,7 +211,7 @@ These remain explicit refusal gates, not assertions of production readiness.
 |---|---|
 | `release/install.py` Python install, Git tag resolution, source worktree creation and `release-install latest` | `bc-release install` binds an exact supplied tag to that tag's archive digest/receipt and installs without a source checkout. Any future `latest` transport discovery must reduce to a concrete tag before verification; no mutable index is a trust root. |
 | `release/runtime_assets.py` Python verifier/extractor, shell `sha256sum` | `release_install.cpp` bounded regular-file archive parser, streaming SHA-256, exact manifest file map and typed refusals. Python packer remains CI/platform-side, never payload. |
-| Worktree/build selection, current link/receipt writing, manual rollback | Native `bc-release install/verify/status/rollback` sealed prefix/index with atomic last-write receipt, current and previous candidate validation before switching; refuse an unsafe state rather than reinterpret legacy receipts. |
+| Worktree/build selection, current link/receipt writing, manual rollback | Native `bc-release install/verify/rollback` sealed prefix/index with atomic last-write receipt, current and previous candidate validation before switching; refuse an unsafe state rather than reinterpret legacy receipts. |
 | `tools/lab/radiance/launch-flashnext-best.sh` and `lib/plan-check.sh` | `bc-serve serve/start` through `session.cpp`, `manifest_writer.cpp`, `plan_cache.cpp`; RSC02 measured-plan and durable-admission contracts, not copied shell branches. |
 | `tools/bigcherry/serving/supervisor.py`; shell health/stop/status | Native `bc-serve` session ownership, control socket, health/canary, stop/status; RSC02 typed process lifecycle. |
 | `python3 -m bigcherry resources derive-launch`, repository layouts, CLI config resolution | Native `config_loader.cpp`, `resources.cpp`, stored manifest gate; `configs/*.toml` shipped, `archs.toml` compiled in. RSC12 schema and live measured-memory requirements are the source. |
@@ -300,3 +300,5 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 - RV4517
 - RV4520
 - 2026-11-22T10:47:57.333866+00:00 (updated-by): Updated: section:detailed_solution
+- RV4553
+- 2026-11-22T12:18:04.798791+00:00 (updated-by): Updated: section:detailed_solution

@@ -57,7 +57,7 @@ older tag family, and extra repository paths owned by the engine). The package p
 
 ## Installing a release
 
-Radiance releases now use a single Python-free **engine-runtime** asset and native `bc-release install/verify/status/rollback`. The platform CLI does **not** offer the retired `release-install` command and does not create detached source worktrees for deployment. Native `bc-serve` in the verified current prefix rechecks the tag-bound installation before starting; no source-checkout launcher or Python runtime is required.
+Radiance releases now use a single Python-free **engine-runtime** asset and native `bc-release install/verify/rollback`. The platform CLI does **not** offer the retired `release-install` command and does not create detached source worktrees for deployment. Native `bc-serve` in the verified current prefix rechecks the tag-bound installation before starting; no source-checkout launcher or Python runtime is required.
 
 Obtain an exact release tag's `bigcherryrad-PLAN.tar.gz`, `.sha256` and `.receipt.json` from the same trusted publishing channel. The receipt's tag and cryptographic binding must be verified, not inferred from a mutable `latest` pointer.
 
@@ -83,7 +83,7 @@ radiance_home/bin/bc-release install --tag bc-radiance-X.Y.Z \
   --archive /path/to/bigcherryrad-PLAN.tar.gz \
   --root /path/to/installed-radiance --sdk /path/to/rocm-sdk
 radiance_home/bin/bc-release verify --root /path/to/installed-radiance --sdk /path/to/rocm-sdk
-radiance_home/bin/bc-release status --root /path/to/installed-radiance --sdk /path/to/rocm-sdk
+radiance_home/bin/bc-release verify --root /path/to/installed-radiance --sdk /path/to/rocm-sdk
 radiance_home/bin/bc-release rollback --root /path/to/installed-radiance --sdk /path/to/rocm-sdk
 ```
 

@@ -53,7 +53,6 @@ Json verify(const fs::path& source, const fs::path& sdk);
 // What a start runs: the current tag only (the previous one is not scanned), and its runtime members are hashed only if
 // they differ from the stamps recorded when they were last verified in full (install, or `verify`).
 Json verify_current(const fs::path& source, const fs::path& sdk);
-Json status(const fs::path& root, const fs::path& sdk);
 Json rollback(const fs::path& source, const fs::path& sdk);
 
 } // namespace bc::release

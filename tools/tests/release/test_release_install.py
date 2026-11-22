@@ -1,6 +1,6 @@
 """RSP01/S16: legacy source-worktree release installer is absent from the platform CLI.
 
-The native bc-release install/verify/status/rollback contract is exercised by
+The native bc-release install/verify/rollback contract is exercised by
 bc_release_install_test (component CTest), including tag binding and rollback.
 This offline test prevents unintentional resurrection of the Python path.
 """

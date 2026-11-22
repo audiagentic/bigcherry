@@ -1,12 +1,12 @@
 # RSC11 S13a — native live-room measurement integration (inactive)
 
-`bc-serve --publish-v2-live-room --site SITE [--profile PROFILE] [--set KEY=VALUE]
-[--sys-root DIR]` is a new **read-only** command. It detects the current
+The standalone live-room CLI has been removed. The native `v2/p1_live_room.cpp`
+library remains available to the session-owned producer and tests. It detects the
 KFD/PCI inventory, resolves selected engine/helper BDFs, reads live host
 MemAvailable and effective memory-cgroup room, and measures AMD global
 pinnable-room capacity using the driver's cap and the current PCI GTT usage
-counters. It outputs `bc_serve_v2_live_room` with three byte fields and the
-selected BDFs. It does **not** write either manifest version, launch any
+counters. It returns a typed `P1LiveRoom` with three byte fields and evidence.
+It does **not** write either manifest version, launch any
 process, or apply power.
 
 The reader fails closed when AMD driver/cap state, selected BDF inventory,

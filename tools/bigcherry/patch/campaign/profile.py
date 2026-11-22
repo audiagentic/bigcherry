@@ -31,7 +31,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-from bigcherry.patch.campaign.build import _atomic_write_json, _print, build_tree
+from bigcherry.hardware.power_receipt import write_json_atomic
+from bigcherry.patch.campaign.build import _print, build_tree
 from bigcherry.patch.campaign.scaffold import _materialize_scaffold_sources
 
 WORKLOADS = {
@@ -108,7 +109,7 @@ def _write_prepared_manifest(path: Path, opts: argparse.Namespace, bins: dict[st
         **_prepared_identity(opts),
         "binaries": binary_rows,
     }
-    _atomic_write_json(path, document)
+    write_json_atomic(path, document, ensure_ascii=False, sync_directory=False, newline="\n")
 
 
 def _load_prepared_manifest(path: Path, opts: argparse.Namespace) -> dict[str, Path]:

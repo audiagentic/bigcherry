@@ -319,10 +319,6 @@ Json verify_current(const fs::path& source, const fs::path& sdk) {
     return {{"status", "verified"}, {"current", index["current"]}, {"root", root.string()}};
 }
 
-Json status(const fs::path& root, const fs::path& sdk) {
-    return verify(root, sdk);
-}
-
 Json rollback(const fs::path& source, const fs::path& sdk) {
     const auto root = fs::absolute(source).lexically_normal();
     RootLock lock(root);

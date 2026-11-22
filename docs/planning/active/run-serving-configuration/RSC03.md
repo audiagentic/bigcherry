@@ -47,7 +47,7 @@ B1 findings (2026-11-02):
 Slice 1b = R3 (lead decision 2026-11-02; B1 as specified needs a plan() refactor, see R2 in notes):
 - Managed patch hook: one thin call after Engine::plan() in start() writes the consumer sizes as the strict v1 plan JSON (ledger.h EnginePlan: host consumers with bytes, residence and the engine function each came from; checkpoint slot/floor/want; kv bytes per token; per-card footprint). A `--plan-memory` mode runs start() as far as plan() and exits before weights load or arenas allocate. The exit logic lives in patch-owned code.
 - Cache, under the work root (not $HOME), with provenance (when measured, which build). Key: container digest; engine build identity (build_plan_id or binary hash, plus the kernel/plugin set); engine card arch and VRAM; the manifest's planning inputs (max_sessions, max_context, checkpoint_interval, kv dtype, placements, layout). Any change is a miss.
-- On a miss: `bc-serve --explain` never touches a GPU. (RSC08 S2b: bc-serve no longer measures; the launcher measures with the engine's own `--plan-memory` and its helpers up, then `bc-serve --write-manifest --measured-plan FILE` (RSC08 S3; it replaced `--plan-store`), and `--write-manifest` without a plan refuses a miss with exit 10. The `--dry-run` and `bc-serve --plan-memory` of the first design are deleted.)
+- On a miss: `bc-serve --explain` never touches a GPU. The native session owner measures with the engine and its helpers, stores the plan, and supplies a sealed native configuration, frozen plan key and owner-attempt identity to `bc-serve --write-manifest OUT`. The writer only reads that session-owned cache; a cache miss exits 10. Raw plan-file import options have been removed.
 - Slice 3's start-up check compares the live plan() against the manifest's budgets, failing closed when short. Same function, same numbers.
 
 ## Code Samples & Guidance
@@ -151,8 +151,6 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 - ServingInputV1 has one `constraints` namespace holding site-only, tighten-only caps (max) and floors (min). This replaces today's hard_caps and hard_floors tables.
 - The engine binary is not an input: bc-serve resolves it relative to its own installed location (radiance_home/../bin/radiance), covered by the package identity. The plan cache directory is derived from the work root in site config (<work-root>/plan-cache). Neither is a CLI flag in v1, so today's `bc-serve --plan-memory --plan-cache DIR --engine-binary PATH` flags (and wiring list item 1's Options.plan_cache / --engine-binary) are replaced at the v1 cutover.
 
-
-
 ## Status 2026-11-19
 
 The derived start-up resource plan is in production use (C++ RAD/BDF ledger: `resources: derived host pool N MiB, host KV N MiB`, then the measuring start re-measures the pool, for example 1033 -> 2247 MiB on flashnext-4gpu). Observed today: the engine's own host admission is the last word (n-gram table 47.68 GiB needs about 74.8 GiB available including the 4.59 GiB headroom; a start with 74.1 GiB available was refused), so a start right after another heavy process can fail for memory the ledger cannot see; consider reporting MemAvailable at the ledger step. The policy-calibration key no longer includes the host pool or helper budgets (#1169), so a re-measured pool does not orphan a calibration record.
@@ -195,3 +193,8 @@ The shipped `engines/radiance/layouts.toml` now omits all literal helper `budget
 
 **Unresolved until the single v2 cutover:** `serving.cpp` still holds the v1 host-pool/host-KV defaults and engine-only recipe-specific pool sizes remain in layouts.toml. The v1 Bash helper launcher now calls the GPU-free Python launch adapter on every start: bc-serve selects actual BDF roles, helper footprints and owner map; the RAD directory and current host memory facts feed the shared resource ledger. The adapter prints a breakdown and injects computed host-pool and host-KV MiB without restoring the old constants. The C++ v1 defaults remain for non-launcher callers until the single S13 cutover, when model/plan sizes and KV geometry must be carried through a typed v2 resource interface. The v1 manifest schema is unchanged; S16 removes the Bash surface.
 - 2026-11-19T07:37:03.328605+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4554
+- 2026-11-22T12:18:29.092969+00:00 (updated-by): Updated: section:detailed_solution

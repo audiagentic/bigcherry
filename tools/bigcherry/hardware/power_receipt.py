@@ -12,19 +12,25 @@ import json
 import os
 import re
 import tempfile
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 
-def write_json_atomic(path: Path, document: dict) -> None:
+def write_json_atomic(
+    path: Path, document: Mapping[str, Any], *, ensure_ascii: bool = True,
+    sync_directory: bool = True, newline: str | None = None,
+) -> None:
+    """Publish sorted, indented JSON; callers select encoding and rename durability."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=path.parent)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            json.dump(document, f, indent=2, sort_keys=True)
+        with os.fdopen(fd, "w", encoding="utf-8", newline=newline) as f:
+            json.dump(document, f, indent=2, sort_keys=True, ensure_ascii=ensure_ascii)
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
@@ -35,7 +41,7 @@ def write_json_atomic(path: Path, document: dict) -> None:
         except OSError:
             pass
         raise
-    if hasattr(os, "O_DIRECTORY"):  # POSIX: persist the rename itself; other platforms have no directory fsync
+    if sync_directory and hasattr(os, "O_DIRECTORY"):  # POSIX: persist the rename itself; other platforms have no directory fsync
         dfd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
             os.fsync(dfd)

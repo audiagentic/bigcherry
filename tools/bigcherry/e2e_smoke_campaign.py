@@ -43,7 +43,6 @@ import math
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import urllib.error
@@ -51,6 +50,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .hardware.power_receipt import write_json_atomic
 
 PROGRESS_INTERVAL_S = 15
 
@@ -476,7 +477,7 @@ class Campaign:
                 "campaign_identity_digest": expected_digest,
                 "history": [],
             }
-            self._atomic_write_json(self.status_path, data)
+            write_json_atomic(self.status_path, data, ensure_ascii=False, sync_directory=False, newline="\n")
             return data
 
         data = self._read_status_document()
@@ -542,7 +543,7 @@ class Campaign:
             raise CampaignError("existing status.json history is invalid")
         history.append(record)
 
-        self._atomic_write_json(self.status_path, data)
+        write_json_atomic(self.status_path, data, ensure_ascii=False, sync_directory=False, newline="\n")
         print(f"[{record['ts']}] {stage} {state} {detail}", flush=True)
 
     def sample_progress(self, stage: str, journal_path: Path, t0: float) -> None:
@@ -1100,24 +1101,6 @@ class Campaign:
             result["dispatch_cache"] = str(dispatch_cache.resolve())
         return result
 
-    @staticmethod
-    def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary_name = tempfile.mkstemp(
-            prefix=f".{path.name}.", suffix=".tmp", dir=path.parent, text=True,
-        )
-        temporary_path = Path(temporary_name)
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-                json.dump(payload, handle, indent=2, sort_keys=True, ensure_ascii=False)
-                handle.write("\n")
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(temporary_path, path)
-        except BaseException:
-            temporary_path.unlink(missing_ok=True)
-            raise
-
     def s6_bench(self, cache: Path) -> Path:
         """Benchmark the model three ways: stock (separate unpatched binary,
         no BigCherry dispatch env at all), native (dispatch on, no tuning
@@ -1154,7 +1137,7 @@ class Campaign:
             },
             "configs": {"stock": stock, "native": native, "replay": replay},
         }
-        self._atomic_write_json(output, payload)
+        write_json_atomic(output, payload, ensure_ascii=False, sync_directory=False, newline="\n")
         self.write_status(stage, "done")
         return output
 

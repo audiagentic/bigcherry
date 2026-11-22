@@ -22,7 +22,7 @@ radiance_home/bin/bc-release install --tag bc-radiance-X.Y.Z \
   --archive /path/to/bigcherryrad-PLAN.tar.gz \
   --root /path/to/install-root --sdk /path/to/rocm-sdk
 radiance_home/bin/bc-release verify --root /path/to/install-root --sdk /path/to/rocm-sdk
-radiance_home/bin/bc-release status --root /path/to/install-root --sdk /path/to/rocm-sdk
+radiance_home/bin/bc-release verify --root /path/to/install-root --sdk /path/to/rocm-sdk
 ```
 
 The native installer verifies tag, manifest, SDK, every runtime file digest and rollback candidates. It does not create source worktrees or use Python. See [RELEASES.md](../../build/RELEASES.md#installing-a-release) for the refusal matrix and rollback.

@@ -14,28 +14,13 @@ import hashlib
 import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any, Mapping
 
 from ..campaign.runtime_matrix import MatrixResolutionError, resolve_matrix, run_matrix
 from ..campaign.run_advisories import evaluate_runtime_result, render as render_run_advisories
+from ..hardware.power_receipt import write_json_atomic
 from ..core import environment
-
-
-def _atomic_json(path: Path, document: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(document, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
 
 
 def _sha256(path: Path) -> str:
@@ -269,7 +254,7 @@ def cmd_runtime_matrix(args) -> int:
             "recipe_registry": str(recipes),
             "cells": [cell.document() for cell in cells],
         }
-        _atomic_json(output / "resolved-matrix.json", resolved)
+        write_json_atomic(output / "resolved-matrix.json", resolved, sync_directory=False)
         if args.dry_run:
             print(json.dumps(resolved, indent=2, sort_keys=True))
             return 0
@@ -296,7 +281,7 @@ def cmd_runtime_matrix(args) -> int:
             revalidate=revalidate,
         )
         advisory_evaluation = evaluate_runtime_result(result)
-        _atomic_json(output / "advisories.json", advisory_evaluation.document())
+        write_json_atomic(output / "advisories.json", advisory_evaluation.document(), sync_directory=False)
         advisory_text = render_run_advisories(advisory_evaluation)
         if advisory_text:
             print(advisory_text, file=sys.stderr, end="")

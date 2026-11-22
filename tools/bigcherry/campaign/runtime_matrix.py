@@ -10,11 +10,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence
+
+from ..hardware.power_receipt import write_json_atomic
 
 from ..core.environment import Host
 
@@ -151,21 +152,6 @@ def resolve_matrix(
     return tuple(resolved)
 
 
-def _atomic_json(path: Path, document: Mapping[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(document, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
 def run_matrix(
     cells: Sequence[ResolvedCell],
     *,
@@ -203,14 +189,14 @@ def run_matrix(
             os.fsync(stream.fileno())
         status = dict(event)
         status["run_started_at"] = started
-        _atomic_json(status_path, status)
+        write_json_atomic(status_path, status, sync_directory=False)
 
     emit("preflight_complete")
     results: list[dict[str, Any]] = []
 
     def finish(state: str) -> dict[str, Any]:
         summary = {"state": state, "completed": completed, "total": len(cells), "results": results}
-        _atomic_json(root / "summary.json", summary)
+        write_json_atomic(root / "summary.json", summary, sync_directory=False)
         return summary
 
     for cell in cells:
