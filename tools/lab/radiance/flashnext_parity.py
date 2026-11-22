@@ -510,6 +510,24 @@ def selected_calibration(path: Path, key: str) -> dict:
     return item["native"]
 
 
+def selected_calibration_key(launch: Path, state: dict) -> str:
+    """The calibration key the native owner selected for this launch.
+
+    The owner reports it in its session start record (calibration_record); the manifest's policy state may leave
+    its own key empty. When the manifest does carry one it must agree.
+    """
+    selection = _load(launch / "native-session-start.json").get("calibration_record")
+    key = selection.get("key_sha256") if isinstance(selection, dict) else None
+    if (not isinstance(selection, dict) or selection.get("status") != "selected"
+            or selection.get("kind") != "radiance.live_policy"
+            or not isinstance(key, str) or not key):
+        raise ParityError("active policy lacks selected calibration store/key")
+    manifest_key = state.get("calibration_key")
+    if manifest_key not in (None, "") and manifest_key != key:
+        raise ParityError("manifest calibration key differs from the owner's selected key")
+    return key
+
+
 def publish_launch_record(
     out: Path, launch: Path, *, work_root: Path | None = None
 ) -> str:
@@ -592,8 +610,8 @@ def publish_launch_record(
             inputs[role] = path
     if state["configured"]:
         cal = snapshot.get("calibration_store")
-        key = state.get("calibration_key")
-        if not cal or not isinstance(key, str) or not key:
+        key = selected_calibration_key(launch, state)
+        if not cal:
             raise ParityError("active policy lacks selected calibration store/key")
         inputs["calibration_record"] = measurement_producers.canonical_blob(
             selected_calibration(Path(cal), key)

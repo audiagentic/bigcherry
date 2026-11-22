@@ -483,7 +483,7 @@ class RunRecordsTests(unittest.TestCase):
         manifest = json.loads((launch / "manifest.json").read_text())
         manifest["spec"]["handoff"]["placement"]["live_policy_state"] = {
             "configured": True, "requested": "on",
-            "reason_code": "configured", "calibration_key": key,
+            "reason_code": "configured", "calibration_key": "",
         }
         manifest["spec"]["handoff"]["placement"]["live_policy"] = {
             "cadence_ns": 1000000000, "min_samples": 1
@@ -493,6 +493,12 @@ class RunRecordsTests(unittest.TestCase):
         provenance["calibration_store"] = str(self.calibration)
         (launch / "launch-provenance.json").write_text(json.dumps(provenance))
         (launch / "launch.json").write_text(json.dumps({"policy": True, "warmup_s": 3.0}))
+        # Native bc-serve leaves the manifest key empty and reports the selection in the owner session.
+        session_path = launch / "native-session-start.json"
+        session = json.loads(session_path.read_text())
+        session["calibration_record"] = {
+            "key_sha256": key, "kind": "radiance.live_policy", "status": "selected"}
+        session_path.write_text(json.dumps(session))
         states = json.loads((launch / "feature-states.v1.json").read_text())
         states[0]["state"] = "active"
         states[0]["reason_code"] = "configured"
@@ -506,7 +512,6 @@ class RunRecordsTests(unittest.TestCase):
             inputs = {v["role"]: store.get_blob(v["blob"])
                       for v in rec["provenance"]["inputs"]}
             self.assertEqual(json.loads(inputs["calibration_record"])["plan_cache_key"], key)
-            self.assertEqual(json.loads(inputs["policy_state"])["calibration_key"], key)
             self.assertEqual(json.loads(inputs["warmup"])["warmup_s"], 3.0)
 
             # Valid data under the wrong key must never become live evidence.
@@ -517,6 +522,19 @@ class RunRecordsTests(unittest.TestCase):
             ))
             with self.assertRaises((fp.ParityError, ValueError)):
                 fp.publish_launch_record(out, launch)
+            self.assertEqual(len(store.query()), 1)
+            self.calibration.write_text(original)
+
+            # A run whose owner reported no selected calibration, or a different one, is refused.
+            for change in (lambda c: c.pop("calibration_record"),
+                           lambda c: c.update(calibration_record={**c["calibration_record"], "status": "none"}),
+                           lambda c: c["calibration_record"].update(key_sha256="e" * 64)):
+                bad = json.loads(session_path.read_text())
+                change(bad)
+                session_path.write_text(json.dumps(bad))
+                with self.assertRaises((fp.ParityError, ValueError)):
+                    fp.publish_launch_record(out, launch)
+                session_path.write_text(json.dumps(session))
             self.assertEqual(len(store.query()), 1)
 
     def test_results_baseline_compare_over_published_launch_records(self):
