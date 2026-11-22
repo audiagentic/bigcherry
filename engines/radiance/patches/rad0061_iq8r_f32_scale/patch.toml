@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0061_iq8r_f32_scale"
+order = 61
+state = "diagnostic"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["RUM15"]
+requires = []
+conflicts = []
+tags = ["quantization", "numerical-precision"]
