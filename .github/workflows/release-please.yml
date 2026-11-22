@@ -142,3 +142,27 @@ jobs:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 rewrite-src/.github/scripts/rewrite_release_lines.py rewrite-src/.github/release-line-rewrites.toml
+
+      # A pin bump with a new release major sets the package's `release-as` (tools/bigcherry/release/release_line.py).
+      # Once the manifest has reached it the release exists and the key must go, or release-please would propose the
+      # same version again. This opens (and queues for merge) the pull request that removes it; it runs on every push,
+      # so a failed attempt is retried by the next one, and does nothing while no key has been reached.
+      - name: clear release-as keys whose release exists
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd rewrite-src
+          cleared=$(PYTHONPATH=tools python3 -m bigcherry.release.release_line clear .)
+          if [ -z "${cleared}" ]; then exit 0; fi
+          branch=chore/release-as-clear
+          if [ -n "$(gh pr list --head "${branch}" --state open --json number --jq '.[].number')" ]; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -q -B "${branch}"
+          git add release-please-config.json
+          git commit -q -m "chore: clear release-as for released lines" -m "Released: ${cleared//$'\n'/, }. The key only starts a line; keeping it would make release-please propose the released version again."
+          git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${branch}"
+          url=$(gh pr create --base main --head "${branch}" --title "chore: clear release-as for released lines" --body "Opened by the release-please workflow: the manifest has reached the pinned release-as, so the release exists. Merges itself when checks pass.")
+          gh pr merge "${url}" --auto --squash

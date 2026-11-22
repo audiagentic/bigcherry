@@ -584,6 +584,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/wire-quality/codec_mock.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/fn-helper.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); the engine launcher `fn-profile.sh` wraps; kept because kernel/copy tracing under rocprofv3 is not a harness capability (MEN11). |
 | `tools/lab/radiance/fn-profile-compare.py` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); rocprofv3 kernel/copy trace and comparison, not covered by ab-benchmark (MEN11); kept. |
+| `tools/lab/radiance/rum09_phase_timeline.py` | **TRANSITIONAL** | RUM09 native trace analyzer; aligns device events per rank to cold/warm windows, refuses invalid/missing events. |
 | `tools/lab/radiance/fn-profile.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); rocprofv3 kernel/copy trace and comparison, not covered by ab-benchmark (MEN11); kept. |
 | `tools/lab/radiance/gpu-mailbox/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |
 | `tools/lab/radiance/gpu-mailbox/mailbox_probe.cpp` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, replaced by bigcherry commands under MEN11/MEN14. |

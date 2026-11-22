@@ -21,15 +21,15 @@ owner: Planning MCP registration required
 
 ## Description
 
-Finish only the diagnostic LTX-specific model-source foundation; the generic AQL lab cleanup is RUM12-owned. The C01-C06 declarations already reuse Radiance sharding; the C08 AQL result is the correct native collective proof. Consolidate model-derived uneven slices with strictly legal IQ8R K offsets, preserving the existing production TP1 behavior.
+Finish only the diagnostic LTX-specific model-source foundation; the generic AQL lab cleanup is RUM13-owned. The C01-C06 declarations already reuse Radiance sharding; the C08 AQL result is the correct native collective proof. Consolidate model-derived uneven slices with strictly legal IQ8R K offsets, preserving the existing production TP1 behavior.
 
 **Existing engineering gap coverage:** LT3-01, LT3-03, LT3-04, LT3-07. **Dependencies:** Radiance 2.2 ABI44; candidate PR #1262; none of the downstream LTX plans.
 
-## Shared native qualification dependency (RUM12)
+## Shared native qualification dependency (RUM13)
 
 The model-independent mixed-architecture AQL test and its direct-HIP
-duplicate are now **owned exclusively by proposed RUM12**, not LTX01.
-See [RUM12](../rum12-native-qualification/README.md). RUM12 removes
+duplicate are now **owned exclusively by proposed RUM13**, not LTX01.
+See [RUM13](../rum13-native-qualification/README.md). RUM13 removes
 the duplicate launch and build path, retains native source/ABI
 validation, and publishes one reusable mixed-card exact-collective
 receipt. LTX01 consumes this evidence; it must not change shared
@@ -81,10 +81,10 @@ BigCherry `docs/reference/agents/WORKFLOW.md`, patch and tooling dispositions, s
 
 ## Acceptance Criteria
 
-RUM12's single-AQL-harness cleanup and exact GPU evidence are external shared capabilities consumed by LTX01, not implementation work in this item. Measure deletion only of redundant **LTX-specific** metadata/geometry code. All supported slices have unique full head coverage and exact model source views. At least the previously demonstrated 3,024 row/biasless, 2,640 deferred, 2,016 reduction and 576 attention declarations are rerun at the candidate commit, with zero mismatches and no invalid audio K cuts admitted. No TP3 production activation, duplicate loader or unowned test script. No release claim from these tests.
+RUM13's single-AQL-harness cleanup and exact GPU evidence are external shared capabilities consumed by LTX01, not implementation work in this item. Measure deletion only of redundant **LTX-specific** metadata/geometry code. All supported slices have unique full head coverage and exact model source views. At least the previously demonstrated 3,024 row/biasless, 2,640 deferred, 2,016 reduction and 576 attention declarations are rerun at the candidate commit, with zero mismatches and no invalid audio K cuts admitted. No TP3 production activation, duplicate loader or unowned test script. No release claim from these tests.
 
 ## Notes
 
-C01-C06 source-backed host proof exists, C06 real GPU kernels were separately tested, but fresh current-commit revalidation is required. RUM12 owns retiring the C07 direct-HIP path; its crash is not production Radiance failure. C08 native AQL mixed-device proof passed. Full device/weight issue is LTX02, not a LTX01 deliverable.
+C01-C06 source-backed host proof exists, C06 real GPU kernels were separately tested, but fresh current-commit revalidation is required. RUM13 owns retiring the C07 direct-HIP path; its crash is not production Radiance failure. C08 native AQL mixed-device proof passed. Full device/weight issue is LTX02, not a LTX01 deliverable.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

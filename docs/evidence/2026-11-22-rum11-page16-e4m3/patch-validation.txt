@@ -1,0 +1,7 @@
+Repository patch-lint: exit 0; 573 warnings (existing patch package policy warnings).
+Focused tests: test_radiance_rad0049.py + test_radiance_kv_row_helper.py
+RADIANCE_SRC supplied from the pinned Radiance checkout.
+5 passed, 1 skipped, 2 subtests passed; exit 0.
+One test requiring a pre-RUM11 composed source was skipped (RADIANCE_FROZEN_SOURCE not provided).
+Composed 2.2 libr3 selftest runner: build succeeded.
+Composed 2.2 libr4d selftest runner: existing built binary used.

@@ -1,8 +1,9 @@
 """Card-free proof of Radiance 2.2's production MTP replay callback and host invariants.
 
 This tests the real ABI43/44 architecture callback extracted from the exact candidate source.
-The small C++ fixture supplies stand-in model and prefill-grid helpers; real split-law and
-effective RadArgs behavior are independently tested upstream in runtime_test.cpp.
+The C++ fixture supplies stand-in model fields, but compiles the unmodified upstream
+pass-key callback with its actual host-pure prefill split/grid header. The effective
+RadArgs launch contract is independently exercised by upstream runtime_test.cpp.
 """
 from __future__ import annotations
 
@@ -37,6 +38,7 @@ PREFIX = r"""
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+#include "rad_prefill_split.h"
 struct RadCtx {};
 enum { RAD_PHASE_DECODE = 1, RAD_PHASE_PREFILL = 2, RAD_PHASE_MIXED = 3 };
 struct RadKVGroupBatch { int group = 7; };
@@ -59,13 +61,6 @@ struct Model {
 };
 int rad_slot(RadCtx*) { return 0; }
 int rad_ctx_wgp_count(RadCtx*) { return 32; }
-// Deliberate mock: tests callback's *keying of splitter output*, not the split law itself.
-int rad_prefill_splits_for_live(int, int, int, int, int, int, int, int used, int) {
-    return std::max(1, used / 384);
-}
-std::uint64_t rad_prefill_grid_key(int q, int bq, int splits, int heads, int seqs, int threads) {
-    return 17ull + ((std::uint64_t)splits << 24) + q + bq + heads + seqs + threads;
-}
 namespace qwen4exp_fp8 {
 Model g_model[1];
 """
@@ -98,7 +93,7 @@ def replay_key(tmp_path_factory):
     out = tmp / "key.so"
     code.write_text(PREFIX + src[start:end] + SUFFIX)
     result = subprocess.run(
-        [compiler, "-std=c++17", "-O0", "-shared", "-fPIC", str(code), "-o", str(out)],
+        [compiler, "-std=c++17", "-O0", "-shared", "-fPIC", "-I", str(_source() / "abi"), str(code), "-o", str(out)],
         capture_output=True, text=True,
     )
     assert result.returncode == 0, result.stderr
@@ -143,8 +138,8 @@ def test_mixed_and_non_decode_speculation_stay_live(replay_key):
 def test_single_sequence_prefill_grid_keys_splitter_result(replay_key):
     k = lambda used: replay_key(2, 0, 0, 128, 1, 4096, used)
     assert k(2304) != 0
-    assert k(2304) == k(2305)  # same split returned by stand-in splitter
-    assert k(2304) != k(3072)  # changed split returned by stand-in splitter
+    assert k(2304) == k(2305)  # same split returned by upstream split law
+    assert k(2304) != k(1024)  # changed real split grid, both above the QSA selector bound
 
 
 def test_actual_scheduler_and_runtime_guards_for_wide_verify():

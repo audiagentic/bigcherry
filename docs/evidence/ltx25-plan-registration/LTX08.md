@@ -29,7 +29,7 @@ Promote only proven 3-card LTX native TP3 and independently proven optional text
 
 - 1. Gather actual LTX01–05 accepted source pins, ABI/plugin table, quality, latency, device BDF and build receipts. Reject missing plan gates, draft PR CI, incompatible license or unadmitted device.
 - 2. Ensure production patch `rad0060` is selected **only** by named validated LTX TP3 source/config, leaves TP1 and other Radiance recipes unchanged, and all hashes/patch replay are recorded.
-- 3. Select LTX-only production recipe/config output using existing RUM09/native release implementation; no Python interpreter, direct-HIP launcher, RUM12 GPU lab or new packager/runtime/config schema in the installed binaries.
+- 3. Select LTX-only production recipe/config output using existing RUM09/native release implementation; no Python interpreter, direct-HIP launcher, RUM13 GPU lab or new packager/runtime/config schema in the installed binaries.
 - 4. Run actual installed TP3 121-frame video/audio generate, cancellation, resume, process termination and TP1 fallback; compare copied artifacts and exact model/config checksums.
 - 5. If LTX07 qualifies independently, add separate four-card optional release only; default fallback remains TP1, no silent worker omission under a four-card measured contract.
 - 6. Publish final runbook, license/read access, supported cards, link constraints, known latency/quality gate, rollback, and unreleased Ledger MCP event; merge only after required checks and review.

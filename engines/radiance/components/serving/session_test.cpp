@@ -401,6 +401,25 @@ void engine_fails_to_start() {
            any_error_contains(r, "exit 4"));
 }
 
+// A start that took its plan from the work root's store and whose engine then does not come up drops the entry, so
+// the next start measures afresh; a start that measured (or came up) leaves the store alone.
+void engine_refuses_the_stored_plan() {
+    Case c("stored-refused");
+    const fs::path entry = c.run / "stored-entry.json";
+    std::ofstream(entry) << "{}\n";
+    c.behaviour["exit_at_start"] = 4;
+    c.prepare();   // the real plan step runs here; the stored-plan mark is set on what it produced
+    c.prepared.reused_store = entry;
+    assert(exit_code(c.owner()) == 1);
+    assert(!fs::exists(entry));
+    Case measured("measured-refused");
+    const fs::path kept = measured.run / "stored-entry.json";
+    std::ofstream(kept) << "{}\n";
+    measured.behaviour["exit_at_start"] = 4;
+    assert(exit_code(measured.owner()) == 1);
+    assert(fs::exists(kept));
+}
+
 void engine_never_healthy() {
     Case c("unhealthy");
     c.behaviour["health_delay_ms"] = 60000;
@@ -1708,6 +1727,7 @@ int test_main(int argc, char** argv) {
     long_run_dir();
     canary_fails();
     engine_fails_to_start();
+    engine_refuses_the_stored_plan();
     engine_never_healthy();
     engine_dies_while_serving();
     engine_ignores_sigint();

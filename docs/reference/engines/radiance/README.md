@@ -1,12 +1,12 @@
 # Radiance
 
-The bump branch pins Radiance **v2.2.0**. Released v1.17.0 builds provide the
-comparison baseline while this candidate is being qualified. The custom build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
+The released **bc-radiance 2020.0.0** line incorporates upstream Radiance
+**v2.2.0**. Older v1.17.0 measurements remain historical comparison evidence. The custom build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
 expert placement adapted to differing GPU memory and bandwidth.
 
 ## Patches and extensions at a glance
 
-BigCherry maintains **45 current engine patch packages** and **6 components** for Radiance.
+BigCherry maintains **40 current engine patch packages** and **6 components** for Radiance.
 Each description says what the package is for, not that it is enabled or
 performance-qualified. **Validated** means package-level evidence exists;
 **untested** means qualification is not established; **diagnostic** is for
@@ -45,16 +45,43 @@ Components are BigCherry-owned additions built alongside Radiance.
 | [ngram-helper](../../../../engines/radiance/components/ngram-helper/README.md) | Optional n-gram work on a spare GPU; off by default |
 | [serving](../../../../engines/radiance/components/serving/README.md) | Serving configuration validation and manifests |
 
-Individual component settings have their own qualification states. The validated
-MTP replay patch supports fixed-shape draft and verify passes on v1.17.0.
+Individual component settings have their own qualification states. The historical v1.17 MTP replay override is archived; Radiance 2.2 owns
+fixed-depth draft, verify and decode pass-key replay.
 Mixed-GPU remote-MoE layouts lack matched current-pin end-to-end throughput
 and quality evidence here. Full manifest-driven serving startup remains under
 qualification.
 
+## Fixed-depth Flash-Next scheduler and replay authority (RUM08)
+
+For the released `flashnext-4gpu` profile the single effective step-timing
+authority is the upstream Radiance scheduler, with explicitly selected
+`prefill-interleave: 0` and `mixed-step-target-ms: 0`. It runs fixed-depth
+MTP (`num-speculative-tokens: 3`). Admission uses the default **arrival**
+order; there is no active `prefill-governor` override or second adaptive
+interleave/depth controller in this profile. `rad0036` remains composed as
+an independently useful **optional long-prefill admission** policy, but
+its budget/age/remaining modes are not active for `flashnext-4gpu`.
+The archived `rad0013` and `rad0047` are not composed: upstream
+`Qwen4exp::pass_key`, `Ctx::pass_key` and the keyed-context issue path
+own fixed-shape decode/verify/MTP replay.
+
+The long-Qwen profiles explicitly choose `rad0036` budget/age admission
+and `prefill-interleave: 2` for *separate* decode/prefill timing. This
+does not constitute two admission owners, and their long-profile behavior
+is not qualified by the Flash-Next fixed-depth replay check. New adaptive,
+suffix and traversal proposals are outside this profile.
+
+See [RUM08 completion evidence](../../../evidence/2026-11-22-rum08-completion/README.md)
+for the upstream key/boundary tests, installed-release hardware trace
+and any remaining acceptance gaps. HIP phase traces observe pass kinds
+and timings, not replay hashes or actual `RadArgs`; evidence must not
+claim argument equality from trace rows alone.
+
 ## Current-pin throughput
 
-The **v2.2.0** candidate is undergoing matched quality and performance checks.
-Fresh aggregate throughput and prefill measurements are pending for these layouts. The Flash-Next model page
+The released **2020.0.0** line still needs matched quality and performance
+checks for these multi-card layouts. Fresh aggregate throughput and prefill
+measurements remain pending. The Flash-Next model page
 records a dated cross-pin check, not a matched unmodified-stock throughput comparison.
 The model workloads differ and must not be ranked against one another.
 

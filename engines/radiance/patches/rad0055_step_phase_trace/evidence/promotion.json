@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "rad0055_step_phase_trace",
+  "pinned": "b6b8751cccb0e834a13ae9e5afca824ee9a487aa",
+  "subject-digest": "dc6326fa3802471605b3582a42d8343e8c1a7c8e6052a25c57d38612397f2bbd",
+  "default-on": false,
+  "models": [
+    "Flash-Next (flashnext-r9700 layout, one R9700, gfx1201)"
+  ],
+  "checks": {
+    "mechanics": "patch tests in tools/tests/patch pass and patch-lint is clean on the PR; the lane build carrying rad0055 (radiance:stock:linux-radiance, serving-core) compiles and bc-serve accepts --step-phase-trace.",
+    "activation": "bc-serve serve flashnext-r9700 --step-phase-trace writes <run-dir>/step-phases/engine-rank-0.jsonl (335 records over three 96-token requests, schema_version 1, valid=true, tape_segments present); the same build without the switch creates no step-phases directory.",
+    "identity": "greedy (temperature 0, seed 1) 96-token completion on a fixed prompt: the 1170.37.0 installed build without rad0055, the rad0055 build with the switch off and the rad0055 build with it on all return the same 86 completion tokens, identical text digest on all nine requests.",
+    "ab": "same-session A/B/C on one card under the gpu lease, three requests each (wall seconds): installed build without rad0055 8.200/7.112/6.208; rad0055 switch off 8.179/7.111/6.146 (within 1% of absent); switch on 7.772/6.162/5.040 (trace-on was not slower; the patch claims no throughput change, the off path is the upstream path). Raw logs are kept in the task scratch folder, not in the repo."
+  }
+}

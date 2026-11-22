@@ -21,7 +21,7 @@ owner: Planning MCP registration required
 
 ## Description
 
-Bind only LTX-specific DiT, STG/isolated guidance and leader-owned VCOND/VAE/video/audio outputs to a **pre-admitted native three-rank Engine**. RUM05 owns shared admission/device/YAML mechanics; RUM06 owns group lifetime, cancellation and clean/fault drain. No alternate config/scheduler.
+Bind only LTX-specific DiT, STG/isolated guidance and leader-owned VCOND/VAE/video/audio outputs to a **pre-admitted native three-rank Engine**. completed RUM05 owns shared admission/device/YAML mechanics; RUM06 owns group lifetime, cancellation and clean/fault drain. No alternate config/scheduler.
 
 **Existing engineering gap coverage:** LT3-02, LT3-08, LT3-09. **Dependencies:** LTX03 full 48-block emitted path and TP1 parity; the specific usable RUM05 device/admission and RUM06 group/lifecycle contracts (not completion of unrelated remote-MoE work).
 

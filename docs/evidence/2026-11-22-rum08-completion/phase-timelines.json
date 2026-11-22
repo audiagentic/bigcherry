@@ -1,0 +1,304 @@
+{
+  "analyzer": "tools/lab/radiance/rum09_phase_timeline.py",
+  "configs": {
+    "flashnext-4gpu": {
+      "benchmark": "bench.json",
+      "caveat": "HIP event synchronization perturbs timing; recorded-pass playback remains enabled. Rank step spans and between-step host gaps are wall-clock measurements, not HIP events. Per-lane GPU intervals can overlap. Async DMA device activity is unavailable rather than zero.",
+      "ranks": {
+        "0": {
+          "rounds": [
+            {
+              "between_step_host_gap_ms_p50": 0.027846,
+              "collective_ms_observed_steps": 0,
+              "collective_ms_p50": null,
+              "compute_ms_observed_steps": 18,
+              "compute_ms_p50": 26.959063,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 18,
+              "idle_wait_ms_p50": 3.7593759999999996,
+              "inter_pass_host_gap_ms_p50": 0.335928,
+              "passes": 72,
+              "phase": "cold",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 32.485685000000004,
+              "steps": 18
+            },
+            {
+              "between_step_host_gap_ms_p50": 0.020077,
+              "collective_ms_observed_steps": 0,
+              "collective_ms_p50": null,
+              "compute_ms_observed_steps": 18,
+              "compute_ms_p50": 26.8855315,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 18,
+              "idle_wait_ms_p50": 3.7540455,
+              "inter_pass_host_gap_ms_p50": 0.28712550000000003,
+              "passes": 72,
+              "phase": "warm",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 32.776981,
+              "steps": 18
+            }
+          ],
+          "warm_minus_cold_ms_p50": {
+            "collective_ms": null,
+            "compute_ms": -0.073532,
+            "host_kv_dma_ms": null,
+            "host_kv_serial_ms": null,
+            "host_kv_wait_ms": null,
+            "idle_wait_ms": -0.00533
+          }
+        }
+      },
+      "schema_version": 1
+    },
+    "flashnext-4gpu-replay": {
+      "benchmark": "bench.json",
+      "caveat": "HIP event synchronization perturbs timing; recorded-pass playback remains enabled. Rank step spans and between-step host gaps are wall-clock measurements, not HIP events. Per-lane GPU intervals can overlap. Async DMA device activity is unavailable rather than zero.",
+      "ranks": {
+        "0": {
+          "rounds": [
+            {
+              "between_step_host_gap_ms_p50": 0.062246,
+              "collective_ms_observed_steps": 0,
+              "collective_ms_p50": null,
+              "compute_ms_observed_steps": 18,
+              "compute_ms_p50": 26.9555475,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 18,
+              "idle_wait_ms_p50": 3.7448129999999997,
+              "inter_pass_host_gap_ms_p50": 0.428292,
+              "passes": 72,
+              "phase": "cold",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 32.330557999999996,
+              "steps": 18
+            },
+            {
+              "between_step_host_gap_ms_p50": 0.023991,
+              "collective_ms_observed_steps": 0,
+              "collective_ms_p50": null,
+              "compute_ms_observed_steps": 18,
+              "compute_ms_p50": 26.883969999999998,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 18,
+              "idle_wait_ms_p50": 3.7359625000000003,
+              "inter_pass_host_gap_ms_p50": 0.2868125,
+              "passes": 72,
+              "phase": "warm",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 32.099367,
+              "steps": 18
+            }
+          ],
+          "warm_minus_cold_ms_p50": {
+            "collective_ms": null,
+            "compute_ms": -0.071578,
+            "host_kv_dma_ms": null,
+            "host_kv_serial_ms": null,
+            "host_kv_wait_ms": null,
+            "idle_wait_ms": -0.00885
+          }
+        }
+      },
+      "schema_version": 1
+    },
+    "flashnext-r9700": {
+      "benchmark": "bench.json",
+      "caveat": "HIP event synchronization perturbs timing; recorded-pass playback remains enabled. Rank step spans and between-step host gaps are wall-clock measurements, not HIP events. Per-lane GPU intervals can overlap. Async DMA device activity is unavailable rather than zero.",
+      "ranks": {
+        "0": {
+          "rounds": [
+            {
+              "between_step_host_gap_ms_p50": 0.074765,
+              "collective_ms_observed_steps": 0,
+              "collective_ms_p50": null,
+              "compute_ms_observed_steps": 18,
+              "compute_ms_p50": 227.745816,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 18,
+              "idle_wait_ms_p50": 17.6997165,
+              "inter_pass_host_gap_ms_p50": 0.876915,
+              "passes": 72,
+              "phase": "cold",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 248.729545,
+              "steps": 18
+            },
+            {
+              "between_step_host_gap_ms_p50": 0.085453,
+              "collective_ms_observed_steps": 0,
+              "collective_ms_p50": null,
+              "compute_ms_observed_steps": 18,
+              "compute_ms_p50": 151.184393,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 18,
+              "idle_wait_ms_p50": 18.033686,
+              "inter_pass_host_gap_ms_p50": 1.0139585000000002,
+              "passes": 72,
+              "phase": "warm",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 172.8570505,
+              "steps": 18
+            }
+          ],
+          "warm_minus_cold_ms_p50": {
+            "collective_ms": null,
+            "compute_ms": -76.561423,
+            "host_kv_dma_ms": null,
+            "host_kv_serial_ms": null,
+            "host_kv_wait_ms": null,
+            "idle_wait_ms": 0.333969
+          }
+        }
+      },
+      "schema_version": 1
+    },
+    "flashnext-tp2xtx-r9700": {
+      "benchmark": "bench.json",
+      "caveat": "HIP event synchronization perturbs timing; recorded-pass playback remains enabled. Rank step spans and between-step host gaps are wall-clock measurements, not HIP events. Per-lane GPU intervals can overlap. Async DMA device activity is unavailable rather than zero.",
+      "ranks": {
+        "0": {
+          "rounds": [
+            {
+              "between_step_host_gap_ms_p50": 0.05437,
+              "collective_ms_observed_steps": 19,
+              "collective_ms_p50": 2.375759,
+              "compute_ms_observed_steps": 19,
+              "compute_ms_p50": 25.807425,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 19,
+              "idle_wait_ms_p50": 3.6181889999999997,
+              "inter_pass_host_gap_ms_p50": 0.532153,
+              "passes": 76,
+              "phase": "cold",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 33.672675,
+              "steps": 19
+            },
+            {
+              "between_step_host_gap_ms_p50": 0.097832,
+              "collective_ms_observed_steps": 19,
+              "collective_ms_p50": 2.3514779999999997,
+              "compute_ms_observed_steps": 19,
+              "compute_ms_p50": 25.858849,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 19,
+              "idle_wait_ms_p50": 3.6110200000000003,
+              "inter_pass_host_gap_ms_p50": 0.533771,
+              "passes": 76,
+              "phase": "warm",
+              "rank": 0,
+              "rank_step_wall_ms_p50": 33.672902,
+              "steps": 19
+            }
+          ],
+          "warm_minus_cold_ms_p50": {
+            "collective_ms": -0.024281,
+            "compute_ms": 0.051424,
+            "host_kv_dma_ms": null,
+            "host_kv_serial_ms": null,
+            "host_kv_wait_ms": null,
+            "idle_wait_ms": -0.007169
+          }
+        },
+        "1": {
+          "rounds": [
+            {
+              "between_step_host_gap_ms_p50": 0.038063,
+              "collective_ms_observed_steps": 19,
+              "collective_ms_p50": 2.677512,
+              "compute_ms_observed_steps": 19,
+              "compute_ms_p50": 25.492826,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 19,
+              "idle_wait_ms_p50": 3.5986510000000003,
+              "inter_pass_host_gap_ms_p50": 0.5141450000000001,
+              "passes": 76,
+              "phase": "cold",
+              "rank": 1,
+              "rank_step_wall_ms_p50": 33.663347,
+              "steps": 19
+            },
+            {
+              "between_step_host_gap_ms_p50": 0.09666749999999999,
+              "collective_ms_observed_steps": 19,
+              "collective_ms_p50": 2.687389,
+              "compute_ms_observed_steps": 19,
+              "compute_ms_p50": 25.511847000000003,
+              "host_kv_dma_ms_observed_steps": 0,
+              "host_kv_dma_ms_p50": null,
+              "host_kv_serial_ms_observed_steps": 0,
+              "host_kv_serial_ms_p50": null,
+              "host_kv_wait_ms_observed_steps": 0,
+              "host_kv_wait_ms_p50": null,
+              "idle_wait_ms_observed_steps": 19,
+              "idle_wait_ms_p50": 3.589528,
+              "inter_pass_host_gap_ms_p50": 0.564989,
+              "passes": 76,
+              "phase": "warm",
+              "rank": 1,
+              "rank_step_wall_ms_p50": 33.641929,
+              "steps": 19
+            }
+          ],
+          "warm_minus_cold_ms_p50": {
+            "collective_ms": 0.009877,
+            "compute_ms": 0.019021,
+            "host_kv_dma_ms": null,
+            "host_kv_serial_ms": null,
+            "host_kv_wait_ms": null,
+            "idle_wait_ms": -0.009123
+          }
+        }
+      },
+      "schema_version": 1
+    }
+  },
+  "schema_version": 1
+}

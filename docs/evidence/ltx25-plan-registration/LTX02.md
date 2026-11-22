@@ -23,11 +23,11 @@ owner: Planning MCP registration required
 
 Turn C05/C06's host-declared graph into one actually issued three-card model-weight self-attention operation, including complete Q/K global normalization, RoPE, attention, output reduction and BF16 bias exactly once.
 
-**Existing engineering gap coverage:** LT3-05 and self-attention part of LT3-06. **Dependencies:** LTX01's model-source declarations plus RUM12's reusable AQL collective proof; RUM06 owns native group lifetime. No shared runtime/harness implementation in LTX02. No new collective implementation or additional benchmark runner.
+**Existing engineering gap coverage:** LT3-05 and self-attention part of LT3-06. **Dependencies:** LTX01's model-source declarations plus RUM13's reusable AQL collective proof; RUM06 owns native group lifetime. No shared runtime/harness implementation in LTX02. No new collective implementation or additional benchmark runner.
 
 ## Steps
 
-- 1. Write a failing **actually issued** single-block RadCtx test using existing patched `ltx2::attn_core`, `Attn::declare`, `Act::step` and `Lin::step`, and consume the RUM12-owned native AQL evidence, not direct-HIP or a second generic launcher. Specify row count, actual model weights, rank order, owner group, per-rank device/kernel, source fingerprint, and TP1 reference.
+- 1. Write a failing **actually issued** single-block RadCtx test using existing patched `ltx2::attn_core`, `Attn::declare`, `Act::step` and `Lin::step`, and consume the RUM13-owned native AQL evidence, not direct-HIP or a second generic launcher. Specify row count, actual model weights, rank order, owner group, per-rank device/kernel, source fingerprint, and TP1 reference.
 - 2. Use existing `RadBuilder`, `RadCtx`, device AQL streams and exact native `all_reduce`. Issue the C05 fill/cast/reduce/rmsnorm/cast chain on all ranks with same-token rows; require full-video-4096 and audio-2048 gain and denominator before local `rope_split`.
 - 3. Issue fused QKV/gate, local RoPE and `attn_dense` with native head offsets, aligned IQ8R quantizer, exact C04 output reduce and only one post-reduction BF16 bias per replica; compare all ranks with the same TP1 activation output. Preserve ordered collective issue across ranks.
 - 4. Exercise 1/16/64 row sizes and 8/8/16 or 12/12/8 splits; replay reversed visible card ordinal, missing kernel or abandoned rank; fail closed with native timeout and owner-tagged errors.
@@ -35,7 +35,7 @@ Turn C05/C06's host-declared graph into one actually issued three-card model-wei
 
 ## Detailed Solution & Technical Design
 
-Consume RUM12's AQL GPU evidence and RUM06's shared-slot/group lifetime. LTX02 owns only model-specific `RadCtx` graph issue, checkpoint oracle and tolerance. Missing generic engine or collective capabilities are RUM blockers; do not implement them here. Do not launch via direct HIP (C07 crash bypassed AQL registration), create a new collective or use per-rank RMS. C05 full-width Q/K reconstruction is the simple correctness baseline; locally compact statistical sums are optimization-only.
+Consume RUM13's AQL GPU evidence and RUM06's shared-slot/group lifetime. LTX02 owns only model-specific `RadCtx` graph issue, checkpoint oracle and tolerance. Missing generic engine or collective capabilities are RUM blockers; do not implement them here. Do not launch via direct HIP (C07 crash bypassed AQL registration), create a new collective or use per-rank RMS. C05 full-width Q/K reconstruction is the simple correctness baseline; locally compact statistical sums are optimization-only.
 
 ## Code Samples & Guidance
 
@@ -51,7 +51,7 @@ Reuse the exact current source-managed extension and existing tests; no side-pat
 
 - `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/src/{global_rms,attn_core,attn_norm,attn_output,attn_rope}.inc`
 - `tools/lab/radiance/ltx-tp3/native-c01-gate/`
-- `docs/evidence/rum12-native-qualification/README.md` (shared AQL proof, read-only dependency)
+- `docs/evidence/rum13-native-qualification/README.md` (shared AQL proof, read-only dependency)
 - `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`
 
 ## Validation
