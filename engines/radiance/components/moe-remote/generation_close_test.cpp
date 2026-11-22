@@ -124,6 +124,49 @@ int main() {
         check(!p.ledger.stopped(), "a cancelled ledger wait neither faults nor interrupts the ledger");
     }
 
+    // A closed generation must not succeed just because the ledger is ALREADY drained and the
+    // helper acknowledgment is immediate. The pending-ticket cancellation test above does not
+    // exercise this branch: Ledger::wait_drained intentionally returns Ok for a drained epoch.
+    {
+        Gen p; check(p.ledger.initialize(1, 0), "already-drained setup");
+        const auto ps = p.ledger.close_admission();
+        p.closing = true;
+        int requests = 0, acknowledgments = 0;
+        const DrainWait r = await_drain(
+            p, 1, ps.latest_ticket, std::chrono::steady_clock::now() + seconds(5),
+            [] {}, [] { return false; },
+            [&] { ++requests; return true; },
+            [&] { ++acknowledgments; return true; });
+        check(r == DrainWait::Cancelled, "already-drained close is cancelled");
+        check(requests == 0 && acknowledgments == 0, "no helper requests or acks after close");
+        check(p.ledger.clean_stop() && !p.ledger.stopped(), "already-drained cancel keeps ledger healthy");
+    }
+    // Closing in the request callback must not be misread as an immediate helper ACK.
+    {
+        Gen p; check(p.ledger.initialize(1, 0), "request-race setup");
+        const auto ps = p.ledger.close_admission();
+        int acknowledgments = 0;
+        const DrainWait r = await_drain(
+            p, 1, ps.latest_ticket, std::chrono::steady_clock::now() + seconds(5),
+            [] {}, [] { return false; },
+            [&] { p.closing = true; return true; },
+            [&] { ++acknowledgments; return true; });
+        check(r == DrainWait::Cancelled && acknowledgments == 0, "close after request cancels before ack");
+        check(p.ledger.clean_stop() && !p.ledger.stopped(), "request-race close stays healthy");
+    }
+    // Even if the helper ACK reports ready in the same iteration as close, it cannot
+    // authorize a successful drain verification; normal nonclosing fast ACK still succeeds.
+    {
+        Gen p; check(p.ledger.initialize(1, 0), "ack-race setup");
+        const auto ps = p.ledger.close_admission();
+        const DrainWait r = await_drain(
+            p, 1, ps.latest_ticket, std::chrono::steady_clock::now() + seconds(5),
+            [] {}, [] { return false; }, [] { return true; },
+            [&] { p.closing = true; return true; });
+        check(r == DrainWait::Cancelled, "close coinciding with an immediate ack cancels");
+        check(p.ledger.clean_stop() && !p.ledger.stopped(), "ack-race close stays healthy");
+    }
+
     // A genuine helper fault or a missed deadline still faults the ledger.
     Gen f; f.map = nullptr;
     check(f.ledger.initialize(1, 0), "ledger");

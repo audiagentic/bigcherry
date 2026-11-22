@@ -749,6 +749,15 @@ int main() {
         self.assertIn("&g.closing);", hook)
         self.assertIn("await_drain(", hook)
         self.assertNotIn("helper_faulted(g) || g.closing", hook)
+        # A previously drained ledger returns Ok even after close: the production
+        # request and final success paths must BOTH refuse a closing generation.
+        drain_body = hook.split('extern "C" int r3_moe_wait_drained(', 1)[1].split(
+            'extern "C" int r3_moe_reopen_admission(', 1)[0]
+        request_body = drain_body.split('request_helper_drain(g, snap->closure_id);', 1)[0]
+        final_body = drain_body.split('if (waited != DrainWait::Drained)', 1)[1].split(
+            'g.drain_verified = true;', 1)[0]
+        self.assertIn('g.closing.load(std::memory_order_acquire)', request_body)
+        self.assertIn('g.closing.load(std::memory_order_acquire)', final_body)
         self.assertNotIn("close_mailbox(", hook)
         self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)

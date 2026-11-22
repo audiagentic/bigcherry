@@ -1102,7 +1102,8 @@ extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
             /* A successful event query guarantees helper wait and consumption before the event, but explicitly check
              * every lane before controller COMMIT. */
             std::lock_guard<std::mutex> lock(g.mu);
-            if (snap->closure_id != g.closed_snapshot.closure_id) return false;
+            if (g.closing.load(std::memory_order_acquire) ||
+                snap->closure_id != g.closed_snapshot.closure_id) return false;
             request_helper_drain(g, snap->closure_id);
             return true;
         },
@@ -1111,7 +1112,10 @@ extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
     if (waited != DrainWait::Drained) return RAD_E_STATE;
     {
         std::lock_guard<std::mutex> lock(g.mu);
-        if (g.ledger.stopped() || helper_faulted(g) ||
+        // Final success must fail closed even if the ledger was already drained and
+        // the helper acknowledged instantly while the generation started retiring.
+        if (g.closing.load(std::memory_order_acquire) ||
+            g.ledger.stopped() || helper_faulted(g) ||
             snap->closure_id != g.closed_snapshot.closure_id ||
             !g.ledger.drained(snap->old_epoch, snap->cutoff_ticket_id))
             return RAD_E_STATE;

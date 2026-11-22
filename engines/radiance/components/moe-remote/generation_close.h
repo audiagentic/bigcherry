@@ -40,8 +40,13 @@ DrainWait await_drain(G& g, uint32_t old_epoch, uint64_t cutoff, std::chrono::st
                                                  [&] { return helper_faulted(); }, closing);
     if (drained == Result::Cancelled) return DrainWait::Cancelled;
     if (drained != Result::Ok) { g.ledger.fault(); return DrainWait::Failed; }
-    if (!request_drain()) return DrainWait::Failed;   /* the closure changed under us: a state error, not a fault */
-    while (!helper_drained()) {
+    // Ledger::wait_drained returns Ok for zero pending tickets even when the owner is closing.
+    // Do not request a helper acknowledgment, or report success, after retirement has begun.
+    if (closing()) return DrainWait::Cancelled;
+    if (!request_drain()) return closing() ? DrainWait::Cancelled : DrainWait::Failed;
+    for (;;) {
+        if (closing()) return DrainWait::Cancelled;
+        if (helper_drained()) break;
         if (closing()) return DrainWait::Cancelled;
         if (g.ledger.stopped() || helper_faulted() || std::chrono::steady_clock::now() >= limit) {
             g.ledger.fault();
@@ -49,5 +54,5 @@ DrainWait await_drain(G& g, uint32_t old_epoch, uint64_t cutoff, std::chrono::st
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
-    return DrainWait::Drained;
+    return closing() ? DrainWait::Cancelled : DrainWait::Drained;
 }
