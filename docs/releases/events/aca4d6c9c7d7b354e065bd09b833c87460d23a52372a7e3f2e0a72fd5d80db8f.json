@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_013339_a-start-on-a-newer-installed-b_6271",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The named-config store key took every --set as an operator set, including the engine.radiance_home that bc-serve adds on each installed start, so a different installed build never matched the stored entry and re-measured instead of replaying or carrying. engine.radiance_home is now excluded like layout.name and handoff.shm; the test starts under a second installed-layout build (root/releases/<tag>/radiance_home) with the runtime home passed as --set, as main.cpp does.",
+  "timestamp-utc": "2026-11-22T01:33:39.468878Z",
+  "user-summary-candidate": "A start on a newer installed build now reuses the stored measured plan instead of measuring again."
+}
