@@ -67,3 +67,20 @@ a missing binary still refuses.
 `kMaxHostPoolChanges` is a protocol-level count, not a resource budget, and was kept with its reason written at the
 definition. The native path's seen-pools set stops a cycle but not a pool that keeps moving to new values, and each
 change is a full measuring run; the legacy planning loop has no seen-pools set at all. So the cap is not redundant.
+
+## Installed start verification
+
+Every installed `bc-serve` start (and the child of a detached start) ran `bc::release::verify`: the current and the
+previous tag, each member of each prefix hashed again with the portable SHA-256. That is separate from
+`engine_identity`.
+
+Now a start runs `verify_current`: the current tag only, and its members are hashed only when their stamps differ from
+the record left by the last full verification. The full hash happens at install and at an explicit `bc-release
+verify` (still current and previous, always hashing); each full verification stores the stamps of every member
+(`<root>/stamps/<tag>.json`, beside the releases rather than inside a prefix, so an older tool still sees the prefix it
+knows). Any difference (content, an added or removed member, a touch) runs the existing full check and its refusals.
+A record written no later than a member's change time is racy, as in git's index, and is not trusted. The digests and
+receipts are unchanged; the stamp type is the one `engine_identity` uses (`file_stamp.h`).
+
+Measured on an installed 2020.0.1 prefix, host-only: the full verification of one tag hashed 85 files in 1215 and
+1221 ms; `verify_current` on the unchanged install hashed 0 files in 3.3 ms (the stat of every member).

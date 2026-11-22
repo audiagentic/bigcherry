@@ -1,6 +1,7 @@
 #include "admission.h"
 #include "calibration.h"
 #include "plan_cache.h"
+#include "file_stamp.h"
 #include "rank_demand.h"
 #include "serving_codec.h"
 #include "sha256.h"
@@ -219,23 +220,6 @@ std::string container_identity(const fs::path& model) {
 }
 
 namespace {
-// What a file's bytes cannot change without changing: size, inode, modification and change time. The change time is
-// set by the kernel on every write and cannot be restored by a caller, so an unchanged stamp means unchanged content.
-struct FileStamp {
-    uint64_t size = 0, inode = 0;
-    int64_t mtime_ns = 0, ctime_ns = 0;
-    bool operator==(const FileStamp& o) const {
-        return size == o.size && inode == o.inode && mtime_ns == o.mtime_ns && ctime_ns == o.ctime_ns;
-    }
-};
-
-FileStamp stamp_file(const fs::path& path) {
-    struct stat st{};
-    if (::stat(path.c_str(), &st) != 0) throw std::runtime_error("cannot stat " + path.string());
-    const auto ns = [](const timespec& t) { return int64_t{t.tv_sec} * 1000000000 + t.tv_nsec; };
-    return {uint64_t(st.st_size), uint64_t(st.st_ino), ns(st.st_mtim), ns(st.st_ctim)};
-}
-
 struct IdentityMemo {
     std::vector<std::pair<fs::path, FileStamp>> stamps;
     std::string identity;
@@ -271,6 +255,9 @@ std::string persisted_identity(const fs::path& file, const std::string& memo_key
         bytes << in.rdbuf();
         const Json stored = Json::parse(bytes.str());
         if (stored.at("key").get<std::string>() != memo_key || stored.at("files") != stamps_json(stamps, home)) return {};
+        std::vector<FileStamp> taken;
+        for (const auto& entry : stamps) taken.push_back(entry.second);
+        if (!stamps_settled(file, taken)) return {};
         const std::string identity = stored.at("identity").get<std::string>();
         return identity.size() == 64 && identity.find_first_not_of("0123456789abcdef") == std::string::npos ? identity
                                                                                                            : std::string();

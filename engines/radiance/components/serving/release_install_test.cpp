@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -615,8 +616,108 @@ void test_interrupted_staging_refuses_install() {
 
 } // namespace
 
+// A start verifies the current install by the stamps recorded when it was verified in full (install, `verify`): an
+// unchanged install hashes no runtime file; anything that moved is hashed and judged by the existing full check.
+// Wait out one tick of the file system's clock: a record written after this call is stamped later than any change before it
+// (a record in the same tick as a change is racy and is rightly not trusted).
+void settle(const fs::path& dir) {
+    const auto probe = dir / "settle-probe";
+    auto mtime = [&] {
+        struct stat st{};
+        check(::stat(probe.c_str(), &st) == 0, "settle probe");
+        return std::pair<long, long>{st.st_mtim.tv_sec, st.st_mtim.tv_nsec};
+    };
+    write_file(probe, "x");
+    const auto first = mtime();
+    do write_file(probe, "x"); while (mtime() == first);
+}
+
+void test_start_verification_uses_stamps() {
+    ScopedDir d;
+    Fixture f(d.path);
+    const auto a = f.make("bc-radiance-1170.41.0");
+    const auto b = f.make("bc-radiance-1170.42.0");
+    bc::release::install(a);
+    bc::release::install(b);
+    const auto prefix = b.root / "releases" / b.tag;
+    const auto member = prefix / "radiance_home/kernels/libr3moe.so";
+
+    settle(d.path);
+    (void)bc::release::verify(b.root, b.sdk);   // a full check after a clock tick: the settled record a start trusts
+    uint64_t hashed = bc::release::hashed_files();
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag, "start verification of the current tag");
+    check(bc::release::hashed_files() == hashed, "a start on an unchanged install hashes no runtime file");
+
+    // The explicit verify is still the full hash, of the current tag and the previous one.
+    settle(d.path);
+    check(bc::release::verify(b.root, b.sdk)["current"] == b.tag, "explicit verify");
+    check(bc::release::hashed_files() > hashed, "explicit verify hashes every member");
+    hashed = bc::release::hashed_files();
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() == hashed,
+          "a start after an explicit verify still hashes nothing");
+
+    // The previous tag is not scanned on a start: tampering with it does not refuse the start, but still refuses verify.
+    write_file(a.root / "releases" / a.tag / "radiance_home/kernels/libr3moe.so", "tampered previous");
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() == hashed,
+          "a start does not scan the previous tag");
+    refused(ErrorCode::digest_mismatch, [&] { bc::release::verify(b.root, b.sdk); });
+
+    // Each kind of change to the current install is caught: same-size content, an added member, a removed member.
+    write_file(member, "kernel");
+    settle(d.path);
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag, "restored bytes pass after a re-hash");
+    check(bc::release::hashed_files() > hashed, "rewritten (even identical) bytes are hashed again");
+    hashed = bc::release::hashed_files();
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() == hashed,
+          "the re-hash re-stored the stamps");
+    write_file(member, "kernel!");   // different content
+    refused(ErrorCode::digest_mismatch, [&] { bc::release::verify_current(b.root, b.sdk); });
+    write_file(member, "kernel");
+    settle(d.path);
+    (void)bc::release::verify_current(b.root, b.sdk);
+    write_file(prefix / "radiance_home/kernels/extra.so", "added");
+    refused(ErrorCode::invalid_install, [&] { bc::release::verify_current(b.root, b.sdk); });
+    fs::remove(prefix / "radiance_home/kernels/extra.so");
+    settle(d.path);
+    (void)bc::release::verify_current(b.root, b.sdk);
+    fs::remove(member);
+    refused(ErrorCode::invalid_install, [&] { bc::release::verify_current(b.root, b.sdk); });
+    write_file(member, "kernel");
+    settle(d.path);
+    (void)bc::release::verify_current(b.root, b.sdk);
+
+    // A touch moves the change time: the member is hashed (and passes), and the stamps are stored again.
+    hashed = bc::release::hashed_files();
+    const timespec when[2] = {{1000000000, 0}, {1000000000, 0}};
+    settle(d.path);
+    check(::utimensat(AT_FDCWD, member.c_str(), when, 0) == 0, "touch");
+    settle(d.path);
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag, "a touched member passes");
+    check(bc::release::hashed_files() > hashed, "a touched member is hashed, not trusted");
+    hashed = bc::release::hashed_files();
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() == hashed,
+          "and then costs nothing again");
+
+    // A record no newer than a member's change is racy (the change may share its clock tick): it is not trusted.
+    hashed = bc::release::hashed_files();
+    check(::utimensat(AT_FDCWD, (b.root / "stamps" / (b.tag + ".json")).c_str(), when, 0) == 0, "age the record");
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() > hashed,
+          "a racy record is not trusted");
+
+    // A corrupt or missing stamp file is ignored: the full hash runs.
+    settle(d.path);
+    write_file(b.root / "stamps" / (b.tag + ".json"), "{ not json");
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() > hashed,
+          "a corrupt stamp file is ignored");
+    fs::remove(b.root / "stamps" / (b.tag + ".json"));
+    hashed = bc::release::hashed_files();
+    check(bc::release::verify_current(b.root, b.sdk)["current"] == b.tag && bc::release::hashed_files() > hashed,
+          "a missing stamp file is ignored");
+}
+
 int main() {
     try {
+        test_start_verification_uses_stamps();
         test_two_installs_and_rollback();
         test_downgrade_refused_before_unpack();
         test_numeric_version_order();
