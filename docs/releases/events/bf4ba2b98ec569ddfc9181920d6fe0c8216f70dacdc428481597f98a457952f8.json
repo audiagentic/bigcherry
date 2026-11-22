@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_022523_restarting-a-configuration-now_2750",
+  "files": [
+    "docs/planning/completed/patching-radiance-upstream/RUM12.md"
+  ],
+  "plan-item-ids": [
+    "RUM12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Complete RUM12 with installed-release card evidence: same-build second named start reuses the stored measurement with no measuring child, and a start under a different installed prefix carries the stored measurement without a measuring engine after the runtime-home key fix.",
+  "timestamp-utc": "2026-11-22T02:25:23.133024Z",
+  "user-summary-candidate": "Restarting a configuration now reuses its earlier measurement, including after a new build is installed, so starts are faster."
+}
