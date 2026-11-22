@@ -79,7 +79,7 @@ the record left by the last full verification. The full hash happens at install 
 verify` (still current and previous, always hashing); each full verification stores the stamps of every member
 (`<root>/stamps/<tag>.json`, beside the releases rather than inside a prefix, so an older tool still sees the prefix it
 knows). Any difference (content, an added or removed member, a touch) runs the existing full check and its refusals.
-A record written no later than a member's change time is racy, as in git's index, and is not trusted. The digests and
+The previous tag is no longer scanned on a start (explicit `verify` and rollback still check it). The digests and
 receipts are unchanged; the stamp type is the one `engine_identity` uses (`file_stamp.h`).
 
 Measured on an installed 2020.0.1 prefix, host-only: the full verification of one tag hashed 85 files in 1215 and

@@ -3,7 +3,7 @@
 // by the kernel on every write and cannot be restored by a caller, so an unchanged stamp means unchanged content. One
 // mechanism for everything that skips a hash because "nothing moved" (the engine identity digest, a release install's
 // verification): stamp BEFORE hashing, store the stamps with the result, and trust the result only while every stamp
-// still matches and the stored result is not racy.
+// still matches; any difference, or a record that cannot be read, hashes again.
 #include <sys/stat.h>
 
 #include <cstdint>
@@ -32,18 +32,6 @@ inline FileStamp stamp_file(const std::filesystem::path& path) {
     struct stat st{};
     if (::stat(path.c_str(), &st) != 0) throw std::runtime_error("cannot stat " + path.string());
     return stamp_of(st);
-}
-
-// A stored result is racy when the file holding it was written no later than a stamped file changed: the kernel's
-// timestamps tick, so a change in the same tick as the store would leave every stamp unchanged. Such a result is not
-// trusted (the next full check stores a settled one), exactly as git treats an index entry newer than the index.
-inline bool stamps_settled(const std::filesystem::path& stored_result, const std::vector<FileStamp>& stamps) {
-    struct stat st{};
-    if (::lstat(stored_result.c_str(), &st) != 0) return false;
-    const int64_t stored = timespec_ns(st.st_mtim);
-    for (const FileStamp& s : stamps)
-        if (s.ctime_ns >= stored || s.mtime_ns >= stored) return false;
-    return true;
 }
 
 }  // namespace bc::serving

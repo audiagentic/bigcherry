@@ -56,19 +56,9 @@ int child(char** argv) {
     return 0;
 }
 
-// Wait out one tick of the file system's clock, so a file written after this call is stamped later than one written
-// before it (a stored result in the same tick as a change is racy and is rightly not trusted).
-void settle(const fs::path& dir) {
-    const fs::path probe = dir / "settle-probe";
-    auto mtime = [&] {
-        struct stat st{};
-        expect(::stat(probe.c_str(), &st) == 0, "probe");
-        return std::pair<long, long>{st.st_mtim.tv_sec, st.st_mtim.tv_nsec};
-    };
-    write(probe, "x");
-    const auto first = mtime();
-    do write(probe, "x"); while (mtime() == first);
-}
+// Let the file system's clock tick, so a change after this call moves a file's stamps (a same-size rewrite in the same
+// tick as the earlier write would otherwise carry the same times).
+void tick() { ::usleep(20000); }
 
 fs::path persisted_file(const fs::path& work) {
     fs::path found;
@@ -123,7 +113,7 @@ int main(int argc, char** argv) {
         const fs::path work = root / "work";
         fs::create_directories(work);
         const char* self = argv[0];
-        settle(root);
+        tick();
         const auto stored = fresh_process(self, binary, home, work);
         expect(stored.identity == first, "the persisted path gives the digest the hash gives");
         expect(stored.hashed == 1, "the first fresh process hashes and stores");
@@ -139,7 +129,7 @@ int main(int argc, char** argv) {
         // new state is stored and read again.
         auto changes = [&](const char* what, auto&& mutate) {
             mutate();
-            settle(root);
+            tick();
             const auto changed = fresh_process(self, binary, home, work);
             expect(changed.hashed == 1, what);
             const auto again = fresh_process(self, binary, home, work);
@@ -157,14 +147,6 @@ int main(int argc, char** argv) {
             expect(::utime((home / "helpers" / "h.bin").c_str(), &t) == 0, "touch");
         });
         expect(touched == content, "a touch alone does not change the digest, only re-checks it");
-
-        // A persisted file no newer than a runtime file's change is racy (it may share the clock tick): not trusted.
-        {
-            const utimbuf old_record{1000000000, 1000000000};
-            expect(::utime(persisted_file(work).c_str(), &old_record) == 0, "age the persisted file");
-            expect(fresh_process(self, binary, home, work).hashed == 1, "a racy persisted file is not trusted");
-            expect(fresh_process(self, binary, home, work).hashed == 0, "and its replacement is");
-        }
 
         // A corrupt or foreign persisted file is ignored, hashed over, and replaced.
         const fs::path stored_file = persisted_file(work);

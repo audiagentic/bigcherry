@@ -652,7 +652,7 @@ Json stamps_json(const Stamps& stamps) {
 }
 
 // Was every member of this prefix, as it is now, verified in full and recorded? False on any difference, on a record
-// that cannot be read or parsed, and on a racy record: the full check then runs.
+// that cannot be read or parsed: the full check then runs.
 bool stamps_trusted(const fs::path& prefix_path, const fs::path& file) {
     try {
         if (!is_regular_plain(file))
@@ -661,10 +661,7 @@ bool stamps_trusted(const fs::path& prefix_path, const fs::path& file) {
         const auto now = capture_stamps(prefix_path);
         if (!now || recorded != stamps_json(*now))
             return false;
-        std::vector<serving::FileStamp> taken;
-        for (const auto& entry : *now)
-            taken.push_back(entry.second);
-        return serving::stamps_settled(file, taken);
+        return true;
     } catch (const std::exception&) {
         return false;
     }

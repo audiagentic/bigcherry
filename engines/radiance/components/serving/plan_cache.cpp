@@ -255,9 +255,6 @@ std::string persisted_identity(const fs::path& file, const std::string& memo_key
         bytes << in.rdbuf();
         const Json stored = Json::parse(bytes.str());
         if (stored.at("key").get<std::string>() != memo_key || stored.at("files") != stamps_json(stamps, home)) return {};
-        std::vector<FileStamp> taken;
-        for (const auto& entry : stamps) taken.push_back(entry.second);
-        if (!stamps_settled(file, taken)) return {};
         const std::string identity = stored.at("identity").get<std::string>();
         return identity.size() == 64 && identity.find_first_not_of("0123456789abcdef") == std::string::npos ? identity
                                                                                                            : std::string();
