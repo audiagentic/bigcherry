@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.62.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.62.0...bc-platform-1.62.1) (2026-11-22)
+
+
+### Fixes
+
+* **ltx:** close C06 AQL coordinate allocation leak ([#1316](https://github.com/audiagentic/bigcherry/issues/1316)) ([6336353](https://github.com/audiagentic/bigcherry/commit/633635392adc2b4bc1ea7edad6f61eec7413b307))
+
 ## [1.62.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.61.2...bc-platform-1.62.0) (2026-11-22)
 
 
