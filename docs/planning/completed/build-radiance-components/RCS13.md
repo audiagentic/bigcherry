@@ -2,7 +2,7 @@
 id: RCS13
 order: 0
 plan: build-radiance-components
-state: in_progress
+state: superseded
 created-at: '2026-11-13T03:53:14.434848+00:00'
 breadth: ''
 skill: advanced
@@ -72,9 +72,17 @@ Card-free large-K model admission (2026-11-18): the existing declared `r3_gemv_g
 
 Open: (1) **hardware** acceptance of an actual model with intermediate > 2560, including grouped-GEMM fallback or typed startup refusal and non-stale outputs; (2) gfx1100 and gfx1030 byte identity and decode parity, each qualified independently; (3) a deterministic multi-stream oracle if a concurrency identity gate is wanted.
 
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: C02 GEMV K-bound implementation and guard expiry have one canonical owner under RCS12 instead of an audit ticket and a second kernel implementation ticket. Canonical remaining owner: RCS12. RCS13 identifies itself as the RCS12 MC-004/005 (C02) execution fix; RCS12 already names this exact guarded implementation requirement, so keeping two plan owners duplicates the same kernel admission task. Exact remaining acceptance and stop/fallback requirements are in the active receiver. This lifecycle state retires duplicate planning ownership only; original source/evidence/negative results are retained and not declared complete.
+
 ## Change Log
 
 - 2026-11-13T03:53:14.434848+00:00 (created-by): Created by bigcherry-1
 - 2026-11-13T03:53:59.413255+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
 - 2026-11-17T22:25:51.124293+00:00 (updated-by): Updated: section:notes
 - 2026-11-17T22:26:00.089362+00:00 (state-transition): State: pending → in_progress
+
+## Reviews
+
+- RV4508
+- 2026-11-22T10:36:51.300961+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:43:57.520227+00:00 (state-transition): State: in_progress → superseded
