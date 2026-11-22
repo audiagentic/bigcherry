@@ -1378,24 +1378,19 @@ void quality_lab_experiment_file(Fixture& t) {
 }
 
 void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
-    const auto no_snapshot = run_bc_serve(
-        {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
-         "missing-ranks.json"});
+    const auto no_snapshot = run_bc_serve({"--write-manifest", "unused.json"});
     if (no_snapshot.exit_code != 2 ||
-        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos ||
-        no_snapshot.output.find("cannot read missing-plan.json") != std::string::npos)
-        throw std::runtime_error("v3 writer did not reject a missing sealed snapshot before plan-file access: " +
-                                 no_snapshot.output);
+        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos)
+        throw std::runtime_error("v3 writer accepted a missing sealed snapshot: " + no_snapshot.output);
 
-    const auto raw_import = run_bc_serve(
-        {"--write-manifest", "unused.json", "--bc-native-config-fd", "3", "--measured-plan",
-         "missing-plan.json", "--rank-demand", "missing-ranks.json"});
-    if (raw_import.exit_code != 2 ||
-        raw_import.output.find("v3 --write-manifest does not import --measured-plan or --rank-demand") ==
-            std::string::npos ||
-        raw_import.output.find("cannot read missing-plan.json") != std::string::npos)
-        throw std::runtime_error("v3 writer did not refuse raw measured-plan imports before file access: " +
-                                 raw_import.output);
+    for (const auto* flag : {"--measured-plan", "--rank-demand", "--helpers-resident-mib",
+                             "--engine-resident-mib", "--publish-v2-p1", "--publish-v2-live-room"}) {
+        const auto result = run_bc_serve({"--write-manifest", "unused.json", flag});
+        if (result.exit_code != 2 ||
+            result.output.find(std::string("unknown option ") + flag) == std::string::npos)
+            throw std::runtime_error(std::string("writer accepted removed option ") + flag + ": " +
+                                     result.output);
+    }
 
     // A native v3 measured writer must accept the frozen-key guard too. Use an
     // invalid descriptor so the CLI reaches sealed-snapshot loading without

@@ -172,7 +172,7 @@ read-only triage.
 ## 5. After the release: sync and clean up
 
 Once the release PR is merged, the bundle published, and installed bundle
-smoke passes (`bc-release install`, `verify`, `status`, then a start):
+smoke passes (`bc-release install`, `verify`, then a start):
 
 1. In the **primary** checkout run `git fetch` and `git pull --ff-only` only,
    never edit; then `python3 -m bigcherry --engine radiance pin-status` must

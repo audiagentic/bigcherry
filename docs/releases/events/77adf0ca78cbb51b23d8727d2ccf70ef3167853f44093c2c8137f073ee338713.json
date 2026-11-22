@@ -1,0 +1,11 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_161044_corrected-the-radiance-release_7201",
+  "files": [
+    "config/release.toml"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The radiance release line listed patch sets (serving-manifest, host-compat) that the 2.2 migration removed from the production source recipe; build-patch-sets now matches source.radiance, which fixes test_radiance_has_its_own_release_line that failed on main.",
+  "timestamp-utc": "2026-11-22T16:10:44.288654Z",
+  "user-summary-candidate": "Corrected the Radiance release configuration to list the patch sets the build actually uses."
+}
