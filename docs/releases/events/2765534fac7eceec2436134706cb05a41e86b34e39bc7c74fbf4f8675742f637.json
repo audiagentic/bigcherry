@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_094247_restarting-a-named-serving-con_4664",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The stored-manifest execution projection now reduces the live heat histogram path (a per-start run-directory file) to recorded-or-not, exactly as the stored-plan key does, so a second start of the same config in the same installed prefix replays its stored plan instead of refusing with BC_CFG_PLAN_MISMATCH and re-carrying the measurement. Test added first: a different run-directory histogram path replays, turning the recording off still refuses.",
+  "timestamp-utc": "2026-11-22T09:42:47.681869Z",
+  "user-summary-candidate": "Restarting a named serving config on the same install now reuses its stored plan instead of rewriting it each start."
+}
