@@ -41,6 +41,8 @@ tools/bigcherry/experiment/contract.py; tools/bigcherry/experiment/execution.py;
 
 Malformed/missing telemetry; zero positive launches; route-selected-only; controls/boundaries; real artifact end-to-end; INVALID report rendering; full offline contract suite.
 
+Add failing fixtures in tools/tests/campaign/test_qualification_execution.py and test_experiment_contract.py for zero positive trigger records; foreign/duplicate/mismatched-cell evidence; malformed/negative/noninteger counts; passed effects but missing required correctness; and mixed positive/control cases. Verify every invalid cohort is reported INVALID and cannot be promoted; retain one eligible provenance-bound real contract artifact as the final acceptance gate.
+
 ## Effort & Risk
 
 
@@ -52,6 +54,8 @@ Fail closed on untriggered candidates; distinguish INVALID from FAIL; no benchma
 ## Acceptance Criteria
 
 At least one real campaign contract consumes machine-derived TriggerEvidence; untriggered positive lanes are INVALID, not pass/fail; evidence is schema/provenance bound; tests cover malformed, empty, control and passing cases.
+
+A required positive qualification cell is INVALID, never PASS, unless its own exact cell identity and lane/model/config/route receipt contains a well-formed, strictly nonnegative integer launch or route count and a positive candidate trigger. Missing, duplicate, stale or foreign-cell proof must fail closed, even when another cell triggered. Required correctness checks with absent results are INVALID, never replaced by synthetic passed=True. Existing valid controls/boundaries remain supported, and the same plan/cell evidence must be traceable to the original Experiment Contract without a new evidence schema or evaluator.
 
 ## Notes
 
@@ -68,8 +72,6 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 
 ## Ledger-events
 
-
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.753861+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -82,3 +84,8 @@ GPT roadmap provenance: request req_f7a013040828433c, same session ses_76206cac3
 - 2026-09-12T18:55:48.051370+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260912_191132_corrected-the-gpt-guided-imple_8803
 - 2026-09-12T19:11:32.084083+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4322
+- 2026-11-22T03:33:30.726626+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria

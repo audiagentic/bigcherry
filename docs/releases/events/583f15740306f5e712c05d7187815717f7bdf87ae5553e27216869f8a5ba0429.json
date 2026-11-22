@@ -1,0 +1,34 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_030954_registered-separate-radiancel_3946",
+  "files": [
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX01.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX02.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX03.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX04.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX05.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX06.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX07.md",
+    "docs/planning/active/build-radiance-ltx25-tp3/LTX08.md",
+    "docs/planning/active/patching-radiance-upstream/RUM13.md",
+    "docs/evidence/ltx25-plan-registration/README.md",
+    "docs/evidence/rum13-native-qualification/README.md",
+    "docs/reviews/planning-audit-2026-11-22/AUDIT.md",
+    "docs/reviews/planning-audit-2026-11-22/MCP_EXECUTION.md"
+  ],
+  "plan-item-ids": [
+    "LTX01",
+    "LTX02",
+    "LTX03",
+    "LTX04",
+    "LTX05",
+    "LTX06",
+    "LTX07",
+    "LTX08",
+    "RUM13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Registered eight model-specific LTX-2.5 IQ8R TP3 Planning MCP items (LTX01-LTX08) in build-radiance-ltx25-tp3 from the existing evidence handoff, plus model-independent RUM13 in patching-radiance-upstream for reuse and deletion of the duplicate direct-HIP collective lab. All nine remain pending. Generic production collective and lifecycle ownership stays RUM06; completed RUM05/RUM09 and platform/llama.cpp work were not duplicated or reopened. Fixed two plan links through the Planning MCP update tool. This is planning-only, with no GPU, new runtime capability or performance verdict. Historical audit inventory and unfinished backlog cleanup remain review-only.",
+  "timestamp-utc": "2026-11-22T03:09:54.063019Z",
+  "user-summary-candidate": "Registered separate Radiance/LTX TP3 plans and a shared AQL qualification owner using the canonical Planning interface."
+}

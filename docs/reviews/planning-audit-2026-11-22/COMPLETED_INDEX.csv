@@ -1,0 +1,911 @@
+id,path,group,state,title,also_active
+AM01,docs/planning/completed/amd-llm-review/AM01.md,amd-llm-review,completed,Inventory LLM AMD-optimization references,no
+AM02,docs/planning/completed/amd-llm-review/AM02.md,amd-llm-review,completed,Triage AMD LLM optimization targets,no
+AM03,docs/planning/completed/amd-llm-review/AM03.md,amd-llm-review,completed,Review shortlisted AMD LLM optimizations,no
+AM04,docs/planning/completed/amd-llm-review/AM04.md,amd-llm-review,completed,Reconcile AMD research with existing plans,no
+AM05,docs/planning/completed/amd-llm-review/AM05.md,amd-llm-review,completed,Validate AMD plan-alignment recommendations at source level,no
+CO01,docs/planning/completed/build-code-cleanup/CO01.md,build-code-cleanup,completed,Remove legacy compat.recipe patch-selection path,no
+CO02,docs/planning/completed/build-code-cleanup/CO02.md,build-code-cleanup,superseded,"Fix stale tests for patches 1225 (HI85), 1233 (RD73), 1242 (HI134): implementation drifted past its own tests",no
+CO03,docs/planning/completed/build-code-cleanup/CO03.md,build-code-cleanup,completed,Eliminate duplicate overlay target reads,no
+EC01,docs/planning/completed/build-ec-contracts/EC01.md,build-ec-contracts,completed,Experiment contract schema/validator,no
+EC02,docs/planning/completed/build-ec-contracts/EC02.md,build-ec-contracts,completed,Contract registry/loading + backfill for existing 1200-1210 transforms,no
+EC03,docs/planning/completed/build-ec-contracts/EC03.md,build-ec-contracts,completed,Campaign expansion: contract -> positive/control/boundary lanes,no
+EC04,docs/planning/completed/build-ec-contracts/EC04.md,build-ec-contracts,completed,"Lane metadata: contract/optimization ID, role, workload, model reference",no
+EC05,docs/planning/completed/build-ec-contracts/EC05.md,build-ec-contracts,completed,Evidence binding: contract identity/hash into bundles and reports,no
+EC06,docs/planning/completed/build-ec-contracts/EC06.md,build-ec-contracts,completed,A/B aggregation: per-contract target gains and control regressions,no
+EC07,docs/planning/completed/build-ec-contracts/EC07.md,build-ec-contracts,completed,Correctness gates: parity/reference/bit-identity per contract,no
+EC08,docs/planning/completed/build-ec-contracts/EC08.md,build-ec-contracts,completed,Generalisation handoff: feed exact winning signatures to generalise.py,no
+EC09,docs/planning/completed/build-ec-contracts/EC09.md,build-ec-contracts,completed,Promotion gate: require all declared contract evidence + holdout proof,no
+EC10,docs/planning/completed/build-ec-contracts/EC10.md,build-ec-contracts,completed,"Reporting: hypothesis, winners, non-trigger envelope, promotion decision",no
+EC11,docs/planning/completed/build-ec-contracts/EC11.md,build-ec-contracts,completed,CLI: validate/list/plan/run/report entry points,no
+EC12,docs/planning/completed/build-ec-contracts/EC12.md,build-ec-contracts,completed,"Tests: schema, identity, expansion, evidence, promotion, report",no
+EC13,docs/planning/completed/build-ec-contracts/EC13.md,build-ec-contracts,completed,AMD-TEST-001: Controlled MoE routing benchmark generator,no
+EC14,docs/planning/completed/build-ec-contracts/EC14.md,build-ec-contracts,superseded,VK-TUNE-002: Large physical ubatch for Vulkan MoE prefill -- campaign boundary-sweep dimension,no
+EC15,docs/planning/completed/build-ec-contracts/EC15.md,build-ec-contracts,superseded,VK-DRV-001: RADV vs AMD proprietary/AMDVLK driver identity as required evidence provenance,no
+EC16,docs/planning/completed/build-ec-contracts/EC16.md,build-ec-contracts,completed,Generalise Experiment Contract target classification beyond the 5-family matmul enum,no
+EC17,docs/planning/completed/build-ec-contracts/EC17.md,build-ec-contracts,completed,Separate typed source-evidence from BigCherry acceptance-metric semantics,no
+EC18,docs/planning/completed/build-ec-contracts/EC18.md,build-ec-contracts,superseded,Mandatory trigger-proof requirement for performance contracts,no
+EC19,docs/planning/completed/build-ec-contracts/EC19.md,build-ec-contracts,completed,"Machine-readable plan/contract lifecycle status, computed not maintained in prose",no
+EC20,docs/planning/completed/build-ec-contracts/EC20.md,build-ec-contracts,completed,CI link-audit: source -> plan -> patch/action -> contract must be mechanically valid,no
+EC21,docs/planning/completed/build-ec-contracts/EC21.md,build-ec-contracts,completed,Additional CI patch-catalog checks beyond EC20's link-audit,no
+BHA01,docs/planning/completed/build-hip-autotune/BHA01.md,build-hip-autotune,completed,bigcherry pin-bump: single-tree orchestrator command,no
+RCS02,docs/planning/completed/build-radiance-components/RCS02.md,build-radiance-components,completed,"Split moe_remote_gpu.h (2,048 lines) into lane units - pure move",no
+RCS03,docs/planning/completed/build-radiance-components/RCS03.md,build-radiance-components,completed,"Split r3_moe_worker.cpp (1,513 lines): options, owners, serve loop, harness",no
+RCS04,docs/planning/completed/build-radiance-components/RCS04.md,build-radiance-components,completed,Extract moe-remote and moe-harness components from libr3,no
+RCS06,docs/planning/completed/build-radiance-components/RCS06.md,build-radiance-components,completed,Move the n-gram helper into its own component,no
+RCS07,docs/planning/completed/build-radiance-components/RCS07.md,build-radiance-components,superseded,RDNA2 (gfx1030) MoE backend: capability probe and kernel plan,no
+RCS11,docs/planning/completed/build-radiance-components/RCS11.md,build-radiance-components,completed,Radiance builds in the agent-dev container: find the ROCm runtime without /opt/rocm,no
+RR01,docs/planning/completed/build-radiance-rdna3/RR01.md,build-radiance-rdna3,superseded,RDNA3 (gfx1100) kernel library for standalone radiance,no
+RR02,docs/planning/completed/build-radiance-rdna3/RR02.md,build-radiance-rdna3,superseded,"ROCm 10.1 RDNA3 optimization, quantization and KV-cache qualification",no
+RR03,docs/planning/completed/build-radiance-rdna3/RR03.md,build-radiance-rdna3,superseded,"Radiance drafter on a separate card: R9700 first, then the RX 6900 XT",no
+RR04,docs/planning/completed/build-radiance-rdna3/RR04.md,build-radiance-rdna3,superseded,"gfx1100 native kernel optimization: FP8 GEMM, quantized WMMA, paged KV and TP2",no
+RR05,docs/planning/completed/build-radiance-rdna3/RR05.md,build-radiance-rdna3,superseded,"libr3 baseline, targets and measurement for native gfx1100 kernels",no
+RR06,docs/planning/completed/build-radiance-rdna3/RR06.md,build-radiance-rdna3,superseded,A reference check for the MXFP4 GEMMs on gfx1100 (kdev oracle),no
+RR07,docs/planning/completed/build-radiance-rdna3/RR07.md,build-radiance-rdna3,superseded,Decode on gfx1100 as a vector kernel: MXFP4 GEMV for M <= 4,no
+RR08,docs/planning/completed/build-radiance-rdna3/RR08.md,build-radiance-rdna3,superseded,Prefill on gfx1100: lane-owns-a-row MXFP4 GEMM with bf16 activations,no
+RR09,docs/planning/completed/build-radiance-rdna3/RR09.md,build-radiance-rdna3,superseded,"gfx1100 follow-ups after the two GEMMs: int8 route, attention, logits, weight layout",no
+RR10,docs/planning/completed/build-radiance-rdna3/RR10.md,build-radiance-rdna3,superseded,"Two RX 7900 XTX in tensor parallel under libr3, then the drafter on the R9700",no
+BRBE01,docs/planning/completed/build-rdna-boost-experiments/BRBE01.md,build-rdna-boost-experiments,completed,RESOLVED: run_id path leak + lock ownership bug (both fixed); original instant-fake-ok symptom unexplained (low priority),no
+BRBC02,docs/planning/completed/build-reusable-build-campaign/BRBC02.md,build-reusable-build-campaign,completed,"Structurally enforce work-root/checkout non-overlap, not just default-topology safety",no
+VA01,docs/planning/completed/build-validation-package-standard/VA01.md,build-validation-package-standard,completed,Document the RD-patch validation methodology and folder standard,no
+VA02,docs/planning/completed/build-validation-package-standard/VA02.md,build-validation-package-standard,completed,Extend patch-lint: static validation-package policy (README/validation.toml/contract-binding/coverage),no
+VA03,docs/planning/completed/build-validation-package-standard/VA03.md,build-validation-package-standard,superseded,SUPERSEDED -- split into VA03A (evidence schema/writer) and VA03B (status-aware verifier),no
+VA04,docs/planning/completed/build-validation-package-standard/VA04.md,build-validation-package-standard,completed,Backfill RD04 (bf16_flash_attn_tile) validation package and re-validate against the current resolved pin,no
+VA05,docs/planning/completed/build-validation-package-standard/VA05.md,build-validation-package-standard,completed,Backfill RD58 (pin_state_buffer_multigpu_restore) validation package and re-validate against current resolved pin,no
+VA06,docs/planning/completed/build-validation-package-standard/VA06.md,build-validation-package-standard,completed,Backfill RD73 (stable_graph_cache_key) validation package and re-validate against b10692,no
+VA07,docs/planning/completed/build-validation-package-standard/VA07.md,build-validation-package-standard,completed,Resolve evidence schema v2 build-role mismatch (tune/replay/stock vs baseline/control/subject),no
+VA08,docs/planning/completed/build-validation-package-standard/VA08.md,build-validation-package-standard,completed,"Status-aware patch-verify-evidence: ported-benched/deferred-hardware obligations, packaged-patch coverage fix",no
+VA09,docs/planning/completed/build-validation-package-standard/VA09.md,build-validation-package-standard,superseded,"SUPERSEDED -- split into VA16 (VA09A: plural registry metadata), VA17 (VA09B: contract-scoped plan semantics), VA18 (VA09C: evidence schema v4)",no
+VA10,docs/planning/completed/build-validation-package-standard/VA10.md,build-validation-package-standard,completed,RD58 contract vocabulary: new workload tag + correctness token for multi-GPU state-restore claims,no
+VA11,docs/planning/completed/build-validation-package-standard/VA11.md,build-validation-package-standard,superseded,"SUPERSEDED -- split into VA11A (executor plumbing), VA11B (contract execution architecture), VA11C (hardware acceptance)",no
+VA12,docs/planning/completed/build-validation-package-standard/VA12.md,build-validation-package-standard,completed,RD73 resource-cost acceptance semantics (graph-cache memory/resource gate),no
+VA13,docs/planning/completed/build-validation-package-standard/VA13.md,build-validation-package-standard,completed,"VA11A: real validation executor plumbing (trace/package_root/named-correctness wiring), fail-closed",no
+VA14,docs/planning/completed/build-validation-package-standard/VA14.md,build-validation-package-standard,completed,"VA11B: real contract-execution architecture (control/subject lanes, effect aggregation, promotion gate)",no
+VA15,docs/planning/completed/build-validation-package-standard/VA15.md,build-validation-package-standard,completed,VA11C: real-GPU control/subject lane hardware smoke test,no
+VA16,docs/planning/completed/build-validation-package-standard/VA16.md,build-validation-package-standard,completed,VA09A: plural registry metadata (PatchDescriptor.experiment_contracts),no
+VA17,docs/planning/completed/build-validation-package-standard/VA17.md,build-validation-package-standard,completed,VA09B: contract-scoped ValidationPlan semantics (multi-contract support),no
+VA18,docs/planning/completed/build-validation-package-standard/VA18.md,build-validation-package-standard,completed,VA09C: evidence schema v4 (per-contract verdicts),no
+VA19,docs/planning/completed/build-validation-package-standard/VA19.md,build-validation-package-standard,completed,Exclude generated tooling residue from validation-digest identity,no
+VA20,docs/planning/completed/build-validation-package-standard/VA20.md,build-validation-package-standard,completed,VA08A: resolve pin to immutable SHA in cmd_patch_verify_evidence(),no
+VA21,docs/planning/completed/build-validation-package-standard/VA21.md,build-validation-package-standard,completed,RD08 trigger check silently filtered by llama-bench's default log verbosity (resolved),no
+VA22,docs/planning/completed/build-validation-package-standard/VA22.md,build-validation-package-standard,completed,gfx1201 double-env-selector diagnostic-invocation bug (was misdiagnosed as a ROCm 7.2.4 limitation),no
+VA23,docs/planning/completed/build-validation-package-standard/VA23.md,build-validation-package-standard,completed,Bind contract-produced artifacts to the generic performance/controls validators (RD73 errors with 'benchmark artifact requires non-empty metrics'),no
+VA24,docs/planning/completed/build-validation-package-standard/VA24.md,build-validation-package-standard,completed,"Gate promotion on statistical significance (effect CI excludes zero), not point estimates alone",no
+VA25,docs/planning/completed/build-validation-package-standard/VA25.md,build-validation-package-standard,completed,Execution attestation: no measurement is evidence unless the observed environment matches its resolved identity,no
+VA26,docs/planning/completed/build-validation-package-standard/VA26.md,build-validation-package-standard,superseded,"PQM-v1: standard Patch Qualification Matrix (4 arms x N architectures, isolated + in-situ)",no
+HTR01,docs/planning/completed/hip-tune-recovery/HTR01.md,hip-tune-recovery,completed,Bounded recovery search: pluggable RecoveryStrategy + AssignmentExecutor for HI143 hard-fail campaigns,no
+HTR02,docs/planning/completed/hip-tune-recovery/HTR02.md,hip-tune-recovery,superseded,Durable BehavioralFailureWitness records (not a candidate blacklist),no
+HTR03,docs/planning/completed/hip-tune-recovery/HTR03.md,hip-tune-recovery,completed,"Versioned, configurable behavioral corpus + explicit workload-class applicability",no
+HTR04,docs/planning/completed/hip-tune-recovery/HTR04.md,hip-tune-recovery,superseded,"Retune escalation: recommendation-only signal, never an autonomous action (deferred implementation)",no
+HTR05,docs/planning/completed/hip-tune-recovery/HTR05.md,hip-tune-recovery,superseded,"Empirical multiplicity-correction investigation (BH vs Holm vs BY) -- study first, no production change",no
+HTR06,docs/planning/completed/hip-tune-recovery/HTR06.md,hip-tune-recovery,superseded,"Investigate synthetic-to-E2E candidate ranking fidelity (bounded empirical study, not a ranking change)",no
+HTR07,docs/planning/completed/hip-tune-recovery/HTR07.md,hip-tune-recovery,superseded,Adaptive recovery: bisect with the shortest vector that actually reproduces the failure,no
+MU01,docs/planning/completed/multi-gpu-validation/MU01.md,multi-gpu-validation,completed,Real hardware findings: large-model multi-GPU llama-server/llama-bench validation gotchas,no
+BCOP01,docs/planning/completed/patching-bc-optimizations/BCOP01.md,patching-bc-optimizations,superseded,Act on QFP17 QSA prefill memory and tiled-indexer findings,no
+BCOP02,docs/planning/completed/patching-bc-optimizations/BCOP02.md,patching-bc-optimizations,superseded,Qualify Flash-Next IQ expert service path and MMQ safety,no
+BCOP03,docs/planning/completed/patching-bc-optimizations/BCOP03.md,patching-bc-optimizations,superseded,Qualify forced-front MTP overlap using the existing 1321 primitive,no
+BCOP04,docs/planning/completed/patching-bc-optimizations/BCOP04.md,patching-bc-optimizations,superseded,Close or reopen QFP11 from measured AllReduce boundary cost,no
+BCOP05,docs/planning/completed/patching-bc-optimizations/BCOP05.md,patching-bc-optimizations,superseded,Act on QFP09 critical-path rank-skew findings,no
+BCOP06,docs/planning/completed/patching-bc-optimizations/BCOP06.md,patching-bc-optimizations,superseded,Isolate MTP draft nondeterminism before accepting small throughput wins,no
+BCOP07,docs/planning/completed/patching-bc-optimizations/BCOP07.md,patching-bc-optimizations,superseded,Complete QSA chunk correctness and constant-topology promotion,no
+BCOP08,docs/planning/completed/patching-bc-optimizations/BCOP08.md,patching-bc-optimizations,superseded,Assess miss-cost-aware multi-tier expert residency,no
+BCOP09,docs/planning/completed/patching-bc-optimizations/BCOP09.md,patching-bc-optimizations,superseded,Gate runtime expert slicing on transient host-weight pipeline results,no
+BCOP10,docs/planning/completed/patching-bc-optimizations/BCOP10.md,patching-bc-optimizations,superseded,Qualify adaptive MTP draft vocabulary after static 64K trim,no
+BCOP102,docs/planning/completed/patching-bc-optimizations/BCOP102.md,patching-bc-optimizations,superseded,PNRO18: retire obsolete P2P probe-hardening,no
+BCOP103,docs/planning/completed/patching-bc-optimizations/BCOP103.md,patching-bc-optimizations,completed,PRBE112: gate rejected RD42 against native shared-expert MMVQ,no
+BCOP104,docs/planning/completed/patching-bc-optimizations/BCOP104.md,patching-bc-optimizations,completed,PGC14: fail closed on RCCL SHM CE hangs,no
+BCOP107,docs/planning/completed/patching-bc-optimizations/BCOP107.md,patching-bc-optimizations,completed,PRBE29: gate F16 shadow on complete upload and effective compute type,no
+BCOP108,docs/planning/completed/patching-bc-optimizations/BCOP108.md,patching-bc-optimizations,deprecated,PNRO02: retire infeasible 1250 composition; gate exact-F32 residual epilogue,no
+BCOP11,docs/planning/completed/patching-bc-optimizations/BCOP11.md,patching-bc-optimizations,superseded,Consolidate async host-input lifetime onto scheduler copy generations,no
+BCOP12,docs/planning/completed/patching-bc-optimizations/BCOP12.md,patching-bc-optimizations,superseded,Gate direct sparse QSA attention after upstream indexer tiling,no
+BCOP13,docs/planning/completed/patching-bc-optimizations/BCOP13.md,patching-bc-optimizations,superseded,Land corruption-resistant performance-integrity qualification,no
+BCOP15,docs/planning/completed/patching-bc-optimizations/BCOP15.md,patching-bc-optimizations,superseded,Assess compact active-lane dispatch for range-owned MoE experts,no
+BCOP159,docs/planning/completed/patching-bc-optimizations/BCOP159.md,patching-bc-optimizations,superseded,PNRO11: close target-wide output replication,no
+BCOP16,docs/planning/completed/patching-bc-optimizations/BCOP16.md,patching-bc-optimizations,superseded,Gate fused CPU cold-tail MoE execution from measured overhead,no
+BCOP166,docs/planning/completed/patching-bc-optimizations/BCOP166.md,patching-bc-optimizations,deprecated,PRBE67: retire unproven HIP FA graph-UID recapture,no
+BCOP168,docs/planning/completed/patching-bc-optimizations/BCOP168.md,patching-bc-optimizations,deprecated,PRBE115: retire Q8_0 raw-F32 verify-width follow-up,no
+BCOP17,docs/planning/completed/patching-bc-optimizations/BCOP17.md,patching-bc-optimizations,superseded,Gate whole-expert parallelism behind lower-complexity expert caching,no
+BCOP170,docs/planning/completed/patching-bc-optimizations/BCOP170.md,patching-bc-optimizations,completed,QFP35: reconcile 1355 HC_POST screening and gate recomputation,no
+BCOP18,docs/planning/completed/patching-bc-optimizations/BCOP18.md,patching-bc-optimizations,superseded,Qualify topology-aware 6900 XT auxiliary expert execution,no
+BCOP181,docs/planning/completed/patching-bc-optimizations/BCOP181.md,patching-bc-optimizations,superseded,PGC16: retire duplicate partial-branch AllReduce fold,no
+BCOP183,docs/planning/completed/patching-bc-optimizations/BCOP183.md,patching-bc-optimizations,superseded,PGC05: retire duplicate adaptive AllReduce threshold/bucket plan,no
+BCOP184,docs/planning/completed/patching-bc-optimizations/BCOP184.md,patching-bc-optimizations,completed,PRBE20: per-type MMVQ width fence before determinism patching,no
+BCOP185,docs/planning/completed/patching-bc-optimizations/BCOP185.md,patching-bc-optimizations,completed,PRBE67: graph UID reuse and binding-identity evidence gate,no
+BCOP186,docs/planning/completed/patching-bc-optimizations/BCOP186.md,patching-bc-optimizations,deprecated,PRBE52: close stale adaptive-MTP plan after measured rejection,no
+BCOP188,docs/planning/completed/patching-bc-optimizations/BCOP188.md,patching-bc-optimizations,completed,PKC05: qualify Q1_0 native HIP unpack without duplicating kernels,no
+BCOP189,docs/planning/completed/patching-bc-optimizations/BCOP189.md,patching-bc-optimizations,superseded,QFP51: retire redundant scheduler split-template cache,no
+BCOP19,docs/planning/completed/patching-bc-optimizations/BCOP19.md,patching-bc-optimizations,superseded,Gate sequence-sharded long-context attention by actual topology cost,no
+BCOP190,docs/planning/completed/patching-bc-optimizations/BCOP190.md,patching-bc-optimizations,superseded,PKC04: close duplicate Vulkan lifecycle ownership gate,no
+BCOP191,docs/planning/completed/patching-bc-optimizations/BCOP191.md,patching-bc-optimizations,completed,QFP48: gate Q8_1 MMQ producer fusion on typed route and exposed cost,no
+BCOP192,docs/planning/completed/patching-bc-optimizations/BCOP192.md,patching-bc-optimizations,superseded,PNRO11: retire target-wide lm_head mirroring for DFlash tensor split,no
+BCOP193,docs/planning/completed/patching-bc-optimizations/BCOP193.md,patching-bc-optimizations,completed,PNRO10: block 1261 until ctx_other backend insertion leaves GPU loop,no
+BCOP195,docs/planning/completed/patching-bc-optimizations/BCOP195.md,patching-bc-optimizations,deprecated,PRBE114: retire unqualified tensor-split SSM_CONV Meta rewrite,no
+BCOP197,docs/planning/completed/patching-bc-optimizations/BCOP197.md,patching-bc-optimizations,completed,QFP05: gate static GGUF d2t MTP vocabulary before adaptive cache,no
+BCOP198,docs/planning/completed/patching-bc-optimizations/BCOP198.md,patching-bc-optimizations,completed,QFP02: 1292 k-pool tail-layout admission and ownership reconciliation,no
+BCOP199,docs/planning/completed/patching-bc-optimizations/BCOP199.md,patching-bc-optimizations,completed,QFP25/1334: grouped sparse-FA union-capacity admission,no
+BCOP20,docs/planning/completed/patching-bc-optimizations/BCOP20.md,patching-bc-optimizations,superseded,Remove context-wide synchronization from target-to-drafter MTP handoff,no
+BCOP200,docs/planning/completed/patching-bc-optimizations/BCOP200.md,patching-bc-optimizations,deprecated,PRBE115: reject raw-F32 MTP-width widening; require exact Q8_1 producer,no
+BCOP21,docs/planning/completed/patching-bc-optimizations/BCOP21.md,patching-bc-optimizations,superseded,Root-cause HIP D=72 Flash Attention fault before retaining fallback,no
+BCOP22,docs/planning/completed/patching-bc-optimizations/BCOP22.md,patching-bc-optimizations,superseded,Qualify paired-MMVQ through its fused-core dependency chain,no
+BCOP239,docs/planning/completed/patching-bc-optimizations/BCOP239.md,patching-bc-optimizations,deprecated,QFP48: retire unproven router split-K reduction fusion; reconcile 1357 status,no
+BCOP25,docs/planning/completed/patching-bc-optimizations/BCOP25.md,patching-bc-optimizations,superseded,Execute bounded D=72 HIP Flash-Attention root-cause qualification,no
+BCOP275,docs/planning/completed/patching-bc-optimizations/BCOP275.md,patching-bc-optimizations,completed,Reconcile published and failed BCOP audits into the existing development branch,no
+BCOP292,docs/planning/completed/patching-bc-optimizations/BCOP292.md,patching-bc-optimizations,superseded,Retire PNRO18 probe hardening under rejected PNRO03/1252,no
+BCOP51,docs/planning/completed/patching-bc-optimizations/BCOP51.md,patching-bc-optimizations,deprecated,PRBE07 BridgeSpec disposition,no
+BCOP54,docs/planning/completed/patching-bc-optimizations/BCOP54.md,patching-bc-optimizations,deprecated,PRBE65 / RD82: reject generic Vulkan FA occupancy scaling,no
+BCOP59,docs/planning/completed/patching-bc-optimizations/BCOP59.md,patching-bc-optimizations,superseded,PRBE59 / RD76: superseded rocWMMA FlashAttention restoration,no
+BCOP62,docs/planning/completed/patching-bc-optimizations/BCOP62.md,patching-bc-optimizations,deprecated,PNRO06/07: close unqualified hybrid TOP_K and wave32 follow-up,no
+BCOP63,docs/planning/completed/patching-bc-optimizations/BCOP63.md,patching-bc-optimizations,deprecated,PNRO14/19: retire unqualified gfx1151 TILE row and stale anchor task,no
+PCC01,docs/planning/completed/patching-code-cleanup/PCC01.md,patching-code-cleanup,completed,"Fix stale tests for patches 1225 (HI85), 1233 (RD73), 1242 (HI134): implementation drifted past its own tests",no
+DOC01,docs/planning/completed/patching-docs-structure/DOC01.md,patching-docs-structure,deprecated,Bulk backfill per-patch doc skeletons (Summary/Outcome/Detail) for remaining ~140 llama.cpp patches,no
+PEC01,docs/planning/completed/patching-ec-contracts/PEC01.md,patching-ec-contracts,deprecated,VK-TUNE-002: Large physical ubatch for Vulkan MoE prefill -- campaign boundary-sweep dimension,no
+EX01,docs/planning/completed/patching-external-fixes/EX01.md,patching-external-fixes,completed,1005_prompt_cache_checkpoint_selection anchors broken -- need re-derivation against real source,no
+EX02,docs/planning/completed/patching-external-fixes/EX02.md,patching-external-fixes,superseded,"MMQ q6_K/J=112 illegal-memory-access incident on gfx1100 -- quarantined, root cause open",no
+EX03,docs/planning/completed/patching-external-fixes/EX03.md,patching-external-fixes,superseded,Generated q1_0 MMVQ timing failure poisons HIP context during tuning,no
+PEF03,docs/planning/completed/patching-external-fixes/PEF03.md,patching-external-fixes,superseded,"Triage b11126 sources-check findings (fork history rewrites, incomplete mainline checks)",no
+FMTP01,docs/planning/completed/patching-flash-next-mtp-pipeline/FMTP01.md,patching-flash-next-mtp-pipeline,completed,Instrument and fail-closed gate the MTP overlap lane,no
+FMTP06,docs/planning/completed/patching-flash-next-mtp-pipeline/FMTP06.md,patching-flash-next-mtp-pipeline,deprecated,Extend ahead reuse to probabilistic rejection and multi-slot service,no
+PGC02,docs/planning/completed/patching-gpu-collectives/PGC02.md,patching-gpu-collectives,superseded,Complete qualification and promotion decision for landed N-way internal AllReduce,no
+PGC03,docs/planning/completed/patching-gpu-collectives/PGC03.md,patching-gpu-collectives,deprecated,"dev kernel PCIe P2P DMA quirk for dual-XTX: patch, build, and boot on ROCm-validated 7.0.13 line",no
+PGC04,docs/planning/completed/patching-gpu-collectives/PGC04.md,patching-gpu-collectives,superseded,0860 allreduce provider CLI (--allreduce / --allreduce-wire),no
+PGC05,docs/planning/completed/patching-gpu-collectives/PGC05.md,patching-gpu-collectives,superseded,Adaptive AllReduce threshold CLI: implemented; bucket table retired,no
+PGC06,docs/planning/completed/patching-gpu-collectives/PGC06.md,patching-gpu-collectives,superseded,--allreduce-fuse residual arg (1250 NRO02 fused residual),no
+PGC07,docs/planning/completed/patching-gpu-collectives/PGC07.md,patching-gpu-collectives,superseded,Additional wire formats (bf16/fp8) on --allreduce-wire,no
+PGC08,docs/planning/completed/patching-gpu-collectives/PGC08.md,patching-gpu-collectives,completed,1254 GDN MTP prefix tail: validate 1253 vs 1253+1254 (and 1261),no
+PGC12,docs/planning/completed/patching-gpu-collectives/PGC12.md,patching-gpu-collectives,deprecated,"Adaptive AllReduce: phase-aware routing (prefill to RCCL, generation to host) and the prompt-tail cost",no
+PGC16,docs/planning/completed/patching-gpu-collectives/PGC16.md,patching-gpu-collectives,superseded,Prefill AllReduce count reduction — RETIRED as upstream duplicate,no
+PHA01,docs/planning/completed/patching-hip-autotune/PHA01.md,patching-hip-autotune,completed,Production patch admission gate for validated-state evidence (HI83 admission phase),no
+PHA02,docs/planning/completed/patching-hip-autotune/PHA02.md,patching-hip-autotune,completed,RCCL heterogeneous per-rank kernel/code-object dispatch investigation,no
+PHA06,docs/planning/completed/patching-hip-autotune/PHA06.md,patching-hip-autotune,completed,CORRECTED -- no real regression: RD13 test assumed an out-of-band local mutation that pull() legitimately resets,no
+PHA07,docs/planning/completed/patching-hip-autotune/PHA07.md,patching-hip-autotune,completed,0850 ordered speculative trace patch lifecycle and production integration,no
+HI134,docs/planning/completed/patching-hip-collectives/HI134.md,patching-hip-collectives,completed,Profile and tune META butterfly allreduce for dev heterogeneous tensor-split,no
+HI138,docs/planning/completed/patching-hip-collectives/HI138.md,patching-hip-collectives,completed,"Repair heterogeneous RCCL viability, then qualify topology-aware collective replay",no
+HI139,docs/planning/completed/patching-hip-collectives/HI139.md,patching-hip-collectives,superseded,Integrate ROCm/Vulkan backend stacks and provider candidates,no
+HI140,docs/planning/completed/patching-hip-collectives/HI140.md,patching-hip-collectives,superseded,Qwen3.8-Flash 3-GPU/4-GPU tensor-split benchmark matrix,no
+HI155,docs/planning/completed/patching-hip-collectives/HI155.md,patching-hip-collectives,superseded,Size-adaptive internal/RCCL AllReduce provider dispatch,no
+HI156,docs/planning/completed/patching-hip-collectives/HI156.md,patching-hip-collectives,superseded,RCCL Phase 2: topology-aware qualification/tuning/replay for the RCCL-viable device subset,no
+HI157,docs/planning/completed/patching-hip-collectives/HI157.md,patching-hip-collectives,superseded,Wire patch 1225 (device-3 RCCL guard) into a default patch-set -- it is currently not shipping,no
+HI18,docs/planning/completed/patching-hip-collectives/HI18.md,patching-hip-collectives,superseded,Tune the multi-device allreduce algorithm (SPLIT_REDUCE),no
+HI58,docs/planning/completed/patching-hip-collectives/HI58.md,patching-hip-collectives,completed,Implement SPLIT_REDUCE telemetry and handoff observation,no
+HI84,docs/planning/completed/patching-hip-collectives/HI84.md,patching-hip-collectives,superseded,Validate META SPLIT_REDUCE correctness for D=3/D=4 heterogeneous topologies,no
+HI85,docs/planning/completed/patching-hip-collectives/HI85.md,patching-hip-collectives,completed,AUTO reduction plan crashes instead of falling back on RCCL hard failure,no
+HI88,docs/planning/completed/patching-hip-collectives/HI88.md,patching-hip-collectives,completed,RCCL same-architecture algorithm/protocol tuning (realistic scope only),no
+PHC02,docs/planning/completed/patching-hip-collectives/PHC02.md,patching-hip-collectives,superseded,Validate META SPLIT_REDUCE correctness for D=3/D=4 heterogeneous topologies,no
+PKC01,docs/planning/completed/patching-kernel-coverage/PKC01.md,patching-kernel-coverage,completed,Decide whether non-GEMM lifecycle representation has a gap,no
+PKC04,docs/planning/completed/patching-kernel-coverage/PKC04.md,patching-kernel-coverage,superseded,Vulkan attention/transport lifecycle: no separate control plane,no
+MET01,docs/planning/completed/patching-moe-expert-tiering/MET01.md,patching-moe-expert-tiering,completed,Per-layer routed-expert profile + canonical residency policy,no
+MET13,docs/planning/completed/patching-moe-expert-tiering/MET13.md,patching-moe-expert-tiering,superseded,MET13 — superseded duplicate of MET12 host-expert prefetch,no
+NRO01,docs/planning/completed/patching-nasone-rdna-optimizations/NRO01.md,patching-nasone-rdna-optimizations,superseded,Q8_0 wire format for the internal HIP AllReduce,no
+NRO02,docs/planning/completed/patching-nasone-rdna-optimizations/NRO02.md,patching-nasone-rdna-optimizations,superseded,Fuse residual ADD into internal AllReduce completion,no
+NRO03,docs/planning/completed/patching-nasone-rdna-optimizations/NRO03.md,patching-nasone-rdna-optimizations,superseded,Correctness-first HIP P2P transport provider for internal AllReduce,no
+NRO04,docs/planning/completed/patching-nasone-rdna-optimizations/NRO04.md,patching-nasone-rdna-optimizations,superseded,gfx1100 BF16/WMMA fused chunked GatedDeltaNet,no
+NRO05,docs/planning/completed/patching-nasone-rdna-optimizations/NRO05.md,patching-nasone-rdna-optimizations,superseded,Chunk GDN MTP prefill prefix while preserving snapshot tail,no
+NRO06,docs/planning/completed/patching-nasone-rdna-optimizations/NRO06.md,patching-nasone-rdna-optimizations,superseded,Adaptive MTP draft-depth controller,no
+NRO07,docs/planning/completed/patching-nasone-rdna-optimizations/NRO07.md,patching-nasone-rdna-optimizations,superseded,Hybrid ROCm TOP_K kernels,no
+NRO08,docs/planning/completed/patching-nasone-rdna-optimizations/NRO08.md,patching-nasone-rdna-optimizations,superseded,Wave32-native TOP_K reductions and item-per-thread tuning,no
+NRO09,docs/planning/completed/patching-nasone-rdna-optimizations/NRO09.md,patching-nasone-rdna-optimizations,superseded,GPU-resident LRU cache for host-offloaded MoE expert weights,no
+NRO10,docs/planning/completed/patching-nasone-rdna-optimizations/NRO10.md,patching-nasone-rdna-optimizations,superseded,Increase Meta compute-container view headroom for recurrent/MTP graphs,no
+NRO11,docs/planning/completed/patching-nasone-rdna-optimizations/NRO11.md,patching-nasone-rdna-optimizations,superseded,Add ctx_other model devices to speculative scheduler backends,no
+NRO12,docs/planning/completed/patching-nasone-rdna-optimizations/NRO12.md,patching-nasone-rdna-optimizations,superseded,Replicate lm_head for DFlash2/DSpark under tensor split,no
+NRO13,docs/planning/completed/patching-nasone-rdna-optimizations/NRO13.md,patching-nasone-rdna-optimizations,superseded,Qwen4exp gather-based sparse QSA decode,no
+NRO14,docs/planning/completed/patching-nasone-rdna-optimizations/NRO14.md,patching-nasone-rdna-optimizations,superseded,Direct pread-based lazy PLE table rows,no
+NRO15,docs/planning/completed/patching-nasone-rdna-optimizations/NRO15.md,patching-nasone-rdna-optimizations,superseded,RDNA3.5 D=256 tile FlashAttention occupancy configuration,no
+NRO16,docs/planning/completed/patching-nasone-rdna-optimizations/NRO16.md,patching-nasone-rdna-optimizations,superseded,Dequant-float MMVDQ for Q4_K/Q5_K/Q6_K decode,no
+PNRO01,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO01.md,patching-nasone-rdna-optimizations,superseded,Q8_0 wire format for the internal HIP AllReduce,no
+PNRO03,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO03.md,patching-nasone-rdna-optimizations,deprecated,HIP internal-AllReduce P2P provider — rejected on the build server,no
+PNRO06,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO06.md,patching-nasone-rdna-optimizations,completed,Hybrid ROCm TOP_K kernels,no
+PNRO07,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO07.md,patching-nasone-rdna-optimizations,completed,Wave32-native TOP_K reductions and item-per-thread tuning,no
+PNRO08,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO08.md,patching-nasone-rdna-optimizations,superseded,GPU-resident LRU cache for host-offloaded MoE expert weights,no
+PNRO09,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO09.md,patching-nasone-rdna-optimizations,deprecated,Increase Meta compute-container view headroom for recurrent/MTP graphs,no
+PNRO11,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO11.md,patching-nasone-rdna-optimizations,superseded,DFlash/DSpark tensor-split shared lm_head: retire target-wide replication,no
+PNRO12,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO12.md,patching-nasone-rdna-optimizations,superseded,Qwen4exp gather-based sparse QSA decode,no
+PNRO13,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO13.md,patching-nasone-rdna-optimizations,deprecated,Direct pread-based lazy PLE table rows,no
+PNRO14,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO14.md,patching-nasone-rdna-optimizations,deprecated,RDNA3.5 D=256 tile FlashAttention: route- and architecture-gated disposition,no
+PNRO15,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO15.md,patching-nasone-rdna-optimizations,deprecated,Dequant-float MMVDQ for Q4_K/Q5_K/Q6_K decode,no
+PNRO17,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO17.md,patching-nasone-rdna-optimizations,completed,Root-caused and fixed: HIP+ROCR_VISIBLE_DEVICES double-filter broke non-prefix device selection,no
+PNRO18,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO18.md,patching-nasone-rdna-optimizations,superseded,1252 P2P probe hardening — retired with rejected provider,no
+PNRO19,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO19.md,patching-nasone-rdna-optimizations,completed,1270 (PNRO14) patch mechanics test fails: anchor matched 3x / 0x against vendor source,no
+PNRO20,docs/planning/completed/patching-nasone-rdna-optimizations/PNRO20.md,patching-nasone-rdna-optimizations,completed,1253 test-backend-ops anchor fails when composed under 1205's evidence stack (blocks 1205 revalidation),no
+PA01,docs/planning/completed/patching-patch-system/PA01.md,patching-patch-system,completed,Freeze the packaged-patch + validation refactor spec,no
+PA02,docs/planning/completed/patching-patch-system/PA02.md,patching-patch-system,completed,Patch registry + source isolation cutover (RS00–RS06),no
+PA03,docs/planning/completed/patching-patch-system/PA03.md,patching-patch-system,completed,Validation framework + evidence schema v2 (RS07–RS11),no
+PA04,docs/planning/completed/patching-patch-system/PA04.md,patching-patch-system,superseded,Local CI + docs + pilot migrations + acceptance (RS12–RS18),no
+PA05,docs/planning/completed/patching-patch-system/PA05.md,patching-patch-system,completed,RD19 (1200_rd19) promoted to validated without HI83 evidence,no
+PA06,docs/planning/completed/patching-patch-system/PA06.md,patching-patch-system,completed,Source/patch identity hardening: patch+overlay filesystem containment (L0.1/L0.2),no
+PA07,docs/planning/completed/patching-patch-system/PA07.md,patching-patch-system,completed,Source/patch identity hardening: transactional apply_all + patch semantics epoch (L1.1/L1.2),no
+PA08,docs/planning/completed/patching-patch-system/PA08.md,patching-patch-system,completed,Source/patch identity hardening: canonical campaign cache-reuse live HEAD/object-format checks (L2.1/L2.2/L2.3),no
+PA09,docs/planning/completed/patching-patch-system/PA09.md,patching-patch-system,completed,Source/patch identity hardening: compile-time source re-attestation (L3.1),no
+PA10,docs/planning/completed/patching-patch-system/PA10.md,patching-patch-system,completed,Source/patch identity hardening: HI82 output-identity split + ignored-file/schema enforcement (L4.1/L4.2/L4.3),no
+PA11,docs/planning/completed/patching-patch-system/PA11.md,patching-patch-system,completed,Source/patch identity hardening: variant transform content-authority (L5.1),no
+PA12,docs/planning/completed/patching-patch-system/PA12.md,patching-patch-system,completed,Source/patch identity hardening: atomic metadata writes + cross-process plan locking (L6.1/L6.2),no
+PA13,docs/planning/completed/patching-patch-system/PA13.md,patching-patch-system,superseded,Source/patch identity hardening: unify canonical-campaign and HI82 source authority (Layer 7),no
+PA14,docs/planning/completed/patching-patch-system/PA14.md,patching-patch-system,completed,PA10 residual: independently authoritative source output binding (deferred from PA10),no
+PA15,docs/planning/completed/patching-patch-system/PA15.md,patching-patch-system,completed,Cross-process build-directory race in campaign/workers.py's build worker (no lock analogous to plan_lock),no
+PA16,docs/planning/completed/patching-patch-system/PA16.md,patching-patch-system,completed,Pin-bump rebase validation: patch-rebase-check + known-good quarantine + transaction parity,no
+PA17,docs/planning/completed/patching-patch-system/PA17.md,patching-patch-system,completed,Campaign source-cache hardening: read-only metadata + optional re-materialization proof,no
+PA18,docs/planning/completed/patching-patch-system/PA18.md,patching-patch-system,completed,Package-only patch layout and patch-owned record migration,no
+PA19,docs/planning/completed/patching-patch-system/PA19.md,patching-patch-system,superseded,Unified patch validation gate orchestration (gates.py + patch-gates CLI),no
+PA20,docs/planning/completed/patching-patch-system/PA20.md,patching-patch-system,completed,"Refactor framework composition into serving, campaign, and qualification patch surfaces",no
+PA21,docs/planning/completed/patching-patch-system/PA21.md,patching-patch-system,completed,gates.py: orchestration layer composing existing validation/evidence/admission checks,no
+PA22,docs/planning/completed/patching-patch-system/PA22.md,patching-patch-system,completed,"bigcherry patch-gates CLI (--intent validate/promote/build/rebase, --json)",no
+PA23,docs/planning/completed/patching-patch-system/PA23.md,patching-patch-system,completed,Wire patch-lint to consume the shared gate registry (retire parallel check list),no
+PA24,docs/planning/completed/patching-patch-system/PA24.md,patching-patch-system,completed,Reorganize PATCH_VALIDATION.md around the finalized G0-G7 gate sequence,no
+PA25,docs/planning/completed/patching-patch-system/PA25.md,patching-patch-system,completed,Audit focal evidence/G4 and exact-composition G7 for the seven promoted/touched patches,no
+PA26,docs/planning/completed/patching-patch-system/PA26.md,patching-patch-system,completed,PA26,no
+PA27,docs/planning/completed/patching-patch-system/PA27.md,patching-patch-system,completed,Mechanically split 0100 into serving dispatch/replay and campaign tune/record build plumbing,no
+PA28,docs/planning/completed/patching-patch-system/PA28.md,patching-patch-system,completed,Add semantic patch-sets and transitional sources without moving live consumers,no
+PA29,docs/planning/completed/patching-patch-system/PA29.md,patching-patch-system,completed,Atomically migrate live framework/native consumers to semantic sources,no
+PA30,docs/planning/completed/patching-patch-system/PA30.md,patching-patch-system,completed,Run final semantic-equivalence gates before deleting old framework/native names,no
+PA31,docs/planning/completed/patching-patch-system/PA31.md,patching-patch-system,completed,Delete patch-set.framework and source.bigcherry-native after PA30,no
+PA32,docs/planning/completed/patching-patch-system/PA32.md,patching-patch-system,completed,1005: physical-clear A/B diagnostic for hybrid/recurrent state reset on checkpoint invalidation,no
+PA33,docs/planning/completed/patching-patch-system/PA33.md,patching-patch-system,completed,Replace patch-validate evidence alias with the canonical validation execution facade,no
+PA34,docs/planning/completed/patching-patch-system/PA34.md,patching-patch-system,completed,Make exact selector identity authoritative for experiment/focal-overlay gates and rebase,no
+PA35,docs/planning/completed/patching-patch-system/PA35.md,patching-patch-system,completed,Close framework evidence-quality gaps without overstating lifecycle state,no
+PA36,docs/planning/completed/patching-patch-system/PA36.md,patching-patch-system,completed,Finish validation-producer architecture and migrate patch-specific code out of validation_campaign.py,no
+PA37,docs/planning/completed/patching-patch-system/PA37.md,patching-patch-system,completed,"Make atomic patch 1203 an executable, truthful multi-contract validation package",no
+PA38,docs/planning/completed/patching-patch-system/PA38.md,patching-patch-system,completed,RD12 package prerequisites: bind Experiment Contract and complete validation.toml,no
+PA39,docs/planning/completed/patching-patch-system/PA39.md,patching-patch-system,completed,Accept RD1203 generic multi-contract validation on real hardware,no
+PA40,docs/planning/completed/patching-patch-system/PA40.md,patching-patch-system,completed,"Close patch-system acceptance: local CI, overlay ownership, pilot evidence, staleness, and DoD",no
+PA41,docs/planning/completed/patching-patch-system/PA41.md,patching-patch-system,completed,Remediate RD06 quantitative performance failure before PA39 rerun,no
+PA42,docs/planning/completed/patching-patch-system/PA42.md,patching-patch-system,completed,Authorize and implement RD13 performance and controls producer lanes,no
+PA43,docs/planning/completed/patching-patch-system/PA43.md,patching-patch-system,completed,Split validation_campaign.py generic infrastructure into modules,no
+PA44,docs/planning/completed/patching-patch-system/PA44.md,patching-patch-system,completed,Make the production patches cheaper to carry across pin bumps,no
+PA45,docs/planning/completed/patching-patch-system/PA45.md,patching-patch-system,completed,Promote-and-release: one command from a validated patch to a versioned BigCherry release,no
+PA46,docs/planning/completed/patching-patch-system/PA46.md,patching-patch-system,completed,"Adopt the branching standard: slice branches, gated pull requests, automatic versions",no
+PA47,docs/planning/completed/patching-patch-system/PA47.md,patching-patch-system,completed,"One worktree per slice: slice start / lab / finish tooling, main as the only long-lived branch",no
+PA48,docs/planning/completed/patching-patch-system/PA48.md,patching-patch-system,deprecated,All-patches composition at b11474: three patches fail on order interference from legacy untested patches,no
+PPS02,docs/planning/completed/patching-patch-system/PPS02.md,patching-patch-system,completed,Semantic successor carry-forward audit and migration gate,no
+PPS03,docs/planning/completed/patching-patch-system/PPS03.md,patching-patch-system,completed,"Add an enumerated, sparse `tags` field; fix kind mislabels and framework/upstream-fix composition bug",no
+QFP06,docs/planning/completed/patching-qwen-flash-next/QFP06.md,patching-qwen-flash-next,superseded,Graph-instantiate OOM eviction + graph-cache-cap experiment (cap rejected; evidence retained),no
+QFP08,docs/planning/completed/patching-qwen-flash-next/QFP08.md,patching-qwen-flash-next,completed,Draft-prefill overlap — superseded by validated 1348 and 1359,no
+QFP11,docs/planning/completed/patching-qwen-flash-next/QFP11.md,patching-qwen-flash-next,superseded,Retire per-AllReduce graph-capture work; consolidate verify latency onto measured rank-skew owners,no
+QFP12,docs/planning/completed/patching-qwen-flash-next/QFP12.md,patching-qwen-flash-next,deprecated,1306 split the Qwen4Exp shared expert (mirrored upstream: full copy computed on every GPU),no
+QFP18,docs/planning/completed/patching-qwen-flash-next/QFP18.md,patching-qwen-flash-next,completed,Lightweight evidence-reuse promotion to validated for the Flash-Next stack,no
+QFP19,docs/planning/completed/patching-qwen-flash-next/QFP19.md,patching-qwen-flash-next,deprecated,"Reconcile patches broken by the 0504396 pin bump (1250, 1268, 1275, 1320)",no
+QFP20,docs/planning/completed/patching-qwen-flash-next/QFP20.md,patching-qwen-flash-next,superseded,"Triage sources-check findings from the 0504396 bump (63 findings: moved forks, drifted tracked commits, timed-out mainline checks)",no
+QFP24,docs/planning/completed/patching-qwen-flash-next/QFP24.md,patching-qwen-flash-next,superseded,Safe pinned scheduler input ring for asynchronous large prefill host->GPU copies,no
+QFP30,docs/planning/completed/patching-qwen-flash-next/QFP30.md,patching-qwen-flash-next,completed,Range-MMQ broadcast activation dedup for whole-expert MoE prefill,no
+QFP31,docs/planning/completed/patching-qwen-flash-next/QFP31.md,patching-qwen-flash-next,completed,MTP draft prompt window: draft head prefills only the last N prompt tokens,no
+QFP32,docs/planning/completed/patching-qwen-flash-next/QFP32.md,patching-qwen-flash-next,completed,MTP re-reserve: no full realloc + sync per prefill chunk when MTP outputs turn on,no
+QFP33,docs/planning/completed/patching-qwen-flash-next/QFP33.md,patching-qwen-flash-next,deprecated,Draft ubatch cap: smaller draft compute buffer,no
+QFP34,docs/planning/completed/patching-qwen-flash-next/QFP34.md,patching-qwen-flash-next,completed,Thin-F32 prefill kernel: <=16-row F32 matmuls off generic SGEMM,no
+QFP35,docs/planning/completed/patching-qwen-flash-next/QFP35.md,patching-qwen-flash-next,completed,"Hyper-connection kernels: no 64-bit div/mod, and audit our fused chains against the reported ones",no
+QFP36,docs/planning/completed/patching-qwen-flash-next/QFP36.md,patching-qwen-flash-next,completed,MoE router: split-K router GEMM and multi-warp routing helper,no
+QFP37,docs/planning/completed/patching-qwen-flash-next/QFP37.md,patching-qwen-flash-next,completed,MMQ work distribution: stream-k for few-tile matmuls and expert tile shape for our quant,no
+QFP38,docs/planning/completed/patching-qwen-flash-next/QFP38.md,patching-qwen-flash-next,deprecated,"Small-batch vector kernels for MTP verify: row packing, wide-K, MoE vector path to 8 tokens",no
+QFP39,docs/planning/completed/patching-qwen-flash-next/QFP39.md,patching-qwen-flash-next,deprecated,One-shot PCIe P2P AllReduce for small tensors: re-evaluate 1252 on the XTX pair,no
+QFP40,docs/planning/completed/patching-qwen-flash-next/QFP40.md,patching-qwen-flash-next,completed,"Audits from the external list: lazy-mode embedding table, MTP decode fused copies, gathered QSA decode",no
+QFP41,docs/planning/completed/patching-qwen-flash-next/QFP41.md,patching-qwen-flash-next,deprecated,"Per-device dispatch threads and other host-thread parallelism: design, then implement behind a flag",no
+QFP42,docs/planning/completed/patching-qwen-flash-next/QFP42.md,patching-qwen-flash-next,completed,MTP asynchronous NextN staging: remove the per-chunk target synchronization barrier,no
+QFP44,docs/planning/completed/patching-qwen-flash-next/QFP44.md,patching-qwen-flash-next,superseded,Follow-up MMQ tile geometry and compact MoE block-map qualification,no
+QFP49,docs/planning/completed/patching-qwen-flash-next/QFP49.md,patching-qwen-flash-next,deprecated,"Prefill cross-card sum: overlap the transfer with compute, narrower wire, rank balance",no
+QFP50,docs/planning/completed/patching-qwen-flash-next/QFP50.md,patching-qwen-flash-next,completed,"Prefill pipeline, two batches deep: submit batch k+1 before waiting for batch k",no
+QFP51,docs/planning/completed/patching-qwen-flash-next/QFP51.md,patching-qwen-flash-next,superseded,Scheduler split-template cache — closed: reused graphs already skip re-splitting,no
+QFP53,docs/planning/completed/patching-qwen-flash-next/QFP53.md,patching-qwen-flash-next,superseded,Prompt graph reuse via coarse KV/k-pool padding — rejected; residual batch gap owned by QFP48,no
+RNX07,docs/planning/completed/patching-r9700-cross-rdna/RNX07.md,patching-r9700-cross-rdna,superseded,R9X07 — WHT/compressed-wire extraction into the existing AllReduce provider stack,no
+RHP02,docs/planning/completed/patching-radiance-heat-placement/RHP02.md,patching-radiance-heat-placement,deprecated,Single Radiance heat observation feed to libr3moe; remove duplicate route collection,no
+RHP05,docs/planning/completed/patching-radiance-heat-placement/RHP05.md,patching-radiance-heat-placement,superseded,Request-count or timed heat reevaluation with restart-safe ownership activation,no
+RHP10,docs/planning/completed/patching-radiance-heat-placement/RHP10.md,patching-radiance-heat-placement,completed,Long-context thrash experiment,no
+RHP17,docs/planning/completed/patching-radiance-heat-placement/RHP17.md,patching-radiance-heat-placement,deprecated,Device-speed and phase-aware expert placement: minimise each layer's slowest-device finish time (offline simulation first),no
+RHP18,docs/planning/completed/patching-radiance-heat-placement/RHP18.md,patching-radiance-heat-placement,completed,"Live placement observability: the manifest, the launcher and the helper say whether the policy is on, why not, and what a calibration is waiting for",no
+RHP19,docs/planning/completed/patching-radiance-heat-placement/RHP19.md,patching-radiance-heat-placement,completed,"Calibration that always terminates with a usable record: bounded loop, periodic waiting report, and a deliberate tail-lane move to measure the tail-lane quantities",no
+PRQ06,docs/planning/completed/patching-radiance-qualification/PRQ06.md,patching-radiance-qualification,completed,Radiance patch set: qualify or retire the 7 untested patches and archive the 4 superseded ones,no
+RAD01,docs/planning/completed/patching-radiance-rdna3/RAD01.md,patching-radiance-rdna3,completed,"Bring Radiance engine patches and libr3 switches under the patch-set, profile and campaign system",no
+RAD02,docs/planning/completed/patching-radiance-rdna3/RAD02.md,patching-radiance-rdna3,superseded,"Inverted expert-parallel layout: trunk on the R9700, routed experts on the two XTX",no
+RAD03,docs/planning/completed/patching-radiance-rdna3/RAD03.md,patching-radiance-rdna3,superseded,"Redesign the R9700 expert helper as GPU lanes: direct-to-VRAM load, GPU-signalled mailbox exchange, one R9700 stream per XTX",no
+RAD04,docs/planning/completed/patching-radiance-rdna3/RAD04.md,patching-radiance-rdna3,superseded,"27B prefill: overlap the cross-card sum with the next GEMM (two half-steps, second queue)",no
+RAD05,docs/planning/completed/patching-radiance-rdna3/RAD05.md,patching-radiance-rdna3,superseded,gfx11 decode MoE GEMV for w4nl64a8h (helper and XTX engine expert GEMMs at decode size),no
+RAD06,docs/planning/completed/patching-radiance-rdna3/RAD06.md,patching-radiance-rdna3,superseded,Prefill: multi-buffered helper hand-off pipeline and gfx11-native grouped MoE GEMM,no
+RAD09,docs/planning/completed/patching-radiance-rdna3/RAD09.md,patching-radiance-rdna3,superseded,Reconcile feat/rad03-gpu-lanes with main: one rad0002 and one hook,no
+RAD12,docs/planning/completed/patching-radiance-rdna3/RAD12.md,patching-radiance-rdna3,superseded,"Helper small lane that follows the rows: several pre-queued sizes, the smallest that fits",no
+RAD14,docs/planning/completed/patching-radiance-rdna3/RAD14.md,patching-radiance-rdna3,superseded,"Shape-aware MoE execution geometry for the worker (FP8 GEMV, per-projection tiles, per-expert row density)",no
+RAD15,docs/planning/completed/patching-radiance-rdna3/RAD15.md,patching-radiance-rdna3,deprecated,Engine-side MoE decode rows: the worker GEMVs as kernel-plugin rows for gfx1100 (libr3) and gfx1201 (bc-moe-gfx12),no
+RAD16,docs/planning/completed/patching-radiance-rdna3/RAD16.md,patching-radiance-rdna3,superseded,The RX 6900 XT (gfx1030) on dev: what it can usefully do,no
+RAD17,docs/planning/completed/patching-radiance-rdna3/RAD17.md,patching-radiance-rdna3,superseded,hc_read prefill FP8 WMMA down-product: production port into r4d_hc_bf16.hip,no
+RAD18,docs/planning/completed/patching-radiance-rdna3/RAD18.md,patching-radiance-rdna3,completed,hc_up_mix_wide_kernel PF2 RT sweep (occupancy/register pressure),no
+RAD20,docs/planning/completed/patching-radiance-rdna3/RAD20.md,patching-radiance-rdna3,completed,moe-remote helper: replace the lane threads' yield-polling with GPU-side waits and blocking syncs,no
+RAD24,docs/planning/completed/patching-radiance-rdna3/RAD24.md,patching-radiance-rdna3,completed,"moe-remote: engine fails fast when a helper process dies (pidfd watcher, notify generation)",no
+RAD31,docs/planning/completed/patching-radiance-rdna3/RAD31.md,patching-radiance-rdna3,superseded,Compressed (FP8) helper result plane: offline quality and transfer study,no
+RAD37,docs/planning/completed/patching-radiance-rdna3/RAD37.md,patching-radiance-rdna3,completed,"radiance v1.13.0 -> v1.14.0 bump: re-port libr3 and rad0002, find and fix regressions",no
+RAD40,docs/planning/completed/patching-radiance-rdna3/RAD40.md,patching-radiance-rdna3,superseded,Host-link transfer harness and historical measurements (remaining tests superseded by HL02),no
+RAD42,docs/planning/completed/patching-radiance-rdna3/RAD42.md,patching-radiance-rdna3,superseded,Delivered chunked MoE result combine; BAR-push transferred to RAD51,no
+RAD48,docs/planning/completed/patching-radiance-rdna3/RAD48.md,patching-radiance-rdna3,superseded,Native gfx11 int8 prefill tile (27B INT8 on 7900 XTX),no
+RAD52,docs/planning/completed/patching-radiance-rdna3/RAD52.md,patching-radiance-rdna3,completed,"Prefill attention fills the card at every piece size (one-KV-head ranks, gfx1100 native split form)",no
+RAD53,docs/planning/completed/patching-radiance-rdna3/RAD53.md,patching-radiance-rdna3,completed,gfx1100 fp8 KV read: direct E4M3 to f16 conversion,no
+RUM01,docs/planning/completed/patching-radiance-upstream/RUM01.md,patching-radiance-upstream,completed,Approve an upstream-native migration with explicit deletion boundaries,no
+RUM02,docs/planning/completed/patching-radiance-upstream/RUM02.md,patching-radiance-upstream,completed,Extract injected BigCherry implementations into owned components and narrow hooks,no
+RUM03,docs/planning/completed/patching-radiance-upstream/RUM03.md,patching-radiance-upstream,completed,Port build dependencies and compose local ABI44 from upstream ABI43,no
+RUM04,docs/planning/completed/patching-radiance-upstream/RUM04.md,patching-radiance-upstream,completed,Use original native YAML and remove duplicated engine configuration contracts,no
+RUM05,docs/planning/completed/patching-radiance-upstream/RUM05.md,patching-radiance-upstream,completed,Preserve one ownership plan and disjoint-card admission without a new fleet broker,no
+RUM07,docs/planning/completed/patching-radiance-upstream/RUM07.md,patching-radiance-upstream,completed,Consolidate KV layouts on upstream dtype row sizing and retain only supported local formats,no
+RUM08,docs/planning/completed/patching-radiance-upstream/RUM08.md,patching-radiance-upstream,completed,Reuse upstream MTP replay and reconcile scheduling policy,no
+RUM09,docs/planning/completed/patching-radiance-upstream/RUM09.md,patching-radiance-upstream,completed,Prove the minimum working transition and publish the migrated runtime,no
+RUM10,docs/planning/completed/patching-radiance-upstream/RUM10.md,patching-radiance-upstream,deprecated,Add multi-model fleet helper support only after the single-model migration,no
+RUM11,docs/planning/completed/patching-radiance-upstream/RUM11.md,patching-radiance-upstream,completed,"Restore the plain E4M3 fused KV store for Qwen 27B (H256, page16) on Radiance 2.2",no
+RUM12,docs/planning/completed/patching-radiance-upstream/RUM12.md,patching-radiance-upstream,completed,Named start reuses the last measured plan; stat-based model identity,no
+RWQ04,docs/planning/completed/patching-radiance-wire-quality/RWQ04.md,patching-radiance-wire-quality,deprecated,"Test WHT6 residual outliers, improved scales and controlled clipping",no
+PRBE03,docs/planning/completed/patching-rdna-boost-experiments/PRBE03.md,patching-rdna-boost-experiments,deprecated,Evaluate RDNA4 expanded WMMA flash-attention configurations,no
+PRBE05,docs/planning/completed/patching-rdna-boost-experiments/PRBE05.md,patching-rdna-boost-experiments,completed,Implement per-graph Q8_1 activation cache foundation,no
+PRBE06,docs/planning/completed/patching-rdna-boost-experiments/PRBE06.md,patching-rdna-boost-experiments,completed,Eliminate RMSNorm -> Q8_1 quantize launches for MMVQ consumers,no
+PRBE07,docs/planning/completed/patching-rdna-boost-experiments/PRBE07.md,patching-rdna-boost-experiments,completed,BridgeSpec evaluation — inspiration-only; no sidecar adoption,no
+PRBE08,docs/planning/completed/patching-rdna-boost-experiments/PRBE08.md,patching-rdna-boost-experiments,deprecated,RD08-VDR2-NUMERIC: new contract testing RD08's VDR2 kernel under numerical-equivalence (not bit-identical) acceptance,no
+PRBE09,docs/planning/completed/patching-rdna-boost-experiments/PRBE09.md,patching-rdna-boost-experiments,completed,UP-VK-005: Vulkan tensor-parallel AllReduce tracking — absorbed by PRVP03,no
+PRBE10,docs/planning/completed/patching-rdna-boost-experiments/PRBE10.md,patching-rdna-boost-experiments,completed,Evaluate gating MUL direct Q8_1 production,no
+PRBE100,docs/planning/completed/patching-rdna-boost-experiments/PRBE100.md,patching-rdna-boost-experiments,completed,"Block 08 SSM fused-kernel audit, decomposition, and target-state design",no
+PRBE101,docs/planning/completed/patching-rdna-boost-experiments/PRBE101.md,patching-rdna-boost-experiments,deprecated,Topology-gate RD42 shared-expert overlap: auto-disable under multi-GPU layer-split,no
+PRBE102,docs/planning/completed/patching-rdna-boost-experiments/PRBE102.md,patching-rdna-boost-experiments,completed,Register an SSM/Mamba/GDN-family model fixture (blocks RD13/RD50 activation checks),no
+PRBE103,docs/planning/completed/patching-rdna-boost-experiments/PRBE103.md,patching-rdna-boost-experiments,completed,Confirm root cause of RD08's uniform sub-threshold bit_identical digest failures,no
+PRBE104,docs/planning/completed/patching-rdna-boost-experiments/PRBE104.md,patching-rdna-boost-experiments,completed,RD08 contract-design review: is bit_identical the right correctness bar for VDR=2's reduction-order change,no
+PRBE105,docs/planning/completed/patching-rdna-boost-experiments/PRBE105.md,patching-rdna-boost-experiments,completed,run_rd13_ppl_check() build directories collide across architectures,no
+PRBE106,docs/planning/completed/patching-rdna-boost-experiments/PRBE106.md,patching-rdna-boost-experiments,completed,"RD12's activation marker uses GGML_LOG_INFO, should be GGML_LOG_WARN (RD08 precedent)",no
+PRBE107,docs/planning/completed/patching-rdna-boost-experiments/PRBE107.md,patching-rdna-boost-experiments,completed,Investigate real ~18% prefill throughput gap: stock upstream vs BigCherry baseline composition,no
+PRBE108,docs/planning/completed/patching-rdna-boost-experiments/PRBE108.md,patching-rdna-boost-experiments,completed,Reconcile RD39-42's formal +2.38% gain vs a quick non-interleaved -5% check,no
+PRBE109,docs/planning/completed/patching-rdna-boost-experiments/PRBE109.md,patching-rdna-boost-experiments,completed,Wire RD58's real contract_promotions into validation_campaign.py's run() -- exact gap identified,no
+PRBE11,docs/planning/completed/patching-rdna-boost-experiments/PRBE11.md,patching-rdna-boost-experiments,completed,Evaluate paired MMVQ matmuls over shared activation,no
+PRBE114,docs/planning/completed/patching-rdna-boost-experiments/PRBE114.md,patching-rdna-boost-experiments,deprecated,Tensor-split channels-major SSM_CONV: decline speculative Meta rewrite,no
+PRBE13,docs/planning/completed/patching-rdna-boost-experiments/PRBE13.md,patching-rdna-boost-experiments,superseded,Evaluate shared-expert output-chain fusion,no
+PRBE14,docs/planning/completed/patching-rdna-boost-experiments/PRBE14.md,patching-rdna-boost-experiments,deprecated,Evaluate MoE top-k weights folded into down projection,no
+PRBE16,docs/planning/completed/patching-rdna-boost-experiments/PRBE16.md,patching-rdna-boost-experiments,deprecated,Defer gfx1151 MMVQ nwarps=2 Q8_0 decode,no
+PRBE17,docs/planning/completed/patching-rdna-boost-experiments/PRBE17.md,patching-rdna-boost-experiments,superseded,Defer HIP integrated-GPU host-buffer backout,no
+PRBE19,docs/planning/completed/patching-rdna-boost-experiments/PRBE19.md,patching-rdna-boost-experiments,completed,Apply post-fix source-state bake-in across affected PRBE ports,no
+PRBE22,docs/planning/completed/patching-rdna-boost-experiments/PRBE22.md,patching-rdna-boost-experiments,completed,AMD-MMQ-001: RDNA MMQ tile-width reduction for LDS occupancy,no
+PRBE23,docs/planning/completed/patching-rdna-boost-experiments/PRBE23.md,patching-rdna-boost-experiments,completed,AMD-MOE-001: MoE-aware MMQ tile sizing from average expert occupancy,no
+PRBE24,docs/planning/completed/patching-rdna-boost-experiments/PRBE24.md,patching-rdna-boost-experiments,completed,AMD-MOE-002: GPU compact MoE MMQ block-map construction,no
+PRBE25,docs/planning/completed/patching-rdna-boost-experiments/PRBE25.md,patching-rdna-boost-experiments,completed,AMD-MOE-003: Compact per-expert MMQ launch grid,no
+PRBE26,docs/planning/completed/patching-rdna-boost-experiments/PRBE26.md,patching-rdna-boost-experiments,completed,AMD-MMV-001: Decode matvec without Q8_1 activation quantization,no
+PRBE27,docs/planning/completed/patching-rdna-boost-experiments/PRBE27.md,patching-rdna-boost-experiments,deprecated,AMD-MMQ-002: Dedicated RDNA3.5 MMQ device table,no
+PRBE32,docs/planning/completed/patching-rdna-boost-experiments/PRBE32.md,patching-rdna-boost-experiments,superseded,"AMD-STREAM-002: Per-(device,stream) BLAS handles",no
+PRBE33,docs/planning/completed/patching-rdna-boost-experiments/PRBE33.md,patching-rdna-boost-experiments,deprecated,AMD-STREAM-003: Dedicated scratch for concurrent branches,no
+PRBE34,docs/planning/completed/patching-rdna-boost-experiments/PRBE34.md,patching-rdna-boost-experiments,deprecated,AMD-STREAM-004: Overlap MoE shared expert on auxiliary stream,no
+PRBE36,docs/planning/completed/patching-rdna-boost-experiments/PRBE36.md,patching-rdna-boost-experiments,deprecated,AMD-STREAM-006: Enable graph-opt by default on RDNA3.5,no
+PRBE37,docs/planning/completed/patching-rdna-boost-experiments/PRBE37.md,patching-rdna-boost-experiments,completed,AMD-FUS-001: Canonical GLU GEMV epilogue coverage gaps,no
+PRBE38,docs/planning/completed/patching-rdna-boost-experiments/PRBE38.md,patching-rdna-boost-experiments,completed,AMD-FUS-002: Fuse literal GEMV -> UNARY -> MUL into the vector epilogue,no
+PRBE39,docs/planning/completed/patching-rdna-boost-experiments/PRBE39.md,patching-rdna-boost-experiments,completed,AMD-FUS-003: Fuse GEMV -> view -> residual ADD,no
+PRBE40,docs/planning/completed/patching-rdna-boost-experiments/PRBE40.md,patching-rdna-boost-experiments,completed,AMD-KVPROJ-001: Fuse attention K and V projection into one MMVQ dispatch,no
+PRBE42,docs/planning/completed/patching-rdna-boost-experiments/PRBE42.md,patching-rdna-boost-experiments,deprecated,AMD-GDN-001: Chunked fused GatedDeltaNet recurrence,no
+PRBE43,docs/planning/completed/patching-rdna-boost-experiments/PRBE43.md,patching-rdna-boost-experiments,superseded,AMD-GDN-002: DPP row-shift reduction inside chunked GDN,no
+PRBE44,docs/planning/completed/patching-rdna-boost-experiments/PRBE44.md,patching-rdna-boost-experiments,superseded,AMD-GDN-003: Native exp2 decay in chunked GDN,no
+PRBE45,docs/planning/completed/patching-rdna-boost-experiments/PRBE45.md,patching-rdna-boost-experiments,superseded,AMD-GDN-004: Launch-bounds/VGPR occupancy tuning for chunked GDN,no
+PRBE46,docs/planning/completed/patching-rdna-boost-experiments/PRBE46.md,patching-rdna-boost-experiments,deprecated,UP-VK-001: MoE density-aware Vulkan MMV routing,no
+PRBE48,docs/planning/completed/patching-rdna-boost-experiments/PRBE48.md,patching-rdna-boost-experiments,deprecated,UP-HRX-001: AMD-native HRX backend comparative lane,no
+PRBE49,docs/planning/completed/patching-rdna-boost-experiments/PRBE49.md,patching-rdna-boost-experiments,superseded,UP-VK-002: Vulkan FA MMQ FP32 quant-scale calculation,no
+PRBE50,docs/planning/completed/patching-rdna-boost-experiments/PRBE50.md,patching-rdna-boost-experiments,deprecated,UP-VK-003: Quantized GET_ROWS view-offset correctness,no
+PRBE51,docs/planning/completed/patching-rdna-boost-experiments/PRBE51.md,patching-rdna-boost-experiments,deprecated,UP-HIP-004: Full GPU input-layer offload on AMD UMA,no
+PRBE52,docs/planning/completed/patching-rdna-boost-experiments/PRBE52.md,patching-rdna-boost-experiments,deprecated,PRBE52: adaptive MTP depth — terminal b11474 disposition,no
+PRBE53,docs/planning/completed/patching-rdna-boost-experiments/PRBE53.md,patching-rdna-boost-experiments,superseded,UP-FA-001: Mixed K/V FlashAttention dispatch for asymmetric KV types,no
+PRBE55,docs/planning/completed/patching-rdna-boost-experiments/PRBE55.md,patching-rdna-boost-experiments,deprecated,UP-VK-004: Small-N speculative execution avoids inappropriate MMVQ route,no
+PRBE56,docs/planning/completed/patching-rdna-boost-experiments/PRBE56.md,patching-rdna-boost-experiments,completed,UP-MGPU-001: Speculative scheduler caching/reduced cross-GPU synchronization,no
+PRBE57,docs/planning/completed/patching-rdna-boost-experiments/PRBE57.md,patching-rdna-boost-experiments,completed,FORK-MTP-001: Independent NextN/MTP tensor placement,no
+PRBE58,docs/planning/completed/patching-rdna-boost-experiments/PRBE58.md,patching-rdna-boost-experiments,deprecated,FORK-MTP-002: Remove four-copy Vulkan MTP handoff,no
+PRBE59,docs/planning/completed/patching-rdna-boost-experiments/PRBE59.md,patching-rdna-boost-experiments,superseded,RD76 / FORK-HIP-001: retire obsolete rocWMMA FlashAttention restoration,no
+PRBE60,docs/planning/completed/patching-rdna-boost-experiments/PRBE60.md,patching-rdna-boost-experiments,deprecated,SYS-PCIE-001: PCIe ASPM performance policy,no
+PRBE61,docs/planning/completed/patching-rdna-boost-experiments/PRBE61.md,patching-rdna-boost-experiments,deprecated,VK-TUNE-001: Vulkan rm_kq specialization sweep,no
+PRBE63,docs/planning/completed/patching-rdna-boost-experiments/PRBE63.md,patching-rdna-boost-experiments,superseded,VK-DRV-003: Cooperative-matrix bypass on AMD proprietary Vulkan,no
+PRBE64,docs/planning/completed/patching-rdna-boost-experiments/PRBE64.md,patching-rdna-boost-experiments,deprecated,VK-ACO-001: Audit redundant RADV/ACO scalar waits,no
+PRBE65,docs/planning/completed/patching-rdna-boost-experiments/PRBE65.md,patching-rdna-boost-experiments,completed,VK-FA-001: 32 KiB Vulkan scalar-FA occupancy heuristic — no generic scale patch,no
+PRBE66,docs/planning/completed/patching-rdna-boost-experiments/PRBE66.md,patching-rdna-boost-experiments,completed,HIP-GRAPH-001: Selective HIP graph bypass for unstable FA shapes,no
+PRBE68,docs/planning/completed/patching-rdna-boost-experiments/PRBE68.md,patching-rdna-boost-experiments,deprecated,VK-SUB-001: Architecture-aware Vulkan submission cap,no
+PRBE69,docs/planning/completed/patching-rdna-boost-experiments/PRBE69.md,patching-rdna-boost-experiments,deprecated,VK-SUB-002: Bound startup submission-ramp growth by learned safe ceiling,no
+PRBE71,docs/planning/completed/patching-rdna-boost-experiments/PRBE71.md,patching-rdna-boost-experiments,completed,Qualification-only ablation knobs for RD39-44 (stream/concurrency) and RD50-53 (GDN),no
+PRBE72,docs/planning/completed/patching-rdna-boost-experiments/PRBE72.md,patching-rdna-boost-experiments,completed,Hardware-eligibility needs device traits beyond architecture (integrated/UMA/P2P/driver/GPU-count),no
+PRBE73,docs/planning/completed/patching-rdna-boost-experiments/PRBE73.md,patching-rdna-boost-experiments,completed,Hardware-blocked patch retirement policy (RD21/RD22-class items),no
+PRBE74,docs/planning/completed/patching-rdna-boost-experiments/PRBE74.md,patching-rdna-boost-experiments,deprecated,Q4_K MMVQ wide-load / x4 activation / VDR candidate family (AMD #84 + #88 as one experiment),no
+PRBE99,docs/planning/completed/patching-rdna-boost-experiments/PRBE99.md,patching-rdna-boost-experiments,completed,Resnapshot audit: stew675-rdna-boosts block-01..13 series vs tracked commits,no
+RD01,docs/planning/completed/patching-rdna-boost-experiments/RD01.md,patching-rdna-boost-experiments,completed,Freeze external rdna-boosts provenance and 23-commit disposition,no
+RD02,docs/planning/completed/patching-rdna-boost-experiments/RD02.md,patching-rdna-boost-experiments,completed,Run semantic portability audit against BigCherry pinned llama.cpp,no
+RD03,docs/planning/completed/patching-rdna-boost-experiments/RD03.md,patching-rdna-boost-experiments,completed,"Build BigCherry overlap, dependency, conflict, and safety matrix",no
+RD04,docs/planning/completed/patching-rdna-boost-experiments/RD04.md,patching-rdna-boost-experiments,superseded,Implement final native-BF16 flash-attention logical experiment,no
+RD05,docs/planning/completed/patching-rdna-boost-experiments/RD05.md,patching-rdna-boost-experiments,superseded,Establish flash-attention WMMA correctness barriers,no
+RD06,docs/planning/completed/patching-rdna-boost-experiments/RD06.md,patching-rdna-boost-experiments,superseded,Evaluate RDNA4 expanded WMMA flash-attention configurations,no
+RD07,docs/planning/completed/patching-rdna-boost-experiments/RD07.md,patching-rdna-boost-experiments,superseded,Evaluate Q6_K MMQ sub-scale fold/hoist,no
+RD08,docs/planning/completed/patching-rdna-boost-experiments/RD08.md,patching-rdna-boost-experiments,completed,Evaluate Q6_K MMVQ VDR=2 decode kernel,no
+RD09,docs/planning/completed/patching-rdna-boost-experiments/RD09.md,patching-rdna-boost-experiments,superseded,Implement per-graph Q8_1 activation cache foundation,no
+RD10,docs/planning/completed/patching-rdna-boost-experiments/RD10.md,patching-rdna-boost-experiments,superseded,Evaluate RMS norm direct Q8_1 production,no
+RD100,docs/planning/completed/patching-rdna-boost-experiments/RD100.md,patching-rdna-boost-experiments,superseded,RESOLVED: run_id path leak + lock ownership bug (both fixed); original instant-fake-ok symptom unexplained (low priority),no
+RD101,docs/planning/completed/patching-rdna-boost-experiments/RD101.md,patching-rdna-boost-experiments,superseded,Evaluate BridgeSpec (kdheeraj-p/bridgespec) -- HIP MTP/DFlash speculative decoding sidecars + gfx1100 MMVQ tuning,no
+RD102,docs/planning/completed/patching-rdna-boost-experiments/RD102.md,patching-rdna-boost-experiments,superseded,RD08-VDR2-NUMERIC: new contract testing RD08's VDR2 kernel under numerical-equivalence (not bit-identical) acceptance,no
+RD103,docs/planning/completed/patching-rdna-boost-experiments/RD103.md,patching-rdna-boost-experiments,completed,RD08 correctness harness: fix tensor-name bug (dst -> out),no
+RD104,docs/planning/completed/patching-rdna-boost-experiments/RD104.md,patching-rdna-boost-experiments,superseded,UP-VK-005: Vulkan tensor-parallel AllReduce -- upstream PR/issue tracking and BigCherry adoption path,no
+RD11,docs/planning/completed/patching-rdna-boost-experiments/RD11.md,patching-rdna-boost-experiments,superseded,Evaluate gating MUL direct Q8_1 production,no
+RD12,docs/planning/completed/patching-rdna-boost-experiments/RD12.md,patching-rdna-boost-experiments,superseded,Evaluate paired MMVQ matmuls over shared activation,no
+RD13,docs/planning/completed/patching-rdna-boost-experiments/RD13.md,patching-rdna-boost-experiments,superseded,Evaluate MUL_MAT plus RESHAPE plus ADD fusion,no
+RD14,docs/planning/completed/patching-rdna-boost-experiments/RD14.md,patching-rdna-boost-experiments,superseded,Evaluate SSM gate/beta projection fusion,no
+RD15,docs/planning/completed/patching-rdna-boost-experiments/RD15.md,patching-rdna-boost-experiments,superseded,Evaluate shared-expert output-chain fusion,no
+RD16,docs/planning/completed/patching-rdna-boost-experiments/RD16.md,patching-rdna-boost-experiments,superseded,Evaluate SSM conv-output L2 norm pair fusion,no
+RD17,docs/planning/completed/patching-rdna-boost-experiments/RD17.md,patching-rdna-boost-experiments,superseded,Evaluate MoE top-k weights folded into down projection,no
+RD18,docs/planning/completed/patching-rdna-boost-experiments/RD18.md,patching-rdna-boost-experiments,superseded,Evaluate IMRoPE plus BF16 SET_ROWS fusion extension,no
+RD19,docs/planning/completed/patching-rdna-boost-experiments/RD19.md,patching-rdna-boost-experiments,completed,Evaluate single-GPU Meta wrapper bypass,no
+RD20,docs/planning/completed/patching-rdna-boost-experiments/RD20.md,patching-rdna-boost-experiments,superseded,Correct attn_gate tensor-parallel split granularity,no
+RD21,docs/planning/completed/patching-rdna-boost-experiments/RD21.md,patching-rdna-boost-experiments,superseded,Defer gfx1151 MMVQ nwarps=2 Q8_0 decode,no
+RD22,docs/planning/completed/patching-rdna-boost-experiments/RD22.md,patching-rdna-boost-experiments,superseded,Defer HIP integrated-GPU host-buffer backout,no
+RD23,docs/planning/completed/patching-rdna-boost-experiments/RD23.md,patching-rdna-boost-experiments,completed,Separate RDNA diagnostic and performance-test support,no
+RD24,docs/planning/completed/patching-rdna-boost-experiments/RD24.md,patching-rdna-boost-experiments,superseded,Evaluate SSM pre-scan chain fusion (conv + l2_norm pair + gate/beta),no
+RD25,docs/planning/completed/patching-rdna-boost-experiments/RD25.md,patching-rdna-boost-experiments,superseded,Bake-in rule: port PRBE16/RD24/RD15 kernel regions from branch-tip (post-fix) state,no
+RD26,docs/planning/completed/patching-rdna-boost-experiments/RD26.md,patching-rdna-boost-experiments,superseded,Make decode and speculative-verify batches bit-identical (attention + mmvq + CPU cluster),no
+RD27,docs/planning/completed/patching-rdna-boost-experiments/RD27.md,patching-rdna-boost-experiments,superseded,Fold SSM conv_input concat into qkv mmvq; rpb=2 for small-K MoE,no
+RD28,docs/planning/completed/patching-rdna-boost-experiments/RD28.md,patching-rdna-boost-experiments,superseded,AMD-MMQ-001: RDNA MMQ tile-width reduction for LDS occupancy,no
+RD29,docs/planning/completed/patching-rdna-boost-experiments/RD29.md,patching-rdna-boost-experiments,superseded,AMD-Q8-001: Tiny-M Q8_0 MMQ specialization,no
+RD30,docs/planning/completed/patching-rdna-boost-experiments/RD30.md,patching-rdna-boost-experiments,superseded,AMD-MOE-001: MoE-aware MMQ tile sizing from average expert occupancy,no
+RD31,docs/planning/completed/patching-rdna-boost-experiments/RD31.md,patching-rdna-boost-experiments,superseded,AMD-MOE-002: GPU compact MoE MMQ block-map construction,no
+RD32,docs/planning/completed/patching-rdna-boost-experiments/RD32.md,patching-rdna-boost-experiments,superseded,AMD-MOE-003: Compact per-expert MMQ launch grid,no
+RD33,docs/planning/completed/patching-rdna-boost-experiments/RD33.md,patching-rdna-boost-experiments,superseded,AMD-MMV-001: Decode matvec without Q8_1 activation quantization,no
+RD34,docs/planning/completed/patching-rdna-boost-experiments/RD34.md,patching-rdna-boost-experiments,superseded,AMD-MMQ-002: Dedicated RDNA3.5 MMQ device table,no
+RD35,docs/planning/completed/patching-rdna-boost-experiments/RD35.md,patching-rdna-boost-experiments,superseded,AMD-GEMM-001: 128-byte row padding for cache-set aliasing,no
+RD36,docs/planning/completed/patching-rdna-boost-experiments/RD36.md,patching-rdna-boost-experiments,superseded,AMD-GEMM-002: Persistent F16 shadow of quantized dense weights,no
+RD37,docs/planning/completed/patching-rdna-boost-experiments/RD37.md,patching-rdna-boost-experiments,superseded,AMD-GEMM-003: K-pad F16 shadow to avoid aliasing,no
+RD38,docs/planning/completed/patching-rdna-boost-experiments/RD38.md,patching-rdna-boost-experiments,superseded,AMD-GEMM-004: Large-M F16 shadow to tuned hipBLASLt crossover,no
+RD39,docs/planning/completed/patching-rdna-boost-experiments/RD39.md,patching-rdna-boost-experiments,deprecated,AMD-STREAM-001: Honor active HIP stream in non-split matmul,no
+RD40,docs/planning/completed/patching-rdna-boost-experiments/RD40.md,patching-rdna-boost-experiments,superseded,"AMD-STREAM-002: Per-(device,stream) BLAS handles",no
+RD41,docs/planning/completed/patching-rdna-boost-experiments/RD41.md,patching-rdna-boost-experiments,superseded,AMD-STREAM-003: Dedicated scratch for concurrent branches,no
+RD42,docs/planning/completed/patching-rdna-boost-experiments/RD42.md,patching-rdna-boost-experiments,superseded,AMD-STREAM-004: Overlap MoE shared expert on auxiliary stream,no
+RD43,docs/planning/completed/patching-rdna-boost-experiments/RD43.md,patching-rdna-boost-experiments,superseded,AMD-STREAM-005: Protect concurrent-region join node from fusion,no
+RD44,docs/planning/completed/patching-rdna-boost-experiments/RD44.md,patching-rdna-boost-experiments,superseded,AMD-STREAM-006: Enable graph-opt by default on RDNA3.5,no
+RD45,docs/planning/completed/patching-rdna-boost-experiments/RD45.md,patching-rdna-boost-experiments,superseded,AMD-FUS-001: Fuse GEMV epilogue activation,no
+RD46,docs/planning/completed/patching-rdna-boost-experiments/RD46.md,patching-rdna-boost-experiments,superseded,AMD-FUS-002: Fuse GEMV activation + elementwise MUL,no
+RD47,docs/planning/completed/patching-rdna-boost-experiments/RD47.md,patching-rdna-boost-experiments,superseded,AMD-FUS-003: Fuse GEMV -> view -> residual ADD,no
+RD48,docs/planning/completed/patching-rdna-boost-experiments/RD48.md,patching-rdna-boost-experiments,superseded,AMD-KVPROJ-001: Fuse attention K and V projection into one MMVQ dispatch,no
+RD49,docs/planning/completed/patching-rdna-boost-experiments/RD49.md,patching-rdna-boost-experiments,superseded,AMD-SSM-001: Channels-major SSM_CONV input mode,no
+RD50,docs/planning/completed/patching-rdna-boost-experiments/RD50.md,patching-rdna-boost-experiments,superseded,AMD-GDN-001: Chunked fused GatedDeltaNet recurrence,no
+RD51,docs/planning/completed/patching-rdna-boost-experiments/RD51.md,patching-rdna-boost-experiments,superseded,AMD-GDN-002: DPP row-shift reduction inside chunked GDN,no
+RD52,docs/planning/completed/patching-rdna-boost-experiments/RD52.md,patching-rdna-boost-experiments,superseded,AMD-GDN-003: Native exp2 decay in chunked GDN,no
+RD53,docs/planning/completed/patching-rdna-boost-experiments/RD53.md,patching-rdna-boost-experiments,superseded,AMD-GDN-004: Launch-bounds/VGPR occupancy tuning for chunked GDN,no
+RD54,docs/planning/completed/patching-rdna-boost-experiments/RD54.md,patching-rdna-boost-experiments,completed,UP-HIP-001: Dynamic MMVQ warp count for narrow MoE matrices,no
+RD55,docs/planning/completed/patching-rdna-boost-experiments/RD55.md,patching-rdna-boost-experiments,superseded,UP-VK-001: MoE density-aware Vulkan MMV routing,no
+RD56,docs/planning/completed/patching-rdna-boost-experiments/RD56.md,patching-rdna-boost-experiments,superseded,UP-HIP-002: AMD DPP/native shuffle path,no
+RD57,docs/planning/completed/patching-rdna-boost-experiments/RD57.md,patching-rdna-boost-experiments,superseded,UP-HRX-001: AMD-native HRX backend comparative lane,no
+RD58,docs/planning/completed/patching-rdna-boost-experiments/RD58.md,patching-rdna-boost-experiments,completed,UP-HIP-003: Pinned host buffer for multi-GPU prompt-cache/state restore,no
+RD59,docs/planning/completed/patching-rdna-boost-experiments/RD59.md,patching-rdna-boost-experiments,superseded,UP-VK-002: Vulkan FA MMQ FP32 quant-scale calculation,no
+RD60,docs/planning/completed/patching-rdna-boost-experiments/RD60.md,patching-rdna-boost-experiments,superseded,UP-VK-003: Quantized GET_ROWS view-offset correctness,no
+RD61,docs/planning/completed/patching-rdna-boost-experiments/RD61.md,patching-rdna-boost-experiments,superseded,UP-HIP-004: Full GPU input-layer offload on AMD UMA,no
+RD62,docs/planning/completed/patching-rdna-boost-experiments/RD62.md,patching-rdna-boost-experiments,superseded,UP-MTP-001: Adaptive MTP draft depth,no
+RD63,docs/planning/completed/patching-rdna-boost-experiments/RD63.md,patching-rdna-boost-experiments,superseded,UP-FA-001: Mixed K/V FlashAttention dispatch for asymmetric KV types,no
+RD64,docs/planning/completed/patching-rdna-boost-experiments/RD64.md,patching-rdna-boost-experiments,superseded,UP-KV-001: Dedicated F16 dequant path for Q4/Q5 KV,no
+RD65,docs/planning/completed/patching-rdna-boost-experiments/RD65.md,patching-rdna-boost-experiments,superseded,UP-VK-004: Small-N speculative execution avoids inappropriate MMVQ route,no
+RD66,docs/planning/completed/patching-rdna-boost-experiments/RD66.md,patching-rdna-boost-experiments,completed,UP-CACHE-001: Recurrent-state prompt-cache repair for Qwen hybrid models,no
+RD67,docs/planning/completed/patching-rdna-boost-experiments/RD67.md,patching-rdna-boost-experiments,superseded,UP-MGPU-001: Speculative scheduler caching/reduced cross-GPU synchronization,no
+RD68,docs/planning/completed/patching-rdna-boost-experiments/RD68.md,patching-rdna-boost-experiments,completed,Verify Vulkan baseline PRs #25494/#26585 are ancestral to the current pin before any Vulkan lane work,no
+RD69,docs/planning/completed/patching-rdna-boost-experiments/RD69.md,patching-rdna-boost-experiments,completed,FORK-VK-001: AMD large cooperative-matrix Vulkan route,no
+RD70,docs/planning/completed/patching-rdna-boost-experiments/RD70.md,patching-rdna-boost-experiments,completed,FORK-MGPU-001: Explicit output-device placement,no
+RD71,docs/planning/completed/patching-rdna-boost-experiments/RD71.md,patching-rdna-boost-experiments,superseded,FORK-MTP-001: Independent NextN/MTP tensor placement,no
+RD72,docs/planning/completed/patching-rdna-boost-experiments/RD72.md,patching-rdna-boost-experiments,superseded,FORK-MTP-002: Remove four-copy Vulkan MTP handoff,no
+RD73,docs/planning/completed/patching-rdna-boost-experiments/RD73.md,patching-rdna-boost-experiments,completed,FORK-MTP-003 (re-scoped): stable shape-fingerprint key for the graph cache (was: warm speculative verification widths),no
+RD74,docs/planning/completed/patching-rdna-boost-experiments/RD74.md,patching-rdna-boost-experiments,completed,FORK-MGPU-002: Asynchronous event-chained host staging for ROCm GPU-to-GPU copies,no
+RD75,docs/planning/completed/patching-rdna-boost-experiments/RD75.md,patching-rdna-boost-experiments,completed,FORK-CKPT-001: Batched recurrent-checkpoint reads by backend,no
+RD76,docs/planning/completed/patching-rdna-boost-experiments/RD76.md,patching-rdna-boost-experiments,superseded,FORK-HIP-001: Restore/benchmark rocWMMA FlashAttention on RDNA4,no
+RD77,docs/planning/completed/patching-rdna-boost-experiments/RD77.md,patching-rdna-boost-experiments,superseded,SYS-PCIE-001: PCIe ASPM performance policy,no
+RD78,docs/planning/completed/patching-rdna-boost-experiments/RD78.md,patching-rdna-boost-experiments,superseded,VK-TUNE-001: Vulkan rm_kq specialization sweep,no
+RD79,docs/planning/completed/patching-rdna-boost-experiments/RD79.md,patching-rdna-boost-experiments,superseded,VK-DRV-002: AMD graphics queue for compute on proprietary Vulkan,no
+RD80,docs/planning/completed/patching-rdna-boost-experiments/RD80.md,patching-rdna-boost-experiments,superseded,VK-DRV-003: Cooperative-matrix bypass on AMD proprietary Vulkan,no
+RD81,docs/planning/completed/patching-rdna-boost-experiments/RD81.md,patching-rdna-boost-experiments,superseded,VK-ACO-001: Audit redundant RADV/ACO scalar waits,no
+RD82,docs/planning/completed/patching-rdna-boost-experiments/RD82.md,patching-rdna-boost-experiments,superseded,VK-FA-001: Decouple Vulkan FA occupancy tuning from exact shared-memory capability equality,no
+RD83,docs/planning/completed/patching-rdna-boost-experiments/RD83.md,patching-rdna-boost-experiments,superseded,HIP-GRAPH-001: Selective HIP graph bypass for unstable FA shapes,no
+RD84,docs/planning/completed/patching-rdna-boost-experiments/RD84.md,patching-rdna-boost-experiments,superseded,HIP-GRAPH-002: Force graph recapture when FA stream topology changes,no
+RD85,docs/planning/completed/patching-rdna-boost-experiments/RD85.md,patching-rdna-boost-experiments,superseded,VK-SUB-001: Architecture-aware Vulkan submission cap,no
+RD86,docs/planning/completed/patching-rdna-boost-experiments/RD86.md,patching-rdna-boost-experiments,superseded,VK-SUB-002: Bound startup submission-ramp growth by learned safe ceiling,no
+RD87,docs/planning/completed/patching-rdna-boost-experiments/RD87.md,patching-rdna-boost-experiments,completed,HIPBLAS-001: Offline hipBLASLt tuning for captured llama.cpp GEMM signatures,no
+RD88,docs/planning/completed/patching-rdna-boost-experiments/RD88.md,patching-rdna-boost-experiments,superseded,CK-001: Use Composable Kernel profiler as an oracle for hot GEMM signatures,no
+RD89,docs/planning/completed/patching-rdna-boost-experiments/RD89.md,patching-rdna-boost-experiments,completed,"RDNA experiment backlog: priority wave, model/workload matrix, and boundary-sweep vocabulary",no
+RD90,docs/planning/completed/patching-rdna-boost-experiments/RD90.md,patching-rdna-boost-experiments,completed,RD50: require a full multi-target compile before isolated benching (translation-unit fold risk),no
+RD91,docs/planning/completed/patching-rdna-boost-experiments/RD91.md,patching-rdna-boost-experiments,superseded,Qualification-only ablation knobs for -44 (stream/concurrency) and RD50-53 (GDN),no
+RD92,docs/planning/completed/patching-rdna-boost-experiments/RD92.md,patching-rdna-boost-experiments,superseded,Hardware-eligibility needs device traits beyond architecture (integrated/UMA/P2P/driver/GPU-count),no
+RD93,docs/planning/completed/patching-rdna-boost-experiments/RD93.md,patching-rdna-boost-experiments,superseded,Hardware-blocked patch retirement policy (PRBE16/RD22-class items),no
+RD94,docs/planning/completed/patching-rdna-boost-experiments/RD94.md,patching-rdna-boost-experiments,completed,MoE hostile-routing test harness needed before trusting RD30-32's occupancy selector,no
+RD95,docs/planning/completed/patching-rdna-boost-experiments/RD95.md,patching-rdna-boost-experiments,completed,Repin advisory ancestry/redundancy report: exact-tracked-commit baseline detection (equivalent-detection half in RD99),no
+RD96,docs/planning/completed/patching-rdna-boost-experiments/RD96.md,patching-rdna-boost-experiments,completed,HIP peer-to-peer copy corruption on Windows/RDNA4 (from RD74 fork investigation),no
+RD97,docs/planning/completed/patching-rdna-boost-experiments/RD97.md,patching-rdna-boost-experiments,completed,P0: audit AMD PR #75 MMQ tile-reuse barrier race against the pinned tree (structural audit: hazard absent at b10502),no
+RD98,docs/planning/completed/patching-rdna-boost-experiments/RD98.md,patching-rdna-boost-experiments,superseded,Q4_K MMVQ wide-load / x4 activation / VDR candidate family (AMD #84 + #88 as one experiment),no
+RD99,docs/planning/completed/patching-rdna-boost-experiments/RD99.md,patching-rdna-boost-experiments,completed,"Upstream-equivalent-change detection for baseline/retirement (the ""(or an equivalent)"" half of RD95)",no
+PRVP01,docs/planning/completed/patching-rocm-vulkan-provider/PRVP01.md,patching-rocm-vulkan-provider,completed,Retired: CM1 source transplant already native at b11474,no
+RPL01,docs/planning/completed/patching-runtime-placement/RPL01.md,patching-runtime-placement,superseded,Topology-aware runtime placement and execution cost model,no
+PVPS02,docs/planning/completed/patching-validation-package-standard/PVPS02.md,patching-validation-package-standard,completed,Generic per-patch A/B benchmark harness (replace per-RD hardcoded CLI gates),no
+PVPS03,docs/planning/completed/patching-validation-package-standard/PVPS03.md,patching-validation-package-standard,superseded,"Four-arm patch validation: stock / base BC / validated BC / validated BC + patch, with ongoing reference ladder",no
+PVPS05,docs/planning/completed/patching-validation-package-standard/PVPS05.md,patching-validation-package-standard,superseded,Production dual-GPU MTP no-regression lane for every patch,no
+PVPS06,docs/planning/completed/patching-validation-package-standard/PVPS06.md,patching-validation-package-standard,superseded,Distribution-level correctness criterion for non-bit-exact patches,no
+PVPS07,docs/planning/completed/patching-validation-package-standard/PVPS07.md,patching-validation-package-standard,superseded,"Production lane: adaptive rounds, pp4096 sentinel, acceptance bound, scoped gating",no
+PVPS08,docs/planning/completed/patching-validation-package-standard/PVPS08.md,patching-validation-package-standard,superseded,Timed-process PCI attestation via hipDeviceGetPCIBusId logging,no
+PVPS09,docs/planning/completed/patching-validation-package-standard/PVPS09.md,patching-validation-package-standard,superseded,Robust paired-lane statistics: single transient rounds must not decide a session,no
+PVPS10,docs/planning/completed/patching-validation-package-standard/PVPS10.md,patching-validation-package-standard,superseded,"Trigger-coverage profiling stage: prove the patched kernels run, how much, and bound the expected effect",no
+PVPS11,docs/planning/completed/patching-validation-package-standard/PVPS11.md,patching-validation-package-standard,superseded,"Vulkan-backend validation campaigns (build, attest and benchmark Vulkan patches)",no
+PVPS12,docs/planning/completed/patching-validation-package-standard/PVPS12.md,patching-validation-package-standard,superseded,Persist an immutable run/session id in every validation evidence record,no
+PVPS13,docs/planning/completed/patching-validation-package-standard/PVPS13.md,patching-validation-package-standard,completed,"Push the MTP-lane locator fix into mtp_server_lane() itself, not per-producer copies",no
+PH01,docs/planning/completed/plan-hygiene/PH01.md,plan-hygiene,completed,HI active-plan triage audit (gated on RE14 close),no
+QU01,docs/planning/completed/qualification-workflow/QU01.md,qualification-workflow,completed,Repeatable experimental qualification and archival workflow,no
+QU02,docs/planning/completed/qualification-workflow/QU02.md,qualification-workflow,superseded,Add standard console telemetry to CLI harness launches,no
+RA01,docs/planning/completed/rationalisation/RA01.md,rationalisation,completed,TR00 Freeze current tooling behavior and produce disposition map,no
+RA02,docs/planning/completed/rationalisation/RA02.md,rationalisation,completed,TR01 Establish tooling documentation and destination skeleton,no
+RA03,docs/planning/completed/rationalisation/RA03.md,rationalisation,completed,TR02 Add tooling architecture boundary tests,no
+RA04,docs/planning/completed/rationalisation/RA04.md,rationalisation,completed,TR03 Promote pin and release CLI handlers mechanically,no
+RA05,docs/planning/completed/rationalisation/RA05.md,rationalisation,completed,TR04 Promote and freeze canonical campaign architecture,no
+RA06,docs/planning/completed/rationalisation/RA06.md,rationalisation,completed,TR05 Move ROCm environment helpers to canonical env location,no
+RA07,docs/planning/completed/rationalisation/RA07.md,rationalisation,completed,TR05 Promote candidate reporting to maintained analysis,no
+RA08,docs/planning/completed/rationalisation/RA08.md,rationalisation,completed,TR06 Audit RD08 patch-specific correctness proof,no
+RA09,docs/planning/completed/rationalisation/RA09.md,rationalisation,completed,TR05 Delete unreferenced pi-lens shadow probe,no
+RA10,docs/planning/completed/rationalisation/RA10.md,rationalisation,completed,TR07 Classify historical and cutover tooling as transitional,no
+RA11,docs/planning/completed/rationalisation/RA11.md,rationalisation,completed,TR08 Classify HI/RD/RE production modules by capability,no
+RA12,docs/planning/completed/rationalisation/RA12.md,rationalisation,completed,TR05 Move HI34 residency gates into non-package lab,no
+RA13,docs/planning/completed/rationalisation/RA13.md,rationalisation,completed,TR05 Move HI24 slice-A verifier into lab,no
+RA14,docs/planning/completed/rationalisation/RA14.md,rationalisation,completed,TR09 Characterize CLI parser surface before split,no
+RA15,docs/planning/completed/rationalisation/RA15.md,rationalisation,completed,TR10 Move pin-status implementation into release domain,no
+RA16,docs/planning/completed/rationalisation/RA16.md,rationalisation,completed,TR09 Extract canonical CLI bootstrap,no
+RA17,docs/planning/completed/rationalisation/RA17.md,rationalisation,completed,TR06 Package-localize RD08 correctness producer,no
+RA18,docs/planning/completed/rationalisation/RA18.md,rationalisation,completed,TR09 Extract diagnostics CLI handlers,no
+RA19,docs/planning/completed/rationalisation/RA19.md,rationalisation,completed,TR09 Extract replay inspection CLI handler,no
+RA20,docs/planning/completed/rationalisation/RA20.md,rationalisation,completed,TR09 Extract pull CLI handler,no
+RA21,docs/planning/completed/rationalisation/RA21.md,rationalisation,completed,TR09 Extract build CLI handler,no
+RA22,docs/planning/completed/rationalisation/RA22.md,rationalisation,completed,TR09 Extract inventory and experiment-contract CLI handlers,no
+RA23,docs/planning/completed/rationalisation/RA23.md,rationalisation,completed,TR09 Extract patches CLI handler,no
+RA24,docs/planning/completed/rationalisation/RA24.md,rationalisation,completed,TR09 Move build_parser/entrypoint into cli/main.py (CLI split complete),no
+RA25,docs/planning/completed/rationalisation/RA25.md,rationalisation,completed,TR10 Move release records into release domain package,no
+RA26,docs/planning/completed/rationalisation/RA26.md,rationalisation,completed,TR10 Move source lifecycle modules into source domain package,no
+RA27,docs/planning/completed/rationalisation/RA27.md,rationalisation,completed,TR10 Move build modules into build domain package,no
+RA28,docs/planning/completed/rationalisation/RA28.md,rationalisation,completed,Fix .gitignore shadowing tools/bigcherry/build/ and tuning/ domain packages,no
+RA29,docs/planning/completed/rationalisation/RA29.md,rationalisation,completed,TR10 Move experiment modules into experiment domain package,no
+RA30,docs/planning/completed/rationalisation/RA30.md,rationalisation,completed,TR10 Move patch modules into patch domain package,no
+RA31,docs/planning/completed/rationalisation/RA31.md,rationalisation,completed,TR10 Move campaign modules into campaign domain package,no
+RA32,docs/planning/completed/rationalisation/RA32.md,rationalisation,completed,TR10 Move tuning modules into tuning domain package,no
+RA33,docs/planning/completed/rationalisation/RA33.md,rationalisation,completed,TR10 Move foundation modules into core domain package,no
+RA34,docs/planning/completed/rationalisation/RA34.md,rationalisation,completed,TR10 Move analysis modules into analysis domain package (TR10 complete),no
+RA35,docs/planning/completed/rationalisation/RA35.md,rationalisation,completed,TR11 Pilot: move release-domain tests into tests/release/,no
+RA36,docs/planning/completed/rationalisation/RA36.md,rationalisation,completed,TR11 Continue: classify and move remaining tests by domain,no
+RA37,docs/planning/completed/rationalisation/RA37.md,rationalisation,completed,TR12 Clean and relocate maintained analysis tooling,no
+RA38,docs/planning/completed/rationalisation/RA38.md,rationalisation,completed,TR13 Retire verified compatibility shims after domain migration,no
+RA39,docs/planning/completed/rationalisation/RA39.md,rationalisation,completed,TR14 Add tooling hygiene checks to bigcherry check,no
+RA40,docs/planning/completed/rationalisation/RA40.md,rationalisation,completed,TR15 Finalize tooling documentation and agent instructions,no
+RA41,docs/planning/completed/rationalisation/RA41.md,rationalisation,completed,TR16 Establish lab template and non-package management policy,no
+RA42,docs/planning/completed/rationalisation/RA42.md,rationalisation,completed,TR17 Define ongoing tooling governance and change controls,no
+RA43,docs/planning/completed/rationalisation/RA43.md,rationalisation,completed,TR18 Run final no-regression tooling acceptance,no
+CD01,docs/planning/completed/run-campaign-durability/CD01.md,run-campaign-durability,superseded,Durable campaign restart/resume (deferred from reusable-build-campaign RE11),no
+RCD01,docs/planning/completed/run-campaign-durability/RCD01.md,run-campaign-durability,deprecated,Durable campaign restart/resume (deferred from reusable-build-campaign RE11),no
+RCD04,docs/planning/completed/run-campaign-durability/RCD04.md,run-campaign-durability,superseded,"Implement the BigCherry durable job domain, service, Executor API and CLI",no
+RCD05,docs/planning/completed/run-campaign-durability/RCD05.md,run-campaign-durability,superseded,"Implement attempt resolution, pinned workspaces and monitored execution",no
+RCD06,docs/planning/completed/run-campaign-durability/RCD06.md,run-campaign-durability,superseded,Campaign service seams and prepare/execute evolution,no
+RCD08,docs/planning/completed/run-campaign-durability/RCD08.md,run-campaign-durability,superseded,"Implement verified evidence harvest, explicit git commit and canonical reports",no
+RCD09,docs/planning/completed/run-campaign-durability/RCD09.md,run-campaign-durability,superseded,"Implement normalized observability, durable events, telemetry and agent wake semantics",no
+HD2701,docs/planning/completed/run-dense-27b-heterogeneous/HD2701.md,run-dense-27b-heterogeneous,superseded,"Dense 27B on two gfx1100 XTX plus gfx1201 R9700: profile-derived placement, KV ownership and quantization",no
+VTP01,docs/planning/completed/run-dense-27b-virtual-tp/VTP01.md,run-dense-27b-virtual-tp,superseded,"Virtual TP4: logical four shards, only three physical GPU executors",no
+VTP02,docs/planning/completed/run-dense-27b-virtual-tp/VTP02.md,run-dense-27b-virtual-tp,superseded,Q6/Q8 memory and attention-KV ownership: weighted TP4 envelope,no
+VTP03,docs/planning/completed/run-dense-27b-virtual-tp/VTP03.md,run-dense-27b-virtual-tp,superseded,Quality-qualified Q6/Q8 virtual TP4: full 27B A/B acceptance,no
+VTP04,docs/planning/completed/run-dense-27b-virtual-tp/VTP04.md,run-dense-27b-virtual-tp,superseded,Fast virtual TP4 experiments: local R9700 and physical three-way exchange,no
+VTP05,docs/planning/completed/run-dense-27b-virtual-tp/VTP05.md,run-dense-27b-virtual-tp,superseded,Q6/IQ6R and Q8/W8A8: actual Radiance model-shaped kernel screening,no
+VTP06,docs/planning/completed/run-dense-27b-virtual-tp/VTP06.md,run-dense-27b-virtual-tp,superseded,Q6/Q8 model and four-plus-stream quality/capacity qualification,no
+VTP07,docs/planning/completed/run-dense-27b-virtual-tp/VTP07.md,run-dense-27b-virtual-tp,superseded,Native IQ6R gfx1100 relayout blocker — initial Q6/Q8 hardware screen,no
+VTP08,docs/planning/completed/run-dense-27b-virtual-tp/VTP08.md,run-dense-27b-virtual-tp,superseded,Strict native-W8A8 FFN plus FP8 KV physical VRAM lower bounds,no
+VTP09,docs/planning/completed/run-dense-27b-virtual-tp/VTP09.md,run-dense-27b-virtual-tp,superseded,gfx1100 IQ6R M=64 dispatch crossover: exact tiled overlay,no
+VTP10,docs/planning/completed/run-dense-27b-virtual-tp/VTP10.md,run-dense-27b-virtual-tp,superseded,Real 27B W8A8 end-to-end TP2 baseline and IQ6R calibration blocker,no
+VTP11,docs/planning/completed/run-dense-27b-virtual-tp/VTP11.md,run-dense-27b-virtual-tp,superseded,Original BF16 calibration: GDN kernel routing and host-buffer ownership,no
+VTP12,docs/planning/completed/run-dense-27b-virtual-tp/VTP12.md,run-dense-27b-virtual-tp,superseded,Native heterogeneous INT8/FP8 three-GPU and asymmetric operator feasibility,no
+VTP13,docs/planning/completed/run-dense-27b-virtual-tp/VTP13.md,run-dense-27b-virtual-tp,superseded,Opt-in asymmetric physical TP3 runtime and full 27B performance A/B,no
+VTP14,docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md,run-dense-27b-virtual-tp,completed,"Radiance-native three-GPU TP3 integration — build with Radiance, not beside it",no
+VTP31,docs/planning/completed/run-dense-27b-virtual-tp/VTP31.md,run-dense-27b-virtual-tp,completed,"TP3 all-reduce: latency, compute/communication overlap and swappable methods",no
+VTP33,docs/planning/completed/run-dense-27b-virtual-tp/VTP33.md,run-dense-27b-virtual-tp,completed,TP3 capacity: resident KV bounded by the R9700; capacity-oriented splits,no
+VTP35,docs/planning/completed/run-dense-27b-virtual-tp/VTP35.md,run-dense-27b-virtual-tp,superseded,TP3 MXFP4 prefill parity with TP2 (host-staged all-reduce cost),no
+VTP39,docs/planning/completed/run-dense-27b-virtual-tp/VTP39.md,run-dense-27b-virtual-tp,completed,"Long prompts beside other work: decode share, prefill concurrency, short requests (-long configs)",no
+VTP41,docs/planning/completed/run-dense-27b-virtual-tp/VTP41.md,run-dense-27b-virtual-tp,completed,"Prefill order by remaining work, and an adjustable long-prefill threshold (VTP39 follow-up)",no
+VTP43,docs/planning/completed/run-dense-27b-virtual-tp/VTP43.md,run-dense-27b-virtual-tp,completed,"bf16_fp8 KV cache: bf16 keys, E4M3 values (more -long capacity than bf16, closer to bf16 than fp8)",no
+VTP44,docs/planning/completed/run-dense-27b-virtual-tp/VTP44.md,run-dense-27b-virtual-tp,completed,Generic KV layout descriptors and geometry rows; Flash-Next as second model for bf16_fp8/bf16_i8,no
+DO01,docs/planning/completed/run-docs-reference/DO01.md,run-docs-reference,superseded,Reference corpus classification and campaign-artifact relocation,no
+DR01,docs/planning/completed/run-docs-reference/DR01.md,run-docs-reference,superseded,Migrate docs from hardcoded host facts to environment roles,no
+RDR01,docs/planning/completed/run-docs-reference/RDR01.md,run-docs-reference,completed,Reference corpus classification and campaign-artifact relocation,no
+RDR02,docs/planning/completed/run-docs-reference/RDR02.md,run-docs-reference,completed,Migrate docs from hardcoded host facts to environment roles,no
+GP01,docs/planning/completed/run-gpu-collectives/GP01.md,run-gpu-collectives,completed,RCCL Phase 2: topology-aware qualification/tuning/replay for the RCCL-viable device subset,no
+GP02,docs/planning/completed/run-gpu-collectives/GP02.md,run-gpu-collectives,completed,"Rewrite RCCL admission as a shared, reusable fail-closed predicate -- current patch 1225 is not the right design to promote as-is",no
+GP03,docs/planning/completed/run-gpu-collectives/GP03.md,run-gpu-collectives,completed,Consolidate 1243/0840 into ONE production AllReduce dispatch implementation,no
+GP04,docs/planning/completed/run-gpu-collectives/GP04.md,run-gpu-collectives,completed,Close D=2 SPLIT_REDUCE correctness + promotion against real production reduction signatures,no
+GP05,docs/planning/completed/run-gpu-collectives/GP05.md,run-gpu-collectives,completed,"Extend HI18 correctness-harness analytical bound to cover the BF16-compression regime (ne>=32768, <=2 devices)",no
+GP06,docs/planning/completed/run-gpu-collectives/GP06.md,run-gpu-collectives,completed,"RCCL 2.30.4 regression: HI138/GP01-confirmed-viable {0,2} pair crashes -- pin/qualify exact RCCL version before GP01 Phase 2",no
+GP07,docs/planning/completed/run-gpu-collectives/GP07.md,run-gpu-collectives,completed,"Harden rccl_qualify/rccl_qualify_campaign into the durable, reusable RCCL qualification driver",no
+GP08,docs/planning/completed/run-gpu-collectives/GP08.md,run-gpu-collectives,completed,Diagnostics package: separate VALIDATE (qualification) and OPTIMIZE (performance) tools sharing one identity model,no
+GP09,docs/planning/completed/run-gpu-collectives/GP09.md,run-gpu-collectives,superseded,Device-3 / PCI-atomics-incapable topology: safe AND performant fallback investigation (go/no-go against META),no
+GP10,docs/planning/completed/run-gpu-collectives/GP10.md,run-gpu-collectives,completed,Base-level (sub-llama.cpp) collective testing harness -- fast iteration on transforms without a full model/build cycle,no
+GP11,docs/planning/completed/run-gpu-collectives/GP11.md,run-gpu-collectives,superseded,Complete qualification and promotion decision for landed N-way internal AllReduce,no
+GP12,docs/planning/completed/run-gpu-collectives/GP12.md,run-gpu-collectives,superseded,Pin MTP head tensors to a single GPU via --override-tensor to avoid cross-GPU AllReduce on the draft path,no
+GP13,docs/planning/completed/run-gpu-collectives/GP13.md,run-gpu-collectives,superseded,"dev kernel PCIe P2P DMA quirk for dual-XTX: patch, build, and boot on ROCm-validated 7.0.13 line",no
+GP14,docs/planning/completed/run-gpu-collectives/GP14.md,run-gpu-collectives,completed,Investigate: BigCherry default-RCCL baseline ~5.9% slower than native llama.cpp (dual gfx1100 decode),no
+RGC01,docs/planning/completed/run-gpu-collectives/RGC01.md,run-gpu-collectives,completed,Pin MTP head tensors to a single GPU via --override-tensor to avoid cross-GPU AllReduce on the draft path,no
+RHA02,docs/planning/completed/run-hip-autotune/RHA02.md,run-hip-autotune,completed,Multi-GPU validation and end-to-end graph capture verification,no
+RHA03,docs/planning/completed/run-hip-autotune/RHA03.md,run-hip-autotune,completed,Stage advisories: surface prior findings at the moment a result appears,no
+RHA04,docs/planning/completed/run-hip-autotune/RHA04.md,run-hip-autotune,completed,Establish production native parity and measure tuned dispatch end to end,no
+RHA05,docs/planning/completed/run-hip-autotune/RHA05.md,run-hip-autotune,deprecated,Review optional default-logging device attestation without blocking baseline capture,no
+RHA06,docs/planning/completed/run-hip-autotune/RHA06.md,run-hip-autotune,completed,Make campaign workflows unattended across models and GPU topologies,no
+RHA07,docs/planning/completed/run-hip-autotune/RHA07.md,run-hip-autotune,completed,"Extend stage advisories across build, A/B, recovery and promotion boundaries",yes
+RHA08,docs/planning/completed/run-hip-autotune/RHA08.md,run-hip-autotune,completed,Exercise reusable BC build types through the maintained server-bench matrix,no
+RHA09,docs/planning/completed/run-hip-autotune/RHA09.md,run-hip-autotune,completed,Retain durable raw graph-lifecycle qualification artifacts,no
+RHA10,docs/planning/completed/run-hip-autotune/RHA10.md,run-hip-autotune,completed,Close production admission with work-equivalence and replay launch proof,no
+RHA11,docs/planning/completed/run-hip-autotune/RHA11.md,run-hip-autotune,completed,Resolve replay correctness divergence before production admission,no
+RHA12,docs/planning/completed/run-hip-autotune/RHA12.md,run-hip-autotune,completed,Bump llama.cpp pin from b10705 to b10883,no
+RHA15,docs/planning/completed/run-hip-autotune/RHA15.md,run-hip-autotune,completed,,no
+RU01,docs/planning/completed/run-hip-collectives/RU01.md,run-hip-collectives,completed,Validate META SPLIT_REDUCE correctness for D=3/D=4 heterogeneous topologies,no
+KC01,docs/planning/completed/run-kernel-coverage/KC01.md,run-kernel-coverage,superseded,Decide whether non-GEMM lifecycle representation has a gap,no
+KC02,docs/planning/completed/run-kernel-coverage/KC02.md,run-kernel-coverage,superseded,Reusable graph/DAG recipe lifecycle and composition control plane,no
+KC03,docs/planning/completed/run-kernel-coverage/KC03.md,run-kernel-coverage,superseded,Decide whether collective identity needs a cross-backend extension,no
+KC04,docs/planning/completed/run-kernel-coverage/KC04.md,run-kernel-coverage,superseded,Decide whether Vulkan scope needs a reusable lifecycle extension,no
+MRC01,docs/planning/completed/run-measurement-records/MRC01.md,run-measurement-records,completed,Platform run-record v1: one engine-agnostic measurement record schema and content-addressed store,no
+MRC02,docs/planning/completed/run-measurement-records/MRC02.md,run-measurement-records,completed,"Platform host-facts collector attached to every run record (kernel, ROCm, firmware, clocks, power caps, PCIe, host env digest)",no
+MRC03,docs/planning/completed/run-measurement-records/MRC03.md,run-measurement-records,completed,"Engine feature-state contract: every engine reports optional features active/inactive with a reason; platform surfaces it in status, records and production warnings",no
+MRC04,docs/planning/completed/run-measurement-records/MRC04.md,run-measurement-records,completed,Generic calibration-record store: narrow keys plus provenance so records carry across rebuilds; Radiance live policy is the first user,no
+MRC05,docs/planning/completed/run-measurement-records/MRC05.md,run-measurement-records,completed,"Platform baseline, compare and history over run records (one-sided gates, measured tolerances, drift flags); engine parity harnesses become workload profiles",no
+MRC06,docs/planning/completed/run-measurement-records/MRC06.md,run-measurement-records,completed,"Migrate producers onto run-record v1: Radiance workloads store, parity harness, bc-serve lab runs, llama.cpp bench rows and experiment bundles",no
+MRC07,docs/planning/completed/run-measurement-records/MRC07.md,run-measurement-records,superseded,"llama.cpp producers: remove the run_bench redirect shim and migrate the bench write path (deferred, not Radiance)",no
+MEN07,docs/planning/completed/run-multi-engine/MEN07.md,run-multi-engine,superseded,"First patch on the second engine, through the same lifecycle",no
+MEN09,docs/planning/completed/run-multi-engine/MEN09.md,run-multi-engine,superseded,"Per-engine pins and release lines (own numbering per engine, platform released separately)",no
+MEN12,docs/planning/completed/run-multi-engine/MEN12.md,run-multi-engine,completed,First radiance bump to the latest upstream release with patches and components,no
+MEN13,docs/planning/completed/run-multi-engine/MEN13.md,run-multi-engine,superseded,"Engine release lines: formal release stages, tags and releases for every engine",no
+MEN19,docs/planning/completed/run-multi-engine/MEN19.md,run-multi-engine,superseded,"Bump-time native rewrite drift check, and pin-release confirm-then-run",no
+MEN25,docs/planning/completed/run-multi-engine/MEN25.md,run-multi-engine,completed,Engine-agnostic patch-promote: engine settings in engines/<name>/engine.toml [promotion],no
+MEN27,docs/planning/completed/run-multi-engine/MEN27.md,run-multi-engine,completed,Attach the lane build runtime bundle to each engine release as a release asset,no
+RQW01,docs/planning/completed/run-qualification-workflow/RQW01.md,run-qualification-workflow,completed,Add standard console telemetry to CLI harness launches,no
+HL01,docs/planning/completed/run-radiance-host-link/HL01.md,run-radiance-host-link,completed,Root-port host-transfer contention: CPU arbitration diagnosed by physical XTX swap,no
+HL04,docs/planning/completed/run-radiance-host-link/HL04.md,run-radiance-host-link,completed,Prefill-only CPU-combine push into R9700 VRAM: is the combine on the flashnext-4gpu critical path?,no
+PIPE01,docs/planning/completed/run-radiance-host-link/PIPE01.md,run-radiance-host-link,deprecated,Tail layer call: overlap the activation pull and result push with the GEMM by two staggered token halves on copy engines,no
+RRBC01,docs/planning/completed/run-reusable-build-campaign/RRBC01.md,run-reusable-build-campaign,completed,Vulkan-aware device-visibility wiring for build's runtime smoke path,no
+RRBC03,docs/planning/completed/run-reusable-build-campaign/RRBC03.md,run-reusable-build-campaign,completed,Environment-action campaign inputs for non-patch experiments (driver/ICD/ASPM/hipBLASLt),no
+RRVP04,docs/planning/completed/run-rocm-vulkan-provider/RRVP04.md,run-rocm-vulkan-provider,superseded,Superseded: Vulkan async-copy #28618 isolated A/B,no
+RSC07,docs/planning/completed/run-serving-configuration/RSC07.md,run-serving-configuration,superseded,Engine --manifest: managed radiance patch loading the engine section through radiance's own option table,no
+RSC08,docs/planning/completed/run-serving-configuration/RSC08.md,run-serving-configuration,superseded,"Serving manifest v1: generated contract, shared loader and one-release cutover",no
+RSA01,docs/planning/completed/run-validation-attestation/RSA01.md,run-validation-attestation,completed,ROCm server attestation regex is stale: llama-server no longer logs per-device gfx architecture at all,no
+WSL06,docs/planning/completed/run-workspace-lifecycle/WSL06.md,run-workspace-lifecycle,deprecated,Adopt and clear the legacy work roots on dev,no
+SE01,docs/planning/completed/session-recovery/SE01.md,session-recovery,completed,"INCIDENT: 2026-08-11 session work wiped by external git reset -- recovery source dump, part 1 (MMQ quarantine + HI48 journal)",no
+SE02,docs/planning/completed/session-recovery/SE02.md,session-recovery,completed,"Recovery source dump, part 2: recipes/build system (recipes.toml, recipes.py, upstream.py, __main__.py, patchset.py additions)",no
+SE03,docs/planning/completed/session-recovery/SE03.md,session-recovery,completed,"Recovery source dump, part 3: docs (FINDINGS.md, BUILD.md/TEST.md split) and pipeline validation results",no
+TO01,docs/planning/completed/toolchain-deps/TO01.md,toolchain-deps,completed,"Toolchain/dependency acquisition and version inventory (ROCm toolchains, llama.cpp pin, Vulkan backend)",no
+TO02,docs/planning/completed/toolchain-deps/TO02.md,toolchain-deps,completed,Structured evidence capture for ad-hoc real-hardware verification runs (non-patch),no
+TO03,docs/planning/completed/toolchain-deps/TO03.md,toolchain-deps,completed,"Concurrent-agent shared-checkout coordination (source-control, not toolchain)",no
+HI01,docs/planning/completed/tuning-hip-autotune/HI01.md,tuning-hip-autotune,completed,"Pin upstream, run source audit, and establish baseline builds",no
+HI02,docs/planning/completed/tuning-hip-autotune/HI02.md,tuning-hip-autotune,completed,"Add CMake options, ABI types, and HIP autotune header infrastructure",no
+HI03,docs/planning/completed/tuning-hip-autotune/HI03.md,tuning-hip-autotune,completed,Refactor candidate catalog generator — single source of truth for all artifacts,no
+HI04,docs/planning/completed/tuning-hip-autotune/HI04.md,tuning-hip-autotune,completed,Separate native selection from launch — no behavior change,no
+HI05,docs/planning/completed/tuning-hip-autotune/HI05.md,tuning-hip-autotune,completed,Implement canonical signature construction and hardware key,no
+HI06,docs/planning/completed/tuning-hip-autotune/HI06.md,tuning-hip-autotune,completed,Implement MMQ forced-J variant enumeration and dispatch,no
+HI07,docs/planning/completed/tuning-hip-autotune/HI07.md,tuning-hip-autotune,completed,Implement MMVF forced block-size variant dispatch,no
+HI08,docs/planning/completed/tuning-hip-autotune/HI08.md,tuning-hip-autotune,completed,Implement MMF forced-nwarps variant dispatch,no
+HI09,docs/planning/completed/tuning-hip-autotune/HI09.md,tuning-hip-autotune,completed,Generate explicit MMVQ geometry variants,no
+HI09b,docs/planning/completed/tuning-hip-autotune/HI09b.md,tuning-hip-autotune,completed,Parse compiler resource reports and blacklist unviable geometries,no
+HI10,docs/planning/completed/tuning-hip-autotune/HI10.md,tuning-hip-autotune,completed,Implement signature collection (record mode) and SQLite persistence,no
+HI100,docs/planning/completed/tuning-hip-autotune/HI100.md,tuning-hip-autotune,completed,Optional Linux machine-state telemetry (GPU clock/temp/power via sysfs) (HI96B),no
+HI101,docs/planning/completed/tuning-hip-autotune/HI101.md,tuning-hip-autotune,completed,workload-check --cache: read a real binary v5 replay cache (HI96C),no
+HI102,docs/planning/completed/tuning-hip-autotune/HI102.md,tuning-hip-autotune,superseded,Production patch admission gate for validated-state evidence (HI83 admission phase),no
+HI103,docs/planning/completed/tuning-hip-autotune/HI103.md,tuning-hip-autotune,completed,HI80 post-completion residuals: Q8_0 byte-stride (conditional) + S3b integrated-path real-HW regression pass,no
+HI104,docs/planning/completed/tuning-hip-autotune/HI104.md,tuning-hip-autotune,superseded,Emit intrinsically-complete nested provenance from the C++ runtime transform writer (retire the flat adapter),no
+HI105,docs/planning/completed/tuning-hip-autotune/HI105.md,tuning-hip-autotune,completed,Extend HI80 correctness-evidence generation to MUL_MAT_ID (MoE-routed) signatures,no
+HI106,docs/planning/completed/tuning-hip-autotune/HI106.md,tuning-hip-autotune,completed,Correctness-evidence CLI must use a test-backend-ops binary built from the SAME inventory as the tune run,no
+HI107,docs/planning/completed/tuning-hip-autotune/HI107.md,tuning-hip-autotune,completed,Real production signature time-share audit -- distinguish 'native won because searched' from 'native because never searched',no
+HI108,docs/planning/completed/tuning-hip-autotune/HI108.md,tuning-hip-autotune,completed,"Extend HI80 correctness-evidence generation to GLU (op=100) signatures, including MoE-routed GLU",no
+HI109,docs/planning/completed/tuning-hip-autotune/HI109.md,tuning-hip-autotune,completed,Real record->tune->promote->replay campaign on the dense Qwen3.8-27B production model,no
+HI11,docs/planning/completed/tuning-hip-autotune/HI11.md,tuning-hip-autotune,completed,Implement compact replay cache and manual seeding before tuning,no
+HI110,docs/planning/completed/tuning-hip-autotune/HI110.md,tuning-hip-autotune,completed,Build-plan-id content addressing doesn't account for the requested binary target -- rebuilds into a shared directory with a new target produce byte-mismatched artifacts,no
+HI111,docs/planning/completed/tuning-hip-autotune/HI111.md,tuning-hip-autotune,completed,Correctness-evidence MUL_MAT mapper rejected all quantized types (Q8_0/Q4_K/Q6_K/...) -- fixed via zero-strides sentinel,no
+HI112,docs/planning/completed/tuning-hip-autotune/HI112.md,tuning-hip-autotune,completed,Correctness-evidence mapper only handles non-batched MUL_MAT signatures -- real batched src1 (MTP multi-token verify) signatures are skipped,no
+HI113,docs/planning/completed/tuning-hip-autotune/HI113.md,tuning-hip-autotune,completed,tune/control-mode live dispatch resolution needs more VRAM headroom than production KV-cache settings leave -- real reproducible ROCm OOM,no
+HI114,docs/planning/completed/tuning-hip-autotune/HI114.md,tuning-hip-autotune,completed,Real RD07 (Q6_K MMQ sub-scale fold) A/B on the production dense Qwen3.8-27B-AD-Q6_K model,no
+HI115,docs/planning/completed/tuning-hip-autotune/HI115.md,tuning-hip-autotune,completed,"Real production pp4096 throughput may have regressed ~2.4x since the recorded 2026-08-19 baseline -- suspected ROCm 7.1.4.0 -> 7.2.4 upgrade, unconfirmed",no
+HI116,docs/planning/completed/tuning-hip-autotune/HI116.md,tuning-hip-autotune,completed,Real record->tune->promote->replay campaign on the production Qwen3.8-27B-AD-Q6_K model,no
+HI117,docs/planning/completed/tuning-hip-autotune/HI117.md,tuning-hip-autotune,completed,Production critical-path attribution: why do real kernel-level wins vanish end-to-end (rocprofv3 campaign),no
+HI118,docs/planning/completed/tuning-hip-autotune/HI118.md,tuning-hip-autotune,completed,Capture fused MUL_MAT(_ID)+GLU gate-tensor geometry in the dispatch signature schema,no
+HI119,docs/planning/completed/tuning-hip-autotune/HI119.md,tuning-hip-autotune,superseded,"Fused MUL_MAT(_ID)+GLU correctness-evidence harness (real two-op graph, not the single-op --test-file mapper)",no
+HI12,docs/planning/completed/tuning-hip-autotune/HI12.md,tuning-hip-autotune,completed,Implement family-level tuning engine with complete-path timing and correctness validation,no
+HI120,docs/planning/completed/tuning-hip-autotune/HI120.md,tuning-hip-autotune,superseded,Harden signature coverage for PRBE11 dst_gate and RD17 x_scale_channel_dst fusion modes,no
+HI121,docs/planning/completed/tuning-hip-autotune/HI121.md,tuning-hip-autotune,completed,Dispatch signature identity v3: two-axis semantic content + producer capability model,no
+HI122,docs/planning/completed/tuning-hip-autotune/HI122.md,tuning-hip-autotune,completed,HI121 close-out step 1: exact per-row DB winner/hardware/native binding (RV84 P0-1),no
+HI123,docs/planning/completed/tuning-hip-autotune/HI123.md,tuning-hip-autotune,completed,"HI121 close-out step 2: source+target manifest/descriptor attestation (RV84 P0-2, P1-1, P1-2)",no
+HI124,docs/planning/completed/tuning-hip-autotune/HI124.md,tuning-hip-autotune,completed,HI121 close-out step 3: mechanical candidate implementation identity (RV84 P0-3),no
+HI125,docs/planning/completed/tuning-hip-autotune/HI125.md,tuning-hip-autotune,superseded,HI121 close-out step 4: C++-authoritative canonical signature digest verification (RV84 P0-4),no
+HI126,docs/planning/completed/tuning-hip-autotune/HI126.md,tuning-hip-autotune,completed,HI121 close-out step 5: source-build-aware multi-generation promotion resolution (RV84 P0-5),no
+HI127,docs/planning/completed/tuning-hip-autotune/HI127.md,tuning-hip-autotune,completed,HI121 close-out step 6: schema-7 verification/attestation state tracking,no
+HI128,docs/planning/completed/tuning-hip-autotune/HI128.md,tuning-hip-autotune,completed,HI121 close-out step 7: retroactive re-attestation/remediation of existing schema-7 data,no
+HI129,docs/planning/completed/tuning-hip-autotune/HI129.md,tuning-hip-autotune,completed,HI121 close-out step 8: closure validation (real dev A→B cross-generation run + independent review),no
+HI13,docs/planning/completed/tuning-hip-autotune/HI13.md,tuning-hip-autotune,completed,Add fused path collection and MUL_MAT_ID dispatch signatures,no
+HI130,docs/planning/completed/tuning-hip-autotune/HI130.md,tuning-hip-autotune,superseded,bigcherry tune-campaign: single-command record->tune->correctness->promote->replay orchestrator,no
+HI131,docs/planning/completed/tuning-hip-autotune/HI131.md,tuning-hip-autotune,superseded,"Winner/tuning persistence across llama.cpp revision bumps -- retain-by-default, retune-as-overlay",no
+HI132,docs/planning/completed/tuning-hip-autotune/HI132.md,tuning-hip-autotune,completed,bigcherry profile-campaign: rocprofv3-based repeatable GPU/runtime deep-profiling command,no
+HI133,docs/planning/completed/tuning-hip-autotune/HI133.md,tuning-hip-autotune,superseded,"profile-campaign CPU call-graph capability via perf (enhancement, deferred -- perf currently non-functional on dev)",no
+HI135,docs/planning/completed/tuning-hip-autotune/HI135.md,tuning-hip-autotune,completed,Unexplained intra-device Rect copy triggered by 6900XT presence in tensor-split topology,no
+HI136,docs/planning/completed/tuning-hip-autotune/HI136.md,tuning-hip-autotune,completed,Safe partial strengthened ingest -- per-row quarantine of unsupported-domain signatures during production tune-campaign,no
+HI137,docs/planning/completed/tuning-hip-autotune/HI137.md,tuning-hip-autotune,superseded,RCCL heterogeneous per-rank kernel/code-object dispatch investigation,no
+HI14,docs/planning/completed/tuning-hip-autotune/HI14.md,tuning-hip-autotune,superseded,Multi-GPU validation and end-to-end graph capture verification,no
+HI141,docs/planning/completed/tuning-hip-autotune/HI141.md,tuning-hip-autotune,completed,Root-cause and fix: mmvq:q8_0:w4:nw8:rpb1:sk0:v1 degrades MTP draft acceptance after long prefill (93.5%->62%),no
+HI142,docs/planning/completed/tuning-hip-autotune/HI142.md,tuning-hip-autotune,superseded,RCCL Phase 2: topology-aware qualification/tuning for the device-3-excluded subset,no
+HI143,docs/planning/completed/tuning-hip-autotune/HI143.md,tuning-hip-autotune,completed,"Detect real-data-triggered candidate defects during tuning, not post-hoc (HI141 methodology gap)",no
+HI144,docs/planning/completed/tuning-hip-autotune/HI144.md,tuning-hip-autotune,superseded,Investigate whether the HI141 w4:nw8:rpb1:sk0 defect corrupts shared MTP trunk state (draft AND target),no
+HI145,docs/planning/completed/tuning-hip-autotune/HI145.md,tuning-hip-autotune,completed,Two-level RCCL admission gate: design only (schema + mechanism decision),no
+HI146,docs/planning/completed/tuning-hip-autotune/HI146.md,tuning-hip-autotune,superseded,RCCL admission gate: implement level-1 comm-init topology admission,no
+HI147,docs/planning/completed/tuning-hip-autotune/HI147.md,tuning-hip-autotune,superseded,RCCL admission gate: implement level-2 per-call candidate binding,no
+HI148,docs/planning/completed/tuning-hip-autotune/HI148.md,tuning-hip-autotune,superseded,RCCL admission gate: promote to validated and wire into default build,no
+HI149,docs/planning/completed/tuning-hip-autotune/HI149.md,tuning-hip-autotune,superseded,CORRECTED -- no real regression: PRBE12 test assumed an out-of-band local mutation that pull() legitimately resets,no
+HI15,docs/planning/completed/tuning-hip-autotune/HI15.md,tuning-hip-autotune,completed,"Production hardening — replay-full binary, cache export, and corruption handling",no
+HI150,docs/planning/completed/tuning-hip-autotune/HI150.md,tuning-hip-autotune,completed,pin-bump orchestrator: design only (split into HI151/HI152/BHA01 for implementation),no
+HI151,docs/planning/completed/tuning-hip-autotune/HI151.md,tuning-hip-autotune,completed,tree-activity lease/maintenance-lock protocol,no
+HI152,docs/planning/completed/tuning-hip-autotune/HI152.md,tuning-hip-autotune,completed,revision-bound patch coverage/disposition schema + gate,no
+HI153,docs/planning/completed/tuning-hip-autotune/HI153.md,tuning-hip-autotune,superseded,bigcherry pin-bump: single-tree orchestrator command,no
+HI154,docs/planning/completed/tuning-hip-autotune/HI154.md,tuning-hip-autotune,completed,stew675-rdna-boosts sources-check findings: rebase + content drift review,no
+HI158,docs/planning/completed/tuning-hip-autotune/HI158.md,tuning-hip-autotune,superseded,Lazy native_select on the dispatch hot path (reopens HI87 under the sub-1% policy),no
+HI159,docs/planning/completed/tuning-hip-autotune/HI159.md,tuning-hip-autotune,superseded,Diagnostics are not zero-cost: enabled() does an atomic RMW on every call,no
+HI16,docs/planning/completed/tuning-hip-autotune/HI16.md,tuning-hip-autotune,completed,"Comprehensive test suite — catalog agreement, native parity, forced variants, replay, correctness",no
+HI160,docs/planning/completed/tuning-hip-autotune/HI160.md,tuning-hip-autotune,superseded,"Replay benchmarks must prove tuned kernels actually launched, not merely that a cache loaded",no
+HI161,docs/planning/completed/tuning-hip-autotune/HI161.md,tuning-hip-autotune,superseded,"Signature identity completeness: ids fields, quantized stride normalisation, and a maintained proof table",no
+HI162,docs/planning/completed/tuning-hip-autotune/HI162.md,tuning-hip-autotune,completed,RD73 measures as a ~2% REGRESSION on the workload it was promoted on,no
+HI163,docs/planning/completed/tuning-hip-autotune/HI163.md,tuning-hip-autotune,superseded,Separate fast runtime cache identity from the persistent cryptographic digest,no
+HI164,docs/planning/completed/tuning-hip-autotune/HI164.md,tuning-hip-autotune,superseded,Resolve bindings at graph-node lifetime -- the dispatch lookup may not need to run at all,no
+HI165,docs/planning/completed/tuning-hip-autotune/HI165.md,tuning-hip-autotune,superseded,Stage advisories: surface prior findings at the moment a result appears,no
+HI166,docs/planning/completed/tuning-hip-autotune/HI166.md,tuning-hip-autotune,completed,Ordered per-step speculative acceptance trace equality (aggregate counts are structurally insufficient),no
+HI167,docs/planning/completed/tuning-hip-autotune/HI167.md,tuning-hip-autotune,completed,Root-cause mmq_types=[] while MMQ carries 27% of real dispatches,no
+HI168,docs/planning/completed/tuning-hip-autotune/HI168.md,tuning-hip-autotune,superseded,Establish production native parity and measure tuned dispatch end to end,no
+HI169,docs/planning/completed/tuning-hip-autotune/HI169.md,tuning-hip-autotune,superseded,Review optional default-logging device attestation without blocking baseline capture,no
+HI17,docs/planning/completed/tuning-hip-autotune/HI17.md,tuning-hip-autotune,completed,Decompose the opaque BLAS candidate into a controlled execution plan,no
+HI170,docs/planning/completed/tuning-hip-autotune/HI170.md,tuning-hip-autotune,superseded,Make campaign workflows unattended across models and GPU topologies,no
+HI171,docs/planning/completed/tuning-hip-autotune/HI171.md,tuning-hip-autotune,superseded,THA15 — Provenance-safe promoted-winner execution and winner-vs-runner-up counterfactual replay audit,no
+HI172,docs/planning/completed/tuning-hip-autotune/HI172.md,tuning-hip-autotune,superseded,Critical-path/slack vs contention hypothesis for isolated-vs-e2e tuning divergence,no
+HI173,docs/planning/completed/tuning-hip-autotune/HI173.md,tuning-hip-autotune,superseded,BLAS-family kernel tuning: authorize and build candidate search for the rocBLAS/Tensile path HI17 made observable,no
+HI174,docs/planning/completed/tuning-hip-autotune/HI174.md,tuning-hip-autotune,superseded,Extend the HIP autotune dispatch/candidate system beyond matmul: non-matmul op-class scope and foundational infra,no
+HI175,docs/planning/completed/tuning-hip-autotune/HI175.md,tuning-hip-autotune,superseded,RoPE candidate-search: authorize and build tuning for RoPE dispatch once THA18 proves the pattern,no
+HI176,docs/planning/completed/tuning-hip-autotune/HI176.md,tuning-hip-autotune,superseded,rmsnorm/norm candidate-search: authorize and build tuning for normalization kernels once THA18 proves the pattern,no
+HI177,docs/planning/completed/tuning-hip-autotune/HI177.md,tuning-hip-autotune,superseded,"Flash-attention candidate-search: authorize and build tuning for attention kernels (largest, highest-risk op class)",no
+HI178,docs/planning/completed/tuning-hip-autotune/HI178.md,tuning-hip-autotune,superseded,Quantize/dequantize candidate-search: authorize and build tuning for quant/dequant kernels,no
+HI179,docs/planning/completed/tuning-hip-autotune/HI179.md,tuning-hip-autotune,superseded,Softmax/GLU-activation candidate-search: authorize and build tuning for remaining elementwise op classes,no
+HI19,docs/planning/completed/tuning-hip-autotune/HI19.md,tuning-hip-autotune,superseded,Enforce the signature / context / candidate / observation separation,no
+HI20,docs/planning/completed/tuning-hip-autotune/HI20.md,tuning-hip-autotune,completed,Load tuning measurements JSONL into SQLite database,no
+HI21,docs/planning/completed/tuning-hip-autotune/HI21.md,tuning-hip-autotune,completed,bigcherry report command for tuning analysis,no
+HI22,docs/planning/completed/tuning-hip-autotune/HI22.md,tuning-hip-autotune,completed,Candidate override for manual testing and seeding,no
+HI23,docs/planning/completed/tuning-hip-autotune/HI23.md,tuning-hip-autotune,completed,Portable multi-generation replay with exact provenance,no
+HI24,docs/planning/completed/tuning-hip-autotune/HI24.md,tuning-hip-autotune,completed,Adaptive screening with an impact budget and a same-kernel noise canary,no
+HI25,docs/planning/completed/tuning-hip-autotune/HI25.md,tuning-hip-autotune,superseded,"Custom gfx1100 Q8_0 × Q8_1 WMMA kernel for K=5120, M=6144, N=512 (cherrypips family)",no
+HI26,docs/planning/completed/tuning-hip-autotune/HI26.md,tuning-hip-autotune,superseded,"Q8_1 activation reuse, K-tile tuning, and fused gate+up prefill for gfx1100 dense models",no
+HI27,docs/planning/completed/tuning-hip-autotune/HI27.md,tuning-hip-autotune,completed,Core types for sig-to-sig routing transformations,no
+HI28,docs/planning/completed/tuning-hip-autotune/HI28.md,tuning-hip-autotune,completed,Predefined routing transformations — transpose_weight_for_mmvf and batch_for_mmvf,no
+HI29,docs/planning/completed/tuning-hip-autotune/HI29.md,tuning-hip-autotune,completed,Recording infrastructure — transform-attempt and transform-gap records for agent analysis,no
+HI30,docs/planning/completed/tuning-hip-autotune/HI30.md,tuning-hip-autotune,completed,Tuner integration — try routing transformations when native selection yields a single-family result,no
+HI31,docs/planning/completed/tuning-hip-autotune/HI31.md,tuning-hip-autotune,superseded,Dispatch integration — use transformed winner at runtime with zero overhead when no transform applies,no
+HI32,docs/planning/completed/tuning-hip-autotune/HI32.md,tuning-hip-autotune,completed,Agent-driven transformation discovery — analyze transform-gap records and propose new routing transformations,no
+HI33,docs/planning/completed/tuning-hip-autotune/HI33.md,tuning-hip-autotune,completed,SQLite schema and Python loader for transform records — gap/attempt tables with observation join,no
+HI34,docs/planning/completed/tuning-hip-autotune/HI34.md,tuning-hip-autotune,completed,Measurement fidelity — adaptive launch batching and the cache-residency question,no
+HI35,docs/planning/completed/tuning-hip-autotune/HI35.md,tuning-hip-autotune,superseded,"Make tuning falsifiable — predicted matmul saving, and the decode fraction it applies to",no
+HI36,docs/planning/completed/tuning-hip-autotune/HI36.md,tuning-hip-autotune,completed,Winner generalisation — make a tuned result cover signatures it was never measured on,no
+HI37,docs/planning/completed/tuning-hip-autotune/HI37.md,tuning-hip-autotune,completed,"Provenance capture — make a tuning artifact self-describing, and the database joinable",no
+HI38,docs/planning/completed/tuning-hip-autotune/HI38.md,tuning-hip-autotune,completed,Crash-safe append-only tuning journal,no
+HI39,docs/planning/completed/tuning-hip-autotune/HI39.md,tuning-hip-autotune,completed,Reproducible tuning experiment bundle and evidence contract,no
+HI40,docs/planning/completed/tuning-hip-autotune/HI40.md,tuning-hip-autotune,completed,"Fix pool workspace metrics to track requested size, not actual pool size",no
+HI41,docs/planning/completed/tuning-hip-autotune/HI41.md,tuning-hip-autotune,completed,"Ranking-policy table abstraction (HI50) — plural, offline-replayable winner-selection policies",no
+HI42,docs/planning/completed/tuning-hip-autotune/HI42.md,tuning-hip-autotune,completed,Restore experiment_bundle.py (HI39 module),no
+HI43,docs/planning/completed/tuning-hip-autotune/HI43.md,tuning-hip-autotune,completed,Restore compare-tunes and A/B benchmark tooling,no
+HI44,docs/planning/completed/tuning-hip-autotune/HI44.md,tuning-hip-autotune,completed,Restore generalise.py (HI36),no
+HI45,docs/planning/completed/tuning-hip-autotune/HI45.md,tuning-hip-autotune,completed,Restore resource_report.py and candidate_binary_size.py,no
+HI46,docs/planning/completed/tuning-hip-autotune/HI46.md,tuning-hip-autotune,completed,Restore release_validate.py as thin orchestration over recipes/releases,no
+HI47,docs/planning/completed/tuning-hip-autotune/HI47.md,tuning-hip-autotune,completed,Restore bandit_simulator.py,no
+HI48,docs/planning/completed/tuning-hip-autotune/HI48.md,tuning-hip-autotune,completed,"DB schema reconciliation, recovery test ledger, and full hardware validation",no
+HI49,docs/planning/completed/tuning-hip-autotune/HI49.md,tuning-hip-autotune,completed,Restore hip-autotune-build-descriptor.json generation in autotune_catalog.py,no
+HI50,docs/planning/completed/tuning-hip-autotune/HI50.md,tuning-hip-autotune,completed,bigcherry build's output directory ignores --llama-root,no
+HI51,docs/planning/completed/tuning-hip-autotune/HI51.md,tuning-hip-autotune,completed,Replay cache wire format: v3-only supported contract,no
+HI52,docs/planning/completed/tuning-hip-autotune/HI52.md,tuning-hip-autotune,completed,HI54: restore the exact MMQ workspace declaration (J_max + MoE routing buffers),no
+HI53,docs/planning/completed/tuning-hip-autotune/HI53.md,tuning-hip-autotune,completed,MMVQ native-wrapper eligibility crash on MoE MUL_MAT_ID (ne12 > MMVQ_MAX_BATCH_SIZE),no
+HI54,docs/planning/completed/tuning-hip-autotune/HI54.md,tuning-hip-autotune,completed,HI54: isolated pool-cache clear/rebase protocol (exact placement invariant),no
+HI55,docs/planning/completed/tuning-hip-autotune/HI55.md,tuning-hip-autotune,completed,Harden tuner measurement integrity and configuration parsing,no
+HI56,docs/planning/completed/tuning-hip-autotune/HI56.md,tuning-hip-autotune,completed,Make replay and production artifacts strict and slim,no
+HI57,docs/planning/completed/tuning-hip-autotune/HI57.md,tuning-hip-autotune,completed,Implement BLAS-0 effective native telemetry,no
+HI59,docs/planning/completed/tuning-hip-autotune/HI59.md,tuning-hip-autotune,completed,Complete release gate and architecture-specific coverage validation,no
+HI60,docs/planning/completed/tuning-hip-autotune/HI60.md,tuning-hip-autotune,completed,Restore device-text metric and clock-drift evidence,no
+HI61,docs/planning/completed/tuning-hip-autotune/HI61.md,tuning-hip-autotune,completed,Separate supported candidate universe from observed workload coverage,no
+HI62,docs/planning/completed/tuning-hip-autotune/HI62.md,tuning-hip-autotune,completed,Isolate offline tests and make Windows tooling output robust,no
+HI63,docs/planning/completed/tuning-hip-autotune/HI63.md,tuning-hip-autotune,completed,Make release-record and index publication crash-safe,no
+HI64,docs/planning/completed/tuning-hip-autotune/HI64.md,tuning-hip-autotune,completed,Windows/WDDM measurement hardening — unblocked sweeps poison on transient fatal failures,no
+HI65,docs/planning/completed/tuning-hip-autotune/HI65.md,tuning-hip-autotune,completed,Attribute B1 measurement-context sensitivity: cache residency vs eviction preconditioning,no
+HI66,docs/planning/completed/tuning-hip-autotune/HI66.md,tuning-hip-autotune,completed,Split replay-full correctness evidence into workload evidence + candidate-qualification evidence,no
+HI67,docs/planning/completed/tuning-hip-autotune/HI67.md,tuning-hip-autotune,completed,"CPU-reference correctness contract: headroom rule, deterministic seeds, tune mode stays native",no
+HI68,docs/planning/completed/tuning-hip-autotune/HI68.md,tuning-hip-autotune,completed,Canary retry becomes a stability probe; one fresh complete finalist block is the sole ranking dataset,no
+HI69,docs/planning/completed/tuning-hip-autotune/HI69.md,tuning-hip-autotune,completed,Profile-gated exact on-device correctness reduction for candidate screening,no
+HI70,docs/planning/completed/tuning-hip-autotune/HI70.md,tuning-hip-autotune,completed,gfx1201 replay-full catalog: 24 candidates never reach correctness evidence regardless of workload,no
+HI71,docs/planning/completed/tuning-hip-autotune/HI71.md,tuning-hip-autotune,completed,Illegal HIP memory access under tune-mode dispatch + MTP speculative decoding,no
+HI72,docs/planning/completed/tuning-hip-autotune/HI72.md,tuning-hip-autotune,completed,Generate-stage manifest/source_revision provenance mismatch in campaign builds,no
+HI73,docs/planning/completed/tuning-hip-autotune/HI73.md,tuning-hip-autotune,completed,Workload-shape-aware candidate catalog: skip evidence for candidates a real inventory can never reach,no
+HI74,docs/planning/completed/tuning-hip-autotune/HI74.md,tuning-hip-autotune,completed,Replay v5 foundation — route-aware cache format with match-kind extension point,no
+HI75,docs/planning/completed/tuning-hip-autotune/HI75.md,tuning-hip-autotune,superseded,HI36b — generalised dispatch runtime: two-level lookup and generalised cache entries on replay v5,no
+HI76,docs/planning/completed/tuning-hip-autotune/HI76.md,tuning-hip-autotune,completed,Compile-only CI check for both HIP autotune build configurations (tune-mode and replay-only),no
+HI77,docs/planning/completed/tuning-hip-autotune/HI77.md,tuning-hip-autotune,completed,Detect/enforce overlay-to-vendor source sync (src/ggml vs vendor/llama.cpp drift),no
+HI78,docs/planning/completed/tuning-hip-autotune/HI78.md,tuning-hip-autotune,completed,Commit a fast single-model E2E smoke-test campaign (record-tune-promote-export-replay),no
+HI79,docs/planning/completed/tuning-hip-autotune/HI79.md,tuning-hip-autotune,completed,Promotion-contract tests with realistic mixed-outcome measurement rows (rejected/poisoned/native-retained),no
+HI80,docs/planning/completed/tuning-hip-autotune/HI80.md,tuning-hip-autotune,completed,Correctness-evidence generation CLI (op_filter/target_tensor derivation from a promoted row's signature),no
+HI81,docs/planning/completed/tuning-hip-autotune/HI81.md,tuning-hip-autotune,completed,CMAKE_HIP_FLAGS does not propagate to compile commands on Windows Ninja+Clang HIP builds,no
+HI82,docs/planning/completed/tuning-hip-autotune/HI82.md,tuning-hip-autotune,completed,"Patch-validation campaign: content-addressed source isolation + activation-evidence gate (GPT design, req_51838ef1ea5f4086)",no
+HI83,docs/planning/completed/tuning-hip-autotune/HI83.md,tuning-hip-autotune,completed,"Validated-state evidence contract: tie STATE=""validated"" to real HI82 evidence",no
+HI86,docs/planning/completed/tuning-hip-autotune/HI86.md,tuning-hip-autotune,superseded,"Topology-aware execution planner (candidate architecture, above per-op dispatch)",no
+HI87,docs/planning/completed/tuning-hip-autotune/HI87.md,tuning-hip-autotune,completed,Warm-cache-first dispatch: skip native_select() on guaranteed cache hits,no
+HI89,docs/planning/completed/tuning-hip-autotune/HI89.md,tuning-hip-autotune,completed,"HI67 export-gate follow-ups: orphaned screening reducer, seed-override native validation",no
+HI90,docs/planning/completed/tuning-hip-autotune/HI90.md,tuning-hip-autotune,completed,Graph-lifecycle trace markers (patch 1231) invisible below llama-server -lv 4,no
+HI91,docs/planning/completed/tuning-hip-autotune/HI91.md,tuning-hip-autotune,completed,Patch RD17 (paired-mmvq gated struct fields) anchor no longer matches current source,no
+HI92,docs/planning/completed/tuning-hip-autotune/HI92.md,tuning-hip-autotune,completed,Replay hot-path instrumentation: L0/L1/L2 hit-rate and native-selector-call counters,no
+HI93,docs/planning/completed/tuning-hip-autotune/HI93.md,tuning-hip-autotune,completed,Cache per-device hardware key/digest once per process (RP4 slice),no
+HI94,docs/planning/completed/tuning-hip-autotune/HI94.md,tuning-hip-autotune,superseded,"Replay fallback paths under graph capture (hardware separation, cache corruption, process-cache hit)",no
+HI95,docs/planning/completed/tuning-hip-autotune/HI95.md,tuning-hip-autotune,superseded,Adaptive retention band derived from the screen-stage canary (HI24 step 7),no
+HI96,docs/planning/completed/tuning-hip-autotune/HI96.md,tuning-hip-autotune,superseded,"Tuner config X-macro, machine-state telemetry, and workload-check --cache variant (HI37 Part 3)",no
+HI97,docs/planning/completed/tuning-hip-autotune/HI97.md,tuning-hip-autotune,completed,Reconcile HI29 runtime transform-record JSONL schema with the HI33 offline loader/analyze stack (producer/consumer field mismatch),no
+HI98,docs/planning/completed/tuning-hip-autotune/HI98.md,tuning-hip-autotune,completed,WDDM tuner failure-recovery: soak validation + adjudicate retry/backoff defaults,no
+HI99,docs/planning/completed/tuning-hip-autotune/HI99.md,tuning-hip-autotune,completed,Tuner config X-macro: single source of truth for env overrides + header emission (HI96A),no
+THA09,docs/planning/completed/tuning-hip-autotune/THA09.md,tuning-hip-autotune,superseded,Lazy native_select on the dispatch hot path (reopens HI87 under the sub-1% policy),no
+THA10,docs/planning/completed/tuning-hip-autotune/THA10.md,tuning-hip-autotune,completed,Diagnostics are not zero-cost: enabled() does an atomic RMW on every call,no
+THA13,docs/planning/completed/tuning-hip-autotune/THA13.md,tuning-hip-autotune,completed,Separate fast runtime cache identity from the persistent cryptographic digest,no
+THA14,docs/planning/completed/tuning-hip-autotune/THA14.md,tuning-hip-autotune,superseded,Resolve bindings at graph-node lifetime -- the dispatch lookup may not need to run at all,no
+THA19,docs/planning/completed/tuning-hip-autotune/THA19.md,tuning-hip-autotune,superseded,RoPE candidate-search: authorize and build tuning for RoPE dispatch once HI174 proves the pattern,no
+THA20,docs/planning/completed/tuning-hip-autotune/THA20.md,tuning-hip-autotune,superseded,rmsnorm/norm candidate-search: authorize and build tuning for normalization kernels once HI174 proves the pattern,no
+THA21,docs/planning/completed/tuning-hip-autotune/THA21.md,tuning-hip-autotune,superseded,"Flash-attention candidate-search: authorize and build tuning for attention kernels (largest, highest-risk op class)",no
+THA22,docs/planning/completed/tuning-hip-autotune/THA22.md,tuning-hip-autotune,superseded,Quantize/dequantize candidate-search: authorize and build tuning for quant/dequant kernels,no
+THA23,docs/planning/completed/tuning-hip-autotune/THA23.md,tuning-hip-autotune,superseded,Softmax/GLU-activation candidate-search: authorize and build tuning for remaining elementwise op classes,no
+THA24,docs/planning/completed/tuning-hip-autotune/THA24.md,tuning-hip-autotune,superseded,"Custom gfx1100 Q8_0 × Q8_1 WMMA kernel for K=5120, M=6144, N=512 (cherrypips family)",no
+THA25,docs/planning/completed/tuning-hip-autotune/THA25.md,tuning-hip-autotune,superseded,"Q8_1 activation reuse, K-tile tuning, and fused gate+up prefill for gfx1100 dense models",no
+THTR01,docs/planning/completed/tuning-hip-tune-recovery/THTR01.md,tuning-hip-tune-recovery,superseded,Durable BehavioralFailureWitness records (not a candidate blacklist),no
+THTR02,docs/planning/completed/tuning-hip-tune-recovery/THTR02.md,tuning-hip-tune-recovery,superseded,"Retune escalation: recommendation-only signal, never an autonomous action (deferred implementation)",no
+THTR03,docs/planning/completed/tuning-hip-tune-recovery/THTR03.md,tuning-hip-tune-recovery,superseded,"Empirical multiplicity-correction investigation (BH vs Holm vs BY) -- study first, no production change",no
+THTR04,docs/planning/completed/tuning-hip-tune-recovery/THTR04.md,tuning-hip-tune-recovery,superseded,"Investigate synthetic-to-E2E candidate ranking fidelity (bounded empirical study, not a ranking change)",no
+ENG05,docs/planning/completed/tuning-radiance-engine/ENG05.md,tuning-radiance-engine,completed,Flash-Next 4-GPU decode: recover the ~3-4% step-time loss since v1.17 and raise decode tok/s,no
+ENG06,docs/planning/completed/tuning-radiance-engine/ENG06.md,tuning-radiance-engine,completed,"bf16_i8 KV cache: qualify on the production layout, match E4M3-V decode speed, measure 256K decode, quantise the QSA block keys",no
+TK01,docs/planning/completed/tuning-radiance-tail-kernel/TK01.md,tuning-radiance-tail-kernel,completed,RX 6900 XT tail quad kernel: register-permute W4 decoder instead of the LDS table (bit-identical),no
+TK02,docs/planning/completed/tuning-radiance-tail-kernel/TK02.md,tuning-radiance-tail-kernel,completed,RX 6900 XT tail quad kernel: fold the quad DPP broadcasts into v_add_f32_dpp (bit-identical),no
+TK03,docs/planning/completed/tuning-radiance-tail-kernel/TK03.md,tuning-radiance-tail-kernel,deprecated,RX 6900 XT tail quad kernel: occupancy-specialised row batches and no padded-row work,no
+TK04,docs/planning/completed/tuning-radiance-tail-kernel/TK04.md,tuning-radiance-tail-kernel,completed,"RX 6900 XT tail quad kernel: stage each activation row once per expert, not once per N-tile CTA",no
+RE01,docs/planning/completed/tuning-reusable-build-campaign/RE01.md,tuning-reusable-build-campaign,completed,"Characterise current build, source, patch, generation, and evidence behavior",no
+RE02,docs/planning/completed/tuning-reusable-build-campaign/RE02.md,tuning-reusable-build-campaign,completed,Introduce ProjectContext and explicit configuration v2,no
+RE03,docs/planning/completed/tuning-reusable-build-campaign/RE03.md,tuning-reusable-build-campaign,completed,Catalog exact patch modules and reviewed production patch sets,no
+RE04,docs/planning/completed/tuning-reusable-build-campaign/RE04.md,tuning-reusable-build-campaign,completed,Add host-local upstream repository and isolated source materialisation,no
+RE05,docs/planning/completed/tuning-reusable-build-campaign/RE05.md,tuning-reusable-build-campaign,completed,Derive effective source tree and source-slice identities,no
+RE06,docs/planning/completed/tuning-reusable-build-campaign/RE06.md,tuning-reusable-build-campaign,completed,Move autotune generation out of source worktrees,no
+RE07,docs/planning/completed/tuning-reusable-build-campaign/RE07.md,tuning-reusable-build-campaign,completed,Implement content-addressed build plans and effective build identity,no
+RE08,docs/planning/completed/tuning-reusable-build-campaign/RE08.md,tuning-reusable-build-campaign,completed,Add immutable artifact store and provenance v2,no
+RE09,docs/planning/completed/tuning-reusable-build-campaign/RE09.md,tuning-reusable-build-campaign,completed,Migrate dispatch DB and tuning artifacts to campaign identities,no
+RE10,docs/planning/completed/tuning-reusable-build-campaign/RE10.md,tuning-reusable-build-campaign,completed,Implement per-source lifecycle pipeline service,no
+RE11,docs/planning/completed/tuning-reusable-build-campaign/RE11.md,tuning-reusable-build-campaign,deprecated,"Implement campaign DAG, resource ownership, locks, and resume",no
+RE12,docs/planning/completed/tuning-reusable-build-campaign/RE12.md,tuning-reusable-build-campaign,completed,Implement explicit balanced comparison planner and campaign reports,no
+RE13,docs/planning/completed/tuning-reusable-build-campaign/RE13.md,tuning-reusable-build-campaign,completed,Add explicit campaign-backed release promotion,no
+RE14,docs/planning/completed/tuning-reusable-build-campaign/RE14.md,tuning-reusable-build-campaign,completed,Cut over campaign execution and retire legacy mutable mechanics,no
+RE15,docs/planning/completed/tuning-reusable-build-campaign/RE15.md,tuning-reusable-build-campaign,completed,Run real GPU end-to-end campaign acceptance,no
+RE16,docs/planning/completed/tuning-reusable-build-campaign/RE16.md,tuning-reusable-build-campaign,completed,Promote execute_campaign_lane() into a reusable production API,no
+RE17,docs/planning/completed/tuning-reusable-build-campaign/RE17.md,tuning-reusable-build-campaign,completed,Generalize lane stage inputs and graph shape beyond inventory-only tune,no
+RE18,docs/planning/completed/tuning-reusable-build-campaign/RE18.md,tuning-reusable-build-campaign,completed,Canonical CampaignLane planner and sequential multi-lane runner,no
+RE19,docs/planning/completed/tuning-reusable-build-campaign/RE19.md,tuning-reusable-build-campaign,completed,Define canonical standard/default campaign profile in v2 config,no
+RE20,docs/planning/completed/tuning-reusable-build-campaign/RE20.md,tuning-reusable-build-campaign,completed,Multi-lane real dev parity proof for the canonical standard profile,no
+RE21,docs/planning/completed/tuning-reusable-build-campaign/RE21.md,tuning-reusable-build-campaign,completed,Flip `bigcherry build` to the new engine; rename legacy to `legacy-build`,no
+RE22,docs/planning/completed/tuning-reusable-build-campaign/RE22.md,tuning-reusable-build-campaign,completed,Fail-closed cutover tests for the multi-lane build flip,no
+RE23,docs/planning/completed/tuning-reusable-build-campaign/RE23.md,tuning-reusable-build-campaign,completed,Delete legacy mutable-checkout mechanics (RE14 step 8),no
+RE24,docs/planning/completed/tuning-reusable-build-campaign/RE24.md,tuning-reusable-build-campaign,completed,Extended adversarial cutover matrix for the audit-found integrity failures,no
+RE25,docs/planning/completed/tuning-reusable-build-campaign/RE25.md,tuning-reusable-build-campaign,completed,ArtifactDescriptor persistence + kind-specific provenance contracts,no
+RE26,docs/planning/completed/tuning-reusable-build-campaign/RE26.md,tuning-reusable-build-campaign,completed,Wire HI70 direct-op evidence corpus into re15_acceptance_run.py's continuous tune stage,no
+RE27,docs/planning/completed/tuning-reusable-build-campaign/RE27.md,tuning-reusable-build-campaign,completed,RE15 stage G: replay coverage schema_version mismatch blocks runtime validation,no
+RE28,docs/planning/completed/tuning-reusable-build-campaign/RE28.md,tuning-reusable-build-campaign,completed,Promotion rejects confirmation evidence: %.3f serialization collapses distinct paired-round timings into a spurious tie,no
+RE29,docs/planning/completed/tuning-reusable-build-campaign/RE29.md,tuning-reusable-build-campaign,completed,"re15_acceptance_run stage H never passed -m to llama-bench, so both comparison arms tried to load the default placeholder model path",no
+RE30,docs/planning/completed/tuning-reusable-build-campaign/RE30.md,tuning-reusable-build-campaign,superseded,"Evaluate adding Vulkan as a tunable build line (patchable, campaign/tune/replay-capable like HIP)",no
+RE31,docs/planning/completed/tuning-reusable-build-campaign/RE31.md,tuning-reusable-build-campaign,superseded,Vulkan-aware device-visibility wiring for build's runtime smoke path,no
+RE32,docs/planning/completed/tuning-reusable-build-campaign/RE32.md,tuning-reusable-build-campaign,superseded,Vulkan candidate eligibility ABI: can_execute() cannot evaluate real Vulkan capability yet,no
+RE33,docs/planning/completed/tuning-reusable-build-campaign/RE33.md,tuning-reusable-build-campaign,superseded,Replace platform.vulkan-linux's targets placeholder with real device/ICD identity,no
+RE34,docs/planning/completed/tuning-reusable-build-campaign/RE34.md,tuning-reusable-build-campaign,superseded,Restore an independent build-comparison oracle for future toolchain/RDNA-target changes,no
+RE35,docs/planning/completed/tuning-reusable-build-campaign/RE35.md,tuning-reusable-build-campaign,superseded,"Structurally enforce work-root/checkout non-overlap, not just default-topology safety",no
+RE36,docs/planning/completed/tuning-reusable-build-campaign/RE36.md,tuning-reusable-build-campaign,superseded,Vulkan experiment execution adapter: forceable selector interface + route telemetry,no
+RE37,docs/planning/completed/tuning-reusable-build-campaign/RE37.md,tuning-reusable-build-campaign,superseded,Environment-action campaign inputs for non-patch experiments (driver/ICD/ASPM/hipBLASLt),no
+RE38,docs/planning/completed/tuning-reusable-build-campaign/RE38.md,tuning-reusable-build-campaign,superseded,Supersede RE30's backend-first folder decision with kind-based patches/framework|fixes|experiments split,no
+RE39,docs/planning/completed/tuning-reusable-build-campaign/RE39.md,tuning-reusable-build-campaign,superseded,Introduce CatalogSnapshot: one immutable patch-catalog read per command/campaign,no
+RE40,docs/planning/completed/tuning-reusable-build-campaign/RE40.md,tuning-reusable-build-campaign,superseded,"Extend patch_catalog.py metadata: PLAN_IDS, BACKENDS, SUBSYSTEMS, REQUIRES, CONFLICTS, HARDWARE",no
+RE41,docs/planning/completed/tuning-reusable-build-campaign/RE41.md,tuning-reusable-build-campaign,completed,Decision: no physical patch-folder move — metadata + CLI filtering is sufficient,no
+RE42,docs/planning/completed/tuning-reusable-build-campaign/RE42.md,tuning-reusable-build-campaign,superseded,"Split resolver into resolve_exact() (fail-closed, explicit) and expand_composition() (dependency-closure expansion)",no
+RE43,docs/planning/completed/tuning-reusable-build-campaign/RE43.md,tuning-reusable-build-campaign,completed,Add bigcherry patch list / patch explain / patch graph CLI subcommands,no
+RE44,docs/planning/completed/tuning-reusable-build-campaign/RE44.md,tuning-reusable-build-campaign,superseded,"Move patches/ into framework/fixes/experiments/_shared (staged last, after resolver/metadata/tooling work)",no
+RE45,docs/planning/completed/tuning-reusable-build-campaign/RE45.md,tuning-reusable-build-campaign,completed,Backend is now intrinsic to requested BuildPlan identity,no
+RE46,docs/planning/completed/tuning-reusable-build-campaign/RE46.md,tuning-reusable-build-campaign,completed,PatchContext applicability now enforced in the real production build path,no
+RE47,docs/planning/completed/tuning-reusable-build-campaign/RE47.md,tuning-reusable-build-campaign,completed,P1 cleanup deferred from the RE30 governance reassessment (2026-08-20),no
+RE48,docs/planning/completed/tuning-reusable-build-campaign/RE48.md,tuning-reusable-build-campaign,completed,"Pin-consistency guard: one command that detects vendor-checkout / pin / release-record / cross-tree desync, plus the canonical pin-bump procedure",no
+RO01,docs/planning/completed/tuning-rocm-vulkan-provider/RO01.md,tuning-rocm-vulkan-provider,completed,BackendStack configuration contract,no
+RO02,docs/planning/completed/tuning-rocm-vulkan-provider/RO02.md,tuning-rocm-vulkan-provider,superseded,Campaign and CLI stack propagation,no
+RO03,docs/planning/completed/tuning-rocm-vulkan-provider/RO03.md,tuning-rocm-vulkan-provider,superseded,Backend stack probing and canonical identity,no
+RO04,docs/planning/completed/tuning-rocm-vulkan-provider/RO04.md,tuning-rocm-vulkan-provider,superseded,BuildPlan and cache stack identity,no
+RO05,docs/planning/completed/tuning-rocm-vulkan-provider/RO05.md,tuning-rocm-vulkan-provider,superseded,Runtime stack attestation,no
+RO06,docs/planning/completed/tuning-rocm-vulkan-provider/RO06.md,tuning-rocm-vulkan-provider,superseded,Manifest measurement database binding,no
+RO07,docs/planning/completed/tuning-rocm-vulkan-provider/RO07.md,tuning-rocm-vulkan-provider,superseded,Provider discovery and completeness layer,no
+RO08,docs/planning/completed/tuning-rocm-vulkan-provider/RO08.md,tuning-rocm-vulkan-provider,superseded,Workload BLAS-domain inventory,no
+RO09,docs/planning/completed/tuning-rocm-vulkan-provider/RO09.md,tuning-rocm-vulkan-provider,superseded,hipBLASLt vendor_auto candidate,no
+RO10,docs/planning/completed/tuning-rocm-vulkan-provider/RO10.md,tuning-rocm-vulkan-provider,superseded,hipBLASLt explicit algorithms,no
+RO11,docs/planning/completed/tuning-rocm-vulkan-provider/RO11.md,tuning-rocm-vulkan-provider,superseded,hipBLASLt independent validation oracle,no
+RO12,docs/planning/completed/tuning-rocm-vulkan-provider/RO12.md,tuning-rocm-vulkan-provider,superseded,Raw HIP kernel audit,no
+RO13,docs/planning/completed/tuning-rocm-vulkan-provider/RO13.md,tuning-rocm-vulkan-provider,superseded,CK dense GEMM provider,no
+RO14,docs/planning/completed/tuning-rocm-vulkan-provider/RO14.md,tuning-rocm-vulkan-provider,superseded,"CK split-K, preshuffle, pipeline variants",no
+RO15,docs/planning/completed/tuning-rocm-vulkan-provider/RO15.md,tuning-rocm-vulkan-provider,superseded,CK grouped GEMM and MoE family,no
+RO16,docs/planning/completed/tuning-rocm-vulkan-provider/RO16.md,tuning-rocm-vulkan-provider,superseded,ROCm qualification matrix,no
+RO17,docs/planning/completed/tuning-rocm-vulkan-provider/RO17.md,tuning-rocm-vulkan-provider,superseded,Vulkan stack and runtime integration,no
+RO18,docs/planning/completed/tuning-rocm-vulkan-provider/RO18.md,tuning-rocm-vulkan-provider,superseded,Stack/build inspection and release completeness,no
+RO19,docs/planning/completed/tuning-rocm-vulkan-provider/RO19.md,tuning-rocm-vulkan-provider,superseded,Capture and pin PR #27952 Vulkan CM1 source,no
+RO20,docs/planning/completed/tuning-rocm-vulkan-provider/RO20.md,tuning-rocm-vulkan-provider,superseded,Integrate CM1 shader generation and Vulkan capability gating,no
+RO21,docs/planning/completed/tuning-rocm-vulkan-provider/RO21.md,tuning-rocm-vulkan-provider,superseded,Expose CM1 as a forceable Vulkan recipe candidate,no
+RO22,docs/planning/completed/tuning-rocm-vulkan-provider/RO22.md,tuning-rocm-vulkan-provider,superseded,Qualify and selectively promote RDNA CM1 winners,no

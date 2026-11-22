@@ -1,0 +1,2 @@
+source_id,source_path,target_literal,expected_path,completed_canonical
+RSC11,docs/planning/active/run-serving-configuration/RSC11.md,../../evidence/2026-11-13-unpublished-branch-reconciliation/README.md,docs/planning/evidence/2026-11-13-unpublished-branch-reconciliation/README.md,

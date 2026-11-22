@@ -2,7 +2,7 @@
 id: BCOP114
 order: 114
 plan: patching-bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-10T11:24:00+00:00'
 created-by: agent
 priority: P1
@@ -10,6 +10,46 @@ work: S
 ---
 
 # PHC03: gate no-P2P Meta D=3 on copy-path evidence
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 consolidation: Secondary decision note superseded by active primary PHC03 in patching-hip-collectives. PHC03 already owns RU01's D=3 no-P2P Meta SIGSEGV, both peer-copy paths, safe host fallback, exact A/B build discrimination and CPU-double evidence. No separate BCOP implementation. Review RV4318 records the evidence. No completed runtime work is claimed; PHC03's pending acceptance remains unchanged.
 
 ## Discovery / disposition
 
@@ -26,3 +66,12 @@ Compare fresh isolated default build A versus `-DGGML_CUDA_NO_PEER_COPY=ON` buil
 ## Evidence
 
 Pinned llama.cpp b11474 CUDA/Meta/backend/CMake source; RU01/HI84; 1224 and 1242; [upstream #21648](https://github.com/ggml-org/llama.cpp/issues/21648); vLLM custom AllReduce; SGLang PCIe-IPC. Disposable host D=2/3/4 route fixtures passed; pinned source static checks 12/12. No build, pytest, GPU benchmark, measured gain or published implementation.
+
+## Reviews
+
+- RV4318
+
+## Change Log
+
+- 2026-11-22T03:31:12.076555+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T03:31:22.551559+00:00 (state-transition): State: pending → superseded
