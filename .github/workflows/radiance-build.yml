@@ -201,7 +201,7 @@ jobs:
             python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
             # Fingerprint the successful build inside the CI compiler image.
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
-            # The cache holds this build's working set and the previous one (a pin or toolchain bump replaces nearly all of
+            # The cache holds the working set of this build and the previous one (a pin or toolchain bump replaces nearly all of
             # it once), not a fixed 5 GiB of entries nothing uses: twice the bytes this build touched (hit or wrote).
             # Only a successful build gets here, so a failed one never shrinks the limit. Main saves the trimmed cache.
             touched=$(ccache_touched)
