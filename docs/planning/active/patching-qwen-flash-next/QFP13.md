@@ -63,7 +63,7 @@ Implementation details belong in the canonical owner item. Do not duplicate matc
 
 ## Acceptance Criteria
 
-
+**Transferred QFP48 acceptance (retain as separate gating outcome):** QFP13: reuse its existing current-pin decode event/copy-gap census for QFP48's missing decode trace (no second trace CLI). Rank consecutive same-stream/same-tensor adjacent pairs with actual critical-path saving >1% decode-step, launch count and other operations/negative controls. Send eligible fusions to existing implementation owner and after an accepted patch remeasure launch count, GPU gap share, ms/step and TG. If candidate fails correctness or >=3% E2E/positive CI95-low and <=1% unaffected regression, park that candidate; never implement a kernel or new matcher in the QFP13 measurement plan.
 
 ## Notes
 
@@ -96,6 +96,8 @@ Related: PRBE05, PRBE06, PRBE37, PRBE38, PRBE39, PRBE40, QFP06, QFP09, QFP11, RN
 
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE portable census rubric into RAD43, no standalone llama->radiance port" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP13.md:62-99,155-197 remains the llama.cpp HIP/Meta decode launch-gap census and acceptance/assignment umbrella with explicit live canonical PRBE owners and performance gates. docs/planning/active/patching-radiance-rdna3/RAD43.md:12-35 instead profiles moe-remote helper reduction/write, gfx1030 tail GEMV and engine add, so it cannot retain QFP13's per-token llama graph-launch topology. Active items that reference this one: BCOP127, BCOP144, BCOP209, BCOP213, BCOP235, BCOP299, BCOP331, BCOP354, BCOP44, BCOP68. Retain the llama.cpp launch/fusion census as QFP13; RAD43 may reuse its measurement rubric, not replace its remaining work.
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: receiving QFP48. Prior acceptance remains mandatory; this is a planning ownership consolidation, not an executed implementation or evidence/quality pass. Independent hardware routes and production-safe fallbacks remain conditional. Full original design, source/negative receipts and historical review survive in each archived source plan.
 
 ## 2026-10-14 b11552 rollback-copy route reconciliation (BCOP209)
 
@@ -222,3 +224,8 @@ Out of scope for QFP13 implementation ownership:
 
 The older ~26/token `MMVF -> unary_op -> k_bin_bcast` count is **only a neighbourhood census**, not 52 removable launches. At b11552, `ggml_cuda_try_fuse` already fuses eligible `UNARY(SILU|SIGMOID|SOFTPLUS) -> MUL` into **one** `unary_gated` launch; canonical paired-GEMV `GGML_OP_GLU` is also fused into the vector epilogue. PRBE38 remains the sole literal vector-producer-to-pointwise backend owner. Before considering an epilogue edit, join exact graph tensor identities/consumers with actual per-rank kernel launches to prove a separate GEMV output materialization and one remaining exposed pointwise launch. An optimistic 26*3.5 us = **0.091 ms/token** launch-only ceiling (assuming all 26 legal and exposed) is not a measured saving and does not automatically satisfy the >=0.10 ms/token serial-gap alternative. See PRBE38's 2026-10-18 gate for alias, numerical, architecture, work-accounting, fallback and termination conditions. Do not duplicate PRBE37/39/40 or touch active RAD06 helper work.
 - 2026-11-04T04:26:20.600544+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4487
+- 2026-11-22T09:45:43.643919+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
