@@ -16,8 +16,9 @@ Who judges the result is the block's ``gate``:
 Block keys: ``reference_dir`` (required), ``args`` (engine arguments of the KL run, required), ``gate``, ``thresholds``,
 ``control`` (arm name, default first arm), ``timeout_s``, and one of
 
-* ``corpus`` + ``record``: record the reference first (``record.args`` and ``record.environment`` replace the arm's
-  layout, no settings or sidecars; ``reference_dir`` must not hold a reference yet);
+* ``corpus`` + ``record``: record the reference first with the native owner (``record.serving`` = ``config`` +
+  ``native_config``: the YAML of the exact layout the reference is recorded on; ``record.environment`` is optional;
+  ``reference_dir`` must not hold a reference yet);
 * ``reference_metadata``: a STORED reference. ``reference_dir`` already holds it, and this JSON file beside it says
   where it came from (required keys ``pin``, ``layout``, ``recorded_on``). Its content is copied into the ``quality``
   section of ``run.json`` so a result always names the pin and layout its reference was recorded on;
@@ -33,6 +34,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ..core import paths
 from ..engine_adapters import EngineAdapter, QualityCommand, SidecarError, SidecarSet, failed_sidecars
 from ..experiment.engine_quality import (
     KldResult, QualityParseError, QualityThresholds, parse_radiance_kld_json, quality_gate,
@@ -88,12 +90,17 @@ def validate_quality_block(quality: Any, names: list[str]) -> dict[str, Any]:
     expanded.setdefault("control", names[0])
     if "record" in quality:
         record = quality["record"]
-        if not isinstance(record, dict) or set(record) - {"args", "environment"} or not isinstance(
-                record.get("args"), list):
-            raise ValueError("quality.record must be {args: [...], environment: {...}}")
+        if not isinstance(record, dict) or set(record) - {"serving", "environment"} or not isinstance(
+                record.get("serving"), dict) or set(record["serving"]) != {"config", "native_config"}:
+            raise ValueError("quality.record must be {serving: {config, native_config}, environment?: {...}}: the reference "
+                             "is recorded by the native owner from its own YAML")
+        yaml = Path(os.path.expandvars(record["serving"]["native_config"])).expanduser()
+        yaml = yaml if yaml.is_absolute() else paths.REPO_ROOT / yaml
+        if not yaml.is_file():
+            raise ValueError(f"quality.record: native_config {yaml} is not a file")
         expanded["corpus"] = os.path.expandvars(quality["corpus"])
         expanded["record"] = {
-            "args": [os.path.expandvars(a) for a in record["args"]],
+            "serving": {"config": record["serving"]["config"], "native_config": str(yaml.resolve())},
             "environment": {k: os.path.expandvars(v) for k, v in record.get("environment", {}).items()},
         }
     return expanded
@@ -162,13 +169,12 @@ def run_quality_capture(
     cells: list[dict[str, Any]] = []
     control = prepared[quality["control"]]
     if "record" in quality:
-        record_quality = {**quality, "args": quality["record"]["args"]}
         # The engine writes its reference files into this directory; it does not create it.
         Path(quality["reference_dir"]).mkdir(parents=True, exist_ok=True)
         command = adapter.quality_command(
-            "record", {"name": "reference", "model": control["model"], "settings": {}},
+            "record", {"name": "reference", "model": control["model"], "settings": {}, "serving": quality["record"]["serving"]},
             {**reference_env, **quality["record"]["environment"]}, qdir, control["binary"], control["model"],
-            record_quality)
+            quality)
         recorded = _run(command)
         section["recorded_reference"] = recorded
         if recorded.get("returncode") != 0:

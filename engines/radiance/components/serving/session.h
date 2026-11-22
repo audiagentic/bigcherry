@@ -224,7 +224,10 @@ struct Laboratory {
     std::filesystem::path prompts_a, prompts_b, calibration_store;
 };
 struct QualityScore {
-    std::filesystem::path reference, output;
+    // Score: `reference` is a recorded KL directory and `output` the report to write. Record: `corpus` is set,
+    // `reference` is an existing empty directory the engine writes the reference into, and `output` is empty.
+    std::filesystem::path reference, output, corpus;
+    bool record() const { return !corpus.empty(); }
 };
 struct Session {
     PowerHook power_hook;
