@@ -2,7 +2,7 @@
 id: QFP03
 order: 0
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-03T15:20:25.602966+00:00'
 breadth: ''
 skill: intermediate
@@ -58,6 +58,8 @@ Upstream fact (GPT online search): QSA HIP's >1K-context cliff was TOP_K falling
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into llama quality harness QFP15" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP03.md:16-62 identifies dead reset/atomic-gather launches ahead of default-on deterministic ordered TOP_K, with exact-index-order and GPU qualification still outstanding. docs/planning/active/patching-qwen-flash-next/QFP15.md:14-40 owns target-versus-draft MTP seed/acceptance nondeterminism, not the 1294 ordered-radix gather-elision implementation; the validated 1294 patch does not itself prove that residual optimization. Active items that reference this one: BCOP162, BCOP202, BCOP205, BCOP288, BCOP293, BCOP313, QFP04, QFP17, RNX02. Retain the distinct 1294 gather-elision correctness and performance gate; QFP15 remains a consumer of deterministic outcomes, not its implementation owner.
 
 2026-11-22 owner handoff from decision-only BCOP202: Unsectioned source gate. Source-bounded action/stop rule: **Discovery/change:** At b11552, 1294's default-on ordered radix kernel overwrites all `dst` entries using only input and radix prefix/rank, yet current control flow first runs counter reset and atomic gather. Those two launches and the gather input scan are redundant on the ordered arm, not on tie-only/disabled arms. Existing docs inaccurately call the result globally ascending; it is stable greater-first, tie-second partitioned index order. This is a source-level opportunity, not measured AMD speedup. **Owner/consolidation:** QFP03 owns the bounded change within existing validated 1294; RNX02 retains D=256 KV attention/1300, QFP15 residual draft nondeterminism, QFP04 ordered-index consumer, QFP25 sparse attention, PNRO07/1256 conflicting alternative. No new kernel, dispatcher, cache, allocator or scheduler. Historical 1294 manifest RNX02 mapping is not a second implementation owner. **12h/novelty:** QFP03 last independent commit 2026-10-03; 1294 source last changed 2026-10-11T23:22Z. No independent 1294/QFP03 submission, queued lane, benchmark or material planning change was identified after 2026-10-13T17:09Z. Excluded Radiance GPU mailbox/helper, protected expert maps, active RA See docs/planning/completed/patching-bc-optimizations/BCOP202.md for the complete source/shape/negative case and evidence. QFP03 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: QFP03 is redundant as an independent planning owner. Its Carry the 1294 deterministic selected-index TOP_K contract into the QSA decode plan as a necessary selection correctness gate, without adding another TOP_K implementation. Owner(s): QFP04. 1295/1296 uses ordered QSA selection and QFP03 notes QFP04 as an explicit consumer; the 1294 production correctness invariant must persist as a gate, not a duplicate planned kernel. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
 
 ## 2026-10-14 QFP03 implementation audit — remove redundant ordered-radix gather (planning only)
 
@@ -118,3 +120,9 @@ Upstream llama.cpp [PR #28713](https://github.com/ggml-org/llama.cpp/pull/28713)
 - 2026-10-03T15:20:25.602966+00:00 (created-by): Created by agent
 - 2026-11-04T04:25:56.899376+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T05:22:40.645829+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4478
+- 2026-11-22T09:47:01.941956+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:42.760325+00:00 (state-transition): State: pending → superseded

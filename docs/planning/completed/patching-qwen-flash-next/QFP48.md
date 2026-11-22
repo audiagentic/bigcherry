@@ -2,7 +2,7 @@
 id: QFP48
 order: 48
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-10T13:53:50.737727+00:00'
 breadth: ''
 skill: advanced
@@ -91,6 +91,8 @@ Next: attribute the 32 ms per batch boundary - which streams the synchronizes wa
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into RAD43 after new trace only" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP48.md:15-43 and :143-160 keep a current-pin llama.cpp warm per-batch HIP API/device trace-join and a gated quantize-to-MMQ producer check, despite retiring router reduce fusion alone. docs/planning/active/patching-radiance-rdna3/RAD43.md:14-33 profiles Radiance helper gate/up/down/reduce, gfx1030 tail and engine mailbox kernels; it neither owns llama Meta batch gaps nor graph/Q8_1 MMQ producer selection. Active items that reference this one: QFP23, QFP54, TRVP16, PKC03, RNX04, RNX08, BCOP132, BCOP142, BCOP143, BCOP147. Keep the residual llama.cpp batch-boundary and producer-fusion trace gates; do not merge old trace-based candidate speculation into Radiance helper kernel work.
 
+CONSOLIDATION 2026-11-22 PRBE-QFP: QFP48 is redundant as an independent planning owner. Its Move the old fusion-round-2 prefill candidate census to QFP17's prefill attribution, and decode adjacent-kernel/gap census to QFP13; preserve exact producer-fusion stop gates without a second profiling program. Owner(s): QFP17 and QFP13. QFP48 duplicates source-scoped prefill attribution in QFP17 and adjacent-kernel decode census in QFP13; unique post-trace fusion safety and performance gates can be transferred explicitly to those two owners. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
+
 ## 2026-10-17 single-branch reconciliation (BCOP239/BCOP275)
 
 **Disposition: reject router partial/reduce adjacency as a fusion task without new evidence.** Validated 1357 uses independently scheduled split-K partial workgroups, backend-pool scratch and a fixed-order second reduction launch; a workgroup barrier cannot publish across partial CTAs. The October 10 measured +3.2% pooled Flash-Next prefill compares **1357 router replacement versus native SGEMM**, not partial/reduce fusion; changed greedy text and pooled decode 69.8 -> 67.2 tok/s forbid calling it bit-identical or a decode gain. Its README's obsolete “Not promoted” line has been corrected on this branch.
@@ -166,3 +168,9 @@ For the measured Flash-Next physical router K=2560, experts M=512, tokens N=512,
 
 **Reopen only if** a warm exact-pin, per-physical-rank rocprof/HIP API join shows the **reduce kernel plus its launch gap** (not the partial GEMM) accounts for >=3% *removable end-to-end* prefill wall time. Reuse QFP48's existing trace join and QFP36/1357 implementation ownership; require a default-off single-variant design with per-tile epoch/counter reset, global publication fence, graph replay and pool-lifetime proof, multi-request/multi-ubatch/cancellation tests, near-tie top-k and full-vocab/KLD/greedy controls, and expected-vs-observed GEMM/reduction work. On dual gfx1100 and gfx1201, promote only with same-binary ABBA CI95-low >=3% E2E and <=1% decode/control regression, no unexplained token or MTP acceptance changes; otherwise terminal REJECT_BELOW_EXPOSED_GATE / REJECT_NUMERIC / REJECT_LIFETIME. No P2P, RCCL or new scheduler/cache/dispatcher is authorized.
 - 2026-11-04T04:27:15.527356+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4480
+- 2026-11-22T09:47:28.964060+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:56.996396+00:00 (state-transition): State: pending → superseded

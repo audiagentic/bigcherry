@@ -2,7 +2,7 @@
 id: PRBE30
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-09T10:55:30.594236+00:00'
 breadth: ''
 skill: advanced
@@ -12,15 +12,6 @@ priority: P3
 ---
 
 # AMD-GEMM-003: K-pad F16 shadow to avoid aliasing
-
-## 2026-10-09 PRBE28 ownership reconciliation
-
-**K-pad only a PRBE29-created F16 shadow**, not a quantized GGUF source tensor. Reuse PRBE29's owner, buffer lifetime, dequant and leading-dimension metadata. AMD-Ecosystem/llama.cpp PR #57 supplies an implementation reference: one-time dequant then optional 2D-copy into a cache-line-padded F16 shadow, consumed by BLAS. Do not implement a separate allocator or both an additive same-package edit and a `requires` self-dependency. Qualify shadow-only alias/nonalias classes, output parity and incremental VRAM. PRBE28 remains a separate float original-weight path.
-
-
-## 2026-10-10 BCOP126 dependency fence
-
-PRBE29's shadow is only READY after a successful model-buffer load and completion of all async uploads. Do not pad, mutate, or allocate an F16 shadow in `set_tensor` while partial/chunked uploads may still be running. Padding, if ever qualified, is an **optional parameter of PRBE29's existing shadow owner**, after source identity/generation and per-device VRAM admission are proven. Initial PRBE29 control is unpadded; retain the original packed quantized weight and reject any row-stride change without a typed F16 `lda` consumer. No independent PRBE30 patch or hardware queue until a real PRBE29 candidate and causal alias trace exist. This note supersedes the older contradictory "additive Edit plus requires on the same package" wording below.
 
 ## Description
 
@@ -73,6 +64,16 @@ Successor key: patching-rdna-boost-experiments-rd37
 
 2026-09-24 GPT review req_2b717df095b44703 applied: corrected the self-dependency contradiction -- the prior plan both anchored PRBE30 as additive edits into PRBE29's own package AND declared `requires` on PRBE29, which is inconsistent. Now either folds into PRBE29's package with no requires, or becomes a genuinely separate package with requires=[PRBE29's id]; PRBE29 must expose a stable shadow-allocation helper with explicit stride metadata for this item to anchor against.
 
+CONSOLIDATION 2026-11-22 PRBE-QFP: PRBE30 is redundant as an independent planning owner. Its Fold K-padding of the same persistent F16 shadow into the one shadow allocation/dispatch owner; the source plan itself identifies a same-package/no-requires option and a self-dependency contradiction. Owner(s): PRBE29. PRBE30 notes acknowledge no independent design surface beyond PRBE29 and that same-package additive edits cannot require the package itself. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
+
+## 2026-10-09 PRBE28 ownership reconciliation
+
+**K-pad only a PRBE29-created F16 shadow**, not a quantized GGUF source tensor. Reuse PRBE29's owner, buffer lifetime, dequant and leading-dimension metadata. AMD-Ecosystem/llama.cpp PR #57 supplies an implementation reference: one-time dequant then optional 2D-copy into a cache-line-padded F16 shadow, consumed by BLAS. Do not implement a separate allocator or both an additive same-package edit and a `requires` self-dependency. Qualify shadow-only alias/nonalias classes, output parity and incremental VRAM. PRBE28 remains a separate float original-weight path.
+
+## 2026-10-10 BCOP126 dependency fence
+
+PRBE29's shadow is only READY after a successful model-buffer load and completion of all async uploads. Do not pad, mutate, or allocate an F16 shadow in `set_tensor` while partial/chunked uploads may still be running. Padding, if ever qualified, is an **optional parameter of PRBE29's existing shadow owner**, after source identity/generation and per-device VRAM admission are proven. Initial PRBE29 control is unpadded; retain the original packed quantized weight and reject any row-stride change without a typed F16 `lda` consumer. No independent PRBE30 patch or hardware queue until a real PRBE29 candidate and causal alias trace exist. This note supersedes the older contradictory "additive Edit plus requires on the same package" wording below.
+
 ## 2026-10-08 b11474 composed-source experiment plan
 
 **Rank 4, dependent on PRBE29's shadow allocation API.** Apply K/leading-dimension padding only to an actual selected F16 shadow, not to generic GGUF tensor metadata. Env `BIGCHERRY_DENSE_SHADOW_KPAD_BYTES=0|64|128`, default 0; target the `down_proj` or other PRBE70-identified cache-alias signature at `ggml_backend_cuda_buffer_context` shadow allocator and `ggml_cuda_mul_mat_cublas_impl` stride consumer. Incremental VRAM = sum `nrows * delta_leading_dimension_bytes`, *on top* of PRBE29's 2-byte/scalar shadow; initial <=64 MiB/device additional padding. Compare one padded/unpadded shadow in same model and quant first, byte/tolerance and PPL parity, rocprofv3 cache-conflict counters and kernel time. Full 8K/24K/98K `queue-env-ab.sh` only if the raw shadow itself passed and total VRAM stays below safe ceiling. Expected improvement unknown / likely sub-1% E2E; reject without causal cache evidence.
@@ -97,3 +98,9 @@ Composed-source anchor text must be reverified after applying production patches
 - 2026-09-10T02:57:19.697607+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:34:12.638864+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:46:48.845567+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+
+## Reviews
+
+- RV4474
+- 2026-11-22T09:46:01.610851+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:06.716938+00:00 (state-transition): State: pending → superseded

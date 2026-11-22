@@ -91,6 +91,8 @@ QSA-CHUNKED-MASK promotes only if ub1024 fits at 240K with >=1 GiB lower peak VR
 
 #29901-derived HIP tiling promotes only if it improves lightning-indexer wall >=20% on both gfx1100 and gfx1201 at a representative long-context prefill shape and improves end-to-end prefill >=2% on at least one 80K+ lane, with no decode regression >1% and no spill/occupancy pathology.
 
+**Transferred QFP48 acceptance (retain as separate gating outcome):** QFP17: use one current-pin trace and existing prefill profiler to rank adjacent same-stream/same-tensor kernel pairs by exposed critical-path savings, separately on relevant cards; first exclude already native or patched 1307-1313/1344/1355/GLU fusions and count real Q8_1 quant/MMQ bytes. A plausible >1% prefill-wall candidate gets current patch-specific owner, never a new broad QFP48 patch queue. Any proposed fusion stays default-off until offline patch/mechanics, negative non-fusion/other-quant cases, same-request plus graph recapture, full logits/KLD/greedy/MTP parity, physical-work accounting and balanced matched ABBA 8K/24K/98K show >=3% E2E with positive CI95-low, <=1% decode/control regression and measured VRAM reserve. Keep historical ExLlamaV3 ports only as references, not AMD proof.
+
 ## Notes
 
 Rejected from the survey for this lane: large-message CPU-root AllReduce (measured worse), KTransformers CPU-expert offload (experts fit VRAM; PCIe x4/no P2P), MLC-LLM/mistral.rs (no portable RDNA/IQ kernels).
@@ -134,6 +136,8 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE relevant insight into RAD21/RAD43, keep llama portfolio apart" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP17.md:12-78,96-115,175-201 retains llama.cpp prefill indexer/ubatch/QSA mask, sparse attention and MoE-MMQ attribution and correctness gates across the physical ranks. docs/planning/active/patching-radiance-rdna3/RAD21.md:12-37 is specifically intra-layer moe-remote helper-pipeline prefill; RAD43.md:12-30 is helper/tail kernel work, neither covers QFP17's Meta QSA graph and 240K ubatch fit. Active items that reference this one: BCOP118, BCOP120, BCOP124, BCOP125, BCOP126, BCOP127, BCOP129, BCOP136, BCOP145, BCOP162. Keep the distinct llama.cpp prefill programme in QFP17; Radiance RAD21/RAD43 cannot absorb its acceptance or memory gates.
 
 2026-11-22 final BCOP authority reconciliation (BCOP35): Distributed/context-parallel attention is NOT an authorised implementation path at current no-P2P topology. Only reconsider a newly named versioned mechanism after exact model heads/KV context, real measured physical communication lower bound, remaining exposed attention time after current sparse QSA/FA and a credible >=5% E2E opportunity; use existing QFP17 attention/host-transport/quality owners. No separate BCOP35 runtime or speculative scheduler. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: receiving QFP48. Prior acceptance remains mandatory; this is a planning ownership consolidation, not an executed implementation or evidence/quality pass. Independent hardware routes and production-safe fallbacks remain conditional. Full original design, source/negative receipts and historical review survive in each archived source plan.
 
 ## 2026-10-18 BCOP293 — native HIP four-head lightning-indexer LDS/head-pass discriminator
 
@@ -275,3 +279,8 @@ Long-context per-unit-effort execution order after the provider diagnostic: **13
 - 2026-11-04T04:12:00.528748+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:26:32.352743+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T06:46:25.612985+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4486
+- 2026-11-22T09:45:28.947111+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
