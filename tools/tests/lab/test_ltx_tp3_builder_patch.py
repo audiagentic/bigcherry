@@ -159,3 +159,30 @@ if __name__ == "__main__":
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(upstream / CPP, target)
     print(json.dumps(patch_copy(dest), sort_keys=True))
+
+
+def test_c06_coordinate_allocation_unwind_contract() -> None:
+    """Static fault-path guard: never orphan a successful GPU allocation before the next may fail."""
+    source = (ROOT / "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp").read_text()
+    contract = source.split("static void verify_c06_load_contract", 1)[1].split(
+        "static void run_self_attn", 1)[0]
+    assert "issued->owned_device.reserve(program.weights.size()+2)" in contract
+    allocation = source.split("r.device_cu=rad_dev_alloc", 1)[1].split(
+        "need(rad_memcpy_async(r.device_cu", 1)[0]
+
+    def owns_every_completed_allocation(block: str) -> bool:
+        locations = [block.find(part) for part in (
+            "need(r.device_cu,", "r.owned_device.push_back(r.device_cu);",
+            "r.device_pos=rad_dev_alloc", "need(r.device_pos,",
+            "r.owned_device.push_back(r.device_pos);",
+        )]
+        return all(at >= 0 for at in locations) and locations == sorted(locations)
+
+    assert owns_every_completed_allocation(allocation)
+    # These mutations used to leak the cu-seqlens buffer if position allocation refused.
+    assert not owns_every_completed_allocation(
+        allocation.replace("r.owned_device.push_back(r.device_cu);", ""))
+    assert not owns_every_completed_allocation(
+        allocation.replace("r.owned_device.push_back(r.device_pos);", ""))
+    assert not owns_every_completed_allocation(
+        allocation.replace("r.device_pos=rad_dev_alloc", "r.owned_device.push_back(r.device_pos);"))
