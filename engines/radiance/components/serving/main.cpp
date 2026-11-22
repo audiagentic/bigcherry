@@ -3,6 +3,7 @@
 #include "serving_codec.h"
 #include "live_policy_ingest.h"
 #include "manifest_power.h"
+#include "lab_experiment.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
@@ -132,7 +133,11 @@ void usage() {
            "after current static/live/power checks; refuses changed build/model/devices, missing "
            "attestation or gates; never rewrites FILE\n"
            "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
-           "                 --kld-ref DIR --kld-out FILE   run a finite native KL score\n"
+           "                 --kld-ref DIR --kld-out FILE [--lab-experiment FILE]   run a finite native KL score;\n"
+           "                 the run writes owner-map.json (the helpers' initial experts) to its run dir; with\n"
+           "                 --lab-experiment, FILE is a forced placement schedule (a JSON object holding\n"
+           "                 `placement`, see docs/reference/engines/radiance/SERVING_MANIFEST.md) applied by helper0 during\n"
+           "                 the score on a lab-profile plan measured afresh; the score fails unless every step committed\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
@@ -141,7 +146,7 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root;
+    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root, lab_experiment_file;
     std::string config_name;
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
@@ -201,6 +206,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             quality->reference = need();
         } else if (arg == "--kld-out" && quality && quality->output.empty()) {
             quality->output = need();
+        } else if (arg == "--lab-experiment" && quality && lab_experiment_file.empty()) {
+            lab_experiment_file = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
@@ -233,6 +240,10 @@ int session_command(const std::string& cmd, int argc, char** argv) {
                                  ": --run-dir DIR is required (the session's lock, socket, record, logs)");
     if (!config_name.empty() && !stored_manifest.empty())
         throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
+    // Read and checked whole before any plan, so a bad schedule never costs a measurement.
+    std::optional<bc::serving::LabPlacementExperiment> lab_experiment;
+    if (!lab_experiment_file.empty())
+        lab_experiment = bc::serving::read_lab_placement_experiment(lab_experiment_file);
     if (!config_name.empty())
         opts.sets.push_back("layout.name=" + Json(config_name).dump());
     if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
@@ -395,6 +406,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.named_config = config_name;
     inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
+    inputs.lab_experiment = std::move(lab_experiment);
     inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_records_file = std::move(calibration_records);
 
