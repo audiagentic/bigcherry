@@ -2,7 +2,7 @@
 id: THA01
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:48:09.536774+00:00'
 breadth: ''
 skill: advanced
@@ -55,13 +55,14 @@ Supersedes: HI104
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi104
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: Runtime transform provenance writer and the C++ canonical verifier are one identity contract, not two separate owners. Unique acceptance and stop/fallback conditions were transferred to active THA04 through the Planning API. THA04 owns the C++-authoritative signature/digest verification; THA01 implements its runtime nested provenance producer. Keeping writer/verifier obligations under one authoritative identity owner prevents two independent admission models. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-09T10:48:09.536774+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:04:09.550721+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.789339+00:00 (updated-by): Updated: section:ledger-events
@@ -70,3 +71,9 @@ Successor key: tuning-hip-autotune-hi104
 - 2026-09-10T03:24:37.131528+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032455_repaired-two-tuning-successors_8434
 - 2026-09-10T03:24:55.035392+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4489
+- 2026-11-22T10:19:11.114390+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:24:14.061976+00:00 (state-transition): State: pending → superseded

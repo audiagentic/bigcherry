@@ -91,6 +91,8 @@ Upstream-first; one owner per buffer class; memory-attribution before new alloca
 
 **Transferred QFP03 acceptance (retain as separate gating outcome):** Preserve existing 1294 lowest-index tie-break for exact tied QSA scores under HIP radix selection, and verify determinism of the selected set as well as output ordering across server starts on fixed 32K/80K long-context prompts. Require greedy/full logits (plus MTP draft acceptance where applicable) identical on repeated starts and speed neutral within stated test noise; test tie/untied equal-order controls, no silent NVIDIA assumption. Preserve documented conflict with 1256/PNRO07; do not port another radix TOP_K or replace the QFP25 sparse attention compaction kernel. Failure blocks 1295/1296 selection-path promotion in QFP04.
 
+**Transferred THA32 acceptance (independent gate):** Qualify upstream llama.cpp #28699 incremental pooled QSA block summaries with PR ancestry, exact current pinned-source applicability and toggle identity (including LLAMA_QSA_NO_POOLED_CACHE only if it truly exists on pin), no duplicate patch if upstream equivalent exists. Clean same-model/build except for qualified QSA cache on/off, MTP n_max=2/4, q8_0 KV, 16K/64K/128K/192K depths on single gfx1201 R9700 and dual gfx1100 XTX tensor-split/no P2P; verify device-local pool placement, cache identity, seq mutation/tail behavior, graph replay and memory. Require identical greedy/logits and accepted/drafted output, attribute TG/PP and end-to-end benefit with balanced A/B/CI; treat reported external ~9% deep decode as unverified, not project proof. Decide no-route, upstream-absorbed, local qualified opt-in or deferred after evidence; consume QFP04's 1292 k-pool lifetime gate and 1295 selected-index decode validation rather than adding a separate QSA cache, scheduler, flag policy or promotion workflow.
+
 ## Notes
 
 Evidence 1295 (old q8 profile): -3.7% ms/step @80K, -12% @160K, unchanged <32K; more accurate than masked path vs f32 CPU reference (max|dp| 0.056 vs 0.073). Its 192K OOM was the hipGraphInstantiate OOM fixed by 1302 (QFP06), not its workspace. Upstream sparse-FA work gathers compact q8_0 blocks and dequantizes during FA, +143% at 88K on CUDA. Supersedes PNRO12 (same intent, never implemented). RNX02 keeps the dense head-dim-256 decode side. Screening on production profile v2: flashnext-v2-1295-d65536/-d131072 (queue-v2-1295.sh). GPT: 1296 step-1 code req_8d8c8c85fecf4332; review of 1295 req_af96db92b8e34cfe.
@@ -108,6 +110,8 @@ Upstream references verified 2026-10-05:
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP25/QFP13" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP04.md:16-56,99-132 retains a conditional F16 decode GET_ROWS-to-CAST elimination/direct selected-index FA path with strict routing, numeric and hardware gates. docs/planning/active/patching-qwen-flash-next/QFP25.md:12-37 explicitly scopes 1334 to sparse prefill and names QFP04 as decode-gather owner; docs/planning/active/patching-qwen-flash-next/QFP13.md:62-99 is a launch census/ranking umbrella, not the typed gather owner. Active items that reference this one: BCOP162, BCOP202, BCOP237, BCOP288, BCOP295, BCOP325, BCOP338, PEF07, PRVP04, QFP02. Keep QFP04 for its gated selected-cell decode attention work and distinct fallback; do not fold it into QFP25 prefill or QFP13 measurement.
 
 CONSOLIDATION 2026-11-22 PRBE-QFP: receiving QFP02, QFP03. Prior acceptance remains mandatory; this is a planning ownership consolidation, not an executed implementation or evidence/quality pass. Independent hardware routes and production-safe fallbacks remain conditional. Full original design, source/negative receipts and historical review survive in each archived source plan.
+
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: receiving THA32. Existing scope and acceptance are retained. The original historical source plans and evidence are archived as superseded, not completed. No new kernel, orchestrator, scheduler, patch, GPU result, runtime activation or performance qualification is implied. Changes use the existing owning implementation only.
 
 ## 2026-10-18 b11552 kernel audit: F16 QSA decode GET_ROWS-to-CAST staging (BCOP288)
 
@@ -166,3 +170,5 @@ The historical proposal below to add a separate direct-index sparse prefill op i
 
 - RV4484
 - 2026-11-22T09:44:55.892265+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- RV4503
+- 2026-11-22T10:18:54.915448+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

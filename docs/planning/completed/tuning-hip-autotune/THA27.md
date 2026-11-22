@@ -2,7 +2,7 @@
 id: THA27
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:50:49.382139+00:00'
 breadth: ''
 skill: advanced
@@ -55,13 +55,14 @@ Supersedes: HI35
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi35
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: The tune-campaign evidence record must include quantitative E2E effect and A/B resolution, not a parallel impact-report promotion process. Unique acceptance and stop/fallback conditions were transferred to active THA05 through the Planning API. THA27 is an evidence/report step required for THA05's promotion and replay receipt; integrating it avoids a second campaign decision gate. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-09T10:50:49.382139+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:07:07.589758+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.979180+00:00 (updated-by): Updated: section:ledger-events
@@ -71,3 +72,9 @@ Successor key: tuning-hip-autotune-hi35
 - 2026-09-10T03:34:45.973983+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_033527_repaired-five-more-tuning-succ_3062
 - 2026-09-10T03:35:27.044252+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4492
+- 2026-11-22T10:19:49.508805+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:25:05.194615+00:00 (state-transition): State: pending → superseded
