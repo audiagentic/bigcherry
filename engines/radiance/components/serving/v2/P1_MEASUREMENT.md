@@ -21,9 +21,7 @@ qualified host-margin record; this code never seeds one.
 The Python parser strictly rejects malformed JSON, duplicate members,
 fractions, missing fields, owner/scope disagreements, invalid worker
 component totals, nonselected helper/engine BDFs and incomplete live room.
-It constructs S11 `PlanMeasurement`, retaining exact resource inputs and
-scope for the S10 v2 writer. A `P1MeasurementSource` accepts an injected
-native command builder and makes a fresh invocation on every refit.
+It retains exact resource inputs and scope for the native writer.
 
 ## Remaining P1 integration, deliberately not claimed by this slice
 

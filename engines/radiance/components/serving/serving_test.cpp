@@ -2315,6 +2315,36 @@ void helper_vram_owner_graph(Fixture& t) {
         throw std::runtime_error("native helper finite score did not complete and clean up: " + quality.dump());
     assert(admissions.size() == 5 && fs::file_size(owner.quality->output.string() + ".rows") == 16);
 
+    // Recording a reference is the same finite run with --kld-record DIR --kld-corpus FILE: no --kld-ref or --kld-out,
+    // and it only succeeds when the engine wrote the reference's kld.json.
+    {
+        const fs::path recorded = t.root / "recorded-reference";
+        fs::create_directory(recorded);
+        const fs::path corpus = t.root / "record-corpus.jsonl";
+        write(corpus, "{\"prompt\":\"a\"}\n");
+        owner.quality = ss::QualityScore{recorded, {}, corpus};
+        const int recorded_exit = ss::serve(owner);
+        const auto record_run = ss::read_record(owner.run_dir).value_or(Json::object());
+        const auto& record_args = record_run.at("processes").back().at("argv");
+        const auto record_events = record_run.at("events").dump();
+        if (recorded_exit != 0 || record_run.value("state", "") != "stopped" || !ss::alive_recorded(record_run).empty() ||
+            record_args.size() != 9 || record_args[5] != "--kld-record" || record_args[6] != recorded.string() ||
+            record_args[7] != "--kld-corpus" || record_args[8] != corpus.string() ||
+            !fs::is_regular_file(recorded / "kld.json") ||
+            record_events.find("quality_recorded") == std::string::npos ||
+            record_events.find("power_restored") == std::string::npos)
+            throw std::runtime_error("native finite reference recording did not complete and clean up: " + record_run.dump());
+        // A reference directory that already holds one, or a missing corpus, is refused before any child starts.
+        const int again = ss::serve(owner);
+        assert(again != 0);
+        owner.quality = ss::QualityScore{t.root / "no-such-reference", {}, corpus};
+        assert(ss::serve(owner) != 0);
+        fs::create_directory(t.root / "empty-reference");
+        owner.quality = ss::QualityScore{t.root / "empty-reference", {}, t.root / "no-corpus.jsonl"};
+        assert(ss::serve(owner) != 0);
+        owner.quality = ss::QualityScore{reference, t.root / "helper-quality.json"};
+    }
+
     // A finite run that times out still stops every helper and restores power.
     owner.quality->output = t.root / "helper-quality-timeout.json";
     owner.timing.quality_timeout = std::chrono::milliseconds(100);
