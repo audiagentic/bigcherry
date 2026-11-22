@@ -8,8 +8,6 @@ from bigcherry.serving.calibration_rebind import (
     select_with_rebind,
 )
 from bigcherry.serving.calibration_store import CalibrationInvalid, emit_from_run
-from bigcherry.serving.measured_plan import PlanMeasurement
-from bigcherry.serving.qualified_calibration import select_for_measurement
 
 NOW = 1800000000
 
@@ -248,15 +246,7 @@ def test_tampered_rebind_is_not_used(tmp_path):
 
 def test_rebound_margin_record_is_selected(tmp_path):
     store, *_ = rebound(tmp_path)
-    measurement = PlanMeasurement(
-        "key", "native", None, None, None, {}, (),
-        resource_inputs={"host_pool_margin_calibration": {
-            "key": "host_ledger_margin.mib", "source": "cache", "evidence": "any", "mib": 9}},
-        scope=scope("b", "c"),
-    )
-    assert len(select_for_measurement(
-        measurement, store, helper_count=0,
-        histogram_enabled=False, live_policy_requested=False,
-        now_unix_s=NOW,
+    assert len(select_with_rebind(
+        store, scope=scope("b", "c"),
+        required_keys=("host_ledger_margin.mib",), now_unix_s=NOW,
     )) == 1
-

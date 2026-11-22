@@ -1,0 +1,13 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_105808_an-unused-python-launch-bridge_3385",
+  "files": [
+    "tools/bigcherry/__main__.py",
+    "tools/bigcherry/engine_adapters/radiance_launch.py",
+    "tools/tests/campaign/test_no_writer_callers.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed the Python launch resource bridge (radiance_launch.py, bigcherry resources derive-launch): it had no caller and used the retired --write-manifest and Python layouts. No Python tool invokes --write-manifest, which remains only as the native owner's private writer handoff. Regenerated the stale patch footprint evidence.",
+  "timestamp-utc": "2026-11-22T10:58:08.782598Z",
+  "user-summary-candidate": "An unused Python launch bridge was removed."
+}

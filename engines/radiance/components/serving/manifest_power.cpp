@@ -148,8 +148,6 @@ bool owner_has_gpu_lease(const std::filesystem::path& leases, const std::filesys
         !data.contains("pids") || !data["pids"].is_array() || !unexpired(data["expires"].get<std::string>()))
         return false;
     const char* instance = std::getenv("AGENT_INSTANCE");
-    if (instance == nullptr || *instance == '\0')
-        instance = std::getenv("CLAUDE_RC_NAME");
     if (instance == nullptr || *instance == '\0' || !data.contains("instance") ||
         !data["instance"].is_string() || data["instance"] != instance)
         return false; // apply needs an explicit verified instance, not merely matching PIDs
