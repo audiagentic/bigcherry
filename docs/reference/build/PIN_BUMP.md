@@ -174,7 +174,7 @@ the llama.cpp repin/transition procedure below is independent.
   pinned commit; a non-clean verdict there is a defect in the check, not
   upstream drift (the patch-owned rule false positives were found this way).
 - **Start the new release line when the upstream major changes.** The release
-  version's major comes from the pin (2.2.0 is 20200), but release-please
+  version's major comes from the pin (2.2.0 is 2020), but release-please
   keeps counting from the old manifest value unless the package carries
   `release-as`. The 2.2 migration shipped as 1170.37.0 and 1170.38.0 because that
   step was skipped. When a bump changes the upstream version, set

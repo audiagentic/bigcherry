@@ -251,10 +251,15 @@ def pin_version(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HE
         if int(parts[0]) < 2:
             # Keep the release numbers already published on Radiance 1.x.
             return PinVersion(int("".join(parts)), version)
-        if len(parts) != 3 or any(not 0 <= int(part) < 100 for part in parts[1:]):
-            raise ReleaseNotesError(f"unsupported upstream release version {version!r}; expected major.minor.patch with two-digit minor and patch limits")
+        # Four digits like the published 1.x numbers: major, two-digit-capable minor, one-digit patch (1.17.0 -> 1170,
+        # 2.2.0 -> 2020). Outside these limits the numbers would collide, so refuse rather than guess.
+        if len(parts) != 3 or not 0 <= int(parts[1]) < 100 or not 0 <= int(parts[2]) < 10:
+            raise ReleaseNotesError(
+                f"upstream release version {version!r} does not fit the four-digit release major "
+                "(major.minor.patch with minor < 100 and patch < 10); change the scheme deliberately"
+            )
         major, minor, patch = map(int, parts)
-        return PinVersion(major * 10_000 + minor * 100 + patch, version)
+        return PinVersion(major * 1000 + minor * 10 + patch, version)
     raise ReleaseNotesError(f"engine {config.engine}: unknown version-source {config.version_source!r}")
 
 

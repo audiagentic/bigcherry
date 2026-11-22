@@ -57,7 +57,7 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_radiance_release_major_keeps_old_tags_and_orders_v2_pins(self):
         config = notes.load_config(_REPO, "radiance")
         revision = "123456789abcdef0"
-        pins = {"1.17.0": 1170, "2.2.0": 20200, "2.2.1": 20201, "2.10.0": 21000}
+        pins = {"1.17.0": 1170, "2.2.0": 2020, "2.2.1": 2021, "2.10.0": 2100, "3.0.0": 3000}
         for upstream, expected in pins.items():
             with self.subTest(upstream=upstream), mock.patch.object(
                 notes, "_show", return_value=f'pinned = "{revision}"\npinned-version = "{upstream}"\n'
@@ -65,6 +65,16 @@ class ReleaseNotesTests(unittest.TestCase):
                 pin = notes.pin_version(_REPO, config, revision)
                 self.assertEqual(pin, notes.PinVersion(expected, upstream))
                 self.assertEqual(notes.release_version(pin), f"{expected}.0.0")
+
+    def test_radiance_release_major_refuses_versions_that_would_collide(self):
+        config = notes.load_config(_REPO, "radiance")
+        revision = "123456789abcdef0"
+        for upstream in ("2.2.10", "2.100.0", "2.2", "2.2.0.1"):
+            with self.subTest(upstream=upstream), mock.patch.object(
+                notes, "_show", return_value=f'pinned = "{revision}"\npinned-version = "{upstream}"\n'
+            ):
+                with self.assertRaises(notes.ReleaseNotesError):
+                    notes.pin_version(_REPO, config, revision)
 
     def test_radiance_render_does_not_read_ledger_or_dump_record_notes(self):
         config = notes.load_config(_REPO, "radiance")
