@@ -26,7 +26,29 @@ no size limit, the same ccache settings the build sets for CI (stable source and
   header or pin recompiles the units that include it).
 - So no larger size is proposed. A bigger limit would only grow the 5.3 GB the job restores (35 to 72 s on every run)
   and, on main, saves, packages and publishes (about 190 to 260 s).
-- The full cache is mostly entries nothing uses any more. Not measured: how much of the 5.0 GiB the last run actually
-  touched (`ccache -s` gives the totals only), and the share the component test targets add. A limit derived from
-  these (a small multiple of the touched working set) would shrink the restore and the main-only save and packaging;
-  that needs a run with the touched size recorded before any value is chosen.
+- The full cache is mostly entries nothing uses any more (measured below).
+
+## Touched size on CI
+
+ccache refreshes the modification time of every entry it hits or writes (checked: a hit makes the entry newer than a
+marker taken before it). A measurement step (`ci/rum18-ccache-touched-size`, dispatched on a branch, restoring the
+main cache) took a marker before the build and summed the bytes of the cache files newer than it afterwards.
+
+| Quantity | Value |
+|---|---|
+| Restored cache, total | 5,343,616,614 bytes (5.0 GiB) |
+| Touched by the build (hit or written) | 277,762,161 bytes (0.26 GiB), 5.2 % |
+| Hits / misses | 923 / 933 hits (98.9 %), 10 misses, 10 cleanups |
+| Steps | restore 89 s, build in the image 370 s |
+
+The local cold lane build (0.21 GiB) agrees: the working set of the whole job, lane and component test targets, is
+about a quarter of a GiB. 94.8 % of what the job downloads and, on main, saves, packages and publishes (about 190 to
+260 s per main run) is entries the build did not use.
+
+## Size rule (change proposed in the PR that follows)
+
+The limit should hold the touched working set of the current build and that of the build before it (a pin or toolchain
+bump replaces nearly the whole working set once, and the next run needs the old entries only for the PR runs still
+based on the old main): twice the touched bytes of the last successful main build. The factor is the two generations,
+not a tuning knob. On main, after a successful build, the job sets the limit to that value and trims the cache before
+it is saved, so the cache follows the measured working set instead of a fixed 5 GiB.

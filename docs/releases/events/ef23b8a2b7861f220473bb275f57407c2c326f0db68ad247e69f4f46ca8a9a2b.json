@@ -1,0 +1,16 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_110826_the-kl-corpus-and-reference-pr_1804",
+  "files": [
+    "docs/evidence/2026-11-22-kld-corpus-reference/README.md",
+    "docs/evidence/2026-11-22-kld-corpus-reference/rad-kld-corpus-4.jsonl",
+    "docs/evidence/2026-11-22-kld-corpus-reference/kld.json",
+    "docs/evidence/2026-11-22-kld-corpus-reference/reference.sha256",
+    "docs/evidence/2026-11-22-kld-corpus-reference/inputs.sha256",
+    "docs/evidence/2026-11-22-kld-corpus-reference/record.sh"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Keep the four-document KLD corpus and the provenance of the flashnext tp2 exact reference (manifest, digests, record command, rebuild recipe, regeneration steps, lost 1.16.0 reference caveat) as evidence; the 3.9 GB logits stay in the work root.",
+  "timestamp-utc": "2026-11-22T11:08:26.630943Z",
+  "user-summary-candidate": "The KL corpus and reference provenance are now kept as evidence."
+}
