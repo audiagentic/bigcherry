@@ -13,6 +13,9 @@
 
 #include <array>
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <csignal>
 #include <cstdio>
 #include <cstring>

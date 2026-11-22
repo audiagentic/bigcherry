@@ -333,6 +333,9 @@ if(BUILD_TESTING)
       endif()
     endif()
   endforeach()
+  # bc_session_test is no ctest test of its own name any more (its groups are bc_session_test_part1..4 and the
+  # host-start check), so the loop above does not reach the executable: keep its assertions here.
+  target_compile_options(bc_session_test PRIVATE -UNDEBUG)
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
