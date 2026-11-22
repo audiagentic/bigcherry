@@ -52,8 +52,15 @@ caller-owned scratch buffer; non-TP3, lossy and bad-head settings
 refuse. This is a correctness-first, high-bandwidth diagnostic, not
 a production kernel or an alternate collective implementation.
 See docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.
-Actual rank collective execution, full TP3 DiT attention wiring,
-model payload loading and video performance remain unproven.
+The C05 Q/K all-head graph **now executes** with the real checkpoint
+BF16 Q/K gains through native Radiance 2.2 `RadCtx` on three mixed
+gfx1100/gfx1201 GPUs and the host backend. Both normal and reversed
+visible device orders pass **2,088,960/2,088,960 exact BF16** against
+a full-width oracle with deterministic test activations, at 1/4/16/64
+rows for video/audio and both legal head splits. This is LTX02
+diagnostic evidence, **not** true model-intermediate TP1 parity.
+Full C06 self-attention execution, the 48-block graph, actual
+VCOND/VAE/video output and production admission remain unproven.
 
 ## C06: native self-attention integration
 
@@ -66,13 +73,19 @@ preserving the original single-rank operations.
 
 The model-backed ABI44 test checks 576 video/audio self-attention
 builder graphs (48 blocks x 2 modalities x 2 legal splits x 3 ranks).
-The existing DiT step loop is reused (including STG gate slicing), but no owner selects TP3: no GPU execution, model payloads,
-full DiT or TP3 serving enabled. See
+The existing DiT step loop is reused (including STG gate slicing),
+but no owner selects TP3: the C06 whole self-attention block,
+full DiT and TP3 serving are **not** enabled. The separately
+tested C05 Q/K native graph does not change this admission. See
 docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.
 
 ## Outcome
 
-C01-C06 native declaration and host graph tests pass; C06 per-card IQ8R GPU kernel checks and C08 mixed-card native exact all-reduce pass. Production LTX TP3 remains disabled, with no integrated model-weight GPU graph, parity or generated video.
+C01-C06 native declaration and host graph tests pass, as do the
+C06 per-card IQ8R GPU kernel checks, RUM13's single native mixed-card
+AQL collective and the actual LTX02 C05 Q/K graph on mixed cards.
+Production LTX TP3 remains disabled; complete IQ8R QKV/C06
+self-attention parity and generated video remain unproven.
 
 ## Detail
 
