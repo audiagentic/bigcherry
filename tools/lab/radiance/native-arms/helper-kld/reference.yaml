@@ -1,0 +1,31 @@
+# Reference recorder of helper-kld.json: the exact two-XTX, tensor-parallel 2, exact-wire run of the same model the helper
+# arms serve (no helper), over the KL corpus. Hand-authored: native-arms.json holds the arms that are edits of a shipped
+# config; no shipped config is engine-only on the XTX pair with this model. Same shape as the retired record block
+# (host pool 14336 MiB, fp8 KV, 8192 context, one sequence, 64-row steps).
+cards: [0, 1]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+    tp: 2
+    tp-wire: exact
+    max-model-len: 8192
+    max-num-seqs: 1
+    max-num-batched-tokens: 64
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    num-speculative-tokens: 0
+    prefix-resume: nearest
+    rope-scaling: none
+    # The ranks exchange through host memory: this host has no peer-to-peer path.
+    p2p: "off"
+x-bigcherry:
+  schema: 1
+  description: "helper-kld reference: Flash-Next tensor-parallel exact on the two 7900 XTX, no helper"
+  ranks:
+    - {arch: "gfx1100", count: 2}
+  memory: {host-pool-mib: 14336}
