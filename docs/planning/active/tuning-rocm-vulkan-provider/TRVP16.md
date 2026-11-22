@@ -62,6 +62,8 @@ A pinned source-composed decision is recorded under PRVP03. Inactive-rank and er
 
 2026-11-22 owner handoff from decision-only BCOP120: Unresolved action and terminal gate. Source-bounded action/stop rule: First, prewrite reject any inactive rank in 1290 or prove zero-source/destination semantics with exact meta fallback parity; prohibit false after mutation. Then validate #25051's actual F32 ordinary mapped-host path (the F16 ring is >=2 MiB/all-COMPUTE only), imported host memory, driverUUID/opaque-FD timeline, no-P2P, D=2/3/4, multi-turn and graph replay. If no correct eligible driver/shape, return `NO_PROVIDER_LANE` and close/defer. Only after correctness and non-overlapping hardware availability may RRVP05 run 4-session/10-ABBA matched controls; promote with CI95-low >=3% E2E and <=1% control regression. Stock meta fallback remains default. See docs/planning/completed/patching-bc-optimizations/BCOP120.md for the complete source/shape/negative case and evidence. TRVP16 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
+CONSOLIDATION 2026-11-22 OWNER-REFERENCES: TRVP16 still owns only mixed-RDNA collective qualification, PRVP03 owns transport SPI, and RRVP02 retains the Vulkan implementation pause. The previously separate CM1 force/qualification references TRVP14/TRVP15 now resolve solely to active TRVP15; no cross-family ownership is transferred to TRVP16.
+
 ## 2026-10-11 implementation audit: inactive-shard safety before heterogeneous TP
 
 **Disposition: no new transport or hardware campaign yet.** TRVP16 owns qualification of the existing PRVP03 communication SPI across all-Vulkan multi-RDNA configurations, not another AllReduce implementation. PRVP03/1290 is an evaluated, default-off, synchronous F32 host reference. An upstream Vulkan provider, [llama.cpp #25051](https://github.com/ggml-org/llama.cpp/pull/25051), merged to upstream master on 2026-11-02 as `dcbb091`. Treat that code as an external candidate only; inspect the exact merged source and reconcile through PRVP03 before any adoption. No BigCherry mixed-RDNA correctness or throughput has been measured.
@@ -118,3 +120,5 @@ Pinned-source structural checks **10/10 passed** (1290 unconditional rank read, 
 - 2026-11-20T03:52:37.135948+00:00 (updated-by): Updated: section:2026_10_11_implementation_audit_inactive_shard_safety_before_heterogeneous_tp
 - 2026-11-20T03:53:03.941929+00:00 (updated-by): Updated: section:2026_10_11_implementation_audit_inactive_shard_safety_before_heterogeneous_tp
 - 2026-11-22T05:16:29.336275+00:00 (updated-by): Updated: section:notes
+- RV4539
+- 2026-11-22T11:20:29.088604+00:00 (updated-by): Updated: section:notes

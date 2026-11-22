@@ -72,6 +72,8 @@ Supersedes: RO04
 semantic-carryforward: concrete identity/reuse gates restored 2026-09-10.
 Vulkan remains paused by directive; this is not closure.
 
+CONSOLIDATION 2026-11-22 OWNER-REFERENCES: BRVP06 is the sole active HIP/ROCm SDK stack-selection, toolchain/runpath and build-fingerprint owner after BRVP04 consolidation. BRVP01 retains its independent Vulkan compile-affecting shader/compiler BuildPlan identity scope; RRVP01 now owns actual loaded runtime stack attestation (formerly RRVP03). RRVP02 remains capability discovery. Vulkan implementation stays paused.
+
 ## Change Log
 
 - 2026-09-09T10:59:53.142667+00:00 (created-by): Created by capability-rebaseline-v3
@@ -96,3 +98,8 @@ Vulkan remains paused by directive; this is not closure.
 - chg_20260910_024129_build-and-external-fix-success_1105
 - 2026-09-10T02:41:29.969279+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T12:34:38.010202+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk
+
+## Reviews
+
+- RV4534
+- 2026-11-22T11:19:27.833422+00:00 (updated-by): Updated: section:notes
