@@ -2,7 +2,7 @@
 id: RCS09
 order: 9
 plan: build-radiance-components
-state: pending
+state: superseded
 created-at: '2026-10-19T00:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -40,15 +40,41 @@ shape and the serving flags (--max-num-seqs, speculative depth), see RCS10; a pr
    exceeds the checked maxima is refused with a clear message.
 5. Document the model-onboarding checklist in docs/reference/engines/radiance (what to add for a new model: container, profile, shape check, tuning run).
 
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
 ## Validation
 
 Shape read from the Flash-Next container equals today's constants (bitwise identical replay, unchanged acceptance numbers); a synthetic second shape passes the replay
 and shm tests; no model name or model constant remains in the helper sources (a lint rule, in the spirit of the engine-name literal lint).
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
 ## Notes
 
 Part of the component split (RCS04/RCS05): the moe-remote and backend components take their shape from the header, not from compile-time model constants. Related: RAD11 (other
 expert quantisations), RCS07 (other architectures), RCS10 (tuning with the release build).
+
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: Helper model-shape constants, profile invariants and model-onboarding checks are the same model-constant execution guard and migration scope owned by RCS12. Canonical remaining owner: RCS12. RCS12 is explicitly the model-constant execution guard plus C-class runtime fixes; RCS09's model-shape versus model-settings split is prerequisite acceptance for precisely that guard. Exact remaining acceptance and stop/fallback requirements are in the active receiver. This lifecycle state retires duplicate planning ownership only; original source/evidence/negative results are retained and not declared complete.
 
 ## Staged conversion plan (GPT review 2026-10-19)
 
@@ -69,3 +95,12 @@ Architecture: runtime shape for orchestration and transport, a small set of shap
 Hardest sites: the fixed 512-expert block scans and `__launch_bounds__` (moe_remote_gpu.h 189-244), `kGemvMaxK` shared-memory tile capacity (361-383), quantised-row chunk counts (125-127, 264-265), shared arrays sized by `kTopK` (537-600; moe_mailbox_ops.hip 365-366), fixed owner and layer-map capacities and `layer * kExperts` bit-index arithmetic (moe_remote_shm.h), route maps and histograms in the hook (342-415), the 640-wide reference arrays in r3_moe_worker.cpp (298-410), and heat and capture dimensions (605-737).
 
 Traps: a smaller hidden does not reduce LDS use while static arrays stay sized for 2560; the expert-width 512 versus 640 assumption sits inside the GEMM kernel layout and output strides; the activation quantisation group (128) is not the weight tile `block_k`, and a hidden that is not whole groups must be refused, not truncated; one-thread-per-expert routing does not generalise (use a fixed tile with grid-stride); the owner bitmap stride change touches every CPU and GPU consumer; capture format is versioned separately from the shm protocol; accumulation order decides bitwise equality, so preserve it for the legacy specialisation.
+
+## Reviews
+
+- RV4507
+
+## Change Log
+
+- 2026-11-22T10:36:39.786717+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:43:41.662763+00:00 (state-transition): State: pending → superseded

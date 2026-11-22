@@ -63,12 +63,20 @@ No legacy / no backward compatibility: v2 replaces v1; no translators or aliases
 
 All items in Validation; RSC01-RSC10 and PWR06-PWR09 states updated from code evidence at S17.
 
+**Transferred RSC04 acceptance (independent gate):** RSC11 S15/S16 runtime-surface retirement gate: maintain an exact inventory of active direct/indirect callers, shell/Python launcher entrypoints, lib/plan-check.sh and lib/sdk-check.sh, positional flags, obsolete aliases and native replacements. Require C++ bc-serve serve/start production path with real strict v2 loader, resolver, measurement/guards, fake engine/helper CI and native config semantics; no shim. Preserve the RSC04 rule that S16 deletion and aliases may occur only after *same-build* S15 dense+helper semantic-projection hardware A/B, >=4 clean RHP12 ABBA pairs per layout and RSP01 release asset/installer acceptance, never from card-free dry runs or historical release claims alone. Verify post-deletion git grep zero executable callers (historical evidence references exempt), active configs/start/stop/manifest/health/canary, restoration and power status; Python-free installed release path, bounded tests, sanitizer/clang and patch lint where changed. If existing #1131 deletion and S15 evidence are complete, close only after explicitly mapping each named gate and receipt; otherwise keep S17 outstanding. No duplicate native supervisor/launcher code.
+
+**Transferred RSC09 acceptance (independent gate):** RSC11 S8 handoff-literal provenance gate: for transport max_rows=4096, small_rows=8, gemv_large_rows=32, skip_owned=true and kernels moe_down_tile=1 (historical v1 handoff values), find current active manifest fields, ownership, real A/B or derivation rule and classify each as derived from live layout/model/shape or a calibration record with evidence and confidence. Refuse unsupported default/profile origin, no silent hand-picked launch constants. Verify current v2 named config writer, resolver and release manifest with parity tests and source-backed hardware A/B for any changed behavior; ensure any interim plan-cache identity includes owner map/helper settings/row-limit inputs or records explicit no-change rationale. Remove old shell launcher literals only where active surfaces are already retired by RSC11 S16/RSP01; do not resurrect the Bash profile, old spelling or a second calibration table. Preserve no-regression gate and the RSC09 requirement that manifest entries carry derivation or calibrated provenance, not a misleading generic profile origin.
+
+**Transferred RSC10 acceptance (independent gate):** RSC11 S5/S11 measured host ledger margin recovery: obtain engine_bringup.cpp host-room refusal via stable structured exit with MemAvailable, needed-to-allocate, headroom and shortfall, never parse an error string or retry after partial weight load. Before first engine weight load, have only the native session owner write a new manifest whose calibration cache provenance raises host_ledger_margin.mib by observed needed-minus-available, preserve the source plan key and all non-resource fields (only resources.host.checkpoint_slots, spec.calibration and manifest digest can differ), retry once, then fail with both figures if still rejected. Record actual available/needed/spare and measured shortfall against the plan-cache entry; use a window max to refit both upward/downward, retain only labeled seed floor for unseen layout. Acceptance: card-free fake refused/success and double refusal tests; hardware deliberately zero-margin first refusal and one successful measured retry followed by three 6-stream soaks; margin in force visible in spec.calibration with seed/cache identity and evidence. A successful bc-serve startup without this refusal/retry receipt is not completion. Keep RSC03 as the separate budget-sizing component; do not create second launcher, cache or handwritten margin.
+
 ## Notes
 
 **Unpublished P1 prototype disposition (2026-11-13):** The original local `rad0014_plan_memory_v2_inputs` sidecar commit `006b7ce14` is preserved at GitHub `archive/rsc11-s13-p1-engine-native-20261113` and is **superseded, not merged**. Current `rad0011` already emits the authoritative post-rank-split rank-demand JSON consumed by native P1; the old three-field sidecar lacks `claimable_bytes` and `evidence` and has a different schema. No production or GPU testing is claimed for `rad0014`. See [unpublished branch reconciliation](../../../evidence/2026-11-13-unpublished-branch-reconciliation/README.md). Retain the active RSC11 S11/S13 admission and hardware gates.
 
 
 Lanes: engine (S1,S5), resolver/contract (S7,S8,S10; S9), power (S3,S4,S12), python serving/tooling (S2,S6,S11,S14), integration lead (S0,S13,S15,S16,S17). Supersedes the piecemeal RSC02/RSC04 sequencing.
+
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RSC04,RSC09,RSC10 These are uncompleted acceptance requirements, not new release/quality passes. Historical source plans remain available as superseded records. Keep legacy and blocked/no-route behavior fail closed; do not add parallel native control planes or tools.
 
 ## Status 2026-11-19
 
@@ -149,3 +157,5 @@ runs remain lead-owned.
 
 - RV4321
 - 2026-11-22T03:32:52.501052+00:00 (updated-by): Updated: section:notes
+- RV4510
+- 2026-11-22T10:35:22.894292+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
