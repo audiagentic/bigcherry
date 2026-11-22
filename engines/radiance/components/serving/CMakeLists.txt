@@ -200,7 +200,12 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_session_test PRIVATE
     BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
     BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
-  add_test(NAME bc_session_test COMMAND bc_session_test)
+  # The session tests run as four CTest tests of about equal run time (session_test.cpp, `--group N`), each its own
+  # declared target, so CTest can run them side by side. Building any of them builds the one executable.
+  foreach(bc_session_group RANGE 1 4)
+    add_custom_target(bc_session_test_part${bc_session_group} DEPENDS bc_session_test)
+    add_test(NAME bc_session_test_part${bc_session_group} COMMAND bc_session_test --group ${bc_session_group})
+  endforeach()
   add_executable(bc_lab_trace_experiment_test EXCLUDE_FROM_ALL lab_trace_experiment_test.cpp)
   target_link_libraries(bc_lab_trace_experiment_test PRIVATE bc_json_dependency)
   set_target_properties(bc_lab_trace_experiment_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
@@ -334,7 +339,7 @@ if(BUILD_TESTING)
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
   # The owner tests plan every case through plan_engine_only (minutes, not seconds).
-  set_tests_properties(bc_session_test PROPERTIES TIMEOUT 600)
+  set_tests_properties(bc_session_test_part1 bc_session_test_part2 bc_session_test_part3 bc_session_test_part4 PROPERTIES TIMEOUT 600)
   set_tests_properties(bc_release_install_test PROPERTIES TIMEOUT 300)
-  set_tests_properties(bc_session_stored_test bc_session_test bc_session_host_start_test bc_release_install_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
+  set_tests_properties(bc_session_stored_test bc_session_host_start_test bc_release_install_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
 endif()

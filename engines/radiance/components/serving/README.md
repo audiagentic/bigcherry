@@ -108,7 +108,7 @@ automatic activation of a partial calibration and arbitrary lab shell scripts
 are not offered.
 
 Card-free tests: `bc_manifest_power_test`, `bc_session_guards_test` and
-`bc_session_test` (as well as existing `bc_power_transaction_test`).
+`bc_session_test_part1` to `_part4` (the session tests, in four groups; as well as existing `bc_power_transaction_test`).
 Every executable is a CMake target and declared in `component.toml`.
 
 ## MRC03 native feature states
@@ -143,7 +143,7 @@ archived on a subsequent owner start so an old run cannot masquerade as a
 new startup decision. Other optional features are reported without
 implicitly being declared production-required. The native mapping and
 file/status/warning paths have the card-free `bc_feature_state_test`
-and `bc_session_test` CTest targets.
+and `bc_session_test_part1` to `_part4` CTest targets.
 
 ## Callback boundary and source scanner
 
