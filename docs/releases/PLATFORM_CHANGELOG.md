@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.61.1...bc-platform-1.61.2) (2026-11-22)
+
+
+### Fixes
+
+* **radiance:** take the parity launch calibration key from the owner session record ([#1299](https://github.com/audiagentic/bigcherry/issues/1299)) ([812b5a8](https://github.com/audiagentic/bigcherry/commit/812b5a8948c82e90ab8c12193ace7883859c78aa))
+
 ## [1.61.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.61.0...bc-platform-1.61.1) (2026-11-22)
 
 
