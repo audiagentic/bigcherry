@@ -15,8 +15,8 @@ faults the ledger and stops the step loop (RAD_E_STATE). A promoted batch
 inherits its admission.
 
 The existing rank barrier publishes the issued ticket. Each rank installs
-that value in thread-local storage; Ctx explicitly passes it to
-bc_moe_remote_before_pass before every run_pass. The ordered device setter
+that value on its Ctx; Ctx explicitly passes it to
+bc_moe_remote_before_pass before every run_pass (no thread-local storage). The ordered device setter
 remains outside tape capture. Trunk and MTP/history/draft passes share the
 parent's immutable ticket.
 
