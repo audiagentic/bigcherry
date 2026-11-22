@@ -72,7 +72,13 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 **Original plan design and scope evidence:** `docs/evidence/ltx25-plan-registration/LTX03.md`. Registered by the canonical Planning MCP via AUDiaGentic. Historical C milestones are not separate plan IDs.
 
+2026-11-22 LTX03 first executable full-depth declaration slice (PR #1396, commit 5902eaa6c): extended the existing C06 model-backed native Attn::declare/Builder test across 48 DiT blocks, video/audio self-attention, both legal head maps (8/8/16 and 12/12/8), and three ranks; 576 real-model declarations passed. Single-worker low-priority host build and all 11/11 CTests pass. Evidence: docs/evidence/2026-11-22-ltx03-all-block-native-self-attention/README.md. This is declaration coverage only, NOT full six-kind issue or TP1 parity. Next owned LTX03 gates: model-backed text/cross-modal Q/KV declarations with head/row geometry, FFN/modulation/residual, full 48-block issue trace. RUM14 owns one production-native resident loader; LTX02 owns captured TP1 activation parity; retain production TP3 refusal.
+
+2026-11-22 next implementation blocker confirmed from the pinned LTX2 source: arch/ltx2/ltx2.cpp attn_declare (near line 1225) deliberately rejects every TP3 non-self attention with the tp && !self guard, and currently requires rows_q==rows_k and qdim==kvdim==odim==H*hd. Production's 48-block declarations include attn2, audio_attn2, a2v and v2a as non-self, with separate Q and KV sources and potentially unequal query/key rows (near lines 1749-1764). LTX03 next RED gate is one source-backed non-self native declaration per variant/split, validating distinct K/V shard, all-head Q/K normalization, exact output reduce and single BF16 bias. Implement by generalizing the existing attn_declare/Act/Lin path in rad0060, not adding another attention engine. Source-level blocker; no GPU execution claimed.
+
 ## Change Log
 
 - 2026-11-22T03:06:36.091610+00:00 (created-by): Created by planning-audit
 - 2026-11-22T03:13:28.884198+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:39:29.662317+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:40:04.410369+00:00 (updated-by): Updated: section:notes

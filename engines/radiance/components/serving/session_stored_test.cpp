@@ -112,6 +112,12 @@ struct World {
     bc::test::NativeSessionPlan plan() const {
         auto native = bc::test::native_session_inputs(host, scratch, port, Json::object(),
                                                       bc::test::SessionLayout::helpers, runtime_home());
+        // A shipped config leaves the n-gram tier to the engine ("auto"): the measuring run resolves it and the stored
+        // manifest records the result, while the draft of every later start still says "auto".
+        auto& inspected = native.inputs.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_SETTINGS"];
+        Json settings = Json::parse(inspected);
+        settings["ngram_placement"] = "auto";
+        inspected = settings.dump();
         if (g_installed_engine) {
             native.inputs.engine_binary = *g_installed_engine;
             native.inputs.helper_binary = g_installed_engine->parent_path().parent_path() / "radiance_home" / "helpers" / "r3_moe_worker";
@@ -134,7 +140,6 @@ struct Case {
          bool refuse_power = false)
         : root(case_root), stored(world.stored), bytes(world.bytes) {
         fs::create_directories(run);
-        fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         inputs = world.plan().inputs;
         inputs.stored_manifest = stored;
         if (bad_build) { // the engine on disk is no longer the one that measured the plan

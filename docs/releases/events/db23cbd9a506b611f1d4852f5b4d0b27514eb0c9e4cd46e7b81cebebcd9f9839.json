@@ -1,0 +1,16 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_125603_closed-the-run-plan-items-whos_5127",
+  "files": [
+    "docs/planning/completed/run-multi-engine/MEN28.md",
+    "docs/planning/completed/run-qwen-flash-next/QFN04.md",
+    "docs/planning/completed/run-power-efficiency/PWR09.md",
+    "docs/planning/completed/run-qwen-flash-next/QFN01.md",
+    "docs/planning/completed/run-qwen-flash-next/QFN02.md",
+    "docs/planning/completed/run-qwen-flash-next/QFN03.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Closed six run-plan items after a read-only triage of all 80 items in the run-* plans: MEN28 and QFN04 completed with recorded acceptance, PWR09, QFN01 and QFN02 superseded by the native Radiance path, QFN03 deprecated. The other 74 items are genuinely open or blocked and stay active.",
+  "timestamp-utc": "2026-11-22T12:56:03.817409Z",
+  "user-summary-candidate": "Closed the run-plan items whose work is finished or replaced."
+}

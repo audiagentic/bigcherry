@@ -111,6 +111,13 @@ if(LTX_NATIVE_CORE_LIB)
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c05)
     add_test(NAME ltx_c06_real_self_attention_graph
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06)
+    # LTX03 full-depth declaration check: model-derived block count,
+    # both self-attention modalities and both legal three-rank head maps.
+    # Does not claim executed TP3 or full six-attention coverage.
+    add_test(NAME ltx03_all_block_self_attention_declarations
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-all-blocks)
+    set_tests_properties(ltx03_all_block_self_attention_declarations
+      PROPERTIES TIMEOUT 180)
     # Frozen Radiance loader geometry on the real C06 self-attention weights.
     # Identifies relayouts that the next issued-GPU test must not bypass.
     add_test(NAME ltx_c06_native_weight_share_contract
