@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.66.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.65.0...bc-platform-1.66.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** bc-serve quality applies forced placement steps before scoring ([#1385](https://github.com/audiagentic/bigcherry/issues/1385)) ([110518d](https://github.com/audiagentic/bigcherry/commit/110518d9f970977935c55e3f83fd89d6870535ce))
+
 ## [1.65.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.64.1...bc-platform-1.65.0) (2026-11-22)
 
 

@@ -127,6 +127,9 @@ if(LTX_NATIVE_CORE_LIB)
     add_test(NAME ltx03_ffn_modulation_residual_declarations
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-ffn-modulation)
     set_tests_properties(ltx03_ffn_modulation_residual_declarations PROPERTIES TIMEOUT 180)
+    add_test(NAME ltx03_ffn_issued_host_tp3_vs_tp1
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-ffn-issued-host)
+    set_tests_properties(ltx03_ffn_issued_host_tp3_vs_tp1 PROPERTIES TIMEOUT 300)
     # Frozen Radiance loader geometry on the real C06 self-attention weights.
     # Identifies relayouts that the next issued-GPU test must not bypass.
     add_test(NAME ltx_c06_native_weight_share_contract

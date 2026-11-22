@@ -1,5 +1,19 @@
 # Changelog
 
+## [2020.5.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.5.0...bc-radiance-2020.5.1) (2026-11-22)
+
+
+### Fixes
+
+* **tests:** the admission ledger shutdown check no longer depends on which thread runs first ([#1417](https://github.com/audiagentic/bigcherry/issues/1417)) ([9f3a640](https://github.com/audiagentic/bigcherry/commit/9f3a64007f651d2570e6b7fec83bbca11597306e))
+
+## [2020.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.4.0...bc-radiance-2020.5.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** bc-serve quality applies forced placement steps before scoring ([#1385](https://github.com/audiagentic/bigcherry/issues/1385)) ([110518d](https://github.com/audiagentic/bigcherry/commit/110518d9f970977935c55e3f83fd89d6870535ce))
+
 ## [2020.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.3.0...bc-radiance-2020.4.0) (2026-11-22)
 
 

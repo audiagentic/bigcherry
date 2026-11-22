@@ -33,7 +33,7 @@ declarations are **not** complete GPU C06 execution.
 - Patched full LTX translation unit compiles with the native ABI44 SDK.
 - Source-backed C01/C02 real-model declarations: 3,024 fused/biasless
   and 2,640 deferred-biased projections pass; 384 rank K cuts refuse.
-- Original C02 negatives plus C04 duplicate-finalizer, non-TP3 world
+- Original C02 negatives plus C04 duplicate-finalizer, non-tensor-parallel world
   and invalid-K refusal.
 - C04 verifies 2,016 source-backed native collective + bias graphs.
 - C05 verifies 1,728 source-backed, 3,456 Q/K all-head native
