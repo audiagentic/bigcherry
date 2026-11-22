@@ -19,11 +19,13 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write   # pushes the build image to GHCR
     outputs:
       image: ${{ steps.tag.outputs.image }}
     steps:

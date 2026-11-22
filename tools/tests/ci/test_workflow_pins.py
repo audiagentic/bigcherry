@@ -30,6 +30,16 @@ class WorkflowPinTests(unittest.TestCase):
                 self.assertRegex(text, r"(?m)^permissions:\n  [a-z-]+: (read|write|none)", "no top-level permissions block")
                 self.assertNotIn("write-all", text)
 
+    def test_workflow_level_permissions_are_read_only_outside_the_allow_list(self):
+        # A write grant belongs to the job that needs it; release-please opens and updates release PRs for its one job.
+        allowed = {"release-please.yml"}
+        for workflow in WORKFLOWS:
+            block = re.search(r"(?m)^permissions:\n((?:  .*\n)+)", workflow.read_text(encoding="utf-8"))
+            with self.subTest(workflow=workflow.name):
+                self.assertIsNotNone(block)
+                if workflow.name not in allowed:
+                    self.assertNotIn("write", block.group(1))
+
 
 if __name__ == "__main__":
     unittest.main()

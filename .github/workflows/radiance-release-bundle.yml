@@ -26,10 +26,8 @@ on:
         type: string
         required: true
 
-# the build workflow it calls pushes its image to ghcr, so the caller must allow packages: write
 permissions:
   contents: read
-  packages: write
 
 concurrency:
   group: radiance-release-bundle-${{ github.event.release.tag_name || inputs.tag }}
@@ -86,6 +84,10 @@ jobs:
     needs: plan
     if: needs.plan.outputs.reuse == ''
     uses: ./.github/workflows/radiance-build.yml
+    # the build workflow it calls pushes its image to ghcr, so this caller job must allow packages: write
+    permissions:
+      contents: read
+      packages: write
     with:
       build_lane: ${{ needs.plan.outputs.lane }}
       source_ref: ${{ needs.plan.outputs.tag }}
