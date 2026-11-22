@@ -2,7 +2,7 @@
 id: TRVP12
 order: 0
 plan: tuning-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-09-09T11:01:00.469466+00:00'
 breadth: ''
 skill: advanced
@@ -63,6 +63,8 @@ Supersedes RO17. Preserve RV104/RV118: do not serialize behind TRVP11, do not du
 
 CONSOLIDATION 2026-11-22 OWNER-REFERENCES: TRVP12 remains sole native Vulkan MUL_MAT split-K and merge recipe owner. TRVP15 is now sole CM1-specific strict route/telemetry and performance-promotion gate after TRVP14 was superseded; PRVP02 still owns CM1 end_k/A-prefetch safety, and RRVP02 owns Vulkan implementation pause. Do not add a parallel selector or scheduler.
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Vulkan-only candidate runtime/recipe integration is paused; the native llama.cpp baseline already contains split-K and reduction, so a second selector/stack system would be premature. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after explicit RRVP02 unpause and working stock Vulkan lane. Reuse shared stack, build, manifest and attestation APIs; verify exact MUL_MAT route and split/reduction/prep semantics, native fallback and mismatch/negative matrix. First check latest upstream split-K absorption before any local variant. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## Change Log
 
 - 2026-09-09T11:01:00.469466+00:00 (created-by): Created by capability-rebaseline-v3
@@ -122,3 +124,6 @@ PRVP04 (BCOP295) owns only the prospective upstream #30738 Q4_0 KV dequant+trans
 
 - RV4538
 - 2026-11-22T11:20:18.062010+00:00 (updated-by): Updated: section:notes
+- RV4568
+- 2026-11-22T13:05:55.837858+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:10:56.383317+00:00 (state-transition): State: pending → deferred

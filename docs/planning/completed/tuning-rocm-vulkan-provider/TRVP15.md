@@ -2,7 +2,7 @@
 id: TRVP15
 order: 0
 plan: tuning-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-09-09T11:01:20.673012+00:00'
 breadth: ''
 skill: advanced
@@ -64,6 +64,8 @@ Supersedes RO22. Consumes TRVP13 and TRVP14; preserve RD08 dependency/reference 
 
 CONSOLIDATION 2026-11-22 PHASE-5: receive TRVP14. TRVP15's CM1 qualification cannot be meaningful without TRVP14's forceable, actual-bound CM1 recipe identity and telemetry; both refer to the same existing native Vulkan selector and one optional candidate family. Original acceptance still applies; the transferred gate is unfinished. Source is superseded for duplicate planning ownership, not completed on implementation, benchmark or live-hardware criteria. Where Vulkan is involved, implementation remains paused by owner directive.
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. CM1 RDNA promotion depends on a native forced-route and safety proof that is not currently authorised under the Vulkan pause. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after RRVP02 unpause, PRVP02 native CM1 end_k safety and a strict observed post-bind route, and TRVP12 runtime identity. Require same-device/driver/shader/shape correctness, complete prep cost and balanced ABBA CI evidence; keep unqualified candidates default-off. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## Change Log
 
 - 2026-09-09T11:01:20.673012+00:00 (created-by): Created by capability-rebaseline-v3
@@ -83,3 +85,6 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive TRVP14. TRVP15's CM1 qualification can
 
 - RV4531
 - 2026-11-22T11:09:17.455813+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- RV4569
+- 2026-11-22T13:06:08.667821+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:11:14.275799+00:00 (state-transition): State: pending → deferred

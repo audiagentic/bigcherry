@@ -2,7 +2,7 @@
 id: PRVP02
 order: 0
 plan: patching-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-09-09T11:01:11.838320+00:00'
 breadth: ''
 skill: advanced
@@ -57,6 +57,8 @@ Original PRVP02 2026-09-10 source-capture design is superseded only as to integr
 
 CONSOLIDATION 2026-11-22 OWNER-REFERENCES: TRVP15 now owns both optional strict CM1 route/telemetry and any evidence-qualified CM1 winner promotion formerly divided with TRVP14. PRVP02 remains the separate native CM1 end_k/A-prefetch safety gate. RRVP02's Vulkan implementation pause remains; the old TRVP14 references in source-bounded historical notes do not imply an active second route owner.
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Native Vulkan CM1 A-prefetch/end_k shader qualification is a Vulkan-only source/correctness experiment, currently unapproved to implement or benchmark. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after RRVP02 unpause. Verify current upstream/pin CM1 code including #27952 absorption, exact supported shader route and end_k bounds, negative cases, numerical and fallback proof on each actual RDNA architecture. Do not resurrect old 1246 patch. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## Exact implementation / data flow
 
 - Pin: llama.cpp b11474 = b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea. ggml/src/ggml-vulkan/ggml-vulkan.cpp:1887-1949 gates int8 CM1 on coopmat_int_support + AMD_RDNA3/AMD_RDNA4 and ggml_vk_matmul_cm1_int_shmem_support() on physical LDS size. Lines 2400-2568 construct CM1 pipelines with arch/quant negative gates. ggml_vk_get_mul_mat_mat_pipeline_map() (near 5976) resolves the bound pipeline; quantize_y (near 6330) selects Q8_1 activation preparation only when a matching pipeline exists, else falls back to F16. These are native controls, not new BigCherry features.
@@ -98,3 +100,6 @@ Upstream #27952 merged 2026-09-24; #28440 already supplied IQ4_XS in pinned code
 
 - RV4536
 - 2026-11-22T11:19:50.426847+00:00 (updated-by): Updated: section:notes
+- RV4571
+- 2026-11-22T13:06:38.669202+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:12:00.572548+00:00 (state-transition): State: pending → deferred

@@ -2,7 +2,7 @@
 id: PRVP06
 order: 6
 plan: patching-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-10-19'
 created-by: agent
 priority: P2
@@ -10,6 +10,46 @@ work: M
 ---
 
 # Vulkan wide FWHT (1024–8192) — RDNA3/4 shader and real-route gate
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Vulkan wide-FWHT shader family (1024-8192) is Vulkan-specific with no currently authorised route or hardware lane. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after RRVP02 unpause and a real pinned wide-FWHT operation on the intended model with measured exposed wall. Prove exact shader bounds, scalar oracle, all sizes/strides, F32 parity, shader compiles and fallback, then only consider a default-off variant with positive CI evidence. Do not infer a need from external CUDA/HIP FWHT work. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
 
 ## Decision (2026-10-19, BCOP329)
 
@@ -53,3 +93,12 @@ The Hadamard transform uses butterfly sign/order and \`1/sqrt(N)\` scaling at in
 **Host-only audit fixture:** 208 accepted geometry cases, 80 fallbacks, 1456 row-tail coverage cases, 66 exact integer butterfly comparisons and seven negative gates passed; Python compiled. This models shader grouping and capability gates but **does not** compile GLSL, prove shader F32 numerics, inspect ISA, run a GPU, or measure performance. No patch, benchmark queue or hardware lane was created.
 
 References: [llama.cpp #29772](https://github.com/ggml-org/llama.cpp/pull/29772), [#29101](https://github.com/ggml-org/llama.cpp/pull/29101), [#29100](https://github.com/ggml-org/llama.cpp/pull/29100), pinned [fwht.comp](https://github.com/ggml-org/llama.cpp/blob/23b0202a189c44a54625aadcb37a946dd1d6278d/ggml/src/ggml-vulkan/vulkan-shaders/fwht.comp), pinned [ggml-vulkan.cpp](https://github.com/ggml-org/llama.cpp/blob/23b0202a189c44a54625aadcb37a946dd1d6278d/ggml/src/ggml-vulkan/ggml-vulkan.cpp).
+
+## Reviews
+
+- RV4575
+
+## Change Log
+
+- 2026-11-22T13:07:29.426087+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:13:00.992450+00:00 (state-transition): State: pending → deferred
