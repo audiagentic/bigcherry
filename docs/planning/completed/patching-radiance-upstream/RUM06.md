@@ -2,7 +2,7 @@
 id: RUM06
 order: 6
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-18T01:28:27.514165+00:00'
 breadth: ''
 skill: advanced
@@ -145,6 +145,8 @@ ABI43/ABI44 lifetime checkpoints (host-only, exact 2.2 source): cbdd21f5b frees 
 
 IQ8R TP3 measured (rad-kld-corpus-4, 8240 positions, fp8 KV, num-speculative-tokens 0, bf16-weights reference qwen3.8-27b-bf16; w8a8 bar: mean KL 0.00139, top-1 96.77%): 4,4,8 mean KL 0.00123, p99 0.0105, top-1 97.51%, PPL x1.0005; 6,6,4 mean KL 0.00128, p99 0.0111, top-1 97.27%, PPL x1.0005. Split choice (build a329c651, two A-B-A-B rounds, stream-bench 1/4/8 streams, 4096-token prompts, 256 tokens): 6,6,4 vs 4,4,8 decode step at 1 stream 22.4 vs 27.5 ms (-18%), 4 streams 73.5 vs 73.8 tok/s, 8 streams 91.2 vs 88.1 tok/s, TTFT on a 4.2k prompt 1.93 vs 1.86 s (+3%), capacity config 2.8 vs 2.3 full-length sessions. Decision: 6,6,4 for every TP3 config; qwen27b-tp3, -int8 and -int8-556 consolidated into qwen27b-tp3, long variants renamed qwen27b-tp3-long[-bf16|-bf16i8].
 
+COMPLETION (2026-11-22, PR #1272 merged; supersedes the CURRENT STATUS paragraph above where they differ). The native engine now owns one opaque remote-MoE generation: process-global registry, DSO constructor registration, TLS-selected owner and libr3moe DSO-global hook state are deleted; the explicit factory bind, slot-keyed lookup, serial handles with a lifetime borrow, owner-bound mailbox init, failure-atomic factory, derived deadlines (registration = startup protocol deadline, layer-map consume and stop budget = readiness/quiesce deadlines) and the clean-stop/fault-stop split are in. Three independent read-only reviews drove the fixes (lock held across a callback, borrow vs close ordering, group-only device init, factory failure rollback, a cancel classified as a fault, success after close began); the final review had no open P0/P1 after b1069c6a0. Host evidence: moe_remote_generation, hook_identity, hook_retire, generation_close, layer_map_wait, helper_registration, admission_ledger and rad0017 failure-injection tests under ASan/UBSan; patch and release suites pass. Card evidence on the sanctioned lane build of the final head (helper on, short gpu leases): clean start/canary/stop with exit 0 and no interrupt or fault line on flashnext-4gpu and qwen27b-tp3 (mixed gfx1100/gfx1100/gfx1201, 6,6,4); a helper killed mid-run takes the fault path (serve exit 1, cause named, no hang) and the same config restarts cleanly; a second helper-on engine is refused (its measuring helper runs out of GPU memory; the plugin-level busy refusal is proven by host tests only); greedy 96-token output is byte-identical to the installed 2020.0.1 on qwen27b-tp3 and on flashnext-tp2xtx-r9700 (previous builds of the same branch; the final build repeated qwen27b-tp3). The four mixed-TP checks (code object, ordinal, rendezvous, span) are covered as live behaviour on those two configs, not as separately named tests. NOT proven: bound-ahead stop or death on real hardware, and an installed release candidate of this change (the release bundle that carries it is the first installed proof). Off-path cost: no per-step lock or allocation added.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -173,3 +175,5 @@ IQ8R TP3 measured (rad-kld-corpus-4, 8240 positions, fp8 KV, num-speculative-tok
 - 2026-11-21T03:07:59.089816+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T20:17:02.760616+00:00 (state-transition): State: pending → in_progress
 - 2026-11-22T01:51:51.539077+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-22T07:30:48.856632+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T07:31:40.203101+00:00 (state-transition): State: in_progress → completed
