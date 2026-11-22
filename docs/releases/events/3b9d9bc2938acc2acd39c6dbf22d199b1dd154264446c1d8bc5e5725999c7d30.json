@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261121_235741_installing-a-new-release-no-lo_3425",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/README.md",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "plan-item-ids": [
+    "RUM12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A named start under a different engine or helper build reuses the stored measurement: the plan, rank demand and resident host memory of the earlier attempt are sealed again under the current build without running a measuring engine, and the old build is recorded as provenance.",
+  "timestamp-utc": "2026-11-21T23:57:41.757930Z",
+  "user-summary-candidate": "Installing a new release no longer forces every configuration to be measured again."
+}
