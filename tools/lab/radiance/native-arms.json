@@ -1,0 +1,54 @@
+{
+ "_comment": "Recipe of every native lab arm YAML next to this file: the committed engines/radiance/configs/BASE.yaml with the listed arm_yaml.py --set changes. Regenerate one with: python3 tools/lab/radiance/arm_yaml.py --base engines/radiance/configs/BASE.yaml --out tools/lab/radiance/native-arms/JOB/ARM.yaml --set PATH=VALUE ... A test regenerates every file from this recipe and compares.",
+ "arms": {
+  "helper-kld/helper-off": {
+   "base": "flashnext-r9700",
+   "set": [
+    "models.flashnext.num-speculative-tokens=0"
+   ]
+  },
+  "helper-kld/helper-on": {
+   "base": "flashnext-2xtx",
+   "set": [
+    "models.flashnext.max-model-len=8192",
+    "models.flashnext.max-num-seqs=1",
+    "models.flashnext.max-num-batched-tokens=64",
+    "models.flashnext.num-speculative-tokens=0",
+    "x-bigcherry.handoff.max-rows=64",
+    "x-bigcherry.handoff.small-rows=8",
+    "x-bigcherry.handoff.heat=@bundle/heat/flashnext-mixed.hot-first",
+    "x-bigcherry.handoff.histogram=off",
+    "x-bigcherry.memory.host-pool-mib=45056"
+   ]
+  },
+  "helper-combine-kld/combine0": {
+   "base": "flashnext-2xtx",
+   "set": [
+    "models.flashnext.max-model-len=8192",
+    "models.flashnext.max-num-seqs=1",
+    "models.flashnext.max-num-batched-tokens=64",
+    "models.flashnext.num-speculative-tokens=0",
+    "x-bigcherry.handoff.max-rows=64",
+    "x-bigcherry.handoff.small-rows=8",
+    "x-bigcherry.handoff.heat=@bundle/heat/flashnext-mixed.hot-first",
+    "x-bigcherry.handoff.histogram=off",
+    "x-bigcherry.memory.host-pool-mib=22528"
+   ]
+  },
+  "helper-combine-kld/combine1": {
+   "base": "flashnext-2xtx-combine",
+   "set": [
+    "models.flashnext.max-model-len=8192",
+    "models.flashnext.max-num-seqs=1",
+    "models.flashnext.max-num-batched-tokens=64",
+    "models.flashnext.num-speculative-tokens=0",
+    "x-bigcherry.handoff.max-rows=64",
+    "x-bigcherry.handoff.small-rows=8",
+    "x-bigcherry.handoff.heat=@bundle/heat/flashnext-mixed.hot-first",
+    "x-bigcherry.handoff.histogram=off",
+    "x-bigcherry.memory.host-pool-mib=22528",
+    "x-bigcherry.helper.combine-min-rows=1"
+   ]
+  }
+ }
+}

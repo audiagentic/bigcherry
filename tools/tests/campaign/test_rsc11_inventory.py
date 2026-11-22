@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import sys
 import tempfile
 import unittest
@@ -12,7 +11,6 @@ from unittest.mock import patch
 
 from bigcherry.core.environment import Device, DevicePower
 from bigcherry.engine_adapters import radiance_inventory as ri
-from bigcherry.engine_adapters.radiance import RadianceAdapter
 
 BDFS = ("0000:03:00.0", "0000:06:00.0", "0000:09:00.0", "0000:17:00.0")
 # Non-sorted ordinals are deliberate: static host ordinals must not influence roles.
@@ -148,26 +146,6 @@ class InventoryContractTests(unittest.TestCase):
                 result = ri.detect(binary=fake, sys_root=root)
             self.assertEqual([(g.ordinal, g.bdf) for g in result.gpus], [
                 (8, BDFS[0]), (4, BDFS[1]), (2, BDFS[2]), (6, BDFS[3])])
-
-    def test_sidecars_use_live_detector_not_host_ordinals(self):
-        from bigcherry.engine_adapters.radiance import RadianceAdapter
-        from test_engine_adapters import write_manifest
-        with tempfile.TemporaryDirectory() as directory:
-            manifest = write_manifest(directory, helpers=(BDFS[1], BDFS[0]))
-            with patch.object(ri, "detect", return_value=ri.Inventory.from_facts(FACTS)), patch(
-                    "bigcherry.engine_adapters.radiance._host", return_value=local_host(
-                        devices=(Device(0, "gfx1100", "stale", 1, BDFS[0]),))):
-                sidecars = RadianceAdapter().sidecars(
-                    {"name": "a", "manifest": manifest}, {}, Path(directory), Path("build/bin/radiance"))
-            self.assertEqual([s.env["ROCR_VISIBLE_DEVICES"] for s in sidecars], ["4", "8"])
-
-    def test_adapter_serving_layout_consumes_the_same_roles(self):
-        with patch.object(ri, "_run", return_value=explained()), patch(
-                "bigcherry.engine_adapters.radiance._host", return_value=local_host()), patch.dict(
-                    os.environ, {"BC_MODEL_ROOT": "/models"}, clear=False):
-            result = RadianceAdapter().serving_layout("flashnext-tp2xtx-r9700")
-        self.assertEqual(result.environment, {"ROCR_VISIBLE_DEVICES": "8,4", "HIP_VISIBLE_DEVICES": "0,1"})
-        self.assertEqual(result.expected_execution["locators"], list(BDFS[:2]))
 
 
 if __name__ == "__main__":

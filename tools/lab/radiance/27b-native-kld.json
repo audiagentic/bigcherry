@@ -5,23 +5,7 @@
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
  "quality_only": true,
- "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad",
  "server_args": [],
- "environment": {
-  "HIP_VISIBLE_DEVICES": "0,1",
-  "ROCR_VISIBLE_DEVICES": "0,1"
- },
- "expected_execution": {
-  "backend": "ROCm",
-  "architectures": [
-   "gfx1100",
-   "gfx1100"
-  ],
-  "locators": [
-   "0000:03:00.0",
-   "0000:06:00.0"
-  ]
- },
  "quality": {
   "reference_dir": "${KLD_REF_DIR}",
   "control": "compat",
