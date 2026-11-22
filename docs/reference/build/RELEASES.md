@@ -205,7 +205,7 @@ version-source` in `engines/<engine>/engine.toml`; the first release of a pin is
 | Line | version-source | Major | Readable alias (added by the release workflow) |
 |---|---|---|---|
 | llama.cpp | `build-tag` | the upstream build number: b11474 -> 11474 | `bc-llamacpp-b<build>-r<N>` |
-| radiance | `pinned-version` | From `pinned-version` in `engines/radiance/recipes.toml`. Published 1.x retains concatenated digits (1.17.0 → 1170). From 2.x, the major is upstream major × 10000 + minor × 100 + patch (2.2.0 → 20200). | `bc-radiance-<upstream version>-r<N>`, e.g. `bc-radiance-1.3.0-r1` |
+| radiance | `pinned-version` | From `pinned-version` in `engines/radiance/recipes.toml`. Published 1.x retains concatenated digits (1.17.0 → 1170). From 2.x the same four digits continue: upstream major × 1000 + minor × 10 + patch (2.2.0 → 2020, 2.10.1 → 2101); a minor of 100 or more, or a patch of 10 or more, is refused because it would collide. | `bc-radiance-<upstream version>-r<N>`, e.g. `bc-radiance-1.3.0-r1` |
 | platform | - | plain semantic version from conventional commits | none |
 
 `N` counts the releases at that major from 0. The radiance pin is a commit, so its commands take the revision (at least 7

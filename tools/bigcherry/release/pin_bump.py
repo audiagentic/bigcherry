@@ -24,6 +24,7 @@ from typing import Any, Sequence, TypeVar
 
 from .. import pin_transition
 from .. import recipes as recipes_module
+from . import release_line
 from ..build import source_compile_check
 from ..core import components as components_module
 from ..core import engines, paths, tree_activity
@@ -500,6 +501,9 @@ def run_phase_declare(*, repo_root: Path, engine: str, vendor_root: Path, target
     if engines.load(repo_root, engine).version_source == "pinned-version":
         recipes_module.set_pinned_version(recipes_module.version_of_ref(target_ref, vendor_root), recipes_file)
     declarations = components_module.repin_components(repo_root, engine, target_ref)
+    # The release major follows the pin: a new major starts its release line (release-please's `release-as`), cleared
+    # by the release-please workflow once the release exists.
+    release_config = release_line.follow_pin(repo_root, engine)
     from_sha = resolve_pin_sha(engine, old, vendor_root)
     to_sha = resolve_pin_sha(engine, target_ref, vendor_root)
     declaring_before = _git(repo_root, "rev-parse", "HEAD")
@@ -511,6 +515,7 @@ def run_phase_declare(*, repo_root: Path, engine: str, vendor_root: Path, target
         recipes_file.relative_to(repo_root).as_posix(),
         marker.relative_to(repo_root).as_posix(),
         *(path.relative_to(repo_root).as_posix() for path in declarations),
+        *((release_config.relative_to(repo_root).as_posix(),) if release_config else ()),
     )
     _git(
         repo_root,

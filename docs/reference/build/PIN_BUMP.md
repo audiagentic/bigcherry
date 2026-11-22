@@ -115,12 +115,20 @@ the llama.cpp repin/transition procedure below is independent.
    `bc_contract_check` to enforce generated-v3 schema/semantic
    fingerprint equality, plus v3 writer/reader/replay tests. Bind sealed
    exact YAML bytes, root, parser/build and fresh measured admission.
-   `bc-serve --work-root ${BC_WORK_ROOT}` enables the host-wide full
-   model identity cache; no cache hit waives resource re-admission.
+   `bc-serve --work-root ${BC_WORK_ROOT}` enables the named-config store:
+   a named start reuses the last measured plan of its config (the model is
+   identified by path, size and mtime and never read). A reused plan is not
+   trusted: resource admission and the live room check run on every start,
+   and the engine refuses a plan that does not fit; that is the safety net,
+   so a stored plan needs no revalidation of its own.
 6. **Hardware acceptance before release.** Qualify each shipped
-   config from the installed bundle (canary, stop/drain, fresh/named/
-   explicit stored replay), with helper-on/off and mixed-rank paths
-   wherever the roster requires them. For model-quality KLD/top-1 use
+   config from the installed bundle (canary, stop/drain, and a second
+   named start with `--work-root`, which is the reuse path), with
+   helper-on/off and mixed-rank paths
+   wherever the roster requires them. The bump records ONE fresh
+   measurement per new build, in a separate work root, and reports how its
+   plan differs from the previous build's; plan differences are reported,
+   they do not gate the A/B. For model-quality KLD/top-1 use
    a temporary YAML arm with `num-speculative-tokens: 0`; leave
    production draft depth unchanged for throughput tests. Compare
    matched old/new model, KV dtype, prompts and topology with
@@ -166,10 +174,11 @@ the llama.cpp repin/transition procedure below is independent.
 - **Paired-run harness.** Seed a stored manifest index only into the old
   arm (the 2.2 owner rejects the old format). Each arm writes run records
   under its own work root: merge them into the environment's work root
-  before `baseline` and `compare`. Take a short per-arm `gpu` lease. A
-  cold native start fingerprints the whole model; pass `--work-root` so the
-  identity cache is used and do not reuse a measurement directory across
-  differing configs (stored replay validation will refuse it).
+  before `baseline` and `compare`. Take a short per-arm `gpu` lease. The
+  arms of one comparison share a work root, so both run the same measured
+  plan (the named-config store hands the second arm the first's plan); a
+  fresh measurement of a new build goes in a work root of its own. Do not
+  reuse a work root across differing configs.
 - **Triage at the current pin must be clean.** Run `pin-triage` at the
   pinned commit; a non-clean verdict there is a defect in the check, not
   upstream drift (the patch-owned rule false positives were found this way).
@@ -338,9 +347,18 @@ acceptance before changing the next deployment.
    branch takes current `main` back). `--through <phase>` stops early;
    `--dry-run` reports the concrete PRs and manifest versions without writes.
 
-   The version is carried only by `release-as` on the `engines/llamacpp`
-   package in `release-please-config.json`; it is removed after the release
-   tag exists. Commit-message `Release-As` footers are not used.
+   The version is carried only by the package-scoped `release-as` in
+   `release-please-config.json`. Commit-message `Release-As` footers are not used.
+
+   The release line follows the pin by itself. The `declare` phase of `pin-bump` compares the new pin's release
+   major (the llama.cpp build number; Radiance 2.2.0 is 2020) with the one in `.release-please-manifest.json` and,
+   when they differ, sets `release-as` `<major>.0.0` in the same commit that moves the pin
+   (`tools/bigcherry/release/release_line.py`). Once the release exists (the manifest has reached `release-as`),
+   the release-please workflow opens a pull request that removes the key and queues it to merge; the `unpin`
+   phase above does the same synchronously for a `pin-release` run. The test
+   `tools/tests/release/test_release_line.py::test_this_repository_declares_its_release_line` (and
+   `python -m bigcherry.release.release_line check`) fails when the pin's major differs from the manifest's without
+   a `release-as`, when the key does not name the pin's major, and when it is older than the manifest.
 
    Required PR checks include conventional-title and index-line-endings. Release-please uses RELEASE_PLEASE_TOKEN to trigger workflows; PRs created with GITHUB_TOKEN may not trigger required checks. If no checks run, close and reopen the PR as the account. The pin-release main/release/unpin branches must be updated against main, preserve the released package version, wait for required checks and refuse on failures.
 

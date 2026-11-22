@@ -87,6 +87,11 @@ nice -n 15 python3 -m bigcherry --engine radiance pin-bump <ref> \
 python3 -m bigcherry --engine radiance pin-bump <ref> --resume
 ```
 
+The declare phase also handles the release line: when the new pin's release major (2.2.0 is 2020) differs from the
+release-please manifest's, it sets the package's `release-as` in the pin commit, and the release-please workflow
+removes it after the release (`tools/bigcherry/release/release_line.py`). Nothing to do by hand; a missing or stale
+key fails `tools/tests/release/test_release_line.py`.
+
 Follow the reported phase failure, rather than bypassing it. The drift gate
 checks component coupling and native rewrites; the compile gate rebuilds
 components, checks exported plugin ABI **and layout fingerprint**, and runs
@@ -108,22 +113,30 @@ offline, with the matching candidate engine and `bc-serve explain NAME
 --native-config engines/radiance/configs/NAME.yaml --model-root ${BC_MODEL_ROOT}
 --engine-binary <candidate-binary> --json`, then validate variant/roster
 consistency. No catalogue, layout file, `--layouts` or managed-start
-`--set` projection is involved. The sealed original YAML bytes, canonical
-root and parser/build identity must bind the measured plan and stored replay;
-fresh resource admission is required on every start, including cache hits.
+`--set` projection is involved. Fresh resource admission and the live room check run on every start, including
+a start that reuses a stored plan.
 
-Pass the platform's absolute work root as `--work-root ${BC_WORK_ROOT}`
-to enable the shared model-identity cache at
-`${BC_WORK_ROOT}/cache/model-identities/<sha256-of-canonical-model-path>.json`.
-It stores a full-file digest, validated against file identity; missing
-`--work-root` fingerprints the model on each run. Never substitute a header
-hash or reuse historical free-VRAM estimates as static identity.
+Pass the platform's absolute work root as `--work-root ${BC_WORK_ROOT}` to
+enable the named-config store at
+`${BC_WORK_ROOT}/cache/named-configs/`: a named start reuses the last measured
+manifest of its config, keyed on the resolved settings, the ordered cards and
+VRAM, the power profile, the config inputs and the model's path, size and
+mtime. The model is never read, and the engine, helper and bc-serve builds are
+provenance, not part of the key. Without `--work-root` every start measures.
+Never reuse historical free-VRAM estimates as static identity. A reused plan
+is protected by admission: it runs on every start, and the engine refuses a plan
+that does not fit.
+
+Record ONE fresh measurement per new build, in a separate work root, and report
+how its plan differs from the previous build's (it does not gate the A/B).
+Parity arms of one comparison share a work root, so both run the same measured
+plan.
 
 ## 4. Qualify on leased hardware before publishing
 
 Run the **entire deployed YAML roster** from the installed, relocatable
 runtime: offline explain, measured start, health, short completion, stop/drain,
-named replay and explicit stored replay. Exercise engine-only, helper-on and
+and a second named start with `--work-root` (the reuse path). Exercise engine-only, helper-on and
 mixed-rank topologies where the roster advertises them. Check ordinal order,
 code objects, exact collective rendezvous and host/VRAM admission. Fix a
 shared planner defect in the measured owner, not by adding per-config

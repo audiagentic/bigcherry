@@ -2,7 +2,7 @@
 id: RUM08
 order: 8
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-18T01:28:40.856862+00:00'
 breadth: ''
 skill: advanced
@@ -15,20 +15,16 @@ work: M
 
 ## Description
 
-Compare upstream recording against rad0013 before retirement; select one scheduler controller and preserve rank-consistent draft/history handling. Keep adaptive/traversal/suffix modes outside the initial acceptance matrix unless explicitly enabled.
+Reuse upstream MTP replay on Radiance 2.2 and settle one scheduling policy: retire rad0013 and rad0047 against upstream pass_key with exactness evidence, keep rad0036 only where upstream's timing controls do not replace it, preserve rank-consistent draft and history handling (rad0028, rad0029), and record one production policy for fixed-depth Flash-Next. Adaptive, traversal and suffix modes stay outside the matrix unless a profile selects them.
 
 ## Steps
 
-- Compare target Qwen4exp pass_key and recorded draft/verify/decode behavior with rad0013's exact intended fix, including split cap and QSA exactness/grid boundary.
-- Instrument only enough to show the selected fixed-depth production draft and verify paths hit the expected replay keys. Retire rad0013 if target coverage is equivalent; otherwise keep a small semantic fix rather than its old full override.
-- Inspect target scheduler prefill-interleave auto defaults, mixed-step timing controller, preemption and prefix adoption against rad0036. Select one policy authority and map its settings through native YAML.
-- Preserve rad0028 rank-consistent draft decisions and rad0029 ownership behavior with actual verify rows. Keep suffix/adaptive/traversal modes disabled unless they are part of the chosen production configuration.
-- Remove superseded governor/config parsing and associated dead tests/aliases once all callers are migrated. Keep unrelated diagnostic experiments out of production composition.
-- Use upstream defaults only after an explicit decision; initial comparison pins the old production behavior so policy drift cannot hide behind a version bump.
-
-- Extend ABI43 tests using existing `tests/arch_test.cpp` exact-QSA-bound coverage and `tests/runtime_test.cpp` effective keyed-bound coverage; inspect actual selected/effective launch arguments, not only the row key.
-- Prove whether a reachable wide verify can receive a missing/nonpositive summary. The architecture key maps missing and above-bound summaries to the same selector bit, while issue code substitutes the keyed bound only for a proven positive summary. If reachable, keep that case live with exact geometry or a narrow semantic patch; do not restore rad0013 wholesale.
-- Preserve rad0028 rank-0 proposal agreement and rad0029 per-rank resource bounds. Choose one explicit production interleave/depth authority; pin it for comparisons and scope or withhold long profiles whose governor semantics differ from the upstream mixed-step timing controller.
+1. Compare upstream Qwen4exp pass_key and the recorded draft/verify/decode tape with rad0013's intended fix (split cap, QSA exactness and grid boundary). Result: upstream replaces rad0013; archived unchanged.
+2. Prove whether a reachable wide verify can receive a missing or nonpositive summary. Result: built-in scheduler entries carry a positive full-KV summary; rad0047 rejected and archived.
+3. Inspect upstream prefill-interleave defaults, the mixed-step timing controller, preemption and prefix adoption against rad0036 and select one authority per profile. Result: flashnext-4gpu fixes depth 3, prefill-interleave 0, mixed-step-target-ms 0 with arrival admission (rad0036 dormant); the long Qwen27B profiles keep rad0036 for admission and upstream interleave for step spacing, as distinct controls.
+4. Preserve rad0028 rank-consistent drafts and rad0029 per-rank ownership with real verify rows (host tests plus TP2 helper-active per-rank shape equality).
+5. Show on hardware that the selected fixed-depth path replays, with helper on and off, and that mixed and unkeyed shapes issue live. Result: docs/evidence/2026-11-22-rum08-completion/ on the installed bc-radiance 2020.0.0 prefix (native /stats counters: played, recorded, audited, zero refused).
+6. Pin the old production behaviour explicitly in the native YAML so policy drift cannot hide behind the bump.
 
 ## Detailed Solution & Technical Design
 
@@ -60,16 +56,17 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 
 ## Files
 
-- engines/radiance/patches/rad0013_mtp_pass_replay/patch.py
+- engines/radiance/patches/archive/rad0013_mtp_pass_replay (archived unchanged; see ARCHIVE.md)
+- engines/radiance/patches/archive/rad0047_mtp_verify_replay_summary (archived unchanged; rejected)
 - engines/radiance/patches/rad0028_rank_consistent_block_drafts/patch.py
 - engines/radiance/patches/rad0029_rank_own_split/patch.py
 - engines/radiance/patches/rad0036_prefill_governor/patch.py
 - engines/radiance/recipes.toml
-- engines/radiance/components/serving/config_loader.cpp
-
-- engines/radiance/patches/rad0047_mtp_verify_replay_summary/patch.py
-- engines/radiance/patches/rad0047_mtp_verify_replay_summary/patch.toml
-- tools/tests/patch/test_radiance_rad0047.py
+- engines/radiance/configs/flashnext-4gpu.yaml
+- tools/tests/patch/test_radiance_upstream_mtp_replay.py
+- docs/evidence/2026-11-21-rum08-replay/README.md
+- docs/evidence/2026-11-22-rum08-completion/README.md
+- docs/reference/engines/radiance/README.md
 
 ## Validation
 
@@ -119,6 +116,8 @@ Rechecked the selected upstream replay seam on the composed frozen 2.2 host buil
 
 2026-11-21: host review on 2.2 b6b8751 (docs/evidence/2026-11-21-rum08-replay/README.md). rad0013 superseded by upstream pass_key (decode/verify/MTP draft keyed bound, QSA exact-side): archived unchanged. rad0047 rejected (scheduler always yields a positive full-KV summary for a wide verify): archived unchanged. rad0036 kept (not replicated by --prefill-interleave/--mixed-step-target-ms). New test tools/tests/patch/test_radiance_upstream_mtp_replay.py compiles the unmodified upstream pass_key. Merged into node/radiance-latest-bump at 1c6cc2a08. Open: GPU replay canary under RUM09.
 
+2026-11-22 completion (bigcherry-1; evidence PR #1288, independent read-only review of the plan set). Met: rad0013 archived unchanged (upstream pass_key supersedes it), rad0047 rejected and archived unchanged, rad0036 composed and scoped, one documented production policy for fixed-depth Flash-Next. Host evidence on actual 2.2 source: 10 patch replay tests with the real prefill split and grid, 3 upstream runtime cases (30 checks) on RadArgs.kv_used_max_h, the QSA selector case (30 checks), 356 upstream scheduler checks. Installed bc-radiance 2020.0.0 hardware (own short gpu lease each, clean stop): helper-inactive flashnext-r9700 final /stats 486 played, 40 recorded, 32 audited, 0 refused, 0 unkeyed; helper-active flashnext-4gpu with six mixed passes 411 played, 22 recorded, 8 audited, 7 unkeyed (the mixed geometry issues live by design), 0 refused; flashnext-tp2xtx-r9700 TP2 per-pass shape tuples identical on ranks 0 and 1 (19 decode steps). Limits kept honest: the phase trace does not log pass keys or RadArgs, so effective-argument equality rests on the upstream executable tests; traced timings are not a speedup claim; adaptive, traversal, suffix and the long-Qwen policies are not qualified here. RUM06 is not a prerequisite (the review checked the dependency: replay and scheduler policy stand on the shipped engine); re-run one canary after the RUM06 lifecycle cutover only if its code touches the replay route. The old rad0055 meaning (plain MXFP4) never applied here; rad0055 is the phase trace. The unexplained +12% warm-step gap against 1.17 is a separate diagnostic, not part of this item.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -144,3 +143,6 @@ Rechecked the selected upstream replay seam on the composed frozen 2.2 host buil
 - 2026-11-19T23:07:28.977274+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T12:44:29.903864+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T01:48:31.465699+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T01:52:58.982899+00:00 (updated-by): Updated: section:description, section:steps, section:files
+- 2026-11-22T01:53:11.443389+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T01:53:15.615009+00:00 (state-transition): State: in_progress → completed

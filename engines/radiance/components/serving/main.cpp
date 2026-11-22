@@ -112,6 +112,7 @@ void usage() {
            "[--set k=v]\n"
            "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
            "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
+           "         [--step-phase-trace]  opt-in per-rank HIP event trace in run-dir; changes timing\n"
            "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
            "             --calibration-store FILE   foreground finite ABBA workload, strict measured-drift "
            "gate\n"
@@ -119,18 +120,17 @@ void usage() {
            "             no stored-manifest replay until RSC12 keys its bytes, no calibration mode\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
            "and verified\n"
-           "         owner GPU lease; own one session in the foreground: measured manifest (measuring first on "
-           "a\n"
-           "         plan-cache miss), engine from it, /health, start canary, then serve until `stop`, a "
+           "         owner GPU lease; own one session in the foreground: measured manifest (a named start "
+           "reuses the last measured one of its config from the --work-root store, else measures), engine from it, /health, start canary, then serve until `stop`, a "
            "signal or a\n"
            "         child's exit; every child stopped and verified gone before it returns. Select the config "
            "with\n"
-           "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
-           "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
+           "         positional CONFIG selects the RSC12 named config. `start --manifest FILE --run-dir DIR` "
+           "replays one named file; live checks and per-start receipts still run. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
            "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
-           "  --work-root DIR     the platform's work root (host-wide model-identity cache); without it a start\n"
-           "                     fingerprints the model per run\n"
+           "  --work-root DIR     the platform's work root: holds the named-config store, so a start reuses the\n"
+           "                     last measured plan of its config; without it every start measures\n"
            "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
            "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
@@ -157,6 +157,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     bool calibration_run = false;
     bool allow_power_apply = false;
     bool strict_production_features = false;
+    bool step_phase_trace = false;
     bool json = false;
     std::vector<std::string> passed; // the options as given, for `start` to hand to its detached `serve`
     for (int i = 2; i < argc; ++i) {
@@ -213,7 +214,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         } else if (arg == "--engine-binary") {
             engine_binary = need();
         } else if (arg == "--work-root") {
-            work_root = need();   // the platform's work root: where the host-wide model-identity cache lives
+            work_root = need();   // the platform's work root: where the named-config store lives
         } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
@@ -235,6 +236,10 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             passed.push_back(arg);
         } else if (arg == "--strict-production-features") {
             strict_production_features = true;
+            passed.push_back(arg);
+        } else if (arg == "--step-phase-trace") {
+            if (step_phase_trace) throw std::runtime_error("--step-phase-trace given twice");
+            step_phase_trace = true;
             passed.push_back(arg);
         } else {
             std::string message = cmd;
@@ -396,6 +401,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     } else if ((cmd == "serve" || cmd == "start") && stored_manifest.empty()) {
         throw std::runtime_error("serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
     }
+    if (quality && step_phase_trace)
+        throw std::runtime_error("--step-phase-trace is a serving-only diagnostic");
     if (quality) {
         if (native_config.empty() || quality->reference.empty() || quality->output.empty() ||
             calibration_run || !lab_experiment.empty())
@@ -480,6 +487,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     session.quality = std::move(quality);
     session.publish_feature_states = true;
     session.strict_production_features = strict_production_features;
+    session.step_phase_trace = step_phase_trace;
     if (calibration_run)
         session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
     session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
@@ -584,8 +592,8 @@ int explain_command(int argc, char** argv) {
         throw std::runtime_error(std::string("explain: ") + error.what());
     }
 const std::string cache_note = work_root.empty()
-        ? "host-wide model identity cache: off (no --work-root); the model is fingerprinted per run"
-        : "host-wide model identity cache: " + work_root.string();
+        ? "named-config store: off (no --work-root); every start measures"
+        : "named-config store: " + work_root.string();
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
     if (!native_config.empty()) {
         ss::EnginePlanInputs preflight;

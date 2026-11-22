@@ -1,0 +1,18 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_015319_plan-records-now-match-the-shi_2934",
+  "files": [
+    "docs/planning/completed/patching-radiance-upstream/RUM08.md",
+    "docs/planning/active/patching-radiance-upstream/RUM06.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM09.md"
+  ],
+  "plan-item-ids": [
+    "RUM08",
+    "RUM06",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Complete RUM08 on the 2020.0.0 installed prefix with its replay and policy evidence; rewrite RUM06's description, steps, acceptance and notes to the remaining engine-generation lifetime cutover with the superseded conversion history condensed; correct RUM09's config count to the 16 shipped configs.",
+  "timestamp-utc": "2026-11-22T01:53:19.117022Z",
+  "user-summary-candidate": "Plan records now match the shipped Radiance 2.2 state: replay and scheduling policy are closed, and the remaining remote-MoE lifetime work is stated precisely."
+}

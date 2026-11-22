@@ -2,7 +2,7 @@
 id: RUM05
 order: 5
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-18T01:28:20.204242+00:00'
 breadth: ''
 skill: advanced
@@ -95,6 +95,8 @@ Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gate
 
 2026-11-22 (bigcherry-2): acceptance audit, no state change. Met on hardware: measured fresh starts on R9700 and XTX cards (flashnext-r9700, the 2xtx family, mixed qwen27b TP3, 4-GPU) across all 16 configs from the installed 1170.37.0 prefix, including the two defects recorded above (R9700 one-session shortfall, n-gram placement); met card-free: exact ordered BDF to child-local device binding in serving and offline Config (native_fleet_v3_engine_test, check_rank_devices, quality overlay keeps devices and rank_devices), existing measured admission and independent owner verification, no broker hook. NOT yet exercised on cards: (1) stored replay: bc-serve start --manifest <stored measured manifest> --run-dir NEW, replaying a manifest written by an earlier start, and the plan-cache-hit start (a second start by name with an unchanged YAML, build, model and host facts, which reuses the measured plan without measuring), on one R9700-only config (flashnext-r9700) and one XTX config with a nontrivial rank order (qwen27b-tp3: XTX, XTX, R9700); (2) the offline caller on cards: one native KL record/score start (--kld-record, then --kld-ref/--kld-out) on qwen27b-tp3, to show the offline Config keeps the same physical order as the serving start. Gate E records fresh starts; it does not record a replay or cache-hit start or an offline KL start. Remaining: those runs, then complete.
 
+2026-11-22 (bigcherry-2): completed. The runs the audit above listed as missing are in docs/evidence/radiance-latest-bump/RUM05-REPLAY-KLD.md: stored-manifest replay (start --manifest, 0 measurement attempts) up with the correct canary on flashnext-r9700 (R9700) and qwen27b-tp3 (XTX, XTX, R9700); and one offline KL start (bc-serve quality qwen27b-tp3 against the bf16 reference, 8240 positions, mean KLD 0.0012823, equal to the serving-split 0.001282 in RUM06), so the offline Config keeps the serving start's physical rank order. Correction to the audit: a second start by name does not reuse a plan on this build (each named start measures into its own run dir); only replay reuses. That is a restart-cost behaviour change tracked outside this item (the named start will reuse the last measured plan from a work-root store). Replay restart cost measured: 44 s with --work-root vs 72 s fresh vs 9 min 19 s without it (whole-model fingerprint before power admission), the last also being addressed by the same change.
+
 ## Change Log
 
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
@@ -110,3 +112,5 @@ Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gate
 - 2026-11-20T12:44:34.149699+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T13:12:22.293227+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T22:16:24.905500+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T23:26:38.077992+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T23:26:42.331262+00:00 (state-transition): State: in_progress → completed
