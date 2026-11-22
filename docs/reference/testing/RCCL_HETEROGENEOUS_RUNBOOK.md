@@ -675,6 +675,8 @@ may be used for qualification when supported by the pinned build.
 
 RCCL Tests `-M 1` must be used to verify what algorithm/protocol/channel configuration actually executed.
 
+**Channel qualification limitation (PHA04):** the existing harness forwards only `RCCL_OVERRIDE_ALGO` and `RCCL_OVERRIDE_PROTO`. It does not apply a requested `RcclCase.channels`. The `-M 1` channel value is an *observation*, not proof of channel control, even if it accidentally equals the request. An explicit channel request therefore returns `harness_failure` with `plan_verification=request_not_applied` after a clean/correct algorithm/protocol run. This is deliberately not `pass` or `verified`; unrequested-channel algorithm/protocol-only rows retain their original meaning. Do not promote channel-qualified candidates until a source- and installed-build-verified control plus per-call executed-plan correlation exists. No RCCL dispatch or admission behavior changes in this diagnostic gate.
+
 ## P2.3 Qualification key
 
 An RCCL candidate is qualified against an exact scope:

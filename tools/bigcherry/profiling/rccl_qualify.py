@@ -291,6 +291,7 @@ PLAN_VERIFIED = "verified"
 PLAN_SUBSTITUTED = "plan_substituted"
 PLAN_UNVERIFIED = "unverified"
 PLAN_EXPLICIT_DECLINE = "explicit_declined"
+PLAN_REQUEST_NOT_APPLIED = "request_not_applied"
 
 
 def _classify(
@@ -298,6 +299,7 @@ def _classify(
     combined_output: str, rccl_json: list | None,
     requested_algorithm: str | None = None, requested_protocol: str | None = None,
     observed_algorithm: str | None = None, observed_protocol: str | None = None,
+    requested_channels: int | None = None, observed_channels: int | None = None,
 ) -> tuple[str, bool | None, str, str | None]:
     """Return (classification, correct, detail, plan_verification). Order
     matters: check the most specific/actionable signal before falling back
@@ -398,6 +400,20 @@ def _classify(
                 f"requested {requested_algorithm}/{requested_protocol} but RCCL "
                 f"selected {observed_algorithm}/{observed_protocol}",
                 PLAN_SUBSTITUTED,
+            )
+        # RCCL Tests -M 1 only OBSERVES the channel count: build_command
+        # forwards algorithm/protocol but has no proven channel-control
+        # mechanism. An exact observed count can match by coincidence.
+        # Keep historical algorithm/protocol-only rows unchanged, but never
+        # label an explicit channel candidate as executed/verified.
+        if requested_channels is not None:
+            return (
+                HARNESS_FAILURE, None,
+                (f"requested {requested_channels} channel(s), but the channel "
+                "request was not applied by the harness; observed count "
+                f"{observed_channels if observed_channels is not None else 'unknown'} "
+                "is not candidate execution proof"),
+                PLAN_REQUEST_NOT_APPLIED,
             )
         return PASS, True, "clean exit, correctness check passed, plan verified", PLAN_VERIFIED
 
@@ -601,6 +617,7 @@ def run_case(
         combined_output=combined_output, rccl_json=rccl_json,
         requested_algorithm=case.algorithm, requested_protocol=case.protocol,
         observed_algorithm=observed_algorithm, observed_protocol=observed_protocol,
+        requested_channels=case.channels, observed_channels=observed_channels,
     )
 
     # compatibility.revision_id raises InsufficientCompatibilityIdentity if
