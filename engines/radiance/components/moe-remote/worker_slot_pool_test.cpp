@@ -106,8 +106,14 @@ static void four_plane_tables() {
 
 
 
+// A model shape for the layout tests (the shipped paths read theirs from the container).
+static constexpr r3::moe_shm::LayoutShape fixture_shape() {
+    return r3::moe_shm::LayoutShape{r3::moe_shm::kHidden, r3::moe_shm::kTopK, r3::moe_shm::kExperts,
+                                    r3::moe_shm::kMaxRows, r3::moe_shm::kActGroup, 640};
+}
+
 static void make_model(bc::experts::Container& f, uint32_t layers) {
-    const auto shape = r3::moe_shm::legacy_shape();
+    const auto shape = fixture_shape();
     f.layers = layers; f.experts = shape.experts; f.hidden = shape.hidden;
     f.intermediate = shape.intermediate; f.top_k = shape.top_k;
     f.enc_store.resize(1);
@@ -143,7 +149,7 @@ struct HelperConfig {
     uint32_t share = 1, count = 1;
 };
 static void production_layout_parity() {
-    const auto s = r3::moe_shm::legacy_shape();
+    const auto s = fixture_shape();
     constexpr uint32_t layers = 49; // Flash-Next routed layer count
     bc::experts::Container f;
     make_model(f, layers);

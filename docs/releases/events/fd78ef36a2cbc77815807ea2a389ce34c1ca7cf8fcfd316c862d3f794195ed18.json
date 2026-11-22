@@ -1,0 +1,15 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_110640_the-session-control-socket-no_4527",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session_stored_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the control-socket tamper defences (run directory ownership and mode refusal, socket lstat/mode/owner verification, SO_PEERCRED peer check, owned-only stale socket removal, O_NOFOLLOW lock) and their public helpers; an existing run directory of any mode starts and a stale socket is replaced. Tests assert that behaviour.",
+  "timestamp-utc": "2026-11-22T11:06:40.214032Z",
+  "user-summary-candidate": "The session control socket no longer refuses run directories or sockets by permission or owner."
+}

@@ -75,10 +75,35 @@ class CheckQualifiedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cases.jsonl"
             path.write_text(
-                json.dumps({"topology_id": "xtx_xtx", "compatibility_revision_id": "rev1", "classification": "pass"}) + "\n"
-                + json.dumps({"topology_id": "xtx_xtx", "compatibility_revision_id": "rev2", "classification": "pass"}) + "\n"
+                json.dumps({"topology_id": "xtx_xtx", "compatibility_revision_id": "rev1", "classification": "pass", "plan_verification": "verified", "correct": True}) + "\n"
+                + json.dumps({"topology_id": "xtx_xtx", "compatibility_revision_id": "rev2", "classification": "pass", "plan_verification": "verified", "correct": True}) + "\n"
             )
             self.assertTrue(cb.check_qualified(path, topology_id="xtx_xtx", revision_id="rev1"))
+
+
+    def test_rejects_pass_without_executed_plan_proof(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cases.jsonl"
+            for verification, correct in (
+                (None, True),
+                ("unverified", True),
+                ("plan_substituted", True),
+                ("request_not_applied", True),
+                ("verified", None),
+                ("verified", False),
+            ):
+                row = {
+                    "topology_id": "xtx_xtx",
+                    "compatibility_revision_id": "rev1",
+                    "classification": "pass",
+                    "plan_verification": verification,
+                    "correct": correct,
+                }
+                path.write_text(json.dumps(row) + "\n")
+                self.assertFalse(
+                    cb.check_qualified(path, topology_id="xtx_xtx", revision_id="rev1"),
+                    (verification, correct),
+                )
 
     def test_rejects_when_only_non_pass_rows_match(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -92,7 +117,7 @@ class CheckQualifiedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cases.jsonl"
             path.write_text(
-                json.dumps({"topology_id": "xtx_r9700", "compatibility_revision_id": "rev1", "classification": "pass"}) + "\n"
+                json.dumps({"topology_id": "xtx_r9700", "compatibility_revision_id": "rev1", "classification": "pass", "plan_verification": "verified", "correct": True}) + "\n"
             )
             self.assertFalse(cb.check_qualified(path, topology_id="xtx_xtx", revision_id="rev1"))
 
@@ -100,7 +125,7 @@ class CheckQualifiedTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cases.jsonl"
             path.write_text(
-                json.dumps({"topology_id": "xtx_xtx", "compatibility_revision_id": "old-rev", "classification": "pass"}) + "\n"
+                json.dumps({"topology_id": "xtx_xtx", "compatibility_revision_id": "old-rev", "classification": "pass", "plan_verification": "verified", "correct": True}) + "\n"
             )
             self.assertFalse(cb.check_qualified(path, topology_id="xtx_xtx", revision_id="new-rev"))
 
@@ -194,7 +219,7 @@ class MainIntegrationTests(unittest.TestCase):
             qualification = tmp_path / "cases.jsonl"
             qualification.write_text(json.dumps({
                 "topology_id": "other_topology", "compatibility_revision_id": "rev1",
-                "classification": "pass",
+                "classification": "pass", "plan_verification": "verified", "correct": True,
             }) + "\n")
             rc = cb.main([
                 "--arms-config", str(arms_config), "--baseline", "baseline",
@@ -245,7 +270,7 @@ class MainIntegrationTests(unittest.TestCase):
             qualification = tmp_path / "cases.jsonl"
             qualification.write_text(json.dumps({
                 "topology_id": "xtx_xtx", "compatibility_revision_id": "abc123",
-                "classification": "pass",
+                "classification": "pass", "plan_verification": "verified", "correct": True,
             }) + "\n")
             out_dir = tmp_path / "out"
             rc = cb.main([

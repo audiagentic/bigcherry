@@ -39,9 +39,33 @@ it, and a check rule rejects a command that writes a run output outside it.
 3. Run template: `bigcherry run new <kind> <topic>` creates the directory, manifest and a README stub (question, inputs, outputs, runtime, safety), replacing hand-made folders.
 4. Lint: no hand-named run output directories in lab scripts; lab launchers must call the run template.
 
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
 ## Validation
 
 Offline tests for layout, id uniqueness, manifest round trip and schema versioning; one real ab-benchmark and one accept run produce a manifest that names their builds and configs.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+**Transferred WSL05 acceptance (independent gate):** WSL01's single bigcherry run new/paths.run_dir versioned manifest command must offer composed templates for ab-benchmark, accept, stream, replay and capture, building on the existing tools/lab/_template and the one run kind/ID/atomic-manifest writer. A generated experiment includes configuration from the owning component/setting, native bigcherry-only execution entry, single-variable-per-arm identity and input digests, declared harvest analysis/evidence README skeleton, explicit run/lease/session/provenance and retention lifecycle, no copied fixed-host paths or new launcher. Add offline unit tests for all five template kinds, no duplicate identifier, manifest round trip, exact arm input equality except the intended setting and refusal of unknown/bad run kind; verify one ab and accept example uses real produced manifest and their build IDs. Retire obsolete handwritten helper evidence/capture/sweep scripts only after verified owner replacements in MEN20 and MEN21, and keep WSL02 harvesting/WSL03 retention as their independent owners. No second run template API or manual output path.
 
 ## Notes
 
@@ -52,6 +76,8 @@ the production nested run kinds or imply a legacy run was completed/harvested.
 
 Foundation for WSL02 to WSL06. Existing llama.cpp tuning outputs (artifacts/, tune journals) keep their own schemas but gain a manifest.
 
+CONSOLIDATION 2026-11-22 LAB-AND-SOURCES: WSL05 has one canonical owner: WSL01. WSL05's generic experiment starter copies templates and fills run manifests through bigcherry run new, exactly WSL01's single workspace run creation API; two template owners would duplicate command, path and metadata logic. This is planning consolidation only, not a completed acceptance or release. Historical evidence and current-pin/real-run stop rules remain binding.
+
 ## Design review (GPT, 2026-10-19) - adopted
 
 - Layout additions: `work/trash/<deletion-id>/` (quarantine, same filesystem as runs/) and `work/objects/sha256/<xx>/<digest>/` (valuable immutable blobs: captures, KL references; not cache).
@@ -61,3 +87,11 @@ Foundation for WSL02 to WSL06. Existing llama.cpp tuning outputs (artifacts/, tu
   generation number; a crashed process leaves `running`, which only reconciliation may turn into `interrupted`.
 - First slice (PR #311): core/workspace.py, core/run_manifest.py, core/retention.py (read-only), `bigcherry run new|status`, `bigcherry clean` (dry run only), tests on temporary roots.
   Producer migration (ab-benchmark first, then accept) is the next step, one at a time.
+
+## Reviews
+
+- RV4543
+
+## Change Log
+
+- 2026-11-22T11:26:43.859594+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
