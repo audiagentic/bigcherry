@@ -21,21 +21,21 @@ owner: Planning MCP registration required
 
 ## Description
 
-Bind actual native three-rank LTX Engine sessions, STG/isolated guidance and leader-owned VCOND/VAE/video/audio output without breaking TP1 or adding an alternate config/scheduler.
+Bind only LTX-specific DiT, STG/isolated guidance and leader-owned VCOND/VAE/video/audio outputs to a **pre-admitted native three-rank Engine**. RUM05 owns shared admission/device/YAML mechanics; RUM06 owns group lifetime, cancellation and clean/fault drain. No alternate config/scheduler.
 
-**Existing engineering gap coverage:** LT3-02, LT3-08, LT3-09. **Dependencies:** LTX03 full 48-block emitted path and approved TP1 parity.
+**Existing engineering gap coverage:** LT3-02, LT3-08, LT3-09. **Dependencies:** LTX03 full 48-block emitted path and TP1 parity; the specific usable RUM05 device/admission and RUM06 group/lifecycle contracts (not completion of unrelated remote-MoE work).
 
 ## Steps
 
-- 1. Model precise ownership: all ranks execute DiT, one declared leader performs VAE, codec, output, and any non-TP operations. Capture one native owner+TP-group and exact device/rank/kernel mapping via existing Radiance services.
-- 2. Keep the `ltx2` world>1 refusal until a named opt-in native v3 YAML has all verified modules, resident memory, step order and admission. No unknown device topology or unsupported helper must enter partial initialization.
-- 3. Wire VCOND inputs, video/audio latents and text contexts to rank consumers once per request; preserve request/epoch/shape identity and completion fences, not a new mailbox ABI.
-- 4. Exercise conditional, STG, isolated-guidance passes and block-28 bypass with exactly matched collective schedules; ensure negative prompts, zero/missing tokens, cancelled parents and rank failures drain safely.
+- 1. Declare only LTX **role semantics**: all admitted ranks run DiT, one leader runs VCOND/VAE/codec/output. Consume RUM05's rank/device mapping and RUM06's shared TP group; **do not implement generic owner, BDF translation or group storage**.
+- 2. Keep the `ltx2` world>1 refusal until existing RUM05 native-v3 YAML and measured admission prove every LTX module, model-specific role constraint, resident byte requirement and issue order. **Never add shared YAML parsing, fleet planning or engine admission code here.** No unknown device topology or unsupported helper must enter partial initialization.
+- 3. Wire **LTX model tensors** (VCOND, latents, text/audio contexts) into existing consumers. Reuse RUM06's request/epoch/fences, with no new generic mailbox or cancellation state.
+- 4. Verify identical **LTX guidance operation lists** across ranks for conditional/STG/isolation/block-28 and exercise negative prompts, missing tokens and cancellations against RUM06's already owned fault/drain behavior. Generic barrier, scheduler or fault handling deficiencies are referred to RUM06.
 - 5. End-to-end first 1-step and short clip with actual VAE/audio decode; fail closed on wrong owner, duplicate rank, hidden kernel/device or mismatch, and ensure TP1 fallback is explicit and unchanged.
 
 ## Detailed Solution & Technical Design
 
-Use native v3 session config/measurement, existing Engine rank semantics and a single LTX execution path. Any pass-specific decision is scoped to an immutable native request or rank state, not a mutable process-wide stage. Do not borrow remote-MoE helper state or introduce Python serving.
+Use RUM05's native-v3 session, physical device admission and RUM06's Engine/group lifetime. LTX04 only implements the LTX DiT/conditioning/output adapter; no shared runtime code is allowed in the LTX patch. Any pass-specific decision is scoped to an immutable native request or rank state, not a mutable process-wide stage. Do not borrow remote-MoE helper state or introduce Python serving.
 
 ## Code Samples & Guidance
 
@@ -50,7 +50,8 @@ Reuse the exact current source-managed extension and existing tests; no side-pat
 ## Files
 
 - `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/patch.py`
-- `engines/radiance/components/serving/ (reuse exact native config/readiness where required)`
+- `docs/planning/active/patching-radiance-upstream/RUM05.md` (read-only shared device/admission implementation)
+- `docs/planning/active/patching-radiance-upstream/RUM06.md` (read-only shared group/lifecycle implementation)
 - `engines/radiance/configs/ltx2-* (new opt-in only after accepted startup)`
 - `tools/lab/radiance/ltx-tp3/{ltx_tp3_guidance_test.cpp,ltx_tp3_protocol_test.cpp}`
 

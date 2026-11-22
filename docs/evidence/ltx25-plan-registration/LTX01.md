@@ -21,43 +21,21 @@ owner: Planning MCP registration required
 
 ## Description
 
-Finish the diagnostic-only native LTX source foundation **and reduce duplicated GPU test infrastructure first**. The C01-C06 declarations already reuse Radiance sharding; the C08 AQL result is the correct native collective proof. Consolidate model-derived uneven slices with strictly legal IQ8R K offsets, preserving the existing production TP1 behavior.
+Finish only the diagnostic LTX-specific model-source foundation; the generic AQL lab cleanup is RUM12-owned. The C01-C06 declarations already reuse Radiance sharding; the C08 AQL result is the correct native collective proof. Consolidate model-derived uneven slices with strictly legal IQ8R K offsets, preserving the existing production TP1 behavior.
 
 **Existing engineering gap coverage:** LT3-01, LT3-03, LT3-04, LT3-07. **Dependencies:** Radiance 2.2 ABI44; candidate PR #1262; none of the downstream LTX plans.
 
-## Initial implementation slice LTX01/S1 — reduction-first GPU lab consolidation
+## Shared native qualification dependency (RUM12)
 
-This slice is **not a C09 plan**. The C07/C08 labels in the historical evidence
-are implementation attempts, while the independent synthetic test gates are
-now G00–G08. Use the correct Radiance 2.2 AQL path without moving ownership
-back into BigCherry.
-
-1. Inventory exactly which lab lines, executable targets, conditional direct-HIP
-   branches, HIP-off native-core archive and copied shared-slot service are
-   redundant. Record a before/after deletion map; moving code does not count
-   as reduction. Preserve C07's SIGSEGV evidence but retire its executable.
-2. In `tools/lab/radiance/ltx-tp3/mixed-ar-gate/`, remove the redundant
-   direct-HIP target and conditional launch path. Retain **one** AQL-backed
-   native lab executable, whole-archive linking the matching HIP-enabled
-   2.2/ABI44 Radiance core with `rad_dev_set`, `rad_stream_create`,
-   `rad_dev_peer_launch`, `rad_stream_sync` and the existing native
-   `all_reduce` entries. Do not add wrappers, adapters, transport or
-   production paths; keep `rad0017` cross-library shared rendezvous intact.
-3. Build and require source/ABI/version refusal, exported AQL/HIP registration
-   symbol proof, existing C01–C06/fixture/tooling/catalog guards and a strict
-   lease-gated R9700 control. Rerun mixed three-card AQL one-/two-shot BF16
-   reductions at 1/4/16/64 rows and legal 8/8/16 and 12/12/8 head slices.
-   Require at least **33/33 exact rank-by-case comparisons per variant**,
-   zero mismatches and no silent fallback; capture raw receipts.
-4. Report **lines/build targets/branches deleted**, test coverage, actual
-   collective and pack/transfer hot-path cost against the C08 baseline.
-   A numerical mismatch or lost identity gate blocks the cleanup; do not
-   preserve a new compatibility shim.
-
-**S1 acceptance:** one AQL test path and one executable; fewer total authored
-lab lines and concepts, strict native ABI/source checks, same or stronger
-three-card numeric evidence, and **zero** production collective changes.
-The rest of LTX01's model/source declaration acceptance remains open.
+The model-independent mixed-architecture AQL test and its direct-HIP
+duplicate are now **owned exclusively by proposed RUM12**, not LTX01.
+See [RUM12](../rum12-native-qualification/README.md). RUM12 removes
+the duplicate launch and build path, retains native source/ABI
+validation, and publishes one reusable mixed-card exact-collective
+receipt. LTX01 consumes this evidence; it must not change shared
+AQL dispatcher, `rad0017`, engine device admission, group lifecycle
+or shared test tool. RUM05 and RUM06 retain those shared runtime
+implementation responsibilities.
 
 ## Steps
 
@@ -103,10 +81,10 @@ BigCherry `docs/reference/agents/WORKFLOW.md`, patch and tooling dispositions, s
 
 ## Acceptance Criteria
 
-LTX01/S1 must pass its explicit deletion and GPU numerical gates above; this is **necessary but insufficient** for overall LTX01 closure. All supported slices have unique full head coverage and exact model source views. At least the previously demonstrated 3,024 row/biasless, 2,640 deferred, 2,016 reduction and 576 attention declarations are rerun at the candidate commit, with zero mismatches and no invalid audio K cuts admitted. No TP3 production activation, duplicate loader or unowned test script. No release claim from these tests.
+RUM12's single-AQL-harness cleanup and exact GPU evidence are external shared capabilities consumed by LTX01, not implementation work in this item. Measure deletion only of redundant **LTX-specific** metadata/geometry code. All supported slices have unique full head coverage and exact model source views. At least the previously demonstrated 3,024 row/biasless, 2,640 deferred, 2,016 reduction and 576 attention declarations are rerun at the candidate commit, with zero mismatches and no invalid audio K cuts admitted. No TP3 production activation, duplicate loader or unowned test script. No release claim from these tests.
 
 ## Notes
 
-C01-C06 source-backed host proof exists, C06 real GPU kernels were separately tested, but fresh current-commit revalidation is required. Treat C07 direct-HIP fault as a **retired test-path diagnosis**, not as evidence against Radiance. C08 native AQL mixed-device proof passed. Full device/weight issue is LTX02, not a LTX01 deliverable.
+C01-C06 source-backed host proof exists, C06 real GPU kernels were separately tested, but fresh current-commit revalidation is required. RUM12 owns retiring the C07 direct-HIP path; its crash is not production Radiance failure. C08 native AQL mixed-device proof passed. Full device/weight issue is LTX02, not a LTX01 deliverable.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

@@ -21,16 +21,16 @@ owner: Planning MCP registration required
 
 ## Description
 
-Add one bounded native Gemma producer on gfx1030 and fast-card connector consumer through the existing request/owner/admission framework, with no fourth DiT rank or duplicated YAML path.
+Implement only the **Gemma/LTX tensor producer/consumer adapter** on gfx1030/fast-card connectors using existing RUM05/RUM06 request, transfer and admission APIs. Do not implement generic worker roles, owner/epoch state, native YAML parsing or a fourth DiT rank.
 
 **Existing engineering gap coverage:** LT3-12 and LT3-13. **Dependencies:** LTX04 and LTX06 accepted; LTX05 baseline as independent comparator.
 
 ## Steps
 
-- 1. Define immutable typed producer record: model/build digest, request/epoch, 49-layer stack shape, BF16 length, GPU BDF, source/finalizer and completion fence. Reuse existing native request/config schema and one admission owner.
+- 1. Define only the **model tensor payload view** (49-layer BF16 stack, bytes, checkpoint digest). Reuse existing RUM05 native ownership/BDF and RUM06 generation/request/fence identity; no duplicate generic producer record or lifecycle.
 - 2. Compute Gemma on 6900; host-stage full two-prompt stack (up to 770,703,360 bytes per model geometry) once per conditioning request; fast card runs both connector towers and duration head. Do not transfer per denoise step.
-- 3. Use existing shared transfer streams, pinned buffers and native manifest admission, not a new dynamic sockets/messages system. Validate arrival order, checksum, stale or cancelled epoch, worker death and resource release.
-- 4. Add exact native YAML worker role, BDF disjointness and memory requirements through the existing edition-3 measured input/fresh replay and owner receipt. Forbid unknown memory, duplicate BDFs and stale model pins.
+- 3. Consume RUM05/RUM06-owned transfer streams, pinned buffers and native manifest admission; any missing **generic** transfer, epoch or drain function is a RUM blocker, not new LTX code. Validate arrival order, checksum, stale or cancelled epoch, worker death and resource release.
+- 4. Supply only **LTX-specific requirements** for an optional named native-v3 worker config. **RUM05 exclusively owns implementation of any missing generic worker-role YAML, BDF disjointness and admission rules.** Forbid unknown memory, duplicate BDFs and stale model pins.
 - 5. On a leased four-card run, prove exact positive/negative prompt output, peak VRAM, measured copy/stall, start/cancel/restart and a comparable TP3 no-text-worker control. Avoid fallback under a measured four-card contract.
 
 ## Detailed Solution & Technical Design
@@ -50,7 +50,7 @@ Reuse the exact current source-managed extension and existing tests; no side-pat
 ## Files
 
 - `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/ (only needed LTX handoff hooks)`
-- `engines/radiance/components/serving/ (existing native config authority)`
+- `docs/planning/active/patching-radiance-upstream/RUM05.md` (shared native config/admission owner, read-only dependency)
 - `engines/radiance/configs/ltx2-*`
 - `tools/lab/radiance/ltx-tp3/ltx_tp3_handoff_test.cpp`
 

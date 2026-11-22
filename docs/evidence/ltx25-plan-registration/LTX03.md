@@ -21,7 +21,7 @@ owner: Planning MCP registration required
 
 ## Description
 
-Extend the single proven LTX native TP3 architecture path to all self, text and cross-modal attention, FFN and modulation operations across 48 DiT blocks, preserving exact rank ownership and existing kernel/collective scheduler.
+Extend the single proven LTX native TP3 architecture path to all self, text and cross-modal attention, FFN and modulation operations across 48 DiT blocks, preserving model-specific rank/head ownership while consuming the RUM06-owned collective scheduler and lifetime.
 
 **Existing engineering gap coverage:** Remaining LT3-06 plus cross-modal and FFN work from LT3-03/04/05. **Dependencies:** LTX02 accepted on both modalities.
 
@@ -30,12 +30,12 @@ Extend the single proven LTX native TP3 architecture path to all self, text and 
 - 1. Enumerate actual six attention kinds at every DiT block: video self, audio self, video-to-text, audio-to-text, video-to-audio and audio-to-video. Check fused KV Q sources, head dimension, real weight/gain/bias geometry for each; use the same C01Slice/Geom authority.
 - 2. Reuse `ltx2::Attn::declare`, `attn_core` and `Lin::declare/step` with one explicit owner view, not copied per-attention implementations; add only missing typed differences for cross-modal Q vs KV and data-length mismatch.
 - 3. Make output projections, FFN-down and other row-parallel operations use existing exact reduction and once-only bias with replicated residual/modulation; replicate small BF16 gates when cheaper than a new shard loader.
-- 4. Verify rank-ordered collective schedule for each conditional/pass variant, including STG bypass of block 28, zero tokens, audio/video uneven lengths, cancellation and rank fault. Fail before issue on unsupported K group boundaries.
+- 4. Verify the **LTX-emitted operation order** for each conditional/pass variant, including STG block 28, zero tokens and uneven audio/video rows; consume RUM06's existing cancellation/fault/drain contract and report any missing generic behavior to RUM06 instead of implementing a new one. Fail before issue on unsupported K group boundaries.
 - 5. Build source-backed tests using the real model for every block/kind, then issue representative one-block multi-modal and entire 48-block traces under a lease. Require TP1 intermediate equality / quality constraints prior to adding serving entrypoint.
 
 ## Detailed Solution & Technical Design
 
-No new model scheduler, patch loader or DSO API. The normal LTX DiT loop remains the only step owner; take rank-local operands and explicit global head offsets once. Use native `all_reduce` across the existing TP group, not device P2P assumptions.
+No new model scheduler, TP-group/collective scheduler, patch loader or DSO API. RUM06 exclusively owns shared runtime sequencing mechanics. The normal LTX DiT loop remains the only step owner; take rank-local operands and explicit global head offsets once. Use native `all_reduce` across the existing TP group, not device P2P assumptions.
 
 ## Code Samples & Guidance
 

@@ -21,14 +21,14 @@ owner: Planning MCP registration required
 
 ## Description
 
-Check if the RX 6900 XT can independently run the model's Gemma text stack without stealing a TP rank or causing impossible memory admission; implement only missing native operator rows with verified coverage.
+Check if the RX 6900 XT can independently run the model's Gemma text stack without stealing a TP rank or causing impossible memory admission; inventory any missing generic native kernel rows but **do not implement libr2 or generic kernel registration here**; hand the exact verified gap to a RUM/native-kernel owner.
 
 **Existing engineering gap coverage:** LT3-10 and LT3-11. **Dependencies:** Independent accepted TP3 three-card serving LTX04; no dependency for LTX01–05.
 
 ## Steps
 
-- 1. Inventory exact Gemma operators on gfx1030 `libr2`; identify missing dense GEMM, causal/sliding attention, norms and embeddings before proposing any kernel source.
-- 2. Use the released Radiance 2.2 native kernel row/registration framework; add narrowly justified missing gfx1030 rows only with CPU reference and device tests. Do not copy a new Gemma implementation or call into Python.
+- 1. Enumerate the **LTX checkpoint's Gemma operator signatures** (weight dtypes and extents, dense GEMM, causal/sliding attention, norms and embeddings) as source-backed requirements, without changing shared kernel code.
+- 2. Inventory actual gfx1030 Gemma operator/row eligibility and record missing-row evidence. Route any required **shared libr2/kernel-row implementation** to a RUM-owned native kernel plan after checking existing owners; LTX06 stays responsible for the Gemma-specific weight, shape, quality and feasibility test. Do not copy a new Gemma implementation or call into Python.
 - 3. Measure real model Gemma weight bytes, runtime temporary/persistent allocations, worst two-prompt 49-layer BF16 stack, fragmentation and reserve on 16GiB gfx1030; reject if actual workspace cannot fit.
 - 4. Keep connectors on a fast GPU initially. Execute one- and two-prompt Gemma and compare exact embeddings/hidden stack to TP1 native control, including warm/repeat and cancellation.
 - 5. Record qualified/unqualified decision and if unqualified retain three-card TP3 independently with original text path.
@@ -49,8 +49,8 @@ Reuse the exact current source-managed extension and existing tests; no side-pat
 
 ## Files
 
-- `engines/radiance/components/libr2/units.txt`
-- `engines/radiance/archs.toml`
+- `engines/radiance/components/libr2/units.txt` (read-only kernel inventory; shared source changes belong to RUM)
+- `engines/radiance/archs.toml` (read-only plugin eligibility; shared source changes belong to RUM)
 - `existing Radiance Gemma native kernel packages`
 - `docs/design/ltx25-iq8r-tp3.md`
 
