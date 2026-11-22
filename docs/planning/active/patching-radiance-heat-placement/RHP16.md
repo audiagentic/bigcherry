@@ -80,7 +80,7 @@ Context and multi-stream with the policy on (runs rhp16-ctx-ab and rhp16-longdec
 
 RESULTS 2026-11-10 (fresh calibration through the supported path after #801/#802; flashnext-4gpu, heat period 1 s): derived policy cadence 6.05 s, margin 84,150 ppm, min_samples 2, max_moves 337, min_residency 68.5 s, effect gate on. ABBA on/off (runs/policy-onoff-ab, arm states verified from the manifests): cold 27k TTFT 7.46/7.43 s on vs 10.95/10.86 s off (-32%); document prefill +0.6..+1.1%; 6-stream decode aggregate +6..+13%, engine-reported +3%/-6%; 1-stream decode over 6 prompts flat on average (120.5 vs 123.5 tok/s, acceptance 0.667 vs 0.693; per-prompt -20%..+24%; runs/policy-accept). Quality (forced-churn KL on the current build, runs/policy-kld): identical to the 2026-11-08 corrected run to every digit (mean +0.008, p99 +0.234 over the 0.2 limit, p99.9 +0.43, top-1 -0.6 points); the p99 breach is the RAD46 tail-accuracy effect and the live policy moves hot experts off the tail. Adaptation after a documents-only period: steady state by the 3rd-4th cold prompt (~30-40 s; runs/policy-lag). The key/format/heat-period defects that left the policy silently off or starved are RHP18-20 (#801, #802, #804, #805).
 
-
+2026-11-22 RHP22 numerical disposition, **FAIL for the four-GPU forced-churn p99 gate**: historical 8,240-row same-reference duplicate-control p99 0.7036 static vs 0.9377 forced (+0.2341 vs maximum +0.2000), control repeat bit-identical, not random error. Churn completed before scoring, so a warmed ordinary policy final map and actual mid-scoring transitions remain unqualified. RHP16 retains the ONE live-policy calibration/numerical owner: reuse existing scorer and serving owner-map to freeze the *measured* settled map at the same ABI/model/layout, take matched static/frozen KL and top-1, and consume RHP06/RHP20 live-move quality and format receipts. Do not add an independent RHP22 scorer or consider quality acceptance/prod promotion without passing gates. Historical ON state is not a waiver, no runtime action in this docs disposition. Source: docs/evidence/2026-11-22-rhp22-quality-disposition/README.md
 
 ## Status 2026-11-19 (live policy works natively on flashnext-4gpu)
 
@@ -627,3 +627,4 @@ Merge: off by default (no record in the production store). Enabling waits on the
 - 2026-11-10T03:37:11.008607+00:00 (state-transition): State: pending → in_progress
 - 2026-11-10T10:37:23.306277+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:36:09.423133+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T07:14:57.646075+00:00 (updated-by): Updated: section:notes
