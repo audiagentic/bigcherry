@@ -20,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
+#include <vector>
 
 using rad::Builder;
 using rad::RadFile;
@@ -350,6 +351,58 @@ static void verify_c06_load_contract(const RadFile& model, const rad::Program& p
             need(w.n_sel == 1 && share_bytes == w.stored_bytes,
                  "C06 identity layout is not a direct native file share");
         } else {
+            // The production RelayoutPool dispatches through exactly these
+            // frozen Builder-selected hook coordinates. A plain memcpy
+            // from the RAD container would skip required kernel layout.
+            need(!w.widen && !w.narrow &&
+                 w.lay_op > 0 && (size_t)w.lay_op < program.ops.size(),
+                 "C06 nonidentity weight lacks a native layout owner");
+            const auto& oi = program.ops[(size_t)w.lay_op];
+            need(w.lay_band >= 0 && (size_t)w.lay_band < oi.bands.size() &&
+                 w.lay_dom >= 0 && w.lay_dom < RAD_N_DOMAINS,
+                 "C06 nonidentity weight has invalid native layout band");
+            const auto& resolved = oi.bands[(size_t)w.lay_band].dom[w.lay_dom];
+            need(resolved && resolved.row && resolved.row->info &&
+                 resolved.row->info->relayout,
+                 "C06 nonidentity weight is missing production relayout hook");
+            // Exercise the exact kernel-selected production layout hook
+            // against the real checkpoint's selected native plane shares.
+            // This is a small host reference fixture, not a parallel
+            // streaming loader or a second IQ8R layout implementation.
+            std::array<RadTensor,RAD_ENC_MAX_PLANES> source_planes{};
+            rad::weight_planes(w,source_planes.data());
+            std::vector<std::vector<uint8_t>> data((size_t)w.n_sel);
+            for (int k=0;k<w.n_sel;++k) {
+                const auto& sh=shares[k];
+                const auto& ep=model.plane(*e,w.sel[k]);
+                const uint8_t* src=model.data(ep);
+                need(src != nullptr, "C06 native source plane is not mapped");
+                data[(size_t)k].resize((size_t)sh.dense_bytes());
+                size_t at=0;
+                for (const auto& rect:sh.rects)
+                    for (int64_t row=0;row<rect.rows;++row) {
+                        const uint8_t* from=src+(rect.row0+row)*sh.row_bytes+rect.byte0;
+                        std::memcpy(data[(size_t)k].data()+at,from,(size_t)rect.bytes);
+                        at+=(size_t)rect.bytes;
+                    }
+                need(at==data[(size_t)k].size(),
+                     "C06 layout fixture did not consume native share");
+                source_planes[(size_t)k].data=data[(size_t)k].data();
+            }
+            const auto* ki=resolved.row->info;
+            constexpr size_t guard=64;
+            std::vector<uint8_t> stored((size_t)w.stored_bytes+guard,0xa5);
+            const int layout_rc=ki->relayout(
+                resolved.geom.params(),resolved.geom.n_params(),w.lay_operand,
+                &w.enc,w.sel,source_planes.data(),w.n_sel,
+                stored.data(),w.stored_bytes);
+            if (layout_rc!=RAD_OK)
+                std::fprintf(stderr,"C06 rank %d native %s relayout failed rc=%d\n",
+                             rank,ki->name,layout_rc);
+            need(layout_rc==RAD_OK,
+                 "C06 native kernel relayout refused real checkpoint plane");
+            for(size_t j=(size_t)w.stored_bytes;j<stored.size();++j)
+                need(stored[j]==0xa5,"C06 native relayout overwrote output guard");
             ++relayouts; // Cannot be directly memcpy'ed: use engine loader.
             // Record the exact kernel layout that blocks naive checkpoint
             // pointer binding in a future issue test.

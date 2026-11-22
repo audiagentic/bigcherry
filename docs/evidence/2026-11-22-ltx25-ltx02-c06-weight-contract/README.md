@@ -13,7 +13,8 @@
 
 For each of **12 rank / modality / split cases**, the native graph declares **10 model weights per rank**; `weight_share` accepts every real selected plane and the test verifies that each rectangle is nonempty, within the source plane and densely covers its declared share. Identity layouts must agree byte-for-byte with their native stored extent.
 
-Every rank has exactly **two non-identity layouts**:
+Every rank has exactly **two non-identity layouts**. The test also verifies for each such weight that its frozen native `WeightInfo::lay_op`, `lay_band` and `lay_dom` resolve to a real `RadKernelInfo::relayout` callback. This is the same hook called by production `RelayoutPool`, so missing or stale layout owners fail the C06 contract gate before any model execution. It now **executes** that exact kernel-selected hook against model-backed selected source planes for each of the two non-identity weights, for all 12 rank/modality/split cases (**24 successful relayout calls**). A bounded host-only fixture gathers the native `weight_share` rectangles from `RadFile::data` and invokes the existing kernel relayout callback; a canary checks output buffer bounds. This does not reproduce the production asynchronous streaming loader or load the model into `RadCtx`:
+
 
 - `dit.blk.0.{attn1,audio_attn1}.qkv.scale` from the corresponding `qkv.weight` source, `rad.planes` layout.
 - `dit.blk.0.{attn1,audio_attn1}.out.scale` from the corresponding `out.weight` source, `rad.planes` layout.
