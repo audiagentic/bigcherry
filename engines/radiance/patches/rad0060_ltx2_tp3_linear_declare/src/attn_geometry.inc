@@ -10,8 +10,12 @@
                tp->width <= 0 || tp->offset < 0 ||
                tp->offset > H * hd || tp->width > H * hd - tp->offset ||
                tp->offset % hd || tp->width % hd ||
-               qdim != H * hd || kvdim != H * hd ||
-               odim != H * hd || rows_q <= 0 || rows_k <= 0 ||
+               qdim <= 0 || kvdim <= 0 || odim <= 0 ||
+               g.w_i8_group <= 0 ||
+               qdim % g.w_i8_group || kvdim % g.w_i8_group ||
+               ((self) && (qdim != H * hd || kvdim != H * hd ||
+                            odim != H * hd)) ||
+               rows_q <= 0 || rows_k <= 0 ||
                (self && rows_q != rows_k)))
         return RAD_E_UNSUPPORTED;
     A.tp3 = tp != nullptr;

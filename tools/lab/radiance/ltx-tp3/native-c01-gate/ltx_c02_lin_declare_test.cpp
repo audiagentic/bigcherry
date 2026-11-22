@@ -570,8 +570,10 @@ static void run_self_attn(const RadFile& model, Registry& reg,
                           int owned, int total_heads,
                           std::unique_ptr<Builder>* instance = nullptr,
                           bool inspect_weights = false, bool aql = false,
-                          C06Issued* capture = nullptr, bool text_cross = false) {
-    const std::string kind = text_cross ? (audio ? "audio_attn2" : "attn2") : (audio ? "audio_attn1" : "attn1");
+                          C06Issued* capture = nullptr, bool text_cross = false, bool modal_cross = false) {
+    const std::string kind = modal_cross ? (audio ? "v2a" : "a2v") :
+                             text_cross ? (audio ? "audio_attn2" : "attn2") :
+                             (audio ? "audio_attn1" : "attn1");
     const std::string prefix = "dit.blk." + std::to_string(block) + "." + kind;
     const auto* fused = model.find(prefix + (text_cross ? ".q.weight" : ".qkv.weight"));
     const auto* kv_source = text_cross ? model.find(prefix + ".kv.weight") : nullptr;
@@ -581,15 +583,16 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     const auto* gnk = model.find(prefix + ".k_norm.weight");
     need(fused && (!text_cross || kv_source) && output && gate && gnq && gnk,
          "C06 model missing a self-attention source");
-    const int64_t full = fused->shape[1];
+    const int64_t full = text_cross ? fused->shape[0] : fused->shape[1];
+    const int64_t qdim = fused->shape[1];
+    const int64_t kvdim = text_cross ? kv_source->shape[1] : full;
+    const int64_t odim = output->shape[0];
     need(fused->rank == 2 && fused->shape[0] == (text_cross ? full : 3 * full) &&
-         (!text_cross || (kv_source->rank == 2 && kv_source->shape[0] == 2 * full &&
-                          kv_source->shape[1] == full)) &&
+         (!text_cross || (kv_source->rank == 2 && kv_source->shape[0] == 2 * full)) &&
          full % total_heads == 0 &&
-         output->rank == 2 && output->shape[0] == full &&
-         output->shape[1] == full &&
+         output->rank == 2 && output->shape[1] == full &&
          gate->rank == 2 && gate->shape[0] == total_heads &&
-         gate->shape[1] == full &&
+         gate->shape[1] == qdim &&
          gnq->rank == 1 && gnq->shape[0] == full &&
          gnk->rank == 1 && gnk->shape[0] == full,
          "C06 source self-attention geometry mismatch");
@@ -615,26 +618,29 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     g.max_tok = 4;
     g.dtype = "bf16";
     ltx2::Act x{}, ao{}, kv_in{};
-    need(x.declare(&b, m.nm, g, "c06.input", 4, full) == RAD_OK &&
+    need(x.declare(&b, m.nm, g, "c06.input", 4, qdim) == RAD_OK &&
          ao.declare(&b, m.nm, g, "c06.attention", 4, local) == RAD_OK &&
-         (!text_cross || kv_in.declare(&b, m.nm, g, "c06.keys", 4, full) == RAD_OK),
+         (!text_cross || kv_in.declare(&b, m.nm, g, "c06.keys", 4, kvdim) == RAD_OK),
          "C06 real activation/quantization declaration failed");
     need(x.q.op && ao.q.op && x.a.q8_fed && ao.a.q8_fed,
          "C06 failed to declare the exact native IQ8R activation quantizers");
     const rad_buf qkv = ltx2::decl_b(&b, m.nm.f("c06.qkv"), RAD_BF16, {4, (text_cross ? 1 : 3) * local});
     const rad_buf bkv = text_cross ? ltx2::decl_b(&b, m.nm.f("c06.kv"), RAD_BF16, {4, 2 * local}) : 0;
     const rad_buf logits = ltx2::decl_b(&b, m.nm.f("c06.gate"), RAD_BF16, {4, total_heads});
-    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {4, full});
+    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {4, odim});
     const rad_buf scratch = ltx2::decl_b(&b, m.nm.f("c06.norm_scratch"), RAD_BF16,
                                          {4, full});
     need(x.a.x && x.a.q8 && x.a.s8 && ao.a.x && ao.a.q8 && ao.a.s8 &&
          qkv && logits && out && scratch && (!text_cross || (bkv && kv_in.q.op)),
          "C06 activation buffers missing");
-    const ltx2::Rope rope = text_cross ? ltx2::Rope{} :
+    const ltx2::Rope rope = modal_cross ? ltx2::Rope{1, full, "20"} :
+                            text_cross ? ltx2::Rope{} :
                             audio ? ltx2::Rope{1, full, "20"} :
                                    ltx2::Rope{3, full, "20 2048 2048"};
     const std::string original = "transformer.transformer_blocks." +
-                                 std::to_string(block) + "." + kind;
+                                 std::to_string(block) + "." +
+                                 (modal_cross ? (audio ? "video_to_audio_attn" :
+                                                "audio_to_video_attn") : kind);
     ltx2::Attn a{};
     const auto before = b.program().weights.size();
     for(int bad=0; bad<2; ++bad) {
@@ -642,7 +648,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
         if(bad==0) wrong.world=2;
         else wrong.wire_exact=0;
         need(ltx2::attn_declare(&b, m, wrong, a, prefix.c_str(), original.c_str(),
-                               total_heads, hd, full, full, full, !text_cross, x, text_cross ? &kv_in : nullptr,
+                               total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
                                qkv, bkv, logits, ao, out, 4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN,
                                0, rope, 1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
              "C06 invalid native geometry admitted");
@@ -650,7 +656,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     ltx2::Act unquantized = x;
     unquantized.q.op = 0;
     need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
-                           total_heads, hd, full, full, full, !text_cross,
+                           total_heads, hd, qdim, kvdim, odim, !text_cross,
                            unquantized, text_cross ? &kv_in : nullptr, qkv, bkv, logits, ao, out,
                            4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN, 0, rope,
                            1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
@@ -658,7 +664,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     unquantized = ao;
     unquantized.q.op = 0;
     need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
-                           total_heads, hd, full, full, full, !text_cross,
+                           total_heads, hd, qdim, kvdim, odim, !text_cross,
                            x, text_cross ? &kv_in : nullptr, qkv, bkv, logits, unquantized, out,
                            4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN, 0, rope,
                            1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
@@ -667,7 +673,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
         ltx2::Act no_kv = kv_in;
         no_kv.q.op = 0;
         need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
-                               total_heads, hd, full, full, full, false, x, &no_kv,
+                               total_heads, hd, qdim, kvdim, odim, false, x, &no_kv,
                                qkv, bkv, logits, ao, out, 4, 2,
                                RAD_ACCESS_PER_TOKEN, 0, rope, 1e-6, &slice, scratch)
                  == RAD_E_UNSUPPORTED,
@@ -677,7 +683,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
          "C06 rejected geometry allocated weights");
     const int rc=ltx2::attn_declare(
         &b, m, g, a, prefix.c_str(), original.c_str(),
-        total_heads, hd, full, full, full, !text_cross, x, text_cross ? &kv_in : nullptr,
+        total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
         qkv, bkv, logits, ao, out, 4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN,
         0, rope, 1e-6, &slice, scratch);
     if(rc != RAD_OK) {
@@ -690,15 +696,18 @@ static void run_self_attn(const RadFile& model, Registry& reg,
          a.inner == local && a.hd == hd &&
          a.tp_q.scratch == scratch && a.tp_k.scratch == scratch,
          "C06 lost local head or scratch ownership");
-    need(a.gate.N == total_heads && a.gate.K == full && a.gate.bias,
+    need(a.gate.N == total_heads && a.gate.K == qdim && a.gate.bias,
          "C06 replicated head gate missing");
     need((text_cross || (a.op_rq && a.op_rk && a.op_v)) &&
+         (!modal_cross || (a.op_rq && a.op_rk)) &&
          a.op_attn && a.op_hg && (text_cross ? a.kv.op : !a.kv.op) &&
          a.qkv.op && a.out.op && a.out.post_reduce && a.out.op_b &&
          a.tp_q.reduce && a.tp_k.reduce && !a.op_qn && !a.op_kn,
          "C06 native self-attention graph incomplete");
     for(const rad_op h:{a.op_rq,a.op_rk}) {
-        if (text_cross) { need(!h, "text cross-attention unexpectedly rotates Q/K"); continue; }
+        if (text_cross && !modal_cross) {
+            need(!h, "text cross-attention unexpectedly rotates Q/K"); continue;
+        }
         const auto* op=b.program().op(h);
         long long head0=-1, heads=0, dim=0;
         need(op && op->base.get_i("head0",&head0) && head0==first &&
@@ -802,7 +811,9 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
-            if (std::string(argv[3]) == "--ltx03-text-cross") {
+            if (std::string(argv[3]) == "--ltx03-text-cross" ||
+                std::string(argv[3]) == "--ltx03-modal-cross") {
+                const bool modal = std::string(argv[3]) == "--ltx03-modal-cross";
                 int64_t count = 0;
                 for (int64_t block = 0; block < nblocks; ++block)
                     for (bool audio : {false, true})
@@ -812,7 +823,7 @@ int main(int argc, char** argv) {
                             for (int rank = 0; rank < 3; ++rank) {
                                 run_self_attn(model, reg, block, audio, rank,
                                               first, split[rank], nheads,
-                                              nullptr, false, false, nullptr, true);
+                                              nullptr, false, false, nullptr, true, modal);
                                 first += split[rank];
                                 ++count;
                             }
