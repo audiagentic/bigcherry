@@ -220,9 +220,6 @@ struct PowerHook {
 // Status-returning hooks. SessionPower must outlive serve().
 PowerHook hooks_for_power_transaction(power::SessionPower& transaction);
 
-struct Laboratory {
-    std::filesystem::path prompts_a, prompts_b, calibration_store;
-};
 struct QualityScore {
     // Score: `reference` is a recorded KL directory and `output` the report to write. Record: `corpus` is set,
     // `reference` is an existing empty directory the engine writes the reference into, and `output` is empty.
@@ -231,7 +228,6 @@ struct QualityScore {
 };
 struct Session {
     PowerHook power_hook;
-    std::optional<Laboratory> laboratory; // explicit finite ABBA mode, never a detached serving session
     std::optional<QualityScore> quality;   // foreground native-v3 score against a recorded reference
     std::filesystem::path run_dir;
     // Production owners publish the admitted manifest's native feature snapshot.
@@ -248,7 +244,6 @@ struct Session {
     Callback<v2::Status(const EngineStart&, const std::filesystem::path& engine_log)> runtime_guard;
     // Actual live worker and heat checks, not the manifest's startup decision.
     Callback<v2::Status()> runtime_watch;
-    Callback<v2::Status()> lab_evidence_gate;
     // Injectable process boundary after the last authenticated byte check
     // but before fork/exec. Production leaves it empty; a test can replace
     // the operator's pathname at exactly the unsafe TOCTOU boundary.
@@ -380,7 +375,6 @@ struct EnginePlanInputs {
     std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
     std::filesystem::path work_root;       // the platform's work root (--work-root): holds the named-config store; empty: every start measures
     bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
-    std::filesystem::path calibration_prompts_a, calibration_prompts_b, calibration_store;
     std::filesystem::path calibration_records_file; // real writer P2 source, part of static input key
 
     // OS/dependency seams: only the production default calls the real detector,
@@ -398,9 +392,6 @@ struct EnginePlanInputs {
     bool quality_score = false; // this owner must be the admitted runtime home's executable
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default
-    std::filesystem::path live_policy_file; // only with explicit lab calibration
-    bool calibration_run = false;
-    std::filesystem::path experiment_file; // foreground lab-only v2 experiment; never replay/cache
 };
 
 /* Resolve a native config then publish its measured manifest (`native_admission` is required). On a cache miss bring

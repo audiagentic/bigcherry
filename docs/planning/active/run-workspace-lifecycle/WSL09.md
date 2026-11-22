@@ -52,7 +52,7 @@ Small-medium. Risk is deleting a build still needed; mitigated by the process an
 
 ## Acceptance Criteria
 
-
+**Transferred WSL04 acceptance (independent gate):** WSL09 inherits WSL04's remaining cache lifecycle: keep exact build/source plan IDs referenced by releases, pinned recipes, live lane/lease, harvested run manifests, configured newer-K-per-recipe protection and all mounted/running process references; identify age, physical bytes and source/build relationships before proposing eviction. Existing build_gc.py --builds read-only candidates and --apply quarantine/journal owner remains authoritative (do not build another GC); maintain dry-run default, fail-closed untrusted metadata, per-recipe lock and process scans, idempotent records and reproducible rebuild from a retained plan/lane. Run a real work-root non-destructive inventory and one authorized --apply only after the remaining unmanaged histogram-period-default run and non-content-addressed recipe dirs are classified; use the 2026-11-16 manual deletion list as a comparison, never bypass a protection rule just to free space. Source-cache deletion remains read-only until independently proven source/build dependency/active checkout/reference safety, then may use the same policy; ccache and tune-cache size caps plus LRU eviction are a separate conditional phase and must not be claimed delivered by build-GC. Preserve extra component-source checkout identity and build compile retry logs; no blanket test-tmp deletion without ownership. No auto cleanup of a live or unknown build.
 
 ## Notes
 
@@ -60,7 +60,7 @@ Progress (2026-11-17): implemented and merged in #1017 (tools/bigcherry/core/bui
 
 Progress (2026-11-17): implemented and merged in #1017, #1020, #1021 (tools/bigcherry/core/build_gc.py, docs/reference/build/BUILD_CACHE_GC.md): candidacy, finite policy, references from processes, run manifests, build-plan locks and installed release receipts, fail-closed inspection, quarantine-rename deletion, journal under cleanup-records; process scan scoped to the work root owner. Six independent reviews; every finding has a regression test. Direction change (owner): old runs are not adopted wholesale. A run is either migrated to docs/evidence as small result files and deleted, or deleted; nothing stays unmanaged. The legacy-run adoption (#1026) stays as the mechanism for any run that must remain. Work root cleanup done 2026-11-17 (#1027, #1030, #1034): 5,752 entries removed, runs/ from 337 to 23 entries, evidence on main. Real-root read-only result after the cleanup: 80 builds, all protected, every one by a single unadopted flat run (runs/histogram-period-default) plus age and newest-K rules; 66 unclassified roots are non-content-addressed recipe directories (rad42-bar-push 60, rsc11-s13-switch 3, hl02-attributes 1). Remaining for completion: migrate and delete histogram-period-default, classify or retire the 64 non-content-addressed recipe directories, rerun the read-only listing and show the candidates, then run --apply once and compare with the manual 2026-11-16 deletion list. Do not weaken the guards.
 
-
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving WSL04 These are uncompleted acceptance requirements, not new release/quality passes. Historical source plans remain available as superseded records. Keep legacy and blocked/no-route behavior fail closed; do not add parallel native control planes or tools.
 
 ## Status 2026-11-19 (what the GC must now know)
 
@@ -75,3 +75,8 @@ Progress (2026-11-17): implemented and merged in #1017, #1020, #1021 (tools/bigc
 - 2026-11-16T19:22:30.159084+00:00 (updated-by): Updated: section:notes
 - 2026-11-17T03:19:15.618493+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:38:25.388659+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4512
+- 2026-11-22T10:35:45.468955+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

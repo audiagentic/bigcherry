@@ -2,7 +2,7 @@
 id: RSC10
 order: 0
 plan: run-serving-configuration
-state: pending
+state: superseded
 created-at: '2026-11-05T18:06:22.609430+00:00'
 breadth: ''
 skill: advanced
@@ -56,9 +56,15 @@ arch-standards
 
 ## Notes
 
-
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: Structured engine host-room refusal and measured-margin one-retry path are already RSC11 S5/S11 session-owner slices. Canonical remaining owner: RSC11. RSC11 has S5 engine structured host-room refusal and S11 measured plan retry in the one native bc-serve session owner; RSC10 tracks the same implementation boundary independently. Exact remaining acceptance and stop/fallback requirements are in the active receiver. This lifecycle state retires duplicate planning ownership only; original source/evidence/negative results are retained and not declared complete.
 
 ## Change Log
 
 - 2026-11-05T18:06:22.609430+00:00 (created-by): Created by bigcherry-2
 - 2026-11-05T18:06:44.484861+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:standards, section:acceptance_criteria
+
+## Reviews
+
+- RV4506
+- 2026-11-22T10:36:24.503749+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:41:13.021239+00:00 (state-transition): State: pending → superseded

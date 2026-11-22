@@ -2,7 +2,7 @@
 id: RSC09
 order: 0
 plan: run-serving-configuration
-state: pending
+state: superseded
 created-at: '2026-11-04T07:54:17.228388+00:00'
 breadth: ''
 skill: intermediate
@@ -54,7 +54,7 @@ No handoff value in a manifest has origin profile with confidence estimate; each
 
 ## Notes
 
-
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: The five originally hand-picked Flash-Next manifest handoff values belong to RSC11's already named S8 resolver/calibration and S17 closure; no separate profile override path. Canonical remaining owner: RSC11. RSC11 enumerates S8 as the same five RSC09 handoff derivations/calibrations and S17 as the one plan reconciliation; keeping RSC09 separately creates duplicate authority for exact v2 manifest values. Exact remaining acceptance and stop/fallback requirements are in the active receiver. This lifecycle state retires duplicate planning ownership only; original source/evidence/negative results are retained and not declared complete.
 
 ## Change Log
 
@@ -65,3 +65,9 @@ No handoff value in a manifest has origin profile with confidence estimate; each
 
 - chg_20261104_075438_the-serving-configuration-tool_6545
 - 2026-11-04T07:54:46.777908+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4505
+- 2026-11-22T10:36:13.014676+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:40:55.248587+00:00 (state-transition): State: pending → superseded
