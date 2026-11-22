@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.64.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.64.0...bc-platform-1.64.1) (2026-11-22)
+
+
+### Fixes
+
+* **release:** radiance release line lists the patch sets the 2.2 recipe uses ([#1408](https://github.com/audiagentic/bigcherry/issues/1408)) ([69cd518](https://github.com/audiagentic/bigcherry/commit/69cd518bf0b3172d7bb0bd1de3aae2a572ab3945))
+
 ## [1.64.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.4...bc-platform-1.64.0) (2026-11-22)
 
 
