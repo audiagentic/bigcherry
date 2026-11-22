@@ -1,16 +1,12 @@
 #include "resources.h"
 
-#include "calibration.h"
-#include "experts.h"
 #include "serving.h"
 #include "v2/manifest.h"
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstdint>
 #include <limits>
-#include <map>
 #include <set>
 #include <string>
 #include <string_view>
@@ -69,101 +65,6 @@ uint64_t positive_bytes(const Json& j, std::string_view field) {
         throw std::invalid_argument(std::string(field) + " must be positive");
     return value;
 }
-uint64_t calibration_mib(const Calibration& calibration, std::string_view field, const std::string& layout) {
-    const auto entry = calibration.find("calibration." + std::string(field), {"", layout, ""});
-    // No calibrated target means no retained KV tier for this layout (RSC03 contract).
-    if (!entry)
-        return 0;
-    if (!entry->value.is_number_integer() ||
-        (!entry->value.is_number_unsigned() && entry->value.get<int64_t>() < 0)) {
-        throw std::invalid_argument("bad calibrated " + std::string(field));
-    }
-    return entry->value.get<uint64_t>();
-}
-
-struct ExpertId {
-    int32_t layer = 0;
-    int32_t expert = 0;
-    auto operator<=>(const ExpertId&) const = default;
-};
-
-v2::Result<ModelFootprint> inspect_weights(const std::filesystem::path& model, const Json& owner_map,
-                                           bool ngram_in_ram) {
-    bc::experts::Container container;
-    if (!container.open(model.c_str())) {
-        return malformed("cannot open verified RAD expert directory: " + model.string());
-    }
-    if (container.hdr.str_bytes == 0 || container.hdr.str_bytes > (uint64_t{1} << 28U) ||
-        !container.range(container.hdr.str_off, container.hdr.str_bytes)) {
-        return malformed("model has invalid RAD name strings");
-    }
-    std::vector<char> names(static_cast<size_t>(container.hdr.str_bytes));
-    if (!container.pread_full(container.hdr.str_off, names.data(), names.size())) {
-        return malformed("cannot read RAD weight names");
-    }
-    std::map<ExpertId, uint64_t> experts;
-    ModelFootprint weights;
-    weights.owner_map_digest = owner_map.at("owner_map_sha256").get<std::string>();
-    for (const auto& entry : container.dir_store) {
-        if (entry.name >= names.size() || entry.bytes > container.bytes) {
-            return malformed("model has invalid weight directory entries");
-        }
-        const auto first = names.cbegin() + static_cast<std::ptrdiff_t>(entry.name);
-        const auto end = std::find(first, names.cend(), '\0');
-        if (end == names.cend())
-            return malformed("model contains an unterminated weight name");
-        std::string name(first, end);
-        std::transform(name.begin(), name.end(), name.begin(),
-                       [](unsigned char value) { return static_cast<char>(std::tolower(value)); });
-        const uint64_t rounded = ceil_div(entry.bytes, 256);
-        const auto aligned = multiply(rounded, 256);
-        if (!aligned)
-            return invalid("resource byte count overflow");
-        if (entry.layer >= 0 && entry.expert >= 0 && entry.slot >= 0) {
-            auto& bytes = experts[{entry.layer, entry.expert}];
-            const auto updated = add(bytes, *aligned);
-            if (!updated)
-                return invalid("resource byte count overflow");
-            bytes = *updated;
-        } else if (name.find("ngram") != std::string::npos) {
-            const auto updated = add(weights.ngram_bytes, *aligned);
-            if (!updated)
-                return invalid("resource byte count overflow");
-            weights.ngram_bytes = *updated;
-        } else if (name.find("embed") != std::string::npos) {
-            const auto updated = add(weights.embedding_bytes, *aligned);
-            if (!updated)
-                return invalid("resource byte count overflow");
-            weights.embedding_bytes = *updated;
-        }
-    }
-    if (experts.empty())
-        return malformed("model has no routed expert directory entries");
-    std::set<ExpertId> assigned;
-    for (const Json& helper : owner_map.at("helpers")) {
-        for (const Json& pair : helper.at("experts")) {
-            if (!pair.is_array() || pair.size() != 2)
-                return malformed("owner map has invalid expert pair");
-            const ExpertId id{pair.at(0).get<int32_t>(), pair.at(1).get<int32_t>()};
-            if (!experts.contains(id) || !assigned.insert(id).second) {
-                return invalid("owner map does not match model expert directory");
-            }
-        }
-    }
-    for (const auto& [id, bytes] : experts) {
-        if (!assigned.contains(id)) {
-            const auto updated = add(weights.unowned_expert_bytes, bytes);
-            if (!updated)
-                return invalid("resource byte count overflow");
-            weights.unowned_expert_bytes = *updated;
-        }
-        weights.staging_bytes = std::max(weights.staging_bytes, bytes);
-    }
-    if (!ngram_in_ram)
-        weights.ngram_bytes = 0;
-    return weights;
-}
-
 constexpr std::array<std::pair<std::string_view, std::string_view>, AllocationCount> PartLabels{
     {{"embedding", "engine plan"},
      {"unowned_experts", "published owner map"},
@@ -270,99 +171,6 @@ v2::Result<ResourceLedger> calculate(const ResourceRequest& request) {
                           model.other_engine_bytes, *kv_bytes,
                           target.host_reserve_bytes};
     return result;
-}
-
-v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
-                                         const std::filesystem::path& calibration_cache) {
-    const Json& values = documents.resolved_values;
-    const Json& resolved_helpers = documents.resolved_helpers;
-    const Json& facts = documents.detected_facts;
-    const Json& manifest = documents.unmeasured_manifest;
-    try {
-        const Json& owner = manifest.at("spec").at("plan").at("owner_map");
-        if (owner.at("helpers").size() != resolved_helpers.size()) {
-            return invalid("owner-map helper count differs from resolved BDF order");
-        }
-        const std::string layout = values.at("layout").at("name").get<std::string>();
-        const Calibration calibration = Calibration::standard(calibration_cache);
-        const uint64_t kv_target = calibration_mib(calibration, "host_kv_tier.target_mib", layout);
-        const uint64_t margin = calibration_mib(calibration, "host_ledger_margin.mib", layout);
-        ResourceRequest request;
-        request.engine_ranks = positive_bytes(values.at("engine"), "tp");
-        request.target.context_tokens = positive_bytes(values.at("service"), "max_context");
-        request.target.concurrent_sessions = positive_bytes(values.at("service"), "max_sessions");
-        const auto total = multiply(request.target.context_tokens, request.target.concurrent_sessions);
-        const auto kv_target_bytes = multiply(kv_target, MiB);
-        const auto margin_bytes = multiply(margin, MiB);
-        if (!total || !kv_target_bytes || !margin_bytes)
-            return invalid("resource byte count overflow");
-        const uint64_t kv_per = std::max<uint64_t>(1, ceil_div(*kv_target_bytes, *total));
-        request.target.retained_tokens = std::min(*total, *kv_target_bytes / kv_per);
-        request.target.pool_margin_bytes = *margin_bytes;
-        const auto reserve = multiply(nonnegative_bytes(values.at("memory"), "host_reserve_mib"), MiB);
-        if (!reserve)
-            return invalid("resource byte count overflow");
-        request.target.host_reserve_bytes = *reserve;
-        const bool ngram_in_ram = values.at("engine").at("ngram_placement") == "ram";
-        const auto model =
-            inspect_weights(values.at("engine").at("model").get<std::string>(), owner, ngram_in_ram);
-        if (!model)
-            return model.error();
-        request.model = model.value();
-        request.model.kv_bytes_per_token = kv_per;
-
-        for (const Json& helper : resolved_helpers) {
-            const std::string bdf = helper.at("bdf").get<std::string>();
-            const Json* device = nullptr;
-            for (const Json& gpu : facts.at("gpus")) {
-                if (gpu.at("bdf") == bdf)
-                    device = &gpu;
-            }
-            if (device == nullptr)
-                return invalid("helper BDF absent from current inventory: " + bdf);
-            if (helper.at("arch") != device->at("arch") ||
-                helper.at("hip_ordinal") != device->at("hip_ordinal")) {
-                return invalid("helper role changed since BDF inventory detection: " + bdf);
-            }
-            HelperCapacity capacity;
-            capacity.bdf = bdf;
-            capacity.arch = helper.at("arch").get<std::string>();
-            capacity.vram_mib = positive_bytes(*device, "vram_total_mib");
-            capacity.architecture_reserve_mib = arch_reserve_mib(capacity.arch);
-            const uint64_t budget = nonnegative_bytes(helper, "budget_mib");
-            if (budget >= capacity.vram_mib ||
-                capacity.architecture_reserve_mib >= capacity.vram_mib - budget) {
-                return invalid("helper has no model-derived worker footprint: " + bdf);
-            }
-            const auto footprint =
-                multiply(capacity.vram_mib - capacity.architecture_reserve_mib - budget, MiB);
-            if (!footprint)
-                return invalid("resource byte count overflow");
-            capacity.worker_footprint_bytes = *footprint;
-            capacity.planned_budget_mib = budget;
-            request.helpers.push_back(std::move(capacity));
-        }
-        const Json& host = facts.at("host");
-        const uint64_t memory_mib = positive_bytes(host, "mem_available_mib");
-        uint64_t cgroup_mib = memory_mib;
-        for (const Json& group : host.value("memory_cgroups", Json::array())) {
-            cgroup_mib = std::min(cgroup_mib, positive_bytes(group, "room_mib"));
-        }
-        const Json& pin = host.at("amdgpu_pin");
-        const uint64_t pin_mib = pin.value("loaded", false) && !pin.value("lifted", false)
-                                     ? positive_bytes(pin, "cap_mib")
-                                     : positive_bytes(host, "mem_total_mib");
-        const auto available = multiply(memory_mib, MiB);
-        const auto cgroup = multiply(cgroup_mib, MiB);
-        const auto pin_bytes = multiply(pin_mib, MiB);
-        if (!available || !cgroup || !pin_bytes)
-            return invalid("resource byte count overflow");
-        request.host = {*available, *cgroup, *pin_bytes};
-        return calculate(request);
-    } catch (const std::exception& error) {
-        // Only external JSON and calibration decoding throws; admission is a typed result.
-        return malformed(std::string("invalid resource inputs: ") + error.what());
-    }
 }
 
 namespace {

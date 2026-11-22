@@ -1,0 +1,18 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_101554_no-user-visible-change-a-fres_2688",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/resources.cpp",
+    "engines/radiance/components/serving/resources.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/README.md",
+    "engines/radiance/components/serving/CMakeLists.txt"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the non-native planning path from the serving component: the plan_engine_only fallback loop (plan-cache, plan-extra, five-round retry), EnginePlanInputs.runner and ManifestRunner, the unreferenced resources::derive_launch adapter and its helpers, and the dead mock tests. plan_engine_only now refuses a start without an admitted native config YAML. Adds native_only_planning_refusals to session_test.",
+  "timestamp-utc": "2026-11-22T10:15:54.312194Z",
+  "user-summary-candidate": "No user-visible change: a fresh serving start already required a native YAML; the unreachable older planning code is removed."
+}

@@ -290,9 +290,6 @@ struct ManifestRun {
     int exit = 0;
     std::string out, err;
 };
-/* Runs this bc-serve (`argv[0]` is its path) to completion and returns its exit and output. Injectable for
- * tests. */
-using ManifestRunner = Callback<ManifestRun(const std::vector<std::string>& argv)>;
 /* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop
  * request ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it
  * cannot verify leaves the child the owner's to stop). */
@@ -390,13 +387,12 @@ struct EnginePlanInputs {
 
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
-    std::optional<NativeAdmissionRequest> native_admission;
+    std::optional<NativeAdmissionRequest> native_admission; // required by plan_engine_only; a stored replay may omit it
     // Offline admission check (`bc-serve explain CONFIG --native-config YAML`): resolve, inspect and reconcile the
     // admitted YAML exactly as a serve start does, then stop before the writer, the power admission and every
     // engine or helper child. It needs native_admission and takes no GPU.
     bool native_preflight = false;
     bool quality_score = false; // this owner must be the admitted runtime home's executable
-    ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default
     std::filesystem::path live_policy_file; // only with explicit lab calibration
@@ -404,9 +400,10 @@ struct EnginePlanInputs {
     std::filesystem::path experiment_file; // foreground lab-only v2 experiment; never replay/cache
 };
 
-/* Resolve a config then publish its measured manifest. On cache miss (exit 10) bring helpers up sequentially
- * against the unmeasured manifest, measure with --plan-memory and record helper RSS. On exit 11 adjust the
- * derived pool (bounded retries). Python and the launcher remain reference only until RSC11 S16. */
+/* Resolve a native config then publish its measured manifest (`native_admission` is required). On a cache miss bring
+ * helpers up sequentially against the unmeasured manifest and measure with --plan-memory, recording helper RSS; if the
+ * writer asks for another derived host pool, measure again with it (bounded). A stored plan for the same inputs is
+ * reused or carried instead. */
 EngineStart replay_stored_manifest(const EnginePlanInputs& given, const std::filesystem::path& run_dir,
                                    const Hooks& hooks);
 

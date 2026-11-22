@@ -9,14 +9,14 @@ serving manifest with provenance.
 ## Outcome
 
 The strict TOML loader, `bc-serve` inspection and manifest generation,
-the shared v1 reader, and the engine-side memory-plan measurement and
+the shared strict manifest reader, and the engine-side memory-plan measurement and
 admission check are implemented. The serving component now includes an
 owner-map verifier that checks the planner's owned expert sets and exact
-device byte totals. Card-free tests cover the verifier. The helpers read their
-whole configuration from the manifest (`r3_moe_worker --manifest FILE --role
-helperN`, through `v1/helper_settings.h`; RSC06) and the launcher writes the
-manifests they start from. The engine still starts from flags until the S4
-cutover, so this is not yet a fully qualified v1 launch.
+device byte totals. Card-free tests cover the verifier. The engine and the
+helpers read their whole configuration from the serving manifest the owner
+writes from the config's native YAML (`r3_moe_worker --manifest FILE --role
+helperN`, through `v2/helper_settings.h`; RSC06). Planning is native-only: a fresh start
+needs an admitted native config YAML, and there is no other planning path.
 
 
 ## Native YAML candidate
@@ -249,9 +249,7 @@ RSC05 work.
 The one document processes load is the serving manifest (edition 3, written by the owner from the config's sealed native YAML; spec in
 `docs/design/serving-manifest-v2/`), read by the shared strict reader. `explain`'s record is not a file any process reads. The engine and
 helpers start from that manifest (rad0009, shared `bc_serving_v2` library).
-The owner now launches and verifies measuring/serving process groups;
-legacy shell and Python paths remain reference oracles until the later
-hardware A/B and retirement gate.
+The owner launches and verifies the measuring and serving process groups.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.
