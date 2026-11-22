@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.60.0...bc-platform-1.61.0) (2026-11-22)
+
+
+### New and changed
+
+* **release:** pin-bump sets and clears release-as itself; CI checks the release line ([#1282](https://github.com/audiagentic/bigcherry/issues/1282)) ([8f8c91d](https://github.com/audiagentic/bigcherry/commit/8f8c91d0ed5b35b7f44a6abe78e73cc743494896))
+
 ## [1.60.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.59.0...bc-platform-1.60.0) (2026-11-22)
 
 
