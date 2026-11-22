@@ -112,6 +112,12 @@ struct World {
     bc::test::NativeSessionPlan plan() const {
         auto native = bc::test::native_session_inputs(host, scratch, port, Json::object(),
                                                       bc::test::SessionLayout::helpers, runtime_home());
+        // A shipped config leaves the n-gram tier to the engine ("auto"): the measuring run resolves it and the stored
+        // manifest records the result, while the draft of every later start still says "auto".
+        auto& inspected = native.inputs.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_SETTINGS"];
+        Json settings = Json::parse(inspected);
+        settings["ngram_placement"] = "auto";
+        inspected = settings.dump();
         if (g_installed_engine) {
             native.inputs.engine_binary = *g_installed_engine;
             native.inputs.helper_binary = g_installed_engine->parent_path().parent_path() / "radiance_home" / "helpers" / "r3_moe_worker";

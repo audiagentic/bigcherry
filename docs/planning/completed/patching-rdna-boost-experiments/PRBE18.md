@@ -2,7 +2,7 @@
 id: PRBE18
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:54:45.862958+00:00'
 breadth: ''
 skill: advanced
@@ -52,6 +52,8 @@ priority: P3
 ## Notes
 
 2026-11-22 owner handoff from decision-only BCOP127: Bounded action / terminal gate. Source-bounded action/stop rule: Consume existing Qwen3.5-27B GDN graph/rocprof receipts. Verify actual post-scheduler Q/K/V alias edges and native fusion hit counts; reject if no residual or <2.9126% exposed E2E wall, otherwise qualify exactly one narrower default-off candidate with full recurrent/MTP/graph/no-P2P correctness and >=3% CI95-low E2E, <=1% controls. Missing trace = BLOCKED_ON_GRAPH_TRACE; no new hardware queue while active lanes run. Technical design and tests belong in PRBE18. See docs/planning/completed/patching-bc-optimizations/BCOP127.md for the complete source/shape/negative case and evidence. PRBE18 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+INACTIVE PORTFOLIO DISPOSITION 2026-11-22: Deprecated as an execution-plan proposal; not delivered, accepted, tested on hardware, or deleted from history. The 16-node GDN port was rejected. Current plan explicitly HOLD/trace-only with no patch/hardware lane. Existing native norm+scale fusion is already available. External paired-launch improvement +1.2% single GPU, <=0.37% hybrid, below >=3% E2E CI95-low qualification; no first-party attributable route/ceiling or safe two-output fusion graph proof. Future re-evaluation requires a distinct source/pin/evidence review; the archived item is a reference and must not reintroduce the old implementation. Reconsider only when current-pin first-party GDN Q/K graph receipts show both eligible launches and full alias/output live-range safety, with optimistic exposed non-overlapped E2E wall >=2.9126%, then a separately owned *new* default-off candidate may be proposed after per-rank physical-work/logit/KLD/MTP/graph controls. Do not resurrect old 16-node patch; preserve historical BCOP127/BCOP330 and current evidence as source, not production proof.
 
 ## 2026-10-19 b11552 kernel audit — paired GDN Q/K L2 normalization (BCOP330)
 
@@ -120,3 +122,11 @@ Historical RD24/PRBE18 proposed a 16-op fused SSM pre-scan, a `1235` Q8_1-cache 
 ## Change Log
 
 - 2026-11-22T05:17:10.989403+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- 2026-11-22T12:38:07.551463+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:39:26.739309+00:00 (state-transition): State: pending → deprecated
+- 2026-11-22T12:46:08.679453+00:00 (state-transition): State: deprecated → pending
+- RV4564
+- 2026-11-22T12:47:51.033130+00:00 (state-transition): State: pending → deprecated
