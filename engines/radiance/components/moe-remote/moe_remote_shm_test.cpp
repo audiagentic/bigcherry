@@ -255,16 +255,19 @@ static void Lane_DrainAndRequestIdentity() {
     check(!lane_quiesced(h,lane,closure,true), "stale consumption identity not quiescent");
 }
 
+// A model shape for the layout tests (the shipped paths read theirs from the container).
+static constexpr LayoutShape fixture_shape() { return LayoutShape{kHidden, kTopK, kExperts, kMaxRows, kActGroup, 640}; }
+
 static void SharedMapping_ReleaseAcquire() {
     const Topology t{1,2};
     Layout l{};
-    check(wire::layout_for(legacy_shape(),48,t,&l)==Refusal::None,"mapped model layout");
+    check(wire::layout_for(fixture_shape(),48,t,&l)==Refusal::None,"mapped model layout");
     const std::string name="/r3-moe-shm-v26-test-"+std::to_string((long long)getpid());
     const int fd=shm_open(name.c_str(),O_CREAT|O_EXCL|O_RDWR,0600);
     check(fd>=0 && ftruncate(fd,off_t(l.bytes))==0, "shared memory create");
     void* base=mmap(nullptr,size_t(l.bytes),PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
     check(base!=MAP_FAILED &&
-          wire::init(base,size_t(l.bytes),legacy_shape(),48,t,kManifest)==Refusal::None,
+          wire::init(base,size_t(l.bytes),fixture_shape(),48,t,kManifest)==Refusal::None,
           "shared memory init");
     Header* h=static_cast<Header*>(base);
     const uint32_t slot=slot_of(0,1,t.ranks);
