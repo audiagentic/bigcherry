@@ -78,10 +78,16 @@ standalone native collective proof, **not full LTX model inference**.
    frozen Radiance source, HIP-enabled configuration, matching SDK
    ABI/layout, exported AQL/HIP registration/launcher and shared-slot
    symbols. No fallback to direct HIP or inconsistent library mixtures.
-   Under a short GPU lease rerun the R9700 single-family control and
-   the gfx1100/gfx1100/gfx1201 one-shot and two-shot host-mailbox cases;
-   require at least the previously recorded **33/33 exact BF16
-   comparisons per entry**, zero mismatches and named run receipts.
+   Under a short GPU lease rerun the gfx1100/gfx1100/gfx1201
+   one-shot and two-shot host-mailbox cases, with **three distinct
+   physical cards** and at least **33/33 exact BF16 comparisons per
+   entry**, zero mismatches and named run receipts. For a homogeneous
+   control use individual kernel rows on one R9700 **without**
+   running three spinning collective ranks on the same physical
+   card: that unsupported colocation stalled in the post-main probe.
+   Add a bounded prelaunch refusal for duplicated physical GPU
+   ordinals in a claimed independent-card TP world. Do not infer
+   that production RUM06 needs another transport from this test.
    Include wrong model-independent device ordinal, missing row/library,
    foreign ABI, timeout and rank-failure/cleanup refusal where supported
    by the existing runner; do not invent a production cancellation test
@@ -173,7 +179,8 @@ owner, zero active direct-HIP mixed-card collective execution modes,
 no separately compiled shared-slot copy and no extra HIP-off core
 linkage. Matching 2.2 SDK/source/ABI enforced; one-shot and two-shot
 cross-DSO mixed-card tests remain **at least 33/33 exact BF16 each**,
-with raw receipts, timeouts/refusals, actual lines and build targets
+with raw receipts, timeouts/refusals (including a **prelaunch
+duplicate-device-ordinal refusal**), actual lines and build targets
 deleted, and no production runtime change. RUM05/RUM06 implementation
 ownership is unchanged. LTX01/LTX02 must only *consume* this gate.
 
@@ -188,3 +195,12 @@ responsibility**; it is not a parallel obligation.
 See `docs/evidence/ltx25-plan-registration/README.md` for the
 sole RUM/LTX ownership matrix. Historical C07/C08 names remain
 evidence labels, not distinct implementation plans.
+
+**Post-main hardware review (2026-11-22):** both actual Radiance
+2.2 AQL host-mailbox variants passed again on distinct
+gfx1100/gfx1100/gfx1201 cards (33/33 each). An optional
+three-rank/one-gfx1201 control stalled in a native kernel and
+timed out after 40 s, without an observed numerical verdict.
+This is **not** a mixed-card regression or a passing same-card
+control. RUM13 must refuse the duplicate-device lab placement
+before launch. See [post-main receipt](POST-MAIN-2026-11-22.md).

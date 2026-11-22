@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0060_ltx2_tp3_linear_declare"
+order = 60
+state = "diagnostic"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["LT3"]
+requires = []
+conflicts = []
+tags = ["tensor-parallel", "quantization"]

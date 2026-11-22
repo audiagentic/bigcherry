@@ -33,6 +33,29 @@ Turn C05/C06's host-declared graph into one actually issued three-card model-wei
 - 4. Exercise 1/16/64 row sizes and 8/8/16 or 12/12/8 splits; replay reversed visible card ordinal, missing kernel or abandoned rank; fail closed with native timeout and owner-tagged errors.
 - 5. Measure native fill, insert/cast, exact all-reduce, RMSNorm, extraction, GEMM, local attention, output reduction and AQL transfer waits separately at model-derived rows against LTX01's bare-collective receipt and TP1. Only consider compact per-row-statistic reduction after **measured** hot-path cost and proof of equal numerical semantics; replace C05 in place, never add a parallel communication path.
 
+## Smallest issued-C05 slice (open)
+
+The existing 5-case native Builder test **does not issue on GPU**:
+it calls `Builder::set_instances(false)` and checks `libref` host
+rows, but does not create a native `rad::Ctx` or stage device
+weights. RUM13's separate exact AQL collective proof also
+does **not** execute LTX's generated graph. Do not equate
+these two tests with actual model parity.
+
+Reuse the **same model-backed Builder/Program and existing
+Radiance weight loader**, select installed gfx1100/gfx1201
+kernel registry rows, plan native arena/buffers, and bind
+three `CtxDesc` instances with rank/world/device and
+`record_passes=false`. Issue just the existing
+`Tp3GlobalRms::step` Q then K sequence with read-only
+checkpoint gains, compare rank-local BF16 outputs against
+a full-width TP1 oracle, and record numerical tolerance
+and source identity. First prove refusal of missing
+HIP-enabled core, absent kernel or gain, and duplicate
+physical devices. A generic runtime gap belongs to its
+RUM owner, not an LTX workaround. After this gate,
+extend the same path to the complete C06 block.
+
 ## Detailed Solution & Technical Design
 
 Consume RUM13's AQL GPU evidence and RUM06's shared-slot/group lifetime. LTX02 owns only model-specific `RadCtx` graph issue, checkpoint oracle and tolerance. Missing generic engine or collective capabilities are RUM blockers; do not implement them here. Do not launch via direct HIP (C07 crash bypassed AQL registration), create a new collective or use per-rank RMS. C05 full-width Q/K reconstruction is the simple correctness baseline; locally compact statistical sums are optimization-only.
