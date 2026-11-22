@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.65.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.64.1...bc-platform-1.65.0) (2026-11-22)
+
+
+### New and changed
+
+* **ltx:** declare the TP3 FFN, modulation and gated residual across all DiT blocks ([#1407](https://github.com/audiagentic/bigcherry/issues/1407)) ([d98914b](https://github.com/audiagentic/bigcherry/commit/d98914ba92bff208849c3a5c7af94057760117c2))
+
 ## [1.64.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.64.0...bc-platform-1.64.1) (2026-11-22)
 
 
