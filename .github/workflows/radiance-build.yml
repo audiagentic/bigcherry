@@ -167,7 +167,11 @@ jobs:
             export CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=content
             mkdir -p work/upstream work/.ccache
             ccache -z
-            trap "ccache -s" EXIT
+            # How much of the restored cache this build used: ccache refreshes the modification time of every entry it
+            # hits or writes, so the bytes of the files newer than this marker are the touched working set.
+            touch /src/work/.ccache-start-marker
+            ccache_touched() { find "$CCACHE_DIR" -type f -newer /src/work/.ccache-start-marker -printf "%s\n" | awk "{s+=\$1} END {print s+0}"; }
+            trap "ccache -s; echo ccache-touched-bytes=\$(ccache_touched); echo ccache-total-bytes=\$(du -sb \$CCACHE_DIR | cut -f1)" EXIT
             if [ -d work/upstream/radiance.git ]; then
               git -C work/upstream/radiance.git worktree prune
               # The restored clone is normally current: fetch (every ref, all tags) only when it lacks the pin, and
