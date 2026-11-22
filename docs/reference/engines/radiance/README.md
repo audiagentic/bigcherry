@@ -77,15 +77,19 @@ and any remaining acceptance gaps. HIP phase traces observe pass kinds
 and timings, not replay hashes or actual `RadArgs`; evidence must not
 claim argument equality from trace rows alone.
 
-## Current-pin throughput
+## Current-pin measured prefill
 
-The released **2020.1.1** line still needs matched quality and performance
-checks for these multi-card layouts. Fresh aggregate throughput and prefill
-measurements remain pending. The Flash-Next model page
-records a dated cross-pin check, not a matched unmodified-stock throughput comparison.
-The model workloads differ and must not be ranked against one another.
+The paired RUM09 release gate measured engine-side prefill on the
+**Radiance v2.2.0** Flash-Next four-GPU layout (R9700, two RX 7900 XTX
+and RX 6900 XT). Both arms used the same prompts, seed, topology,
+262,144-token context, eight sessions and stock power profile.
 
-| Model and layout | Prefill tokens/s | Aggregate output tokens/s |
+| Workload | Baseline: v1.17.0 tokens/s | Best recorded: v2.2.0 tokens/s |
 | --- | ---: | ---: |
-| [Flash-Next](models/qwen3.8-flash-next.md), R9700 + two RX 7900 XTX + RX 6900 XT | Not qualified | Not qualified |
-| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md), R9700; two-XTX alternative unqualified
+| Document prefill | 3,254 | **3,662** |
+| Long-7 prefill | 2,207 | **2,453** |
+| Long-8 prefill | 2,099 | **2,430** |
+
+The [paired RUM09 gate](../../../evidence/radiance-latest-bump/RUM09-GATE-D.md)
+used two launches per arm in November 2026. These are BigCherry
+cross-version measurem

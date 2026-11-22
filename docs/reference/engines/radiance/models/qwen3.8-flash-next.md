@@ -1,13 +1,29 @@
 # Qwen3.8-Flash-Next
 
-The current upstream pin is **Radiance v1.17.0**. The heterogeneous FP8/IQ4R MoE layout uses a Radeon PRO R9700 engine GPU, two RX 7900 XTX helpers and an RX 6900 XT tail.
+The current upstream pin is **Radiance v2.2.0**. The heterogeneous
+FP8/IQ4R MoE layout uses an R9700 engine GPU, two RX 7900 XTX helpers
+and an RX 6900 XT tail.
 
-> Placement: experts move live from the heat map when the layout is calibrated; check the manifest carries `live_policy` before a placement-sensitive measurement: [live placement](../LIVE_PLACEMENT.md).
+## Current-pin measured prefill
 
-## Current-pin evidence
+The [RUM09 paired release gate](../../../../evidence/radiance-latest-bump/RUM09-GATE-D.md)
+used the flashnext-4gpu profile, 262,144-token context, eight sessions,
+stock power profile and matched prompts, seed and topology. It recorded
+two launches per arm in November 2026.
 
-A 5 November 2026 cross-pin check used temperature 0, seed 7, 512-token prompts, 512 generated tokens and two alternating passes. On v1.17.0, cold prefill ranged from **3,473 to 3,733 tokens/s**. This is engine-side prefill, not client output. Step timings were recorded for 1, 2, 4 and 6 streams, but aggregate engine-decode and client-output tokens/s were not qualified. Larger context/cache and multi-session throughput remain unqualified.
+| Workload | Baseline: v1.17.0 prefill tokens/s | Best recorded: v2.2.0 prefill tokens/s |
+| --- | ---: | ---: |
+| Document prefill | 3,254 | **3,662** |
+| Long-7 prefill | 2,207 | **2,453** |
+| Long-8 prefill | 2,099 | **2,430** |
 
-**Baseline:** v1.16.0 with the same layout and workload. **Best recorded on v1.17.0:** 3,733 prefill tokens/s in the cross-pin check. This is not an unmodified-stock comparison or a demonstrated speedup.
+These are **engine-side prefill** figures, not client-output throughput.
+The gate does not provide qualified aggregate engine-decode or
+client-visible output tokens/s, nor a like-for-like unmodified-stock
+comparison. The reported decode step latency cannot be presented as
+throughput. Do not extrapolate these results to different cache,
+stream-count or model configurations.
 
-The [historical technical record](../../../../archive/radiance/qwen3.8-flash-next-pre-v117-reference.md) retains the cross-pin conditions and previous-version benchmarks. See also the [v1.14 archive](../../../../archive/radiance/v1.14-model-results/qwen3.8-flash-next.md) and [Radiance overview](../README.md).
+Older cross-pin results are retained in the
+[historical technical record](../../../../archive/radiance/qwen3.8-flash-next-pre-v117-reference.md)
+and [v1.14 archive](../../../../archive/radiance/v1.14-model-results/qwen3.8-flash-next.md).
