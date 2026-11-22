@@ -17,14 +17,16 @@ using namespace moe_shm;
  * still filtering the runtime layer maps. Wait for helper 0's completed
  * seqlock publication, not for a provisional digest or one helper's bit.
  * This boundary is also used verbatim in card-free startup-order tests. */
-inline WaitResult wait_bootstrap_seal(void* map, const timespec* deadline) {
+inline WaitResult wait_bootstrap_seal(void* map, const timespec* deadline, const std::atomic<bool>* cancel = nullptr) {
     if (!map || !deadline) return WaitResult::Error;
     Header* h = static_cast<Header*>(map);
     const WaitResult waited = wait_for(h, deadline, [&] {
         const uint32_t seq = load(&placement_control(map)->seq);
+        if (cancel && cancel->load(std::memory_order_acquire)) return true;   // the generation is closing
         return seq != 0 && !(seq & 1u); // helper 0 publishes even only after the final digest and mask
     });
     if (waited != WaitResult::Ready) return waited;
+    if (cancel && cancel->load(std::memory_order_acquire)) return WaitResult::Error;   // cancelled, not sealed
     return bootstrap_generation_sealed(map) ? WaitResult::Ready : WaitResult::Error;
 }
 // Rank initialization's lock ordering is a production invariant: engine
@@ -34,9 +36,9 @@ template <class Work, class OnWaitError>
 auto with_bootstrap_rank_lock(void* map,
         const std::atomic<uint32_t>& ready_mask, uint32_t rank,
         std::mutex& mu, const timespec* deadline, Work&& work,
-        OnWaitError&& on_wait_error) -> decltype(work()) {
+        OnWaitError&& on_wait_error, const std::atomic<bool>* cancel = nullptr) -> decltype(work()) {
     if (!(ready_mask.load(std::memory_order_acquire) & (1u << rank))) {
-        const WaitResult result = wait_bootstrap_seal(map,deadline);
+        const WaitResult result = wait_bootstrap_seal(map,deadline,cancel);
         if (result != WaitResult::Ready) return on_wait_error(result);
     }
     std::lock_guard<std::mutex> lock(mu);

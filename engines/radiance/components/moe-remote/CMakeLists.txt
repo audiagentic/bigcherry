@@ -108,6 +108,12 @@ if(BUILD_TESTING)
   target_link_libraries(r3_helper_registration_test PRIVATE Threads::Threads)
   set_target_properties(r3_helper_registration_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME r3_helper_registration_test COMMAND r3_helper_registration_test)
+  # Closing a generation: refuse new borrows, cancel the borrowers' waits, wait for them, then free (real seal wait).
+  add_executable(r3_hook_retire_test EXCLUDE_FROM_ALL hook_retire_test.cpp)
+  target_include_directories(r3_hook_retire_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_hook_retire_test PRIVATE Threads::Threads)
+  set_target_properties(r3_hook_retire_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_hook_retire_test COMMAND r3_hook_retire_test)
   # The identity of the one live hook (serial handles; stale / foreign / address-reuse refused). Pure host code.
   add_executable(r3_hook_identity_test EXCLUDE_FROM_ALL hook_identity_test.cpp)
   target_include_directories(r3_hook_identity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

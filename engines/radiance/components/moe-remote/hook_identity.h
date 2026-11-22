@@ -59,11 +59,27 @@ public:
         live_.store(nullptr, std::memory_order_release);
         return true;
     }
+    // Close the generation `h` in the order that keeps every borrower safe: (1) refuse new borrows, (2) `wake()` -- the
+    // caller cancels and wakes whatever a borrower may be blocked in (its own closing flag, a futex notify), (3) wait
+    // for every existing borrow to end, (4) `release()` frees the state's resources while no borrower can be inside,
+    // (5) unpublish. Not called from a thread holding a Borrow, and the hook's own worker threads (which borrow) must
+    // already be stopped and joined. False, with nothing done, when `h` is not the live hook.
+    template <class Wake, class Release>
+    bool retire(T* h, Wake wake, Release release) {
+        if (live_.load(std::memory_order_acquire) != h) return false;
+        closing_.store(true, std::memory_order_release);
+        wake();
+        std::unique_lock<std::shared_mutex> lock(mu_);
+        release();
+        live_.store(nullptr, std::memory_order_release);
+        closing_.store(false, std::memory_order_release);
+        return true;
+    }
     // The live hook for `id`, or an empty Borrow: the check every direct entry point makes before any side effect.
     Borrow borrow(uint64_t id) const {
         std::shared_lock<std::shared_mutex> lock(mu_);
         T* now = live_.load(std::memory_order_acquire);
-        if (id == 0 || !now || now->serial != id) return {};
+        if (id == 0 || !now || now->serial != id || closing_.load(std::memory_order_acquire)) return {};
         return Borrow(std::move(lock), now);
     }
     // The serial of the live hook when `match(hook)` holds, else 0.
@@ -87,5 +103,6 @@ public:
 private:
     mutable std::shared_mutex mu_;
     std::atomic<T*> live_{nullptr};
+    std::atomic<bool> closing_{false};
     std::atomic<uint64_t> next_;
 };

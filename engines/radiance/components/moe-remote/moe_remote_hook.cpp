@@ -123,7 +123,10 @@ struct R3MoeHook {
     Header* hdr = nullptr;
     bool pinned = false;
     uint64_t serial = 0;   /* this generation's identity; never reused, so a stale handle cannot alias a new hook */
-    int slot_base = -1, ranks = 0;    /* the engine's claimed slot span (its tp_group); the kernels' init finds this hook by it */
+    int slot_base = -1, ranks = 0;
+    /* Set when the engine closes the generation: new borrows are refused (LiveHook::retire) and every wait a borrower
+     * may be blocked in ends. Not a fault: a clean stop leaves the ledger healthy. */
+    std::atomic<bool> closing{false};    /* the engine's claimed slot span (its tp_group); the kernels' init finds this hook by it */
     bool opened = false;   /* a generation holds this hook: set by the factory, cleared by the generation's close */
     r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
     std::deque<RankCompletion> completion;
@@ -275,7 +278,7 @@ int before_pass(HookState& g, int rank, StepTicket value, void* stream) {
 
 /* Distinct events per admitted parent AND per rank, recorded by the
  * scheduler after all parent GPU effects, before issue-ahead. g.mu only
- * orders against close_mailbox; the ranks are parked here. */
+ * orders against release_resources; the ranks are parked here. */
 int rank_done_ticket(HookState& g, int rank, StepTicket ticket, void* stream) {
     if (!ticket.ticket_id) return RAD_OK;
     if (!stream || rank < 0 || rank >= (int)g.rank.size() ||
@@ -891,7 +894,7 @@ void write_heat(HookState& g, uint32_t rank, RankState& s, bool final) {
 }
 
 /* The live snapshot thread: every R3_MOE_WORKER_HISTOGRAM_PERIOD_S seconds, each ready rank's histogram. It takes g.mu per snapshot, so
- * it never reads a rank that close_mailbox is tearing down (close_mailbox stops and joins it first, without holding g.mu). */
+ * it never reads a rank that release_resources is tearing down (cb_close stops and joins it first, without holding g.mu). */
 void snapshot_loop(HookState& g, double period_s) {
     auto next = std::chrono::steady_clock::now() + std::chrono::duration<double>(period_s);
     while (!g.snapshot_stop.load()) {
@@ -913,13 +916,19 @@ void snapshot_loop(HookState& g, double period_s) {
  * (Ledger::wait_drained turns a missed deadline into a ledger fault, and a helper fault ends the loop), so a stuck cycle
  * is observed as a fault state, never timed out by a literal here. Not clean (a fault, or tickets that never retired):
  * the ledger is interrupted, which wakes quiescence and blocked scheduler admission. */
-void close_mailbox(HookState& g, bool clean) {
+void stop_workers(HookState& g, bool clean) {
     g.placement_stop.store(true, std::memory_order_release);
     if (clean) g.ledger.wake();
     else g.ledger.interrupt();
     if (g.placement_thread.joinable()) g.placement_thread.join();
     g.snapshot_stop = true;
     if (g.snapshotter.joinable()) g.snapshotter.join();
+}
+
+/* Frees the generation's resources. Only after stop_workers (the workers use the entry points) and with no borrower
+ * inside any entry point (LiveHook::retire waits for them), so nothing here can race a reader of the rank array, the
+ * mapping or the header. */
+void release_resources(HookState& g) {
     std::lock_guard<std::mutex> lock(g.mu);
     if (g.opened)
         std::fprintf(stderr, "libr3moe: admission high-water %zu, capacity %zu, outstanding %zu\n",
@@ -971,9 +980,17 @@ void cb_finish_admission(void* self) { (void)hook(self).ledger.finish_admission(
 int cb_wait_finished(void* self, int64_t ms) { return wait_finished_tickets(hook(self), ms); }
 void cb_close(void* self) {
     HookState& g = hook(self);
-    close_mailbox(g, g.ledger.clean_stop());
-    /* Unpublish before the state is freed: the kernels' init and the direct entry points then refuse. */
-    g_live.unpublish(&g);
+    /* The kind of stop is decided first: cancelling waiters below must not change it. */
+    stop_workers(g, g.ledger.clean_stop());
+    /* Then, in this order: refuse new borrows, cancel and wake the waits a borrower may be blocked in (the bootstrap
+     * seal wait, the drain waits), wait for every borrower to leave, free, unpublish. */
+    g_live.retire(&g,
+                  [&] {
+                      g.closing.store(true, std::memory_order_release);
+                      if (g.hdr) notify(g.hdr);
+                      g.ledger.wake();
+                  },
+                  [&] { release_resources(g); });
     g.opened = false;
     delete &g;
 }
@@ -1089,7 +1106,7 @@ extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
     using Result = r3::admission::Ledger::Result;
     const Result drained = g.ledger.wait_drained(snap->old_epoch, snap->cutoff_ticket_id,
                                                  limit, [&] { poll_tickets(g); },
-                                                 [&] { return helper_faulted(g); });
+                                                 [&] { return helper_faulted(g) || g.closing.load(std::memory_order_acquire); });
     if (drained != Result::Ok) { g.ledger.fault(); return RAD_E_STATE; }
     /* A successful event query guarantees helper wait and consumption before
      * the event, but explicitly check every lane before controller COMMIT. */
@@ -1099,7 +1116,8 @@ extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
         request_helper_drain(g, snap->closure_id);
     }
     while (!helper_drained(g, snap->closure_id)) {
-        if (g.ledger.stopped() || helper_faulted(g) || std::chrono::steady_clock::now() >= limit) {
+        if (g.ledger.stopped() || helper_faulted(g) || g.closing.load(std::memory_order_acquire) ||
+            std::chrono::steady_clock::now() >= limit) {
             g.ledger.fault();
             return RAD_E_STATE;
         }
@@ -1367,7 +1385,8 @@ extern "C" int r3_moe_mailbox_device(uint64_t h, int rank, int world_size, R3Moe
                 generation ? load(&generation->ready_helpers) : 0u,
                 control->expected_helpers, load(&g.hdr->helper_fault));
             return RAD_E_STATE;
-        });
+        },
+        &g.closing);   /* the close cancels this wait; it is a startup wait of up to kStartupWaitSeconds */
 }
 
 /* Inactive generation preparation only: no overwrite until the shared
