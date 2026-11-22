@@ -7,7 +7,7 @@
                                  const char* base, int access, int group,
                                  rad_buf y, int64_t max_rows) {
         if (!deferred_bias || !op || bias || op_b || post_reduce ||
-            !y || g.world != 3 || g.wire_exact != 1 ||
+            !y || g.world < 2 || g.wire_exact != 1 ||
             N <= 0 || max_rows <= 0 ||
             max_rows > std::numeric_limits<int64_t>::max() / N)
             return RAD_E_UNSUPPORTED;

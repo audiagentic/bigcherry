@@ -16,7 +16,7 @@ struct Tp3GlobalRms {
                 int64_t owned_width, int64_t source_column, int64_t head_dim,
                 int64_t rows, double eps) {
         if (!b || !source || !shared || !full_gain || scratch || clear ||
-            g.world != 3 || g.wire_exact != 1 || g.wire_min_bytes < 0 ||
+            g.world < 2 || g.wire_exact != 1 || g.wire_min_bytes < 0 ||
             !g.dtype || std::strcmp(g.dtype, "bf16") != 0 ||
             all_width <= 0 || owned_width <= 0 || offset < 0 ||
             offset > all_width || owned_width > all_width - offset ||
