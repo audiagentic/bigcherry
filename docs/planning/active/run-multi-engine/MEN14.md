@@ -19,10 +19,9 @@ Umbrella for aligning radiance with the automated llama.cpp workflow: build -> p
 
 ## Steps
 
-1. Inventory tools/lab/radiance: for each script, the bigcherry command that replaces it, or why it stays a lab tool.
-2. Land RAD09; shelve-to-main any branch-only work (few-rows kernel already default off, evaluated).
-3. Execute the sequence above; each step closes only with its tool used on a real radiance run.
-4. Final gate: one radiance change taken from patch edit to a bc-radiance release using only the documented workflow.
+1. Inventory current `tools/lab/radiance/` scripts and `docs/reference/tooling/TOOL_DISPOSITION.md` against commands already available. Record absent historic wrappers separately; do not delete archived evidence or live helpers without verified replacements.
+2. Make the existing build/patch/verify/promote/release command sequence the single supported Radiance change workflow. Reuse MEN20 component-setting evidence and MEN21 operator capture/replay once delivered; do not add a second launcher or evidence framework.
+3. Run one genuine Radiance patch-to-release exercise and record the exact commands, pinned revision, build/evidence identifiers, validation, outcome and release in ledger/model documentation. Keep unfinished sub-gates linked to their distinct owners.
 
 ## Detailed Solution & Technical Design
 
@@ -46,7 +45,7 @@ No scratch scripts outside tools/lab: untracked .capture.sh and .gemvl.sh (RAD06
 
 ## Validation
 
-The final gate run, recorded in the ledger and on the model page.
+Review the current lab launcher inventory against `TOOL_DISPOSITION.md`; run the affected CLI smoke tests and documentation links. Final validation is one source-backed real Radiance patch-to-release workflow receipt. A successful `bc-serve` startup alone is insufficient.
 
 ## Effort & Risk
 
@@ -58,7 +57,11 @@ The final gate run, recorded in the ledger and on the model page.
 
 ## Acceptance Criteria
 
-
+1. Every remaining Radiance lab launcher has a recorded keep/retire disposition and, for each retirement, an existing equivalent command plus passing proof; missing historic wrappers are reported as absent, not deleted.
+2. The final patch-to-release run uses maintained BigCherry commands and produces identifiable pin, patch, build, evidence, promotion and release records, with no parallel workflow introduced.
+3. MEN20's component-setting A/B evidence and MEN21's operator capture/replay, where relevant, are consumed through their existing interfaces rather than reimplemented in MEN14.
+4. The historic MEN11 helper-ROWS result (`men11-fire-10171108`, 8/8 clean cells, 2026-10-17) remains traceable; MEN14 does not assert new KLD parity from those throughput numbers.
+5. Any remaining RAD08/RAD07 KLD/role-split and model documentation work stays assigned to those IDs, not duplicated here.
 
 ## Notes
 
@@ -72,6 +75,8 @@ BACKLOG TRIAGE 2026-11-04 (MERGE into RSC02; revalidated against main 6eb31a708,
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN14.md:18-35 requires a complete build-to-release workflow, a disposition for every lab script and a final patch-to-release exercise; it explicitly identifies MEN20/MEN21 evidence and replay commands as gaps. RSC02.md:18-29 is bc-serve startup and RSC04.md:18-26 retires legacy serving configuration, not component evidence, MoE capture/replay and release workflow.
 
+CONSOLIDATION 2026-11-22: MEN11 lab-script disposition and full workflow gate assigned here. This is not a new helper bench, quality producer or component evidence runner. The legacy fn-r9700-engine.sh/fn-bench-once.py/fn-helper-gate.sh names are absent from the current `tools/lab/radiance/` tree; explicitly verify historical replacements instead of unconditionally deleting.
+
 ## Change Log
 
 - 2026-10-14T22:28:08.305053+00:00 (created-by): Created by agent
@@ -80,3 +85,9 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:47:08.148435+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:44:59.886778+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:04.814682+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4468
+- 2026-11-22T09:17:50.657888+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-22T09:18:12.343518+00:00 (updated-by): Updated (no visible changes)

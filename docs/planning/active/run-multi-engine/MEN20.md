@@ -19,11 +19,11 @@ Promoting a component setting (libr3 now, moe-remote/backends after RCS04) needs
 
 ## Steps
 
-1. Declare per setting in component.toml: ab-config path and activation marker (already there for marker).
-2. Implement the command on top of ab-benchmark and the evidence verifier used by patch-verify-evidence.
-3. Idle-host check and graceful teardown reused from ServerRunner.
-4. Offline tests with fixture run.json files; one real run reproducing a RAD06 result.
-5. Retire helper-evidence.sh and its TOOL_DISPOSITION row.
+1. Declare setting-specific A/B configuration, activation marker, evidence identity and status in the existing component metadata format, consulting RCS08's lint contract; do not invent a separate registry.
+2. Implement a thin `component-evidence` command that calls existing `ab-benchmark`, common sidecar lifecycle/idle checks and evidence verification. It must check arm identity (only the intended component setting varies), helper activation, failures and reproducible run metadata.
+3. Stage the verified run and print or apply an explicit promotion update only when requested. Reuse the current promotion mechanism and fail closed on an ambiguous or invalid evidence record.
+4. Run offline failure fixtures and one real setting run; compare its output with the historical `men11-fire-10171108` ROWS=0/1 8/8 clean run, without claiming the old throughput result as new hardware acceptance.
+5. Retire `helper-evidence.sh` only if it still exists and only after the new command demonstrably replaces it; coordinate the inventory with MEN14.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +39,7 @@ Promoting a component setting (libr3 now, moe-remote/backends after RCS04) needs
 
 ## Validation
 
-A real run of one setting through the command yields the same evidence an earlier script run staged; offline tests cover each failure.
+Offline positive/negative run.json fixtures (wrong arm identity, absent activation, failed helper/cell, mismatched pin, and attempted invalid promotion); one real ROWS or equivalent setting run through the command, with identity-bound staged evidence and graceful teardown.
 
 ## Effort & Risk
 
@@ -51,7 +51,11 @@ A real run of one setting through the command yields the same evidence an earlie
 
 ## Acceptance Criteria
 
-
+1. One engine-aware component-setting command composes the maintained A/B harness and evidence verifier; no duplicate benchmark, worker launcher or patch registry is created.
+2. Stage a full identity-bound evidence record (setting, baseline, model, pin, build, per-arm variables, activation, results and checks) and reject incorrect setting variation, missing activation and any failed cell.
+3. Promotion/default-on requires explicit request and passing evidence; failure leaves the component status unchanged and auditable.
+4. A real helper-setting run reproduces a valid MEN11-class A/B contract and preserves the prior `men11-fire-10171108` eight-cell result as historic evidence, not as an unmeasured fresh pass.
+5. Offline tests exercise activation, record validation, worker failure/teardown and promotion denial. Retire any redundant helper-evidence wrapper only after equivalence is demonstrated.
 
 ## Notes
 
@@ -65,6 +69,8 @@ BACKLOG TRIAGE 2026-11-04 (MERGE into RCS08; revalidated against main 6eb31a708,
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN20.md:18-31 specifies a bigcherry component-evidence command that launches, verifies and stages a per-setting run and optionally promotes it. RCS08.md:18-27 only defines lint on existing setting declarations/evidence, with no runner or promotion command; the only literal component-evidence verb in the current tree appears in MEN20's plan.
 
+CONSOLIDATION 2026-11-22: owns MEN11's pending component lifecycle/promotion and helper evidence staging; MEN14 consumes it for release flow, RCS08 only lints produced records, RAD08/RAD07 own KLD/documentation. No duplicate helper-launcher implementation.
+
 ## Change Log
 
 - 2026-10-18T13:04:07.928445+00:00 (created-by): Created by agent
@@ -72,3 +78,8 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:47:31.963094+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:45:22.125658+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:26.281835+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4469
+- 2026-11-22T09:19:09.398060+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
