@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.64.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.4...bc-platform-1.64.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** bc-serve quality records a KL reference; helper-kld records its own ([#1365](https://github.com/audiagentic/bigcherry/issues/1365)) ([21d5002](https://github.com/audiagentic/bigcherry/commit/21d50020a73d57bc6edfe4ea439825a4fe9d92f9))
+
+
+### Fixes
+
+* **serving:** authorize power apply by AGENT_INSTANCE only ([#1369](https://github.com/audiagentic/bigcherry/issues/1369)) ([b8f544e](https://github.com/audiagentic/bigcherry/commit/b8f544e36ef728e1ae2f60edcd161bdc00d70768))
+
 ## [1.63.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.3...bc-platform-1.63.4) (2026-11-22)
 
 
