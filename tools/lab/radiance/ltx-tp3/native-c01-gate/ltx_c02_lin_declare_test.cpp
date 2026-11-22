@@ -181,7 +181,7 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
         need(!linear.bias && !linear.op_b && !linear.post_reduce,
              "C04 partial projection applied bias before collective");
         ltx2::Geom wrong = g;
-        wrong.world = 2;
+        wrong.world = 1;
         need(linear.finalize_deferred_output(&b, nm, wrong, base.c_str(),
                                             RAD_ACCESS_PER_TOKEN, 0, y, 4) ==
                  RAD_E_UNSUPPORTED,
@@ -240,7 +240,7 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
         need(scratch && query, "C05 missing Q/K buffers");
         ltx2::Tp3GlobalRms nq{}, nk{}, negative{};
         ltx2::Geom wrong = g;
-        wrong.world = 2;
+        wrong.world = 1;
         need(negative.declare(&b, wrong, query, scratch, wq, full,
                               offset, width, 0, hd, 4, 1e-6) ==
              RAD_E_UNSUPPORTED, "C05 allowed non-TP3 world");
@@ -665,7 +665,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     const auto before = b.program().weights.size();
     for(int bad=0; bad<2; ++bad) {
         ltx2::Geom wrong = g;
-        if(bad==0) wrong.world=2;
+        if(bad==0) wrong.world=1;
         else wrong.wire_exact=0;
         need(ltx2::attn_declare(&b, m, wrong, a, prefix.c_str(), original.c_str(),
                                total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
@@ -738,7 +738,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     for(const rad_op h:{a.tp_q.reduce,a.tp_k.reduce,a.out.post_reduce}) {
         const auto* op=b.program().op(h);
         long long world=0,exact=0;
-        need(op && op->base.get_i("world_size",&world) && world==3 &&
+        need(op && op->base.get_i("world_size",&world) && world==g.world &&
              op->base.get_i("exact",&exact) && exact==1,
              "C06 rank requires BigCherry's existing exact TP3 collective");
     }
@@ -877,7 +877,7 @@ static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
                     ltx2::tab(r.ffn.tabs,0,1,tab_cols,ffn_tab0+2*D,D),cu,ltx2::brows(r.ffn.res,n));
 }
 
-// world==3: this rank's `owned` of `heads` FFN units, deferred bias-free down;
+// world>1: this rank's `owned` of `heads` FFN units, deferred bias-free down;
 // world==1: the whole FFN at full width (the TP1 reference).
 static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, bool audio,
                            int rank, int first, int owned, int heads, int world,
@@ -893,7 +893,7 @@ static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, b
     if (aql) need(rad_dev_set(rank) == RAD_OK, "LTX03 cannot select rank's AQL device");
     r.gpu = aql;
     const int64_t dim = wu->shape[1], width = wu->shape[0];
-    const bool tp = world == 3;
+    const bool tp = world > 1;
     need(width % heads == 0 && (!tp || (first >= 0 && owned > 0 && first + owned <= heads)),
          "LTX03 issued FFN ownership not derivable from checkpoint");
     const int64_t unit = width / heads;
@@ -1033,9 +1033,9 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
     int first = 0;
     for (int rank=0; rank<world; ++rank) {
         lanes[rank].ffn.reduce = reduce;
-        build_ffn_lane(model,reg,block,audio,rank,first,world==3?split[rank]:heads,
+        build_ffn_lane(model,reg,block,audio,rank,first,world>1?split[rank]:heads,
                        heads,world,tokens,&builders[rank],lanes[rank],aql,chain,with_attn);
-        first += world==3 ? split[rank] : 0;
+        first += world>1 ? split[rank] : 0;
     }
     std::array<int,3> results{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
     std::array<std::string,3> failures;
@@ -1159,6 +1159,12 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
         }
         std::sort(per_iter.begin(),per_iter.end());
         *step_ms = per_iter[per_iter.size()/2];
+        std::printf("  per-rank median step:");
+        for (int rank=0; rank<world; ++rank) {
+            auto t = times[rank]; std::sort(t.begin(),t.end());
+            std::printf(" r%d=%.3f", rank, t[t.size()/2]);
+        }
+        std::printf(" ms\n");
     }
     for (auto& r : lanes) r.ctx.reset();
     reg.fini_instances();
@@ -1269,7 +1275,7 @@ static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
     need(rc==RAD_OK && down.op && !down.op_b && !down.bias,
          "LTX03 FFN down was not a bias-free partial GEMM");
     ltx2::Geom wrong = g;
-    wrong.world = 2;
+    wrong.world = 1;
     need(down.finalize_deferred_output(&b,nm,wrong,(prefix + "_down").c_str(),
                                        RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_E_UNSUPPORTED,
          "LTX03 FFN down accepted an incompatible reduction world");
@@ -1303,7 +1309,7 @@ static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
     }
     long long world=0, exact=0;
     const auto* red=b.program().op(down.post_reduce);
-    need(red->base.get_i("world_size",&world) && world == 3 &&
+    need(red->base.get_i("world_size",&world) && world == g.world &&
          red->base.get_i("exact",&exact) && exact == 1,
          "LTX03 FFN row-parallel reduce not exact TP3");
     need(down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
@@ -1361,7 +1367,8 @@ int main(int argc, char** argv) {
                                 variant==2?"attention+FFN block":"FFN",audio?"audio":"video",
                                 (long long)tokens,ms1);
                     for (const std::array<int,3>& split :
-                         {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                         {std::array<int,3>{8,8,16}, std::array<int,3>{10,10,12},
+                          std::array<int,3>{12,12,8}, std::array<int,3>{14,14,4}}) {
                         double ms3 = 0;
                         (void)issue_ffn(model,reg,0,audio,split,nheads,3,tokens,true,nullptr,true,
                                         variant>=1,variant==2,reps,&ms3);
@@ -1370,6 +1377,14 @@ int main(int argc, char** argv) {
                                     (long long)tokens,split[0],split[1],split[2],ms3,ms1/ms3);
                         std::fflush(stdout);
                     }
+                    // the two gfx1100 cards alone: world 2, the R9700 not used
+                    double ms2 = 0;
+                    (void)issue_ffn(model,reg,0,audio,{16,16,0},nheads,2,tokens,true,nullptr,true,
+                                    variant>=1,variant==2,reps,&ms2);
+                    std::printf("LTX03 time %s %s tokens=%lld TP2 (two gfx1100) 16,16: %.3f ms/step (%.2fx vs TP1)\n",
+                                variant==2?"attention+FFN block":"FFN",audio?"audio":"video",
+                                (long long)tokens,ms2,ms1/ms2);
+                    std::fflush(stdout);
                 }
             return 0;
         }
