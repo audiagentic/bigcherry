@@ -141,7 +141,6 @@ struct R3MoeHook {
     bool burst_want = false;
     bool burst_draining = false;
     std::atomic<bool> placement_stop{false};
-    std::atomic<bool> placement_done{false}; /* set by the placement thread as it exits: lets a clean close wait for it */
     std::mutex mu;
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
     std::atomic<bool> snapshot_stop{false};
@@ -623,7 +622,6 @@ void abandon_mailbox(HookState& g) {
     g.map = MAP_FAILED;
     g.fd = -1;
     g.pinned = false;
-    g.placement_done.store(true, std::memory_order_release);
 }
 
 /* Open the helper hand-off for one engine generation: map and pin the shared segment, watch the helpers, wait for them
@@ -915,24 +913,15 @@ void snapshot_loop(HookState& g, double period_s) {
 }
 
 /* `clean`: the engine drained every ticket and nothing faulted (Ledger::clean_stop), so the ledger is healthy and is
- * never interrupted: the placement thread is woken and given a bounded time to leave on its own. Not clean (a fault, or
- * tickets that never retired), or a placement thread that does not leave: the ledger is interrupted, which wakes
- * quiescence and blocked scheduler admission. */
+ * never interrupted: the placement thread is woken and joined with no deadline of its own. It leaves on its own: its
+ * loop checks `placement_stop` every iteration, and any wait inside a cycle ends at that wait's own protocol deadline
+ * (Ledger::wait_drained turns a missed deadline into a ledger fault, and a helper fault ends the loop), so a stuck cycle
+ * is observed as a fault state, never timed out by a literal here. Not clean (a fault, or tickets that never retired):
+ * the ledger is interrupted, which wakes quiescence and blocked scheduler admission. */
 void close_mailbox(HookState& g, bool clean) {
     g.placement_stop.store(true, std::memory_order_release);
-    if (clean) {
-        g.ledger.wake();
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (g.placement_thread.joinable() && !g.placement_done.load(std::memory_order_acquire) &&
-               std::chrono::steady_clock::now() < deadline)
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
-        if (g.placement_thread.joinable() && !g.placement_done.load(std::memory_order_acquire)) {
-            std::fprintf(stderr, "libr3moe: placement thread did not leave a clean close within 10 s; interrupting\n");
-            g.ledger.interrupt();
-        }
-    } else {
-        g.ledger.interrupt();
-    }
+    if (clean) g.ledger.wake();
+    else g.ledger.interrupt();
     if (g.placement_thread.joinable()) g.placement_thread.join();
     g.snapshot_stop = true;
     if (g.snapshotter.joinable()) g.snapshotter.join();
