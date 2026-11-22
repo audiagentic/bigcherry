@@ -173,7 +173,7 @@ static constexpr bool kDiagBuild = false;
 #endif
 
 // Weak only for builds using rad0002 without rad0009 (handoff remains off).
-extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*) __attribute__((weak));
+extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*);   /* rad0009 (declared dependency) */
 
 struct BcMoeRemoteGeneration {
     std::atomic<int> state{1}; /* 1 open, 2 closed */
@@ -208,7 +208,7 @@ extern "C" int bc_moe_remote_open_with(BcMoeRemoteOpenFn factory, int slot_base,
     if (ranks < 1 || slot_base < 0 || slot_base + ranks > BC_MOE_REMOTE_MAX_SLOTS) return BC_MOE_REMOTE_REFUSED;
     int64_t max_rows = 0;
     uint32_t skip_owned = 0, shadow = 0, mask_only = 0;
-    if (bc_serving_remote_settings) (void)bc_serving_remote_settings(&max_rows, &skip_owned, &shadow, &mask_only);
+    (void)bc_serving_remote_settings(&max_rows, &skip_owned, &shadow, &mask_only);
     /* Asked for in a production build the diagnostic modes must not be silently ignored (that would measure the wrong
      * thing): no generation opens, so every expert computes locally, and it is said. */
     if (!kDiagBuild && (shadow || mask_only)) {
