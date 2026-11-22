@@ -58,6 +58,12 @@ Full precision of IQ8R decoded weight scale (no avoidable BF16 intermediate roun
 
 2026-11-22 evidence: two AQL card permutations show 86,400/86,400 BF16 intermediate matches; all 36,864 INT8 activation codes and 144 F32 activation scales match CPU and GPU. Source-backed 198-sample QKV oracle isolates additional device BF16 weight-scale fold. This RUM item owns generic precision preservation; LTX02 only consumes output for model quality and does not duplicate this work.
 
+2026-11-22 RUM15 diagnostic implementation (rad0061, not selected in serving): existing r4d/libr3 IQ8R group-256 F32 scale relayout and shared decode/prefill GEMM paths; libref remains F32. Four files, 14 source-anchored edits pass exact replay and idempotence; 23/23 focused Python tests including actual IQ8R source scales; full source-built gfx1201 R9700 plugin passed 35/35 native IQ8R numeric selftests with exact-F32 reference and unchanged 0.003 threshold (one previous BF16-reference case failed at 0.003963, now passes at 0.00165). gfx1100 native rewrite compile and mixed XTX/R9700 issued C06 parity, loader/refill and admission/perf gates remain open. Evidence docs/evidence/2026-11-22-rum15-f32-native-candidate/README.md.
+
+2026-11-22 native runnable C06 result: diagnostic rad0061 F32 IQ8R scale source patch has 14/14 exact/idempotent anchors and full gfx1201 and gfx1100 native plugin builds. R9700 standalone IQ8R native selftest 35/35 (same exact-F32 oracle threshold). Existing model-backed C06 native AQL issued all four video/audio×head-split graphs in both masked device orders 0,1,2 and 2,0,1, with 108 retired instances/order, all exit 0. All 36,864 IQ8R QKV BF16 outputs agree exactly with unchanged CPU libref, and 12,287/12,288 final BF16 values agree; all 12,288 final values agree exactly between both mixed-GPU orders. Post-norm has 18/36,864 BF16 differences, max abs 0.00390625, and final video 12/12/8 has one difference max abs 0.015380859375 (relative L2 3.92e-5). 23/23 focused Python checks, real model, no fallback, no invented tolerances. Only M=1 seeded input qualifies; production remains unchanged because multirow, real TP1 activation quality, timing, VRAM/host/refill admission and layout-fingerprint release gates still open. See docs/evidence/2026-11-22-rum15-f32-native-candidate/README.md.
+
 ## Change Log
 
 - 2026-11-22T09:17:06.700561+00:00 (created-by): Created by gpt-6
+- 2026-11-22T10:04:33.924676+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:10:14.030623+00:00 (updated-by): Updated: section:notes
