@@ -6,7 +6,7 @@ expert placement adapted to differing GPU memory and bandwidth.
 
 ## Patches and extensions at a glance
 
-BigCherry maintains **45 current engine patch packages** and **6 components** for Radiance.
+BigCherry maintains **40 current engine patch packages** and **6 components** for Radiance.
 Each description says what the package is for, not that it is enabled or
 performance-qualified. **Validated** means package-level evidence exists;
 **untested** means qualification is not established; **diagnostic** is for

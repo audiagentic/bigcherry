@@ -50,7 +50,7 @@ Reuse the exact current source-managed extension and existing tests; no side-pat
 ## Files
 
 - `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/ (only needed LTX handoff hooks)`
-- `docs/planning/active/patching-radiance-upstream/RUM05.md` (shared native config/admission owner, read-only dependency)
+- `docs/planning/completed/patching-radiance-upstream/RUM05.md` (shared native config/admission owner, read-only dependency)
 - `engines/radiance/configs/ltx2-*`
 - `tools/lab/radiance/ltx-tp3/ltx_tp3_handoff_test.cpp`
 

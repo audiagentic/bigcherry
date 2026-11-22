@@ -50,7 +50,7 @@ retire the candidate. Its numbering is not authoritative.
 | --- | --- |
 | Radiance patch footprint, extracted source hooks | **RUM02** (completed); LTX only attaches to existing native APIs |
 | ABI44, mixed-architecture plugin eligibility and loader | **RUM03** (completed); LTX revalidates its binary |
-| Physical device/BDF order, measured VRAM/host budget, native-v3 YAML/worker admission | **RUM05** (active); LTX04/LTX07 supply **LTX model requirements**, not an owner/allocator/parser |
+| Physical device/BDF order, measured VRAM/host budget, native-v3 YAML/worker admission | **RUM05** (completed); LTX04/LTX07 supply **LTX model requirements**, not an owner/allocator/parser |
 | Cross-DSO shared-slot group, rank rendezvous, collective lifetime, clean/cancel/fault drain | **RUM06** (active); LTX02/LTX03/LTX04/LTX07 only test the consumed contract |
 | Selected production migration canaries and release infrastructure | **RUM09** (completed); LTX05/LTX08 own only new-model acceptance/recipes |
 | Model-independent native AQL regression executable and direct-HIP lab cleanup | **RUM13** (candidate); LTX01/LTX02 consume evidence only |
@@ -99,7 +99,7 @@ PR #1262 is a diagnostic foundation. It must have its current local commits push
 authoritative Planning MCP is available, in order:
 
 - Inspect existing RUM02/RUM03/RUM05/RUM06/RUM09 and any RUM13 ID,
-  ownership reviews and linked follow-ons. Retain **RUM05** as the only
+  ownership reviews and linked follow-ons. Retain completed **RUM05** as the only
   generic device/BDF/native-v3 resource-admission owner and **RUM06**
   as the only TP-group/cancel/drain owner; update the *existing items*
   through their normal review/Planning lifecycle only if a genuinely
