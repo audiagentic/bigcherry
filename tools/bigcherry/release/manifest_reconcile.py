@@ -6,9 +6,8 @@ releases keeps the version from the PR head, every other package takes the versi
 
 `merge_manifest_text` is that rule, pure. `reconcile_head` applies it to a PR head in a temporary worktree and pushes a
 plain merge commit (never forced) only while the head is still the commit the caller inspected. CLI (CI):
-`PYTHONPATH=tools python3 -m bigcherry.release.manifest_reconcile <repo> <remote> <repository-owner>` with GH_TOKEN set
-and git's http authorisation supplied through the environment (no credential in argv).
-It never merges a pull request.
+`PYTHONPATH=tools python3 -m bigcherry.release.manifest_reconcile <repo> <remote>` with GH_TOKEN set (the
+remote URL carries it). It never merges a pull request.
 """
 from __future__ import annotations
 
@@ -111,8 +110,6 @@ def reconcile_head(repo: Path, remote: str, base: str, head: str, expected_sha: 
     fast-forward that exact head; a branch that moved meanwhile, even to an ancestor of the candidate, is rejected and
     reported as "head-moved". Raises ManifestReconcileError when the merge cannot be resolved by the rule.
     """
-    if head == base:
-        raise ManifestReconcileError(f"refusing to update {base!r} itself")
     base_ref, head_ref = "refs/reconcile/base", "refs/reconcile/head"
     _ok(git, repo, "fetch", "-q", remote, f"+refs/heads/{base}:{base_ref}", f"+refs/heads/{head}:{head_ref}")
     if _ok(git, repo, "rev-parse", head_ref).strip() != expected_sha:
@@ -138,9 +135,6 @@ def reconcile_head(repo: Path, remote: str, base: str, head: str, expected_sha: 
             if _ok(git, tree, "diff", "--name-only", "--diff-filter=U").strip():
                 raise ManifestReconcileError("unresolved paths remain after the manifest was resolved")
             _ok(git, tree, "commit", "-q", "-m", f"merge {base} into {head}")
-            for parent_ref in (expected_sha, base_ref):
-                if git(tree, ["merge-base", "--is-ancestor", parent_ref, "HEAD"])[0] != 0:
-                    raise ManifestReconcileError("the merge commit does not descend from both the PR head and main")
         except ManifestReconcileError:
             git(tree, ["merge", "--abort"])
             raise
@@ -171,21 +165,19 @@ def canonical_branch(component: str) -> str:
     return f"release-please--branches--{BASE}--components--{component}"
 
 
-def refusal(pr: dict, owner: str, branch: str) -> str | None:
-    """Why a PR is not the same-repository, open, labelled platform release PR to write to (None: it is)."""
+def refusal(pr: dict, branch: str) -> str | None:
+    """Why a PR is not the open, labelled platform release PR (None: it is)."""
     labels = {str(item.get("name")) for item in pr.get("labels") or [] if isinstance(item, dict)}
     checks = (
         (str(pr.get("state")).upper() == "OPEN", "not open"),
         (pr.get("baseRefName") == BASE, f"base is not {BASE}"),
         (LABEL in labels, f"missing label {LABEL!r}"),
         (pr.get("headRefName") == branch, "head branch is not the canonical release branch"),
-        (pr.get("isCrossRepository") is False, "head is in another repository"),
-        ((pr.get("headRepositoryOwner") or {}).get("login") == owner, "head repository owner differs"),
     )
     return next((why for ok, why in checks if not ok), None)
 
 
-_FIELDS = "number,state,baseRefName,labels,headRefName,headRefOid,isCrossRepository,headRepositoryOwner,mergeable,mergeStateStatus"
+_FIELDS = "number,state,baseRefName,labels,headRefName,headRefOid,mergeable,mergeStateStatus"
 GhJson = Callable[..., object]
 
 
@@ -196,14 +188,13 @@ def _gh_json(*args: str) -> object:
     return json.loads(done.stdout or "null")
 
 
-def reconcile_platform(repo: Path, remote: str, owner: str, config: dict, gh_json: GhJson = _gh_json,
+def reconcile_platform(repo: Path, remote: str, config: dict, gh_json: GhJson = _gh_json,
                        git: Git = system_git, sleep: Callable[[float], None] = time.sleep,
                        attempts: int = POLL_ATTEMPTS, seconds: float = POLL_SECONDS) -> list[str]:
     """One report line per candidate: the platform release PR is reconciled, left alone, refused or deferred.
 
-    Candidates are listed by the exact canonical branch, then every write is preceded by a re-read of that PR by number:
-    it must still pass `refusal`, have a determinate mergeability, and the head SHA read is the one reconcile_head
-    expects. Deferred states (``deferred-mergeability-unknown``, ``deferred-head-moved``) leave the PR untouched; running
+    Candidates are listed by the canonical branch; each is re-read by number before a write, so the head SHA written
+    against is the one just read. Deferred states (``deferred-mergeability-unknown``, ``deferred-head-moved``) leave the PR untouched; running
     the workflow again retries.
     """
     package, component = platform_target(config)
@@ -212,11 +203,11 @@ def reconcile_platform(repo: Path, remote: str, owner: str, config: dict, gh_jso
     report: list[str] = []
     for item in listed or []:
         number, line = item["number"], None
-        if refusal(item, owner, branch):
+        if refusal(item, branch):
             continue
         for _ in range(attempts):
             pr = gh_json("pr", "view", str(number), "--json", _FIELDS)
-            why = refusal(pr, owner, branch)
+            why = refusal(pr, branch)
             if why:
                 line = f"PR #{number}: refused: {why}"
                 break
@@ -242,12 +233,12 @@ def reconcile_platform(repo: Path, remote: str, owner: str, config: dict, gh_jso
 
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
-    if len(args) != 3:
-        print("usage: manifest_reconcile <repo> <remote-url-without-credentials> <repository-owner>", file=sys.stderr)
+    if len(args) != 2:
+        print("usage: manifest_reconcile <repo> <remote-url>", file=sys.stderr)
         return 2
     repo = Path(args[0]).resolve()
     config = json.loads((repo / CONFIG).read_text(encoding="utf-8"))
-    for line in reconcile_platform(repo, args[1], args[2], config):
+    for line in reconcile_platform(repo, args[1], config):
         # a refusal or deferral is a warning, never a failed release workflow; the PR stays as it was
         print(f"::warning::{line}" if ("refused" in line or "deferred" in line or "not reconciled" in line) else line)
     return 0
