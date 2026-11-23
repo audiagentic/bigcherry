@@ -1,0 +1,121 @@
+# gfx1100: decode attention keeps the gfx12 shim's zero-C WMMA product and its
+# elementwise f32-add sequence, accumulating in the gfx11 layout. Convert QK
+# immediately before softmax and PV once at the segment partial store.
+# Compile-time restrict to the reachable fp8/i8 h256/gqa6/bs16/f16 forms; this
+# shared decode body is also instantiated by other attention geometries.
+
+@@ find 1
+    constexpr int TREE  = (OPT & O_TREE)  ? 1 : 0;
+    typedef DT16<F16> D;
+    typedef typename D::frag frag16;
+@@ replace
+    constexpr int TREE  = (OPT & O_TREE)  ? 1 : 0;
+    typedef DT16<F16> D;
+    typedef typename D::frag frag16;
+    // Preserve the shim where Form A raised VGPR spills: i8 unchained,
+    // or fp8 NS1 (both chained and unchained). Other variants are unchanged.
+    constexpr bool R3_ACC_ONCE = HEAD_DIM == 256 && GQA == 6 && BS == 16 &&
+                                 TILE == 16 && !KVP && F16 && WIN == 0 &&
+                                 Layout == RAD_KVQ_NONE &&
+                                 ((OPT == 3429947 && NWARPS >= 2) ||
+                                  (OPT == 1177835067 && R3_CHAINED));
+@@ end
+
+@@ find 1
+    if constexpr (K6 || KI) __builtin_assume(tid < NTHR);
+    const int c = lane & 15, h = lane >> 4;
+
+    const int sp = blockIdx.x, kvh = blockIdx.y, seq = blockIdx.z;
+@@ replace
+    if constexpr (K6 || KI) __builtin_assume(tid < NTHR);
+    const int c = lane & 15, h = lane >> 4;
+
+    // The shim's zero-C gfx11 product, before its gfx12 accumulator shuffle.
+    // Never pass a running accumulator as WMMA C: that would alter fp32 bits.
+    auto r3_product11 = [&](frag16 a, frag16 b) {
+        const r3_v16h a11 = __builtin_bit_cast(r3_v16h,
+            r3_frag_12_to_11(__builtin_bit_cast(r3_u4, a), lane));
+        const r3_v16h b11 = __builtin_bit_cast(r3_v16h,
+            r3_frag_12_to_11(__builtin_bit_cast(r3_u4, b), lane));
+        const r3_v8f zero = {0,0,0,0,0,0,0,0};
+        return r3_wmma_f16_native(a11, b11, zero);
+    };
+
+    const int sp = blockIdx.x, kvh = blockIdx.y, seq = blockIdx.z;
+@@ end
+
+@@ find 1
+                if (SGB) sched_barrier();
+                #pragma unroll
+                for (int j = 0; j < PF; ++j) s = D::wmma(kb[j], qf[g + j], s);
+            }
+            float sc[8];
+@@ replace
+                if (SGB) sched_barrier();
+                #pragma unroll
+                for (int j = 0; j < PF; ++j) {
+                    if constexpr (R3_ACC_ONCE) s += r3_product11(kb[j], qf[g + j]);
+                    else s = D::wmma(kb[j], qf[g + j], s);
+                }
+            }
+            if constexpr (R3_ACC_ONCE) s = r3_acc_native_to_gfx12(s);
+            float sc[8];
+@@ end
+
+@@ find 1
+                    if (SGB) sched_barrier();
+                    #pragma unroll
+                    for (int j = 0; j < PF; ++j) acc[g + j] = D::wmma(vb[j], p16, acc[g + j]);
+                }
+@@ replace
+                    if (SGB) sched_barrier();
+                    #pragma unroll
+                    for (int j = 0; j < PF; ++j) {
+                        if constexpr (R3_ACC_ONCE) acc[g + j] += r3_product11(vb[j], p16);
+                        else acc[g + j] = D::wmma(vb[j], p16, acc[g + j]);
+                    }
+                }
+@@ end
+
+@@ find 1
+    if (!live) return;
+    // fetch-inactive: the f32 partials read lrow under `if (h == 0)` only (see the prefill kernel's
+    // epilogue).
+    const float lrow = l_i + swap16_fi(l_i);
+@@ replace
+    if (!live) return;
+    // The softmax rescale's alpha is the same for lane ^ 16 (the same key
+    // row's m_ref and rmax), so its per-element f32 multiply commutes with
+    // this permutation; every element preserves its exact operation order.
+    if constexpr (R3_ACC_ONCE) {
+        #pragma unroll
+        for (int dt = 0; dt < NKS; ++dt) acc[dt] = r3_acc_native_to_gfx12(acc[dt]);
+    }
+    // fetch-inactive: the f32 partials read lrow under `if (h == 0)` only (see the prefill kernel's
+    // epilogue).
+    const float lrow = l_i + swap16_fi(l_i);
+@@ end
+
+# Record whether this body is entered through the chained wrapper, a
+# compile-time distinction that allows protecting spill-prone unchained i8.
+@@ find 1
+template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT,
+         int WIN = 0, RadKVLayout Layout = RAD_KVQ_NONE>
+__device__ __forceinline__
+void r4d_attn_decode_body(const R4DArgs& a, int splits)
+@@ replace
+template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT,
+         int WIN = 0, RadKVLayout Layout = RAD_KVQ_NONE, bool R3_CHAINED = false>
+__device__ __forceinline__
+void r4d_attn_decode_body(const R4DArgs& a, int splits)
+@@ end
+
+@@ find 1
+    r4d_chain_wait_vec();
+    r4d_attn_decode_body<NWARPS, TILE, HEAD_DIM, GQA, BS, KVP, OPT, WIN, Layout>(a, splits);
+    r4d_chain_done();
+@@ replace
+    r4d_chain_wait_vec();
+    r4d_attn_decode_body<NWARPS, TILE, HEAD_DIM, GQA, BS, KVP, OPT, WIN, Layout, true>(a, splits);
+    r4d_chain_done();
+@@ end
