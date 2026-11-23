@@ -6,3 +6,9 @@
 - New route limited to rotated `i8a8h` B4-table BF16-scale M17–64; other forms and upstream gfx1201 unchanged.
 - Stock/rewrite IQR code-object metadata: 840 signatures, zero added/removed/changed resource tuples.
 - AQL chained-slice accounting backed by per-kernel packet semantics in source; live AQL tape playback not tested.
+
+
+### Stage 2 — FP64 qualification
+- Final built, uninstrumented plugin: M17–64, seven shapes and 336 whole-operation GPU comparisons; 115,489,152 BF16 outputs per route.
+- Stock-vs-new independent FP64 numerical gate: PASS 7/7 on max absolute error and RMS-relative tolerance 1e-6; ULP recorded but not gated.
+- M17/M64 launch-count tests demonstrate two/four ordinary NT1 slices for plain and chained kernel specializations; no live AQL chain tape validation.
