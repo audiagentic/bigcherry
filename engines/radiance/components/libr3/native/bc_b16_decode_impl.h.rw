@@ -1,7 +1,7 @@
 # gfx1100: decode attention keeps the gfx12 shim's zero-C WMMA product and its
 # elementwise f32-add sequence, accumulating in the gfx11 layout. Convert QK
 # immediately before softmax and PV once at the segment partial store.
-# Compile-time restrict to the reachable fp8 h256/gqa6/bs16/f16 form; this
+# Compile-time restrict to the reachable fp8/i8 h256/gqa6/bs16/f16 forms; this
 # shared decode body is also instantiated by other attention geometries.
 
 @@ find 1
@@ -15,7 +15,8 @@
     // Other instantiations retain their original gfx12-compat WMMA path.
     constexpr bool R3_ACC_ONCE = HEAD_DIM == 256 && GQA == 6 && BS == 16 &&
                                  TILE == 16 && !KVP && F16 && WIN == 0 &&
-                                 Layout == RAD_KVQ_NONE && OPT == 3429947;
+                                 Layout == RAD_KVQ_NONE &&
+                                 (OPT == 3429947 || OPT == 1177835067);
 @@ end
 
 @@ find 1
