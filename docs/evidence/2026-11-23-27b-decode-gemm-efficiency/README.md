@@ -464,3 +464,58 @@ re-read of the whole activation (grid N/16 blocks, every block reading the [M, K
   it is 159-185 us against 131-134 us, at M 4 and 16 it is 12-17 us slower, and at M 48 much slower. The kernel choice in the launcher is right.
 - What stays: nt 2 costs about 44 us a token tile on 13312 x 5120 (iq8r and i8a8 alike), it is not weight DRAM, not activation
   fetch and not block geometry (wave-per-tile moved it by only +5%), and the remaining candidates (per-wave WMMA and fold issue, or LDS) cannot be told apart without counters.
+
+### 8.7 Where the nt 2 cost is: the gfx11 int8 WMMA shim, and a bit-identical fix measured in scratch
+
+Scratch variants of `gemm_i8_kpar_kernel` (SB 128, KW 4, built as a single-unit libr3 for gfx1100; stock rebuilt to the shipped
+resource record first; one XTX, cold, median of 30 launches, 2 repeats; timing driver adds a fixed launch overhead of about
+10 us to every number, so read differences and ratios). 13312 x 5120, M 32 (nt 2), us: stock 153 (M 16: 104).
+
+| variant (tile 2 = the second token tile) | M 32 |
+|---|---|
+| tile 2's loads kept, its WMMA removed | 107 |
+| tile 2's loads and WMMA removed, fold and LDS reduction kept | 107 |
+| tile 2's loads removed, its WMMA kept (own accumulator, rotated operands) | 141 |
+| tile 2's fragments prefetched one unit ahead (bit-identical, 186 VGPRs) | 147 |
+| the two tiles' WMMA chains interleaved (bit-identical, 172 VGPRs) | 147 |
+
+Reading: the loads, the fold and the LDS reduction of the second tile cost nothing measurable; its WMMA costs about 35 of the 47 us.
+Prefetch and interleave move it by 1-4%. What a WMMA costs is the shim, not the matrix instruction: libr3's
+`r3_wmma_i32_16x16x16_iu8_w32_gfx12` (engines/radiance/components/libr3/r3_compat.h) turns each gfx12 call into a gfx11 one
+with `ds_bpermute` exchanges for the A fragment (2), the B fragment (2) and the accumulator (4), a select per element, and 8 adds
+of the exchanged product into the caller's accumulator, every k step. The kernel issues 8 such calls per 128-K unit per token tile.
+
+Candidate fix, bit-identical by construction (only data movement changes, and the int32 sums are exact): accumulate the 8 k
+steps of a scale group in the gfx11 accumulator layout (`__builtin_amdgcn_wmma_i32_16x16x16_iu8_w32` with the running
+accumulator as C) and convert it to the gfx12 layout once per group, before the fold, instead of once per k step. Scratch
+result, same method, outputs compared by checksum against stock at every shape and M below (all identical):
+
+| shape | M 4 | M 16 | M 20 | M 32 | M 48 |
+|---|---|---|---|---|---|
+| 13312 x 5120, stock -> accumulate once (us) | 103 -> 98 | 105 -> 99 | 150 -> 106 | 148 -> 108 | 196 -> 124 |
+| 5120 x 6656 | 63 -> 56 | 64 -> 58 | 95 -> 63 | 94 -> 62 | 125 -> 82 |
+| 6144 x 5120 | 56 -> 51 | 57 -> 51 | 84 -> 56 | 85 -> 56 | 113 -> 70 |
+| 5120 x 1536 | 27 -> 24 | 26 -> 24 | 34 -> 27 | 35 -> 27 | 43 -> 31 |
+
+Resource record (SB 128, unchained, VGPR / spilled): nt 1 148 -> 141 / 0, nt 2 221 -> 175 / 0, nt 3 240 / 2 -> 240 / 1, nt 4 240 / 35 -> 177 / 0.
+The i8a8 entry was timed; iq8r (SB 256) runs the same body and its record moves 200 / 178 / 207 / 231 -> 210 / 172 / 212 / 171
+(0 spills throughout), not yet timed. Not shipped: a libr3 rewrite of the kernel body needs its own slice and the checks of
+section 7 (bit identity at every M 1-64 on the shapes, chained and unchained, KW 2).
+
+### 8.8 Drafter: two M 16 launches against one M 24-32 launch (the 4-bit row)
+
+From the cold replays of section 8.3 (M 16 uses the spill-free 16-token tile; an M 8 launch costs the same as M 16, weight-bound).
+Per drafter pass, 5 layers of gate_up, down, q, out and two kv linears, plus the fc projection once:
+
+| | one launch at M 24 / 32 | two M 16 launches | saving |
+|---|---|---|---|
+| per layer (us) | 3,410 / 3,420 | 920 | 2,490 / 2,500 |
+| 5 layers (ms) | 17.1 | 4.6 | 12.5 |
+| plus fc (ms) | 18.5 | 5.0 | 13.5 |
+
+Per shape, two M 16 against one M 24: gate_up 428 vs 1,706 us, down 258 vs 973, q 82 vs 289, out 80 vs 248, kv 37 vs 98, fc 360 vs 1,405.
+Isolated figures; the engine's trace (6.6 vs 12.2 ms on the XTX ranks) is the scale that matters. The split would be a launch change
+in the row (two calls over rows 0-15 and 16-M-1), no new kernel; per-row bit identity against the stock M 17-64 form is not
+guaranteed (different accumulation order) and has not been checked. The four cheap register variants of PR 1448 all still spill at nt 2
+(stock 357 / 298 spilled at MW 4 / 8; A 381 / 323, B 417 / 357, C1 412 / 339, C2 401 / 338): the drafter's M 17-32 cost stays open, with structural candidates left
+(a smaller K chunk per decode, or this two-launch split).
