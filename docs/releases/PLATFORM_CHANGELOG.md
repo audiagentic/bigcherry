@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.69.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.68.0...bc-platform-1.69.0) (2026-11-23)
+
+
+### New and changed
+
+* **serving:** wire the calibrating live policy through the manifest (off by default) ([#1384](https://github.com/audiagentic/bigcherry/issues/1384)) ([db97ee9](https://github.com/audiagentic/bigcherry/commit/db97ee90c3b60fb74ba748cc10919fec1a184281))
+
+
+### Fixes
+
+* **parity:** publish the launch record when the live policy ran without a calibration store ([#1428](https://github.com/audiagentic/bigcherry/issues/1428)) ([7ae5aa3](https://github.com/audiagentic/bigcherry/commit/7ae5aa3f32f4869edc1775300085f5154d3788fa))
+
 ## [1.68.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.67.0...bc-platform-1.68.0) (2026-11-23)
 
 
