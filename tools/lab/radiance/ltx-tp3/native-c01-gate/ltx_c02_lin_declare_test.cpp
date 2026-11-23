@@ -355,6 +355,7 @@ struct C06Issued {
         rad_op mod=0, gate=0;
         rad_buf res=0, tabs=0, result=0;   // hidden state, [shift|scale|gate] table, compared output
         // block: self-attention then FFN in one graph (tabs = two [shift|scale|gate] triples)
+        bool pipe=false;   // FFN in two row pieces, each piece's reduction on the second lane
         bool block=false;
         rad_op mod1=0, gate1=0;
         rad_buf attn_out=0;
@@ -864,6 +865,26 @@ static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
                     ltx2::brows(r.ffn.res,n),ltx2::brows(r.x.a.x,n));
     }
     r.x.step(c,r.tokens);
+    if (r.ffn.pipe && r.ffn.reduce) {
+        // Two pieces of rows (a multiple of 64, the first the larger half): the second piece's
+        // projections run on lane 0 while the first piece's exact reduction runs on lane 1,
+        // as the Qwen drivers' step_pipelined does for a prefill step.
+        const int64_t R = std::min<int64_t>(r.tokens, (r.tokens + 1) / 2 + 63) / 64 * 64;
+        for (int piece = 0; piece < 2; ++piece) {
+            const int64_t r0 = piece ? R : 0, m = piece ? r.tokens - R : R;
+            if (m <= 0) continue;
+            r.ffn.up.step(c,r.x,r.ffn.upbuf,m,r0,r0);
+            RAD_ISSUE_N(c,r.ffn.act,m,rad::arch::brow_slice(r.ffn.upbuf,r0,m,r.ffn.up.N),
+                        rad::arch::brow_slice(r.ffn.ff.a.x,r0,m,r.ffn.ff.n));
+            r.ffn.ff.step(c,m,r0);
+            r.ffn.down.l.step(c,r.ffn.ff.a,r.output,r0+m,r0,m,r0);
+            rad_lane(c,1);
+            rad_lane_join(c,0,1);
+            r.ffn.down.reduce_rows(c,r.output,r0,m);
+            rad_lane(c,0);
+        }
+        rad_lane_join(c,1,0);
+    } else {
     r.ffn.up.step(c,r.x,r.ffn.upbuf,r.tokens);
     RAD_ISSUE_N(c,r.ffn.act,r.tokens,ltx2::brows(r.ffn.upbuf,r.tokens),
                 ltx2::brows(r.ffn.ff.a.x,r.tokens));
@@ -872,6 +893,7 @@ static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
         r.ffn.down.step(c,r.ffn.ff,r.output,r.tokens);
     else   // omitted exact reduction: the bias-free partial GEMM only
         r.ffn.down.l.step(c,r.ffn.ff.a,r.output,r.tokens,0,r.tokens,0);
+    }
     if (r.ffn.chain)   // hidden += gate * delta
         RAD_ISSUE_N(c,r.ffn.gate,n,ltx2::brows(r.output,n),
                     ltx2::tab(r.ffn.tabs,0,1,tab_cols,ffn_tab0+2*D,D),cu,ltx2::brows(r.ffn.res,n));
@@ -1002,10 +1024,20 @@ static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, b
                              {"checkpoint.ff.net.2.weight"}, {}, {},
                              dim,local,RAD_ACCESS_PER_TOKEN,0,r.ffn.ff,r.output,tokens,false,down_slice);
     need(rc == RAD_OK && r.ffn.down.op, "LTX03 issued FFN down declaration refused");
-    if (tp)
+    r.ffn.pipe = tp && aql && std::getenv("LTX03_PIPE") != nullptr;
+    if (tp) {
+        // Piped: the reduction is declared at overlap 1 inside the second lane's window, over
+        // an output buffer the lane touches (the declared lives no longer bound its bytes).
+        if (r.ffn.pipe)
+            need(rad_buf_concurrent(&b,r.output) == RAD_OK && rad_lane1_window_begin(&b) == RAD_OK,
+                 "LTX03 second-lane window refused");
         need(r.ffn.down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
-                                                 RAD_ACCESS_PER_TOKEN,0,r.output,tokens) == RAD_OK,
+                                                 RAD_ACCESS_PER_TOKEN,0,r.output,tokens,
+                                                 r.ffn.pipe ? 1 : 0) == RAD_OK,
              "LTX03 issued FFN exact reduction/final bias refused");
+        if (r.ffn.pipe)
+            need(rad_lane1_window_end(&b) == RAD_OK, "LTX03 second-lane window close refused");
+    }
     if (chain) {
         // Declared after the down projection and its reduction, in issue order: the arena
         // planner derives each buffer's lifetime from the declared operation order.
@@ -1358,17 +1390,22 @@ int main(int argc, char** argv) {
             const int64_t tokens = std::stoll(argv[4]);
             need(tokens > 0, "LTX03 timing needs a positive token count");
             const int reps = 20;
+            // LTX03_TIME_QUICK: the video lanes at one split only, for A/Bs of a pinned axis
+            // (RADIANCE_TUNE) where every arm must hold the GPU lease briefly.
+            const bool quick = std::getenv("LTX03_TIME_QUICK") != nullptr;
             for (int variant : {0,2})
                 for (bool audio : {false,true}) {
+                    if (quick && audio) continue;
                     double ms1 = 0;
                     (void)issue_ffn(model,reg,0,audio,{0,0,0},nheads,1,tokens,true,nullptr,true,
                                     variant>=1,variant==2,reps,&ms1);
                     std::printf("LTX03 time %s %s tokens=%lld TP1(one card): %.3f ms/step\n",
                                 variant==2?"attention+FFN block":"FFN",audio?"audio":"video",
                                 (long long)tokens,ms1);
-                    for (const std::array<int,3>& split :
-                         {std::array<int,3>{8,8,16}, std::array<int,3>{10,10,12},
-                          std::array<int,3>{12,12,8}, std::array<int,3>{14,14,4}}) {
+                    const std::vector<std::array<int,3>> splits = quick ?
+                        std::vector<std::array<int,3>>{{12,12,8}} :
+                        std::vector<std::array<int,3>>{{8,8,16},{10,10,12},{12,12,8},{14,14,4}};
+                    for (const std::array<int,3>& split : splits) {
                         double ms3 = 0;
                         (void)issue_ffn(model,reg,0,audio,split,nheads,3,tokens,true,nullptr,true,
                                         variant>=1,variant==2,reps,&ms3);
@@ -1377,6 +1414,7 @@ int main(int argc, char** argv) {
                                     (long long)tokens,split[0],split[1],split[2],ms3,ms1/ms3);
                         std::fflush(stdout);
                     }
+                    if (quick) continue;
                     // the two gfx1100 cards alone: world 2, the R9700 not used
                     double ms2 = 0;
                     (void)issue_ffn(model,reg,0,audio,{16,16,0},nheads,2,tokens,true,nullptr,true,
@@ -1391,7 +1429,8 @@ int main(int argc, char** argv) {
         if (argc == 4 && (std::string(argv[3]) == "--ltx03-ffn-issued-host" || aql &&
                           std::string(argv[3]) == "--ltx03-ffn-issued-aql")) {
             // The issued TP3 FFN against a TP1 issue of the same checkpoint and kernels.
-            const int64_t tokens = 4;
+            // LTX03_TOKENS: a row count other than the host test's four (the pipelined arms).
+            const int64_t tokens = std::getenv("LTX03_TOKENS") ? std::stoll(std::getenv("LTX03_TOKENS")) : 4;
             int checked = 0;
             for (int variant : {0,1,2})   // 0: FFN, 1: modulation+FFN+residual, 2: attention+FFN block
             for (int64_t block : {int64_t(0), nblocks - 1})
@@ -1410,7 +1449,7 @@ int main(int argc, char** argv) {
                         std::array<int,3> calls{};
                         const auto out = issue_ffn(model,reg,block,audio,split,nheads,3,tokens,true,&calls,aql,chain,with_attn);
                         for (int rank=0; rank<3; ++rank)
-                            need(calls[rank]==(with_attn ? 4 : 1),
+                            need(calls[rank]==(with_attn ? 4 : 1) + (aql && std::getenv("LTX03_PIPE") && tokens>64 ? 1 : 0),
                                  "LTX03 wrong native reduction count: attention issues Q, K and output, the FFN one");
                         for (int rank=1; rank<3; ++rank) {
                             if (out[0]!=out[(size_t)rank]) {

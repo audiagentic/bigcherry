@@ -26,7 +26,7 @@ _SHA256 = {
     "attn_core.inc": "4a52ed788b8204bede7fd898cd9b17a815d42397aef2df89b4c45a5d45a88835",
     "attn_cross.inc": "6f51439e1ba144957526a4e41942e8bd498f55dda83905dbbf518354ba54297f",
     "global_rms.inc": "ca708cba1ad960ef277a87e60019162f017fa37b3b7f2e04cb5a2400174e6bad",
-    "post_reduce.inc": "f357e6e31cb35bf036371855bd4728dcd7ca0e0b8ee990436258d6b2b957eb61",
+    "post_reduce.inc": "7a972a5db11741993e60764e3f79fe1af0c120d508a900a77ee0afb272466e1e",
 }
 
 
