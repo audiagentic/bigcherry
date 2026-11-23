@@ -2,7 +2,7 @@
 id: VTP47
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: in_progress
 created-at: '2026-11-23T20:42:19.617288+00:00'
 breadth: ''
 skill: advanced
@@ -62,3 +62,4 @@ Medium. Risk: extra reduction work and launches cancel the gain for the tiniest 
 
 - 2026-11-23T20:42:19.617288+00:00 (created-by): Created by agent
 - 2026-11-23T20:43:12.216774+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-23T20:48:37.567386+00:00 (state-transition): State: pending → in_progress
