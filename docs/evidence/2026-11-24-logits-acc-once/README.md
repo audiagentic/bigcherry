@@ -248,7 +248,27 @@ Cold gate PASS: 17–32 gains beyond repeat spread, and no measured regressions 
 
 - The only BF16 f32 gfx12 WMMA shim in the logits source is in `lm_wmma_body`: one call per K16 iteration for each token tile, across eight K16 iterations in one BF16 scale block. The new native-layout accumulation is compile-time gated to MT=2, FKB=2, I8=true, MH=1, TB=0. Other LM geometry/format/table variants preserve the original shim, avoiding the 54 spill regressions found with the unrestricted rewrite.
 - The M<=2 `mvm_kernel` is not part of the WMMA body and remains unchanged. Adjacent `r4d_gemm_fp8a8.hip` uses an integer I32 WMMA rather than this BF16 f32 shim; it is not a candidate for this same transformation.
-- Future independent gfx1100 BF16 shim audits include `r4d_lora_bf16.hip`, `r4d_moe.hip`, `r4d_gdn_wmma.h`, `r4d_dt16.h`, and `r4d_attn_paged_window.hip`. They were identified by source call-site census only and were not modified, measured or authorized for this slice. Other MT/FKB/TB logits variants would require new resource and bit-identity gates before specialization.
+- Candidate sites should be filtered against the existing native rewrite census; the table below distinguishes uncovered paths from kernels already optimized by native rewrites. Other MT/FKB/TB logits variants require new resource and bit-identity gates before specialization.
 - The full libr3 build, all 140 linked LM metadata comparisons, all 2048 primary/IQR full-byte identity checks, all six actual r3_selftest cases (320 OK), and the two-shape 228-record cold replay were executed. The target M17–32 speed and no-regression gates passed. Static review: only the native logits rewrite and evidence note changed; no vendor, gfx1201 or IQR source edits; `git diff --check` clean.
 - Form B was intentionally not built or timed; no Form B divergence statistics are claimed. The E4M3 chained entrypoint is not exposed by the plugin ABI, so only its unchained export was tested. That path and all other nonselected instantiations retain the stock shim.
 - **READY for owner review of the Form A int8 M17–32 specialization; not pushed, merged or shipped.** No serving, ms/step A/B or KLD was performed.
+
+## Stage 6 — remaining shim candidate census (report only)
+
+The pinned `libr4d/r4d_gemm_fp8a16_nt_m1.hip` contains exactly one direct per-K16 BF16 gfx12 WMMA shim call in its `lm_wmma_body` (line 677). This is the call guarded by Form A for the two int8 MT2/FKB2 instantiations. No second eligible WMMA loop exists in that file; the separate M≤2 matvec is explicitly excluded. The shared body also compiles `I8=false` E4M3 and IQR `TB=2..6`, but those variants retain the stock shim under the compile-time guard.
+
+Other call sites worth a separate **proposal and measured resource/identity gate**, not code changes in this task:
+
+| Candidate source | Shim calls inside repeated loops | Priority / caution |
+|---|---|---|
+| `libr4d/r4d_gemm_w4a16_nt_m64.hip:189-190` | `mmah` f16 WMMA once per `u × j × i` inner step; first C zero, subsequent C running f32 | High where these quantized GEMMs are selected; a zero-C/native partial must reproduce f32 order |
+| `libr4d/r4d_gemm_w5a16_nt_m64.hip:181-182` | Same per-step f16 shim | High; separate row geometry and spill gate |
+| `libr4d/r4d_gemm_w8a16_nt_m64.hip:149-150` | Same per-step f16 shim | High; separate row geometry and spill gate |
+| `libr4d/r4d_attn_paged_window.hip:870,959,964` | One BF16 score WMMA per `kc`, f16 output WMMA per `mc` within value accumulation | Medium; online-softmax precision and f32 addition order require independent testing |
+| `libr4d/r4d_lora_bf16.hip:432-436,671-672` | Two BF16 WMMA calls in each low-rank inner iteration, also in the expansion path | Medium; split accumulators and nonzero C inputs need bitwise validation |
+| `libr4d/r4d_gemm_mxfp4a8_nt_m64.hip:166` | FP8 WMMA once per `i,j` inner step | Medium; check whether this row is selected before optimizing |
+| `libr4d/r4d_attn_gen.hip:455` and `libr4d/r4d_vsa.hip:899` | FP8 WMMA per inner activation/value step | Conditional; assess actual serving selection and numerical effects first |
+
+**Avoid duplicate work:** The native rewrite files already cover `r4d_moe.hip` (including both BF16 WMMA loop families), `bc_b16_prefill_impl.h`, `r4d_gemm_fp8a8.hip`, `r4d_gemm_mxfp4a8_{gemv,decode,tiled}.hip` and `r4d_dt16.h`; do not open another optimization slice for those without examining their existing rewrites. The vendor `r4d_gdn_wmma.h` has a repeated BF16 WMMA helper, but individual callers must be checked for existing native rewrites first.
+
+This is a source census only: **no other kernels were changed or benchmarked**. Form B's WMMA nonzero-C accumulation was not built, measured or proposed for shipping because it may change the f32 reduction order. No Form B divergence statistics are claimed.
