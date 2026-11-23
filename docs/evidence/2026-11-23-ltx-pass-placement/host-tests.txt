@@ -1,0 +1,24 @@
+    Start 2: ltx_c02_actual_lin_declare
+1/4 Test #2: ltx_c02_actual_lin_declare ...................   Passed    0.13 sec
+    Start 7: ltx03_text_cross_attention_declarations
+2/4 Test #7: ltx03_text_cross_attention_declarations ......***Failed    0.00 sec
+I device: host backend, 1 device(s) [0:host]
+LTX2 C02 native Lin failure: C06 invalid native geometry admitted
+
+    Start 8: ltx03_modal_cross_attention_declarations
+3/4 Test #8: ltx03_modal_cross_attention_declarations .....***Failed    0.01 sec
+I device: host backend, 1 device(s) [0:host]
+LTX2 C02 native Lin failure: C06 invalid native geometry admitted
+
+    Start 9: ltx03_ffn_modulation_residual_declarations
+4/4 Test #9: ltx03_ffn_modulation_residual_declarations ...   Passed    0.07 sec
+
+50% tests passed, 2 tests failed out of 4
+
+Total Test time (real) =   0.21 sec
+
+The following tests FAILED:
+	  7 - ltx03_text_cross_attention_declarations (Failed)
+	  8 - ltx03_modal_cross_attention_declarations (Failed)
+Errors while running CTest
+EXIT=8

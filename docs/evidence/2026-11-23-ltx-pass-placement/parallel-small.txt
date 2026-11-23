@@ -1,0 +1,23 @@
+I device: AQL backend, 3 device(s) [0:gfx1100 1:gfx1100 2:gfx1201]
+I kernel plugin 'libr3': its 679 device kernel(s) are offered only to the ranks whose card runs them; not to rank 2 (device 2: the fat binary has code objects for [gfx1100] and this card runs [gfx1201, gfx12-generic])
+I kernel plugin 'libr4d': its 679 device kernel(s) are offered only to the ranks whose card runs them; not to rank 0 (device 0: the fat binary has code objects for [gfx1201] and this card runs [gfx1100, gfx11-generic]), rank 1 (device 1: the fat binary has code objects for [gfx1201] and this card runs [gfx1100, gfx11-generic])
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libr4d
+PASS_FULL_LOAD device=0 weights=4378 stored_mib=18690.46
+I arena: 119.50 MiB device + 0 B scratch = 119.50 MiB, charged to the VRAM budget before it was split
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libr4d
+PASS_FULL_LOAD device=1 weights=4378 stored_mib=18690.46
+I arena: 119.50 MiB device + 0 B scratch = 119.50 MiB, charged to the VRAM budget before it was split
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libr3
+PASS_FULL_LOAD device=2 weights=4378 stored_mib=18690.46
+I arena: 119.50 MiB device + 0 B scratch = 119.50 MiB, charged to the VRAM budget before it was split
+I arena: 119.50 MiB device + 0 B scratch = 119.50 MiB, charged to the VRAM budget before it was split
+PASS_FULL_SERIAL variant=0 device=2 ms=123.093
+PASS_FULL_SERIAL variant=1 device=2 ms=112.355
+PASS_FULL_SERIAL variant=2 device=0 ms=279.004
+PASS_FULL_SERIAL variant=3 device=1 ms=241.408
+PASS_FULL_PARALLEL variant=0 device=2 ms=117.899 bit_equal=1
+PASS_FULL_PARALLEL variant=1 device=2 ms=112.147 bit_equal=1
+PASS_FULL_PARALLEL variant=2 device=0 ms=256.883 bit_equal=1
+PASS_FULL_PARALLEL variant=3 device=1 ms=215.195 bit_equal=1
+PASS_FULL_RESULT passes=4 serial_sum_ms=755.860 parallel_makespan_ms=257.140 speedup=2.939
+EXIT=0
