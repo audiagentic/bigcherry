@@ -61,7 +61,10 @@ Medium. The tail card is used only by this layout; gains there reach the step on
 
 
 
+Ceiling basis (2026-11-24): the 6.8 ms gap is a per-request model fitted from whole-run helper averages (two request sizes, prefill included) against the engine rank's mailbox wait; it is a compute ceiling under stated assumptions, not a measured bound, and the wait is not separable from transport with the data we have (the lab trace is not reachable from a production start). The libr2 waves-per-SIMD change is judged by its own resource table, cold replay on the tail card and a flashnext-4gpu step A/B, not by this model.
+
 ## Change Log
 
 - 2026-11-23T21:26:04.398434+00:00 (created-by): Created by agent
 - 2026-11-23T21:26:33.858915+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-23T22:51:54.858796+00:00 (updated-by): Updated: section:notes

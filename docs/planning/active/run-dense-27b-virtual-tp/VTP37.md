@@ -114,6 +114,14 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-23 iq8r spill fix in the engine (2020.8.1 against 2020.8.0, evidence note section 7).** The libr3 rewrite (#1442, one-line unroll count for 256-wide groups at 2+ token tiles) cut decode ms/step at qwen27b-tp3, untraced ABBA, n 12 a release: 6 streams 43.79 -> 36.69 ms (-16.2%), 8 streams 48.21 -> 37.67 ms (-21.9%); engine decode tok/s +26% at both. Tokens a step level at 8 streams (14.5 vs 15.3 at 6, seed-dependent). Prefill (TTFT) unchanged within noise, as expected (tiled path above 48 rows). Gain is 7.1 and 10.5 ms against an isolated bound of about 15 ms. One and four streams unchanged by construction (NT 1). Not run: five and seven streams, KLD.
 
+
+
+**2026-11-24 read-bandwidth ceiling (evidence 2026-11-24-vtp37-replay-warm-and-noise, section 3).** A plain streaming read gets 750-777 GB/s on the XTX at the large-row size (64 MiB; 80% of nominal) and 882 GB/s steady state at 1 GiB (92%); R9700 527-573 GB/s (87%) and 629 GB/s (98%). The shipped K-parallel row is at 91% (XTX) and 99% (R9700) of those ceilings. Larger transfers per launch stream better (an argument for fewer, larger launches, VTP52). Weight-plane address locality and bytes in flight do not move the plain read (3% spread), so the memory-side GEMM item closes; the kernel-owned remainder is about 9 points on the large XTX rows, at most about 1.2 ms a step.
+
+
+
+**2026-11-24 methodology: ceilings come from A/B or on/off measurements, not from tape sums.** The step-phase tape reports each op's own GPU time, which is not its cost on the critical path: ops on a second lane (the weight prefetch beside the collective), ops overlapped by the collective, and launch gaps all hide in or outside the segment sum. Two ceilings taken from tape sums this session were wrong: the prefetch op (2.6 ms a pass on rank 0 as 56 x 21 us; the engine issues it beside the collective by design, and prefetch on against off measured only 0.42 ms at one stream) and the decode-size piece count (1.5-2.3 ms from nine flag values at about 2 us each; the A/B measured -0.27 +- 0.21 ms at 6 streams and +0.08 +- 0.18 at 8). A lever's ceiling is therefore stated as one of: an on/off or A/B measurement; an isolated cold and prefetch-warm replay with the cost of the launch term removed; or an explicit model with its assumption named. A tape share alone is a pointer to where to look, not a bound. The open items VTP46, VTP48, VTP52, VTP53, VTP55 carry a one-line note on how their ceilings are bounded.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -312,6 +320,10 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
   (evidence: `docs/evidence/2026-11-24-vtp37-logits-acc-once-ab/README.md`). Placement note: the TP3 split is balanced to bandwidth (XTX ranks carry 1.45x the R9700's weight bytes, floors 9.5 vs 9.8 ms),
   so the XTX-over-R9700 integer-GEMM gap is per-byte stream efficiency (81-87% of spec against 96-98%), not placement.
 
+- Serving A/B of the K-parallel look-ahead removal (2020.8.5 against 2020.8.4, two ABBA cycles, 3 seeds x 3 repetitions, within-session): decode ms/step -0.08 ms (s.e. 0.42) at 6 streams and +0.07 ms (s.e. 0.08) at 8 streams: no measurable effect (replay bound 0.8-0.9 ms a pass is not visible at 8 streams, bounded below about 0.2 ms); acceptance and text unchanged (evidence: `docs/evidence/2026-11-24-vtp37-kpar-lookahead-ab/README.md`).
+
+- Replay and harness standards (2026-11-24): kernel replays are reported cold and prefetch-warm side by side (warming the first 12 MiB of the call's weights lifts the large K-parallel rows from 66-73% to 83-88% of nominal bandwidth and cuts M 16 rows 12-30%); the serving A/B harness's noise floor at qwen27b-tp3 is 0.85 ms (2.8%) at 6 streams and 0.26 ms (0.8%) at 8 streams for two ABBA cycles (evidence: `docs/evidence/2026-11-24-vtp37-replay-warm-and-noise/README.md`).
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
@@ -324,3 +336,5 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
 - 2026-11-23T08:38:59.382995+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:41:23.862081+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T11:08:04.931913+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:16:12.158310+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:51:24.478196+00:00 (updated-by): Updated: section:notes
