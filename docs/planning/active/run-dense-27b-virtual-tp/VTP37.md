@@ -312,6 +312,8 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
   (evidence: `docs/evidence/2026-11-24-vtp37-logits-acc-once-ab/README.md`). Placement note: the TP3 split is balanced to bandwidth (XTX ranks carry 1.45x the R9700's weight bytes, floors 9.5 vs 9.8 ms),
   so the XTX-over-R9700 integer-GEMM gap is per-byte stream efficiency (81-87% of spec against 96-98%), not placement.
 
+- Serving A/B of the K-parallel look-ahead removal (2020.8.5 against 2020.8.4, two ABBA cycles, 3 seeds x 3 repetitions, within-session): decode ms/step -0.08 ms (s.e. 0.42) at 6 streams and +0.07 ms (s.e. 0.08) at 8 streams: no measurable effect (replay bound 0.8-0.9 ms a pass is not visible at 8 streams, bounded below about 0.2 ms); acceptance and text unchanged (evidence: `docs/evidence/2026-11-24-vtp37-kpar-lookahead-ab/README.md`).
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
