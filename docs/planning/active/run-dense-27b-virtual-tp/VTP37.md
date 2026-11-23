@@ -276,6 +276,25 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
   device and geometry, not a literal) and the gfx11 kernel's per-segment throughput (10x at 32k; spills, the WMMA shim and the
   software fp8 widen are not separable without a spill-free variant; ~1.0-2.2 ms a step; a larger project).
 
+### 2026-11-23 (later): the nt 2 cost located, open questions
+
+Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sections 8.5-8.8.
+
+- The K-parallel int8 tile's extra cost at nt 2 is the gfx11 iu8 WMMA shim (lane exchanges for both fragments and the
+  accumulator on every k step), not tile structure: a wave per token tile was built and rejected (bandwidth 63-70% of nt 1,
+  nt 2 +5%; archived), an activation-pitch probe and the narrow tile both lost, and converting the accumulator once per
+  scale group is bit-identical and measured 27-37% faster at nt 2-3 in scratch (slice kpar-acc-once). The same shim pattern
+  is in 26 other WMMA sites; logits (the `lm_wmma_kernel`, 240 VGPR with 12 spilled at 17-32 rows) and decode attention are
+  the decode-relevant ones. For the float (bf16) sites the zero-accumulator form keeps the add order; a native accumulate
+  may not (the WMMA's internal order), so bit identity is the first gate there.
+- Drafter M 17-32: four register variants of `iqr_m64_kernel` all still spill; the candidates left are structural (a smaller
+  K chunk per decode) or two launches of the spill-free 16-token tile (not bit-identical to the stock route; needs a
+  numerical qualification, slice drafter-two-m16).
+- Open question, not changed and not measured: `kGdnOutPrefetchSeqs = 4` in the qwen35_fp8 architecture is a hand-picked
+  constant that stops the 8 MiB delta-net out-projection prefetch at 6 and 8 streams (5 or more sequences at depth 3). If the
+  prefetch is ever touched, derive the cap from the cache size and the bytes per sequence instead of a literal. No
+  measurement until the shim items land.
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
