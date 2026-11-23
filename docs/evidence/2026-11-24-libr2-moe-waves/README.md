@@ -68,3 +68,11 @@ The experimental gfx1030-only `moe_waves` native rewrite was removed, leaving th
 There is **no selective performance candidate to qualify**. New all-kernel code-object comparison, new 2,304-case bit gate, new 54-case cold replay and prefetch-warm replay were **not run** because the static selective feasibility gate fails before those downstream gates. No newly qualified win is claimed. Previous experimental run results remain 404 resources, 2,304/2,304 pairwise identity and FAIL 26/54 cold cases; they are historical evidence for the rejected candidate, not validation of the reverted build. The RDNA2 GPU was occupied by another separately leased task during this source audit; no GPU work or heavy build was started. Rebuilding/retesting the stock rollback was not claimed. No serving/A-B/ms-step/KLD, push, or shipment.
 
 Status: **REJECTED / NOT READY**. The branch is for archival review only, not a shipping candidate.
+
+## Final review — archive checkpoint
+
+Read-only review confirms the prior stock wave source is restored byte-for-byte, without changing the pre-existing int8 stub rewrite; the worktree and three-stage diff checks were clean. Commit-added lines contain no machine names or absolute host paths, and stages 7, 8 and 9 are each appended once to the running report. All three stage commits exist, and no push/ship operation was invoked.
+
+The seven existing remote-MoE **host-only** test executables were rerun after the rollback: `r3_moe_shm_test`, `r3_moe_backend_test`, `r3_policy_config_test`, `r3_moe_epoch_test`, `r3_moe_fp8_ref_test`, `r3_rad46_rows_policy_test`, `r3_moe_mailbox_lifetime_test`: **7/7 PASS, 0.13 seconds**. This was an existing-test-binary CTest invocation, not a rebuild of source after rollback. A new full libr2 build, device bit sweep, cold replay and prefetch-warm replay were intentionally not run after rejecting the candidate; all prior resource/bit/timing numbers describe the historical rejected build. The GPU was leased to another task, and no competing build or unleased GPU run was started.
+
+**Final status: REJECTED / ARCHIVE ONLY, NOT READY.** Production helper dispatch bypasses the changed GEMM; no safe tested selective rule and no qualified performance gain. The branch is clean and remains unpushed.
