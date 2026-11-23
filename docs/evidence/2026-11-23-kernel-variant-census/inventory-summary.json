@@ -1,0 +1,28 @@
+{
+  "libraries": {
+    "libr3": {
+      "architecture": "gfx1100",
+      "code_object_symbol_instances": 7952,
+      "code_objects": 112,
+      "different_symbols_same_body_instances": 182,
+      "distinct_mangled_symbols": 7791,
+      "grouping": "heuristic leading function name before template arguments and parameters",
+      "heuristic_families": 450,
+      "symbol_size_bytes_sum": 192160468
+    },
+    "libr4d": {
+      "architecture": "gfx1201",
+      "code_object_symbol_instances": 7885,
+      "code_objects": 112,
+      "different_symbols_same_body_instances": 182,
+      "distinct_mangled_symbols": 7724,
+      "grouping": "heuristic leading function name before template arguments and parameters",
+      "heuristic_families": 445,
+      "symbol_size_bytes_sum": 86614184
+    }
+  },
+  "method": "ELF64 symbol function .kd association; SHA256 of function body; 112 GPU code objects per plugin; functions uniquely keyed by (code object, symbol)",
+  "release": "bc-radiance-2020.8.0",
+  "source_status": "verified release manifest copy, no source modifications",
+  "units": "bytes, decimal"
+}

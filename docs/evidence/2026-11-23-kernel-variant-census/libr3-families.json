@@ -1,0 +1,1802 @@
+{
+  "AttnArgs)": {
+    "isa_bytes": 4948,
+    "variants": 1
+  },
+  "CandArgs)": {
+    "isa_bytes": 5392,
+    "variants": 1
+  },
+  "EscaleArgs)": {
+    "isa_bytes": 1392,
+    "variants": 1
+  },
+  "FactorArgs)": {
+    "isa_bytes": 1252,
+    "variants": 1
+  },
+  "KdaMeta)": {
+    "isa_bytes": 2316,
+    "variants": 1
+  },
+  "LocalRelGeom)": {
+    "isa_bytes": 5900,
+    "variants": 1
+  },
+  "Meta)": {
+    "isa_bytes": 3468,
+    "variants": 1
+  },
+  "PagedMeta)": {
+    "isa_bytes": 12204,
+    "variants": 2
+  },
+  "PickArgs)": {
+    "isa_bytes": 1088,
+    "variants": 1
+  },
+  "Protect)": {
+    "isa_bytes": 716,
+    "variants": 1
+  },
+  "SsdMeta)": {
+    "isa_bytes": 2008,
+    "variants": 1
+  },
+  "WalkArgs)": {
+    "isa_bytes": 2960,
+    "variants": 1
+  },
+  "act_mul_kernel": {
+    "isa_bytes": 3708,
+    "variants": 6
+  },
+  "add_rmsnorm_kernel": {
+    "isa_bytes": 11060,
+    "variants": 6
+  },
+  "ar_rmsnorm_quant_fp8_kernel": {
+    "isa_bytes": 2398420,
+    "variants": 168
+  },
+  "ar_rmsnorm_quant_i8_kernel": {
+    "isa_bytes": 884556,
+    "variants": 80
+  },
+  "ar_rmsnorm_quant_i8_sp_kernel": {
+    "isa_bytes": 100216,
+    "variants": 6
+  },
+  "ar_rmsnorm_quant_i8_tail_kernel": {
+    "isa_bytes": 407328,
+    "variants": 30
+  },
+  "ar_rmsnorm_quant_i8_wide_kernel": {
+    "isa_bytes": 312944,
+    "variants": 30
+  },
+  "argmax_kernel": {
+    "isa_bytes": 4008,
+    "variants": 2
+  },
+  "attend": {
+    "isa_bytes": 15024,
+    "variants": 2
+  },
+  "attend_matrix": {
+    "isa_bytes": 1760724,
+    "variants": 24
+  },
+  "attend_rows": {
+    "isa_bytes": 338968,
+    "variants": 8
+  },
+  "attention": {
+    "isa_bytes": 25312,
+    "variants": 2
+  },
+  "attn_kernel": {
+    "isa_bytes": 1717812,
+    "variants": 42
+  },
+  "attn_na3d_bf16_kernel": {
+    "isa_bytes": 10588,
+    "variants": 1
+  },
+  "attn_na3d_kernel": {
+    "isa_bytes": 40008,
+    "variants": 1
+  },
+  "attn_small_h256_kernel": {
+    "isa_bytes": 2608,
+    "variants": 1
+  },
+  "attn_wmma_kernel": {
+    "isa_bytes": 704220,
+    "variants": 26
+  },
+  "binary_f32_kernel": {
+    "isa_bytes": 1300,
+    "variants": 1
+  },
+  "binary_kernel": {
+    "isa_bytes": 1480,
+    "variants": 1
+  },
+  "bool)": {
+    "isa_bytes": 35480,
+    "variants": 2
+  },
+  "cfg_topk_kernel": {
+    "isa_bytes": 12144,
+    "variants": 1
+  },
+  "chan_affine_kernel": {
+    "isa_bytes": 3024,
+    "variants": 2
+  },
+  "chan_split_kernel": {
+    "isa_bytes": 2224,
+    "variants": 1
+  },
+  "chan_stats_any_kernel": {
+    "isa_bytes": 3700,
+    "variants": 4
+  },
+  "chan_stats_kernel": {
+    "isa_bytes": 4056,
+    "variants": 1
+  },
+  "clamp_kernel": {
+    "isa_bytes": 496,
+    "variants": 1
+  },
+  "cond_aug_kernel": {
+    "isa_bytes": 3628,
+    "variants": 1
+  },
+  "const*)": {
+    "isa_bytes": 3164,
+    "variants": 1
+  },
+  "conv1d_direct_kernel": {
+    "isa_bytes": 2616,
+    "variants": 1
+  },
+  "conv1d_dw_kernel": {
+    "isa_bytes": 1104,
+    "variants": 1
+  },
+  "conv1d_f32_direct_kernel": {
+    "isa_bytes": 2592,
+    "variants": 1
+  },
+  "conv1d_f32_kernel": {
+    "isa_bytes": 98368,
+    "variants": 3
+  },
+  "conv1d_igemm_kernel": {
+    "isa_bytes": 89148,
+    "variants": 2
+  },
+  "conv3d_kernel": {
+    "isa_bytes": 1150768,
+    "variants": 16
+  },
+  "conv_direct_kernel": {
+    "isa_bytes": 2940,
+    "variants": 1
+  },
+  "conv_igemm_kernel": {
+    "isa_bytes": 394056,
+    "variants": 12
+  },
+  "conv_t1d_f32_kernel": {
+    "isa_bytes": 42784,
+    "variants": 3
+  },
+  "conv_t1d_kernel": {
+    "isa_bytes": 47808,
+    "variants": 2
+  },
+  "cu_repeat_kernel": {
+    "isa_bytes": 124,
+    "variants": 1
+  },
+  "d2s3d_kernel": {
+    "isa_bytes": 7200,
+    "variants": 1
+  },
+  "d2s_add_kernel": {
+    "isa_bytes": 2344,
+    "variants": 1
+  },
+  "dry_kernel": {
+    "isa_bytes": 1792,
+    "variants": 1
+  },
+  "dsa_pool_kernel": {
+    "isa_bytes": 6796,
+    "variants": 1
+  },
+  "dsa_query_kernel": {
+    "isa_bytes": 3668,
+    "variants": 1
+  },
+  "dsa_rebase_kernel": {
+    "isa_bytes": 316,
+    "variants": 1
+  },
+  "dsa_score_kernel": {
+    "isa_bytes": 94276,
+    "variants": 2
+  },
+  "elu_f32_kernel": {
+    "isa_bytes": 604,
+    "variants": 1
+  },
+  "embed_lookup_kernel": {
+    "isa_bytes": 1952,
+    "variants": 1
+  },
+  "embed_lookup_q_kernel": {
+    "isa_bytes": 5548,
+    "variants": 4
+  },
+  "encoder_attn": {
+    "isa_bytes": 3488,
+    "variants": 1
+  },
+  "encoder_gelu": {
+    "isa_bytes": 772,
+    "variants": 1
+  },
+  "encoder_layernorm": {
+    "isa_bytes": 1992,
+    "variants": 1
+  },
+  "encoder_rope": {
+    "isa_bytes": 2588,
+    "variants": 1
+  },
+  "end_status_kernel": {
+    "isa_bytes": 216,
+    "variants": 1
+  },
+  "fill_kernel": {
+    "isa_bytes": 596,
+    "variants": 2
+  },
+  "flow_euler_kernel": {
+    "isa_bytes": 4884,
+    "variants": 1
+  },
+  "flow_renoise_kernel": {
+    "isa_bytes": 3636,
+    "variants": 1
+  },
+  "flow_rm_kernel": {
+    "isa_bytes": 2984,
+    "variants": 2
+  },
+  "flow_x0_kernel": {
+    "isa_bytes": 2836,
+    "variants": 2
+  },
+  "fourier_kernel": {
+    "isa_bytes": 2340,
+    "variants": 1
+  },
+  "frame_mix_kernel": {
+    "isa_bytes": 2648,
+    "variants": 1
+  },
+  "frame_store_kernel": {
+    "isa_bytes": 888,
+    "variants": 1
+  },
+  "gate_add_kernel": {
+    "isa_bytes": 3636,
+    "variants": 1
+  },
+  "gate_quant_fp8_kernel": {
+    "isa_bytes": 36848,
+    "variants": 12
+  },
+  "gated_quant_fp8_kernel": {
+    "isa_bytes": 37144,
+    "variants": 10
+  },
+  "gather2_kernel": {
+    "isa_bytes": 464,
+    "variants": 1
+  },
+  "gather_inv_kernel": {
+    "isa_bytes": 124,
+    "variants": 1
+  },
+  "gather_kernel": {
+    "isa_bytes": 4396,
+    "variants": 2
+  },
+  "gather_rows_kernel": {
+    "isa_bytes": 1248,
+    "variants": 1
+  },
+  "gather_rows_u8_kernel": {
+    "isa_bytes": 416,
+    "variants": 1
+  },
+  "gather_scatter_kernel": {
+    "isa_bytes": 208,
+    "variants": 1
+  },
+  "gather_wide_kernel": {
+    "isa_bytes": 6000,
+    "variants": 1
+  },
+  "gelu_kernel": {
+    "isa_bytes": 616,
+    "variants": 1
+  },
+  "gelu_mul_kernel": {
+    "isa_bytes": 596,
+    "variants": 1
+  },
+  "gelu_mul_quant_i8_kernel": {
+    "isa_bytes": 11828,
+    "variants": 6
+  },
+  "gelu_quick_kernel": {
+    "isa_bytes": 2008,
+    "variants": 2
+  },
+  "gelu_tanh_kernel": {
+    "isa_bytes": 2996,
+    "variants": 1
+  },
+  "gemm_8a8_prefill_kernel": {
+    "isa_bytes": 284308,
+    "variants": 5
+  },
+  "gemm_f32_bias_kernel": {
+    "isa_bytes": 371300,
+    "variants": 8
+  },
+  "gemm_fp8a8_kernel": {
+    "isa_bytes": 7498816,
+    "variants": 136
+  },
+  "gemm_i8_kpar_kernel": {
+    "isa_bytes": 910056,
+    "variants": 48
+  },
+  "gemm_nt_f32_tile_kernel": {
+    "isa_bytes": 17696,
+    "variants": 4
+  },
+  "gn_apply_kernel": {
+    "isa_bytes": 37344,
+    "variants": 12
+  },
+  "gn_final_kernel": {
+    "isa_bytes": 3156,
+    "variants": 1
+  },
+  "gn_part_kernel": {
+    "isa_bytes": 8696,
+    "variants": 6
+  },
+  "gram_accum_bf16_wmma": {
+    "isa_bytes": 26292,
+    "variants": 1
+  },
+  "gram_accum_kernel": {
+    "isa_bytes": 6328,
+    "variants": 2
+  },
+  "grid_embed_aa_kernel": {
+    "isa_bytes": 6216,
+    "variants": 2
+  },
+  "grid_embed_cpe_kernel": {
+    "isa_bytes": 4584,
+    "variants": 2
+  },
+  "grid_embed_kernel": {
+    "isa_bytes": 3192,
+    "variants": 2
+  },
+  "grid_embed_pad_kernel": {
+    "isa_bytes": 3460,
+    "variants": 2
+  },
+  "grid_pos3_kernel": {
+    "isa_bytes": 1184,
+    "variants": 1
+  },
+  "hc_down_pf2_kernel": {
+    "isa_bytes": 76140,
+    "variants": 1
+  },
+  "hc_down_reduce_kernel": {
+    "isa_bytes": 2008,
+    "variants": 1
+  },
+  "hc_down_tiled_kernel": {
+    "isa_bytes": 376756,
+    "variants": 10
+  },
+  "hc_down_wide_kernel": {
+    "isa_bytes": 127740,
+    "variants": 2
+  },
+  "hc_enter_kernel": {
+    "isa_bytes": 1752,
+    "variants": 2
+  },
+  "hc_mix_kernel": {
+    "isa_bytes": 9968,
+    "variants": 2
+  },
+  "hc_norm_down_tiled_kernel": {
+    "isa_bytes": 658404,
+    "variants": 16
+  },
+  "hc_norm_scale_kernel": {
+    "isa_bytes": 2392,
+    "variants": 1
+  },
+  "hc_pf2_prep_kernel": {
+    "isa_bytes": 11596,
+    "variants": 1
+  },
+  "hc_project_kernel": {
+    "isa_bytes": 908,
+    "variants": 1
+  },
+  "hc_quant_rows_kernel": {
+    "isa_bytes": 10064,
+    "variants": 2
+  },
+  "hc_rcp_check_kernel": {
+    "isa_bytes": 636,
+    "variants": 1
+  },
+  "hc_read_a_2grid_kernel": {
+    "isa_bytes": 42564,
+    "variants": 2
+  },
+  "hc_read_a_kernel": {
+    "isa_bytes": 154736,
+    "variants": 3
+  },
+  "hc_read_fused_kernel": {
+    "isa_bytes": 8522288,
+    "variants": 64
+  },
+  "hc_read_g_down_kernel": {
+    "isa_bytes": 1211784,
+    "variants": 16
+  },
+  "hc_read_s_down_kernel": {
+    "isa_bytes": 130440,
+    "variants": 2
+  },
+  "hc_up_kernel": {
+    "isa_bytes": 334092,
+    "variants": 16
+  },
+  "hc_up_mix_2grid_kernel": {
+    "isa_bytes": 844900,
+    "variants": 32
+  },
+  "hc_up_mix_kernel": {
+    "isa_bytes": 2166892,
+    "variants": 48
+  },
+  "hc_up_mix_pf3_kernel": {
+    "isa_bytes": 29968,
+    "variants": 1
+  },
+  "hc_up_mix_tiled_2grid_kernel": {
+    "isa_bytes": 116640,
+    "variants": 8
+  },
+  "hc_up_mix_tiled_kernel": {
+    "isa_bytes": 1095796,
+    "variants": 32
+  },
+  "hc_up_mix_wide_kernel": {
+    "isa_bytes": 136604,
+    "variants": 4
+  },
+  "hc_up_tiled_kernel": {
+    "isa_bytes": 91096,
+    "variants": 8
+  },
+  "hc_up_w_kernel": {
+    "isa_bytes": 4153032,
+    "variants": 64
+  },
+  "hc_write_kernel": {
+    "isa_bytes": 1000,
+    "variants": 1
+  },
+  "head_gate_kernel": {
+    "isa_bytes": 1924,
+    "variants": 1
+  },
+  "im2col_nhwc_kernel": {
+    "isa_bytes": 40656,
+    "variants": 12
+  },
+  "int)": {
+    "isa_bytes": 28576,
+    "variants": 7
+  },
+  "interleave2_kernel": {
+    "isa_bytes": 372,
+    "variants": 2
+  },
+  "iota_kernel": {
+    "isa_bytes": 272,
+    "variants": 1
+  },
+  "iqr_embed_kernel": {
+    "isa_bytes": 18000,
+    "variants": 17
+  },
+  "iqr_gemv_kernel": {
+    "isa_bytes": 21065492,
+    "variants": 2176
+  },
+  "iqr_m16_kernel": {
+    "isa_bytes": 6093920,
+    "variants": 404
+  },
+  "iqr_m64_kernel": {
+    "isa_bytes": 21426820,
+    "variants": 544
+  },
+  "iqr_prefill_kernel": {
+    "isa_bytes": 766464,
+    "variants": 44
+  },
+  "iqr_splitk_reduce": {
+    "isa_bytes": 1024,
+    "variants": 4
+  },
+  "join_add_scale_kernel": {
+    "isa_bytes": 49124,
+    "variants": 4
+  },
+  "kd_input_kernel": {
+    "isa_bytes": 4572,
+    "variants": 1
+  },
+  "kd_step_kernel": {
+    "isa_bytes": 6836,
+    "variants": 1
+  },
+  "kda_rows_kernel": {
+    "isa_bytes": 8216,
+    "variants": 1
+  },
+  "kv_len_trim_kernel": {
+    "isa_bytes": 76,
+    "variants": 1
+  },
+  "kv_resolve_kernel": {
+    "isa_bytes": 10688,
+    "variants": 1
+  },
+  "kv_store_b16_kernel": {
+    "isa_bytes": 4472,
+    "variants": 2
+  },
+  "kv_store_fp8_kernel": {
+    "isa_bytes": 5180,
+    "variants": 1
+  },
+  "kv_store_fp8v4_kernel": {
+    "isa_bytes": 6924,
+    "variants": 2
+  },
+  "kv_store_i8_kernel": {
+    "isa_bytes": 1804,
+    "variants": 1
+  },
+  "kv_store_kernel": {
+    "isa_bytes": 768,
+    "variants": 1
+  },
+  "kv_store_streamed_i8_kernel": {
+    "isa_bytes": 2040,
+    "variants": 1
+  },
+  "kv_store_streamed_kernel": {
+    "isa_bytes": 7136,
+    "variants": 2
+  },
+  "l2norm_kernel": {
+    "isa_bytes": 4692,
+    "variants": 1
+  },
+  "lane_gather_kernel": {
+    "isa_bytes": 1628,
+    "variants": 1
+  },
+  "lane_store_kernel": {
+    "isa_bytes": 1248,
+    "variants": 1
+  },
+  "layernorm_kernel": {
+    "isa_bytes": 5028,
+    "variants": 4
+  },
+  "lm_wmma_kernel": {
+    "isa_bytes": 997668,
+    "variants": 70
+  },
+  "ln_mod_kernel": {
+    "isa_bytes": 2808,
+    "variants": 1
+  },
+  "ln_mod_quant_kernel": {
+    "isa_bytes": 137012,
+    "variants": 6
+  },
+  "logit_softcap_kernel": {
+    "isa_bytes": 612,
+    "variants": 1
+  },
+  "logit_softcap_kernel_f32": {
+    "isa_bytes": 576,
+    "variants": 1
+  },
+  "logits_gemm_cols_kernel": {
+    "isa_bytes": 11132,
+    "variants": 1
+  },
+  "logits_gemm_kernel": {
+    "isa_bytes": 1156,
+    "variants": 1
+  },
+  "logprobs_kernel": {
+    "isa_bytes": 13212,
+    "variants": 1
+  },
+  "long)": {
+    "isa_bytes": 16272,
+    "variants": 3
+  },
+  "lora_expand_kernel": {
+    "isa_bytes": 5244,
+    "variants": 3
+  },
+  "lora_expand_mm_kernel": {
+    "isa_bytes": 185448,
+    "variants": 6
+  },
+  "lora_expand_tiled_kernel": {
+    "isa_bytes": 60012,
+    "variants": 6
+  },
+  "lora_shrink_kernel": {
+    "isa_bytes": 7392,
+    "variants": 6
+  },
+  "lora_shrink_wmma_kernel": {
+    "isa_bytes": 596088,
+    "variants": 16
+  },
+  "markov_reduce_tiles": {
+    "isa_bytes": 1844,
+    "variants": 1
+  },
+  "markov_score_tiles": {
+    "isa_bytes": 19388,
+    "variants": 2
+  },
+  "mask_kernel": {
+    "isa_bytes": 372,
+    "variants": 1
+  },
+  "merge": {
+    "isa_bytes": 2080,
+    "variants": 1
+  },
+  "merge_kernel": {
+    "isa_bytes": 60400,
+    "variants": 13
+  },
+  "merge_topk_kernel": {
+    "isa_bytes": 1688,
+    "variants": 1
+  },
+  "mhc_contract_kernel": {
+    "isa_bytes": 440,
+    "variants": 1
+  },
+  "mhc_partial_kernel": {
+    "isa_bytes": 1700,
+    "variants": 2
+  },
+  "mhc_partial_rows4_coeff4_kernel": {
+    "isa_bytes": 8752,
+    "variants": 2
+  },
+  "mhc_partial_vec_kernel": {
+    "isa_bytes": 26712,
+    "variants": 4
+  },
+  "mhc_post_kernel": {
+    "isa_bytes": 860,
+    "variants": 1
+  },
+  "mhc_post_vec_kernel": {
+    "isa_bytes": 3332,
+    "variants": 1
+  },
+  "mhc_pre_glm_wide_kernel": {
+    "isa_bytes": 7704,
+    "variants": 2
+  },
+  "mhc_pre_kernel": {
+    "isa_bytes": 8192,
+    "variants": 1
+  },
+  "mix_rows_kernel": {
+    "isa_bytes": 848,
+    "variants": 1
+  },
+  "moe_blockmap_kernel": {
+    "isa_bytes": 5928,
+    "variants": 2
+  },
+  "moe_down_dec_kernel": {
+    "isa_bytes": 716936,
+    "variants": 20
+  },
+  "moe_gemm_bf16_kernel": {
+    "isa_bytes": 94376,
+    "variants": 10
+  },
+  "moe_gemm_q_kernel": {
+    "isa_bytes": 5888560,
+    "variants": 124
+  },
+  "moe_iqr_kernel": {
+    "isa_bytes": 1350124,
+    "variants": 49
+  },
+  "moe_iqr_packmap_kernel": {
+    "isa_bytes": 5800,
+    "variants": 1
+  },
+  "moe_w4_rows_kernel": {
+    "isa_bytes": 42344,
+    "variants": 2
+  },
+  "mtp_enter_kernel": {
+    "isa_bytes": 32876,
+    "variants": 1
+  },
+  "mtp_enter_tiled_kernel": {
+    "isa_bytes": 603416,
+    "variants": 16
+  },
+  "mtp_prefill_gemm_kernel": {
+    "isa_bytes": 274784,
+    "variants": 4
+  },
+  "mtp_prefill_scale_kernel": {
+    "isa_bytes": 2348,
+    "variants": 1
+  },
+  "mul_weight_f32_kernel": {
+    "isa_bytes": 4600,
+    "variants": 4
+  },
+  "mul_wf32_kernel": {
+    "isa_bytes": 312,
+    "variants": 1
+  },
+  "mv_kernel": {
+    "isa_bytes": 2644,
+    "variants": 1
+  },
+  "mv_rb_kernel": {
+    "isa_bytes": 28884,
+    "variants": 3
+  },
+  "mvm_kernel": {
+    "isa_bytes": 224960,
+    "variants": 38
+  },
+  "narrow_bf16_kernel": {
+    "isa_bytes": 316,
+    "variants": 1
+  },
+  "narrow_f16_kernel": {
+    "isa_bytes": 240,
+    "variants": 1
+  },
+  "narrow_kernel": {
+    "isa_bytes": 5856,
+    "variants": 1
+  },
+  "ngram_ban_kernel": {
+    "isa_bytes": 1400,
+    "variants": 1
+  },
+  "ngram_hint_kernel": {
+    "isa_bytes": 6500,
+    "variants": 2
+  },
+  "ngram_ids_kernel": {
+    "isa_bytes": 6828,
+    "variants": 2
+  },
+  "norm_add_norm_kernel": {
+    "isa_bytes": 89132,
+    "variants": 6
+  },
+  "patch_fold_kernel": {
+    "isa_bytes": 10104,
+    "variants": 2
+  },
+  "patch_projection": {
+    "isa_bytes": 1520,
+    "variants": 2
+  },
+  "penalties_kernel": {
+    "isa_bytes": 928,
+    "variants": 1
+  },
+  "pick_kernel": {
+    "isa_bytes": 2068,
+    "variants": 1
+  },
+  "pix_patch_kernel": {
+    "isa_bytes": 2848,
+    "variants": 1
+  },
+  "pixel_norm_kernel": {
+    "isa_bytes": 3108,
+    "variants": 1
+  },
+  "ple_conv_kernel": {
+    "isa_bytes": 40408,
+    "variants": 4
+  },
+  "ple_gate_kernel": {
+    "isa_bytes": 10084,
+    "variants": 2
+  },
+  "point_fourier_kernel": {
+    "isa_bytes": 2704,
+    "variants": 1
+  },
+  "pool_cols_kernel": {
+    "isa_bytes": 600,
+    "variants": 1
+  },
+  "pool_rows_kernel": {
+    "isa_bytes": 552,
+    "variants": 1
+  },
+  "pooled_mean": {
+    "isa_bytes": 708,
+    "variants": 1
+  },
+  "prefetch_kernel": {
+    "isa_bytes": 292,
+    "variants": 1
+  },
+  "project_absorb_rows": {
+    "isa_bytes": 9920,
+    "variants": 8
+  },
+  "project_expand_rows": {
+    "isa_bytes": 9496,
+    "variants": 8
+  },
+  "qk_norm_rope_kernel": {
+    "isa_bytes": 52560,
+    "variants": 3
+  },
+  "qkv_norm_rope_kernel": {
+    "isa_bytes": 197272,
+    "variants": 36
+  },
+  "qsa_block_key_kernel": {
+    "isa_bytes": 9984,
+    "variants": 2
+  },
+  "qsa_local_kernel": {
+    "isa_bytes": 77184,
+    "variants": 8
+  },
+  "qsa_merge_kernel": {
+    "isa_bytes": 41120,
+    "variants": 4
+  },
+  "qsa_score_kernel": {
+    "isa_bytes": 776072,
+    "variants": 64
+  },
+  "qsa_score_mx_kernel": {
+    "isa_bytes": 117224,
+    "variants": 8
+  },
+  "qsa_select_kernel": {
+    "isa_bytes": 18928,
+    "variants": 4
+  },
+  "qsa_select_wide_kernel": {
+    "isa_bytes": 43332,
+    "variants": 2
+  },
+  "qsa_tail_store_kernel": {
+    "isa_bytes": 3272,
+    "variants": 2
+  },
+  "qsa_work_kernel": {
+    "isa_bytes": 6188,
+    "variants": 2
+  },
+  "quant_act_fp8_kernel": {
+    "isa_bytes": 12188,
+    "variants": 6
+  },
+  "quant_cols_amax_kernel": {
+    "isa_bytes": 1604,
+    "variants": 1
+  },
+  "quant_cols_code_kernel": {
+    "isa_bytes": 42332,
+    "variants": 1
+  },
+  "r3_gemm_mxfp4a8_bt2_gfx11_kernel": {
+    "isa_bytes": 135000,
+    "variants": 12
+  },
+  "r3_gemm_mxfp4a8_bt_gfx11_kernel": {
+    "isa_bytes": 108592,
+    "variants": 12
+  },
+  "r3_gemm_mxfp4a8_dec11_kernel": {
+    "isa_bytes": 157352,
+    "variants": 12
+  },
+  "r3_gemm_mxfp4a8_gemv1_kernel": {
+    "isa_bytes": 12920,
+    "variants": 4
+  },
+  "r3_mxfp4_bt_prepare_kernel": {
+    "isa_bytes": 1276,
+    "variants": 1
+  },
+  "r4d_ar_gather_2rank_kernel": {
+    "isa_bytes": 9552,
+    "variants": 1
+  },
+  "r4d_ar_gather_hc_write_kernel": {
+    "isa_bytes": 30360,
+    "variants": 3
+  },
+  "r4d_ar_gather_hc_write_reg_kernel": {
+    "isa_bytes": 25312,
+    "variants": 2
+  },
+  "r4d_ar_gather_hc_write_wide_kernel": {
+    "isa_bytes": 16844,
+    "variants": 2
+  },
+  "r4d_ar_gather_inv_kernel": {
+    "isa_bytes": 408,
+    "variants": 1
+  },
+  "r4d_ar_gather_wide_kernel": {
+    "isa_bytes": 23232,
+    "variants": 3
+  },
+  "r4d_ar_hc_write_coded_kernel": {
+    "isa_bytes": 64836,
+    "variants": 5
+  },
+  "r4d_ar_hc_write_coded_staged_kernel": {
+    "isa_bytes": 124892,
+    "variants": 5
+  },
+  "r4d_ar_hc_write_kernel": {
+    "isa_bytes": 17120,
+    "variants": 2
+  },
+  "r4d_ar_hc_write_reg_kernel": {
+    "isa_bytes": 17804,
+    "variants": 2
+  },
+  "r4d_ar_hc_write_wht6_kernel": {
+    "isa_bytes": 38964,
+    "variants": 2
+  },
+  "r4d_ar_hc_write_wide_kernel": {
+    "isa_bytes": 5732,
+    "variants": 1
+  },
+  "r4d_ar_ln_had_quant_i8_kernel": {
+    "isa_bytes": 723704,
+    "variants": 48
+  },
+  "r4d_ar_oneshot_2rank_exact_kernel": {
+    "isa_bytes": 49512,
+    "variants": 6
+  },
+  "r4d_ar_oneshot_2rank_wht6_kernel": {
+    "isa_bytes": 57532,
+    "variants": 2
+  },
+  "r4d_ar_oneshot_wide_exact_kernel": {
+    "isa_bytes": 51844,
+    "variants": 9
+  },
+  "r4d_ar_twoshot_coded_kernel": {
+    "isa_bytes": 24244,
+    "variants": 1
+  },
+  "r4d_ar_twoshot_wide_exact_kernel": {
+    "isa_bytes": 455928,
+    "variants": 30
+  },
+  "r4d_ar_twoshot_wide_ti8_kernel": {
+    "isa_bytes": 61460,
+    "variants": 4
+  },
+  "r4d_attn_decode_kernel": {
+    "isa_bytes": 5872668,
+    "variants": 194
+  },
+  "r4d_attn_decode_usel_fb_kernel": {
+    "isa_bytes": 40204,
+    "variants": 1
+  },
+  "r4d_attn_dense_kernel": {
+    "isa_bytes": 301660,
+    "variants": 10
+  },
+  "r4d_attn_prefill_kernel": {
+    "isa_bytes": 3676928,
+    "variants": 91
+  },
+  "r4d_attn_ps_kernel": {
+    "isa_bytes": 321968,
+    "variants": 11
+  },
+  "r4d_attn_splitkv_combine_gq_kernel": {
+    "isa_bytes": 364472,
+    "variants": 54
+  },
+  "r4d_attn_splitkv_combine_kernel": {
+    "isa_bytes": 129484,
+    "variants": 28
+  },
+  "r4d_attn_splitkv_combine_vec_gq_kernel": {
+    "isa_bytes": 638884,
+    "variants": 54
+  },
+  "r4d_attn_splitkv_combine_vec_kernel": {
+    "isa_bytes": 150464,
+    "variants": 28
+  },
+  "r4d_attn_usel_kernel": {
+    "isa_bytes": 120288,
+    "variants": 4
+  },
+  "r4d_attn_vit_kernel": {
+    "isa_bytes": 29816,
+    "variants": 2
+  },
+  "r4d_attn_wide_kernel": {
+    "isa_bytes": 150852,
+    "variants": 4
+  },
+  "r4d_dequant_w4_bf16_kernel": {
+    "isa_bytes": 2908,
+    "variants": 1
+  },
+  "r4d_dflash_conv_kernel": {
+    "isa_bytes": 956,
+    "variants": 1
+  },
+  "r4d_dflash_select_kernel": {
+    "isa_bytes": 4988,
+    "variants": 1
+  },
+  "r4d_dflash_tree_kernel": {
+    "isa_bytes": 15656,
+    "variants": 1
+  },
+  "r4d_gated_had_quant_i8_kernel": {
+    "isa_bytes": 63248,
+    "variants": 18
+  },
+  "r4d_gdn_chunk_scan_kernel": {
+    "isa_bytes": 470680,
+    "variants": 8
+  },
+  "r4d_gdn_conv_prep_kernel": {
+    "isa_bytes": 138416,
+    "variants": 16
+  },
+  "r4d_gdn_conv_update_kernel": {
+    "isa_bytes": 84416,
+    "variants": 8
+  },
+  "r4d_gdn_gated_norm_had_quant_i8_kernel": {
+    "isa_bytes": 36680,
+    "variants": 9
+  },
+  "r4d_gdn_gated_rmsnorm_kernel": {
+    "isa_bytes": 4196,
+    "variants": 2
+  },
+  "r4d_gdn_kkt_solve_kernel": {
+    "isa_bytes": 179088,
+    "variants": 6
+  },
+  "r4d_gdn_recurrent_update_kernel": {
+    "isa_bytes": 3180064,
+    "variants": 216
+  },
+  "r4d_gemm_bf16_nt_m64_kernel": {
+    "isa_bytes": 59100,
+    "variants": 4
+  },
+  "r4d_gemm_bf16_nt_tiled_kernel": {
+    "isa_bytes": 67784,
+    "variants": 4
+  },
+  "r4d_gemm_mxfp4a8_decode1_kernel": {
+    "isa_bytes": 280368,
+    "variants": 40
+  },
+  "r4d_gemm_mxfp4a8_decode_kernel": {
+    "isa_bytes": 25660136,
+    "variants": 280
+  },
+  "r4d_gemm_mxfp4a8_gemv_kernel": {
+    "isa_bytes": 4780576,
+    "variants": 18
+  },
+  "r4d_gemm_mxfp4a8_gemvw_kernel": {
+    "isa_bytes": 673688,
+    "variants": 16
+  },
+  "r4d_gemm_mxfp4a8_nt_m64_kernel": {
+    "isa_bytes": 1262840,
+    "variants": 32
+  },
+  "r4d_gemm_mxfp4a8_tiled_kernel": {
+    "isa_bytes": 88404,
+    "variants": 6
+  },
+  "r4d_gemm_mxfp4a8_tiled_part_kernel": {
+    "isa_bytes": 179356,
+    "variants": 6
+  },
+  "r4d_gemm_w2a8_nt_kernel": {
+    "isa_bytes": 1277184,
+    "variants": 48
+  },
+  "r4d_gemm_w4a16_nt_m64_kernel": {
+    "isa_bytes": 501472,
+    "variants": 16
+  },
+  "r4d_gemm_w4a8_nt_m64_kernel": {
+    "isa_bytes": 2704416,
+    "variants": 64
+  },
+  "r4d_gemm_w4a8_prefill_kernel": {
+    "isa_bytes": 764640,
+    "variants": 14
+  },
+  "r4d_gemm_w4a8_tiled_kernel": {
+    "isa_bytes": 659880,
+    "variants": 16
+  },
+  "r4d_gemm_w5a16_nt_m64_kernel": {
+    "isa_bytes": 1487440,
+    "variants": 40
+  },
+  "r4d_gemm_w8a16_nt_m64_kernel": {
+    "isa_bytes": 685632,
+    "variants": 24
+  },
+  "r4d_gemm_w8a8_nt_m64_kernel": {
+    "isa_bytes": 573512,
+    "variants": 22
+  },
+  "r4d_gemm_w8a8_tiled_kernel": {
+    "isa_bytes": 619856,
+    "variants": 15
+  },
+  "r4d_gemm_wpa8i8_tiled_kernel": {
+    "isa_bytes": 434112,
+    "variants": 18
+  },
+  "r4d_had_quant_act_i8_kernel": {
+    "isa_bytes": 19784,
+    "variants": 9
+  },
+  "r4d_logit_rerank_kernel": {
+    "isa_bytes": 75524,
+    "variants": 14
+  },
+  "r4d_mxfp4a8_tile_a_kernel": {
+    "isa_bytes": 2104,
+    "variants": 1
+  },
+  "r4d_p2p_copy2d_k": {
+    "isa_bytes": 376,
+    "variants": 1
+  },
+  "r4d_p2p_fence_kernel": {
+    "isa_bytes": 20,
+    "variants": 1
+  },
+  "r4d_qk_norm_rope_gate_kernel": {
+    "isa_bytes": 212328,
+    "variants": 66
+  },
+  "r4d_qk_rope_table_kernel": {
+    "isa_bytes": 7420,
+    "variants": 2
+  },
+  "r4d_quant_act_i8_asum_kernel": {
+    "isa_bytes": 14976,
+    "variants": 8
+  },
+  "r4d_quant_act_i8_kernel": {
+    "isa_bytes": 5788,
+    "variants": 4
+  },
+  "r4d_rmsnorm_had_quant_i8_kernel": {
+    "isa_bytes": 79760,
+    "variants": 18
+  },
+  "r4d_rowtopk_merge_kernel": {
+    "isa_bytes": 3740,
+    "variants": 1
+  },
+  "r4d_rowtopk_stage1_kernel": {
+    "isa_bytes": 65380,
+    "variants": 4
+  },
+  "r4d_rowtopk_stage2_kernel": {
+    "isa_bytes": 17592,
+    "variants": 3
+  },
+  "r4d_usel_build_kernel": {
+    "isa_bytes": 17088,
+    "variants": 2
+  },
+  "r4dchain_add_rmsnorm": {
+    "isa_bytes": 14932,
+    "variants": 6
+  },
+  "r4dchain_ar_gather_wide": {
+    "isa_bytes": 25396,
+    "variants": 3
+  },
+  "r4dchain_ar_rmsnorm_quant_i8_sp": {
+    "isa_bytes": 104904,
+    "variants": 6
+  },
+  "r4dchain_ar_rmsnorm_quant_i8_tail": {
+    "isa_bytes": 432016,
+    "variants": 30
+  },
+  "r4dchain_ar_twoshot_coded": {
+    "isa_bytes": 24976,
+    "variants": 1
+  },
+  "r4dchain_ar_twoshot_wide_exact": {
+    "isa_bytes": 481840,
+    "variants": 30
+  },
+  "r4dchain_attn_decode": {
+    "isa_bytes": 6046340,
+    "variants": 194
+  },
+  "r4dchain_attn_splitkv_combine": {
+    "isa_bytes": 116368,
+    "variants": 22
+  },
+  "r4dchain_attn_splitkv_combine_vec": {
+    "isa_bytes": 132492,
+    "variants": 22
+  },
+  "r4dchain_attn_window": {
+    "isa_bytes": 1749408,
+    "variants": 42
+  },
+  "r4dchain_binary": {
+    "isa_bytes": 2200,
+    "variants": 1
+  },
+  "r4dchain_dflash_conv": {
+    "isa_bytes": 1700,
+    "variants": 1
+  },
+  "r4dchain_dflash_select": {
+    "isa_bytes": 5712,
+    "variants": 1
+  },
+  "r4dchain_dflash_tree": {
+    "isa_bytes": 16436,
+    "variants": 1
+  },
+  "r4dchain_embed_lookup": {
+    "isa_bytes": 2612,
+    "variants": 1
+  },
+  "r4dchain_gate_quant": {
+    "isa_bytes": 23280,
+    "variants": 6
+  },
+  "r4dchain_gated_quant": {
+    "isa_bytes": 28304,
+    "variants": 6
+  },
+  "r4dchain_gather_rows": {
+    "isa_bytes": 2020,
+    "variants": 1
+  },
+  "r4dchain_gelu_mul": {
+    "isa_bytes": 1312,
+    "variants": 1
+  },
+  "r4dchain_gelu_mul_quant_i8": {
+    "isa_bytes": 16080,
+    "variants": 6
+  },
+  "r4dchain_gemm_bf16_nt_m64": {
+    "isa_bytes": 61800,
+    "variants": 4
+  },
+  "r4dchain_gemm_fp8a8": {
+    "isa_bytes": 7604012,
+    "variants": 136
+  },
+  "r4dchain_gemm_w4a8_nt_m64": {
+    "isa_bytes": 2753128,
+    "variants": 64
+  },
+  "r4dchain_gemm_w8a8_nt_m64": {
+    "isa_bytes": 590120,
+    "variants": 22
+  },
+  "r4dchain_kv_store": {
+    "isa_bytes": 1464,
+    "variants": 1
+  },
+  "r4dchain_kv_store_i8": {
+    "isa_bytes": 2532,
+    "variants": 1
+  },
+  "r4dchain_lm_wmma": {
+    "isa_bytes": 1050268,
+    "variants": 70
+  },
+  "r4dchain_logit_softcap": {
+    "isa_bytes": 1320,
+    "variants": 1
+  },
+  "r4dchain_logit_softcap_f32": {
+    "isa_bytes": 1288,
+    "variants": 1
+  },
+  "r4dchain_merge_window": {
+    "isa_bytes": 69612,
+    "variants": 13
+  },
+  "r4dchain_moe_gather": {
+    "isa_bytes": 5820,
+    "variants": 2
+  },
+  "r4dchain_prefetch": {
+    "isa_bytes": 932,
+    "variants": 1
+  },
+  "r4dchain_qkv_norm_rope": {
+    "isa_bytes": 223624,
+    "variants": 36
+  },
+  "r4dchain_quant_act_fp8": {
+    "isa_bytes": 16460,
+    "variants": 6
+  },
+  "r4dchain_quant_act_i8": {
+    "isa_bytes": 8700,
+    "variants": 4
+  },
+  "r4dchain_rmsnorm": {
+    "isa_bytes": 12744,
+    "variants": 6
+  },
+  "r4dchain_rmsnorm_quant": {
+    "isa_bytes": 102564,
+    "variants": 24
+  },
+  "r4dchain_rope": {
+    "isa_bytes": 6724,
+    "variants": 1
+  },
+  "r4dchain_rowtopk_merge": {
+    "isa_bytes": 4432,
+    "variants": 1
+  },
+  "r4dchain_rowtopk_stage1": {
+    "isa_bytes": 68140,
+    "variants": 4
+  },
+  "r4dchain_rowtopk_stage2": {
+    "isa_bytes": 19704,
+    "variants": 3
+  },
+  "r4dchain_sample_merge_topk": {
+    "isa_bytes": 2396,
+    "variants": 1
+  },
+  "r4dchain_sample_pick": {
+    "isa_bytes": 2776,
+    "variants": 1
+  },
+  "r4dchain_sample_temp": {
+    "isa_bytes": 1064,
+    "variants": 1
+  },
+  "r4dchain_sample_topk": {
+    "isa_bytes": 15480,
+    "variants": 1
+  },
+  "r4dchain_sigmoid": {
+    "isa_bytes": 1972,
+    "variants": 1
+  },
+  "r4dchain_silu_mul": {
+    "isa_bytes": 2452,
+    "variants": 1
+  },
+  "randn_lanes_kernel": {
+    "isa_bytes": 7472,
+    "variants": 2
+  },
+  "ras_pick_kernel": {
+    "isa_bytes": 868,
+    "variants": 1
+  },
+  "rel_sinusoid_kernel": {
+    "isa_bytes": 2172,
+    "variants": 1
+  },
+  "relu_kernel": {
+    "isa_bytes": 272,
+    "variants": 1
+  },
+  "resample_kernel": {
+    "isa_bytes": 864,
+    "variants": 1
+  },
+  "resize_bilinear_kernel": {
+    "isa_bytes": 7672,
+    "variants": 2
+  },
+  "rms_mod_kernel": {
+    "isa_bytes": 192916,
+    "variants": 10
+  },
+  "rmsnorm_kernel": {
+    "isa_bytes": 16588,
+    "variants": 12
+  },
+  "rmsnorm_p_kernel": {
+    "isa_bytes": 1220,
+    "variants": 1
+  },
+  "rmsnorm_quant_fp8_kernel": {
+    "isa_bytes": 140868,
+    "variants": 36
+  },
+  "rmsnorm_quant_i8_kernel": {
+    "isa_bytes": 250268,
+    "variants": 60
+  },
+  "rmsnorm_quant_i8_reg_kernel": {
+    "isa_bytes": 733256,
+    "variants": 120
+  },
+  "rmsnorm_short_kernel": {
+    "isa_bytes": 5556,
+    "variants": 2
+  },
+  "rope_kernel": {
+    "isa_bytes": 5992,
+    "variants": 1
+  },
+  "rope_rows_kernel": {
+    "isa_bytes": 6096,
+    "variants": 1
+  },
+  "rope_split_kernel": {
+    "isa_bytes": 5232,
+    "variants": 1
+  },
+  "router_gemm_topk_scatter_kernel": {
+    "isa_bytes": 176536,
+    "variants": 12
+  },
+  "router_group_wave_kernel": {
+    "isa_bytes": 25184,
+    "variants": 2
+  },
+  "router_sigmoid_scatter_kernel": {
+    "isa_bytes": 111320,
+    "variants": 12
+  },
+  "router_sigmoid_wave_kernel": {
+    "isa_bytes": 13340,
+    "variants": 2
+  },
+  "router_topk_kernel": {
+    "isa_bytes": 9248,
+    "variants": 2
+  },
+  "router_topk_scatter_kernel": {
+    "isa_bytes": 39824,
+    "variants": 6
+  },
+  "rvq_embed_kernel": {
+    "isa_bytes": 1000,
+    "variants": 1
+  },
+  "s2d3d_kernel": {
+    "isa_bytes": 6856,
+    "variants": 1
+  },
+  "s2d_avg_add_kernel": {
+    "isa_bytes": 2712,
+    "variants": 1
+  },
+  "sam_attn_kernel": {
+    "isa_bytes": 840,
+    "variants": 1
+  },
+  "sam_attn_qtile_kernel": {
+    "isa_bytes": 708,
+    "variants": 1
+  },
+  "sample_kernel": {
+    "isa_bytes": 17936,
+    "variants": 1
+  },
+  "scale": {
+    "isa_bytes": 752,
+    "variants": 1
+  },
+  "scale_kernel": {
+    "isa_bytes": 772,
+    "variants": 1
+  },
+  "scale_rows_kernel": {
+    "isa_bytes": 612,
+    "variants": 1
+  },
+  "scatter_add_kernel": {
+    "isa_bytes": 752,
+    "variants": 1
+  },
+  "scatter_place_kernel": {
+    "isa_bytes": 2436,
+    "variants": 2
+  },
+  "scatter_rows_u8_kernel": {
+    "isa_bytes": 288,
+    "variants": 1
+  },
+  "scatter_scan_kernel": {
+    "isa_bytes": 2504,
+    "variants": 1
+  },
+  "scatter_small_kernel": {
+    "isa_bytes": 4308,
+    "variants": 2
+  },
+  "seg_mean_kernel": {
+    "isa_bytes": 812,
+    "variants": 1
+  },
+  "seg_sinusoid_kernel": {
+    "isa_bytes": 2648,
+    "variants": 1
+  },
+  "seg_softmax_pool_kernel": {
+    "isa_bytes": 916,
+    "variants": 1
+  },
+  "sigmoid_kernel": {
+    "isa_bytes": 1252,
+    "variants": 1
+  },
+  "silu_f32_kernel": {
+    "isa_bytes": 2548,
+    "variants": 2
+  },
+  "silu_kernel": {
+    "isa_bytes": 464,
+    "variants": 1
+  },
+  "silu_mul_kernel": {
+    "isa_bytes": 1712,
+    "variants": 1
+  },
+  "snake_aa_kernel": {
+    "isa_bytes": 3692,
+    "variants": 1
+  },
+  "snake_kernel": {
+    "isa_bytes": 2848,
+    "variants": 1
+  },
+  "splitk_reduce_kernel": {
+    "isa_bytes": 740,
+    "variants": 1
+  },
+  "ssd_rows_kernel": {
+    "isa_bytes": 6816,
+    "variants": 1
+  },
+  "stft_logmel_kernel": {
+    "isa_bytes": 3592,
+    "variants": 1
+  },
+  "sub_i32_kernel": {
+    "isa_bytes": 144,
+    "variants": 1
+  },
+  "swiglu_clamped_kernel": {
+    "isa_bytes": 528,
+    "variants": 1
+  },
+  "swiglu_clamped_quant_kernel": {
+    "isa_bytes": 4568,
+    "variants": 1
+  },
+  "swiglu_step_kernel": {
+    "isa_bytes": 524,
+    "variants": 1
+  },
+  "table_add_kernel": {
+    "isa_bytes": 776,
+    "variants": 1
+  },
+  "tconv_dw_kernel": {
+    "isa_bytes": 10008,
+    "variants": 1
+  },
+  "temp_kernel": {
+    "isa_bytes": 352,
+    "variants": 1
+  },
+  "tile_crop_kernel": {
+    "isa_bytes": 4636,
+    "variants": 1
+  },
+  "timestep_curve_kernel": {
+    "isa_bytes": 1076,
+    "variants": 2
+  },
+  "timestep_kernel": {
+    "isa_bytes": 5500,
+    "variants": 2
+  },
+  "to_rgba8_kernel": {
+    "isa_bytes": 272,
+    "variants": 1
+  },
+  "topk_kernel": {
+    "isa_bytes": 14624,
+    "variants": 1
+  },
+  "validate": {
+    "isa_bytes": 2944,
+    "variants": 1
+  },
+  "vit_gemm_kernel": {
+    "isa_bytes": 152828,
+    "variants": 12
+  },
+  "vit_gemm_wa_kernel": {
+    "isa_bytes": 1265348,
+    "variants": 12
+  },
+  "vocab_quant_kernel": {
+    "isa_bytes": 1356,
+    "variants": 1
+  },
+  "vocab_tile_kernel": {
+    "isa_bytes": 1668444,
+    "variants": 4
+  },
+  "vol_index_kernel": {
+    "isa_bytes": 2536,
+    "variants": 1
+  },
+  "vq_encode_kernel": {
+    "isa_bytes": 5744,
+    "variants": 1
+  },
+  "vq_euclidean_kernel": {
+    "isa_bytes": 2432,
+    "variants": 1
+  },
+  "vsa_attn_kernel": {
+    "isa_bytes": 681164,
+    "variants": 4
+  },
+  "vsa_pool_kernel": {
+    "isa_bytes": 5164,
+    "variants": 1
+  },
+  "vsa_select_kernel": {
+    "isa_bytes": 17480,
+    "variants": 2
+  },
+  "vtile_crop_kernel": {
+    "isa_bytes": 6936,
+    "variants": 2
+  },
+  "vtile_gather_kernel": {
+    "isa_bytes": 22896,
+    "variants": 8
+  },
+  "vtile_join_kernel": {
+    "isa_bytes": 9100,
+    "variants": 2
+  },
+  "vtile_plan_kernel": {
+    "isa_bytes": 3228,
+    "variants": 1
+  },
+  "vtile_stitch_kernel": {
+    "isa_bytes": 32672,
+    "variants": 4
+  },
+  "widen_kernel": {
+    "isa_bytes": 300,
+    "variants": 1
+  },
+  "win_handon_kernel": {
+    "isa_bytes": 1776,
+    "variants": 1
+  },
+  "win_input_kernel": {
+    "isa_bytes": 720,
+    "variants": 1
+  },
+  "win_join_kernel": {
+    "isa_bytes": 1432,
+    "variants": 1
+  },
+  "win_prep_kernel": {
+    "isa_bytes": 4632,
+    "variants": 1
+  },
+  "window_order_kernel": {
+    "isa_bytes": 2984,
+    "variants": 1
+  }
+}

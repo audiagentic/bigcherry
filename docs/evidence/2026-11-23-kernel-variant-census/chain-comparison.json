@@ -1,0 +1,58 @@
+{
+  "libr3": {
+    "r4dchain_attn_decode/r4d_attn_decode_kernel": {
+      "one_args": 194,
+      "one_bytes": 6046340,
+      "one_count": 194,
+      "same_argument_isa": 0,
+      "same_argument_tuples": 194,
+      "samples_1": "void r4dchain_attn_decode<4, 16, 256, 6, 16, 0, 3429947, 0, 2u>(R4DArgs, int)",
+      "samples_2": "void r4d_attn_decode_kernel<3, 16, 256, 6, 16, 0, 1177835067, 0, 0u>(R4DArgs, int)",
+      "shared_isa_hashes": 0,
+      "two_args": 194,
+      "two_bytes": 5872668,
+      "two_count": 194
+    },
+    "r4dchain_gemm_fp8a8/gemm_fp8a8_kernel": {
+      "one_args": 136,
+      "one_bytes": 7604012,
+      "one_count": 136,
+      "same_argument_isa": 0,
+      "same_argument_tuples": 136,
+      "samples_1": "void (anonymous namespace)::r4dchain_gemm_fp8a8<true, 3u, 8u, 256u, false, true, false, 256u>(unsigned char const*, void const*, unsigned char const*, void const*, void*, void*, unsigned int*, unsigned int, unsigned int, unsigned int, unsigned int, u",
+      "samples_2": "void (anonymous namespace)::gemm_fp8a8_kernel<true, 1u, 8u, 256u, false, true, false, 256u>(unsigned char const*, void const*, unsigned char const*, void const*, void*, void*, unsigned int*, unsigned int, unsigned int, unsigned int, unsigned int, uns",
+      "shared_isa_hashes": 0,
+      "two_args": 136,
+      "two_bytes": 7498816,
+      "two_count": 136
+    }
+  },
+  "libr4d": {
+    "r4dchain_attn_decode/r4d_attn_decode_kernel": {
+      "one_args": 194,
+      "one_bytes": 2164744,
+      "one_count": 194,
+      "same_argument_isa": 0,
+      "same_argument_tuples": 194,
+      "samples_1": "void r4dchain_attn_decode<2, 16, 256, 6, 16, 0, 1177835067, 0, 0u>(R4DArgs, int)",
+      "samples_2": "void r4d_attn_decode_kernel<1, 16, 256, 6, 16, 0, 1177835067, 0, 0u>(R4DArgs, int)",
+      "shared_isa_hashes": 0,
+      "two_args": 194,
+      "two_bytes": 1974180,
+      "two_count": 194
+    },
+    "r4dchain_gemm_fp8a8/gemm_fp8a8_kernel": {
+      "one_args": 136,
+      "one_bytes": 2802788,
+      "one_count": 136,
+      "same_argument_isa": 0,
+      "same_argument_tuples": 136,
+      "samples_1": "void (anonymous namespace)::r4dchain_gemm_fp8a8<true, 3u, 8u, 256u, false, true, false, 256u>(unsigned char const*, void const*, unsigned char const*, void const*, void*, void*, unsigned int*, unsigned int, unsigned int, unsigned int, unsigned int, u",
+      "samples_2": "void (anonymous namespace)::gemm_fp8a8_kernel<true, 1u, 8u, 256u, false, true, false, 256u>(unsigned char const*, void const*, unsigned char const*, void const*, void*, void*, unsigned int*, unsigned int, unsigned int, unsigned int, unsigned int, uns",
+      "shared_isa_hashes": 0,
+      "two_args": 136,
+      "two_bytes": 2706364,
+      "two_count": 136
+    }
+  }
+}
