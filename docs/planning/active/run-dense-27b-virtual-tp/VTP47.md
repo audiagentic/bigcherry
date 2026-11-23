@@ -62,9 +62,14 @@ Medium. Risk: extra reduction work and launches cancel the gain for the tiniest 
 
 2026-11-24: occupancy model written above; step 1 builds made (baseline and eight-wave variants of the K-parallel tile) and timing started under the gpu lease.
 
+
+
+**2026-11-24 step 1 result (eight waves per workgroup against four; one XTX, cold weights, scratch driver, three repeats, median of 30; the driver's time includes about 10 us of launch).** Six rank-0 shapes, M 4 / 16 / 32, change in time: MLP gate/up -0.8 / -0.9 / +1.8%; MLP down -5.7 / -7.2 / -1.5% (611 -> 648 GB/s at M 4); delta-net in -1.6 / -3.0 / +2.8%; attention q/gate +1.3 / +4.6 / +2.8%; delta-net out -2.8 / -1.0 / 0.0%; attention out +1.9 / 0.0 / +1.5%; attention k/v -12.8 / -14.9 / -16.6% (14.8 -> 12.9 us at M 4). Reading: more waves per workgroup is not the lever for the large rows, and the rows that look worst by stream rate (k/v 89 GB/s, attention out 367, delta-net out 415) sit near the launch-and-latency floor of the driver: k/v is 12.9 us of which about 10 us is launch, so its isolated bound overstates what a step can gain. The step-level ceiling of this knob is about 0.1 ms, so it is not worth shipping alone. The earlier 0.88 / 1.84 ms isolated bounds should be re-read with the launch term removed before further GEMV work: next is to measure the same rows inside a replayed graph (launch gaps there are far smaller than the driver's 10 us) or take per-op times from the step trace. Steps 2 and 3 (K split across workgroups, k/v + q/gate fusion) stay open but pay mainly on launch count, so they move behind a launch-count audit of the pass.
+
 ## Change Log
 
 - 2026-11-23T20:42:19.617288+00:00 (created-by): Created by agent
 - 2026-11-23T20:43:12.216774+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T20:48:37.567386+00:00 (state-transition): State: pending → in_progress
 - 2026-11-23T20:54:39.540860+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-11-23T20:55:50.196625+00:00 (updated-by): Updated: section:notes
