@@ -16,7 +16,7 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 for different AMD generations. Remote-MoE workers exchange routed expert
 results with the engine over pinned host memory. The main validated engine
 patches provide the remote hand-off and a HyperConn up-mix kernel selector.
-The released bc-radiance 2020.1.1 line uses upstream Radiance v2.2.0 and
+The released bc-radiance 2020.8.0 line uses upstream Radiance v2.2.0 and
 native Radiance YAML. The admitted configuration and device/helper plan are
 recorded for replay; matched multi-card quality and performance qualification
 remains outstanding.
@@ -33,22 +33,25 @@ Package counts include experimental, superseded and rejected work, not only
 patches selected for production. Radiance has 33 validated patches;
 llama.cpp has 70.
 
-## Current-pin throughput
+## Current-pin performance
 
-Fresh aggregate output and prefill throughput on the released upstream
-**v2.2.0** pin are still being qualified for these layouts. The Flash-Next
-model page records a dated cross-pin check, not a matched unmodified-stock
-throughput A/B. Earlier results remain archived.
+The [Flash-Next four-GPU release gate](docs/evidence/radiance-latest-bump/RUM09-GATE-D.md)
+measured engine-side prefill on Radiance v2.2.0 with a 262,144-token
+context, eight sessions, matched prompts and topology, and stock power.
+These are not client-output or aggregate decode rates.
 
-| Model and layout | Prefill tokens/s | Aggregate output tokens/s |
+| Workload | Baseline (v1.17.0), tokens/s | Best recorded (v2.2.0), tokens/s |
 | --- | ---: | ---: |
-| [Flash-Next](docs/reference/engines/radiance/models/qwen3.8-flash-next.md), R9700 + two RX 7900 XTX + RX 6900 XT | Not qualified | Not qualified |
-| [Qwen3.8-27B MXFP4](docs/reference/engines/radiance/models/qwen3.8-27b.md), R9700; two-XTX alternative unqualified | Not qualified | Not qualified |
-| [Qwen3.6-35B-A3B FP8](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md), R9700 | Not qualified | Not qualified |
+| Document prefill | 3,254 | **3,662** |
+| Long-7 prefill | 2,207 | **2,453** |
+| Long-8 prefill | 2,099 | **2,430** |
 
-Earlier v1.14.0 results, including long-context and concurrent serving
-measurements, are retained in the [archive](docs/archive/radiance/v1.14-model-results/).
-The Flash-Next four-card layout has a documented quality trade-off.
+See the [Flash-Next model record](docs/reference/engines/radiance/models/qwen3.8-flash-next.md)
+for the measurement conditions and limits. The other model layouts
+lack qualified current-pin output throughput; their
+[27B](docs/reference/engines/radiance/models/qwen3.8-27b.md) and
+[35B](docs/reference/engines/radiance/models/qwen3.6-35b-a3b.md)
+records do not claim historical results as current measurements.
 
 [Build and use](GETTING_STARTED.md) ·
 [Technical reference](docs/reference/README.md) ·
