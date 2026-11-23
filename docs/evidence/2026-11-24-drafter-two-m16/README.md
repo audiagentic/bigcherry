@@ -12,3 +12,12 @@
 - Final built, uninstrumented plugin: M17–64, seven shapes and 336 whole-operation GPU comparisons; 115,489,152 BF16 outputs per route.
 - Stock-vs-new independent FP64 numerical gate: PASS 7/7 on max absolute error and RMS-relative tolerance 1e-6; ULP recorded but not gated.
 - M17/M64 launch-count tests demonstrate two/four ordinary NT1 slices for plain and chained kernel specializations; no live AQL chain tape validation.
+
+### Stage 3 — cold paired replay
+- Same-session stock/new: 256 MiB cold wash, three repetitions, 7 shapes x 12 heights x 2 specializations.
+- New route faster for every measured M17–64 on every shape in both specializations; no stock-faster crossover.
+- Five-layer M24 unchained total: 18.3088 -> 4.7199 ms (3.88x).
+- Five-layer M24 chained-kernel total: 18.4291 -> 4.4641 ms (4.13x).
+- Five-layer M32 unchained total: 18.4778 -> 4.7292 ms (3.91x).
+- Five-layer M32 chained-kernel total: 18.6023 -> 4.5097 ms (4.12x).
+- Only synthetic kernel timing, no model serving, KLD, A/B, or live AQL chain tape.
