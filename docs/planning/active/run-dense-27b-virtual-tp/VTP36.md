@@ -145,6 +145,10 @@ The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, inclu
 
 **2026-11-24 decode-size piece count A/B: NO-GO.** One piece for messages under 524,288 elements (`ts_pieces_min=524288` on the shipped pin) against the shipped four pieces, two ABBA cycles, 3 seeds x 3 repetitions, 2020.8.5: decode ms/step -0.27 ms (s.e. 0.21) at 6 streams and +0.08 ms (s.e. 0.18) at 8 streams; acceptance and text unchanged (evidence: `docs/evidence/2026-11-24-vtp36-pieces-min-ab/README.md`). The flag-value count is not what the per-call fixed part consists of at decode sizes.
 
+
+
+**Methodology (2026-11-24).** Collective ceilings in this item come from A/B measurements (config-only A/Bs of the pin), link tests (plain host-link copies and flag ping-pong) and the byte model, not from tape op sums: tape segments are each op's own GPU time, overlapped work and gaps do not show in their sum (see VTP37 methodology note). The piece-count estimate of 1.5-2.3 ms taken from sync counts was refuted by the A/B.
+
 ## Results (2026-11-13): the all-reduce
 
 Worktree `perf/vtp36-tp3-performance`. Builds (all `radiance:stock:linux-radiance`, rad0016-rad0030 plus the patches
@@ -469,3 +473,4 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 - 2026-11-14T06:59:22.719204+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-23T22:16:07.345968+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T22:49:19.010908+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:51:30.022120+00:00 (updated-by): Updated: section:notes
