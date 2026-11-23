@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.5](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.4...bc-platform-1.69.5) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** derive the K-parallel look-ahead from register occupancy (IQ8R 17-32 rows -5..-16%) ([#1462](https://github.com/audiagentic/bigcherry/issues/1462)) ([8debbf9](https://github.com/audiagentic/bigcherry/commit/8debbf9edb6ff3d2a326fab4b8a520489997f381))
+
 ## [1.69.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.3...bc-platform-1.69.4) (2026-11-23)
 
 
