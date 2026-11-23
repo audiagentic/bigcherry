@@ -91,3 +91,74 @@
             raw[j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11[j], lane));
         const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
 @@ end
+
+# VTP37: the K-parallel scale-group weight/token look-ahead is an occupancy cost on gfx1100.
+# Model only the register rings and simultaneously-live arrays from their actual types,
+# never a per-model/per-N/K/M register lookup. This model is deliberately applicable only
+# when the number of token tiles does not exceed the 128-K units in the scale group:
+# with additional token tiles the inter-tile bq load scheduling changes the compiler's
+# liveness, and measured NT3/NT4 and SB128 NT2 resources do not follow the simple model.
+# The physical gfx1100 wave32 register file holds 1536 VGPR per SIMD. Keep the kernel's
+# existing waves-per-EU hint: the model is not an exact compiled VGPR predictor.
+@@ find 1
+    Stage8 ac[2], an[2];
+    i2v bc[8], bn[8], bq[2][8];
+    if (wave < ngrp) {
+        aload(wave * kUG, ac);
+        bload(0u, wave * kUG, bc);
+    }
+@@ replace
+    // Count 32-bit words in the actual live operand, accumulator and look-ahead types.
+    // The model is valid for the one/two-token-tile scheduling forms only; wider NT
+    // reorders bq lifetimes (the 2020.8.3 resource records do not fit this model).
+    constexpr uint32_t kVgprFilePerSimd = 1536u; // gfx1100, wave32
+    constexpr uint32_t kRingRegs = (sizeof(Stage8[2]) + sizeof(i2v[8])) / sizeof(uint32_t);
+    constexpr uint32_t kLiveRegs =
+        (sizeof(Stage8[2]) + sizeof(i2v[8]) + sizeof(i2v[2][8]) +
+         sizeof(f8v[NT]) + sizeof(r3_i8[NT]) + sizeof(f8v[NT]) +
+         sizeof(const int8_t*[NT]) + sizeof(const float*[NT])) / sizeof(uint32_t);
+    constexpr bool kDropAhead = (NT <= kUG) &&
+        (kVgprFilePerSimd / (kLiveRegs + kRingRegs) <
+         kVgprFilePerSimd / kLiveRegs);
+    Stage8 ac[2], an[2];
+    i2v bc[8], bn[8], bq[2][8];
+    if constexpr (!kDropAhead) {
+        if (wave < ngrp) {
+            aload(wave * kUG, ac);
+            bload(0u, wave * kUG, bc);
+        }
+    }
+@@ end
+
+@@ find 1
+            const uint32_t un = h + 1u < kUG ? u + 1u : (g + KW) * kUG;
+            if (un < nunit) {
+                aload(un, an);
+                bload(0u, un, bn);
+            }
+@@ replace
+            if constexpr (kDropAhead) {
+                aload(u, ac);
+                bload(0u, u, bc);
+            } else {
+                const uint32_t un = h + 1u < kUG ? u + 1u : (g + KW) * kUG;
+                if (un < nunit) {
+                    aload(un, an);
+                    bload(0u, un, bn);
+                }
+            }
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t p = 0; p < 2; ++p) ac[p] = an[p];
+#pragma unroll
+            for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
+@@ replace
+            if constexpr (!kDropAhead) {
+#pragma unroll
+                for (uint32_t p = 0; p < 2; ++p) ac[p] = an[p];
+#pragma unroll
+                for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
+            }
+@@ end
