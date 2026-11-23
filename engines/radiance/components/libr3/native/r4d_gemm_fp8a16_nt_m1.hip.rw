@@ -1,0 +1,53 @@
+# Logits WMMA Form A: preserve gfx12's zero-C WMMA product and per-step f32
+# addition order, keeping each scale group's partial in native gfx11 layout.
+# Only one accumulator exchange per scale block (rather than per K16 step).
+# Both I8 and E4M3, TB variants, and chained/unchained launches share this body.
+# The matvec (M <= 2) is outside this body and remains unchanged.
+
+@@ find 1
+                f8v part[MT];
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t) part[t] = (f8v)(0.0f);
+@@ replace
+                r3_v8f part11[MT];  /* native gfx11 layout, f32 summation order unchanged */
+                const r3_v8f zero11 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t) part11[t] = zero11;
+@@ end
+
+@@ find 1
+                    const lm_s8v bf =
+                        e4m3x8_to_bf16<I8>((uint32_t)raw[0], (uint32_t)raw[1]);
+@@ replace
+                    const lm_s8v bf =
+                        e4m3x8_to_bf16<I8>((uint32_t)raw[0], (uint32_t)raw[1]);
+                    const r3_v16bf b11 = __builtin_bit_cast(
+                        r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, bf), lane));
+@@ end
+
+@@ find 1
+                        part[t] =
+                            __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12(af, bf, part[t]);
+@@ replace
+                        const r3_v16bf a11 = __builtin_bit_cast(
+                            r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, af), lane));
+                        /* gfx12 shim: part + exchanged WMMA(A,B,zero). Moving the
+                         * exchange outside the group preserves each f32 add exactly. */
+                        part11[t] = part11[t] + r3_wmma_bf16_native(a11, b11, zero11);
+@@ end
+
+@@ find 1
+                const float sc = bscale(sraw[sb]);
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t)
+#pragma unroll
+                    for (int j = 0; j < 8; ++j) acc[t][j] = fmaf(part[t][j], sc, acc[t][j]);
+@@ replace
+                const float sc = bscale(sraw[sb]);
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t) {
+                    const f8v part = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(part11[t]));
+#pragma unroll
+                    for (int j = 0; j < 8; ++j) acc[t][j] = fmaf(part[j], sc, acc[t][j]);
+                }
+@@ end
