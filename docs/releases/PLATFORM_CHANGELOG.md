@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.1...bc-platform-1.69.2) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** keep K-parallel int8 WMMA sums native per scale group (-28% nt2, -5% nt1) ([#1450](https://github.com/audiagentic/bigcherry/issues/1450)) ([9e9dd68](https://github.com/audiagentic/bigcherry/commit/9e9dd689c7926f7e96648a33d1510329f6a429be))
+
 ## [1.69.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.0...bc-platform-1.69.1) (2026-11-23)
 
 
