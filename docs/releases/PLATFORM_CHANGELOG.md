@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.0...bc-platform-1.69.1) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** keep the IQ8R K-parallel tile's 256-K unit loop rolled at two or more token tiles (VTP37) ([#1442](https://github.com/audiagentic/bigcherry/issues/1442)) ([29346d9](https://github.com/audiagentic/bigcherry/commit/29346d96b62c461cf4a600c04be2461e382771f0))
+
 ## [1.69.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.68.0...bc-platform-1.69.0) (2026-11-23)
 
 
