@@ -255,6 +255,46 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - KLD against BF16 with the pipeline on (the serial-reference KLD above stands in for it).
 - An 8192-token one-prompt arm (the layout's max-model-len is 8192, so 6144 was used).
 
+### 2026-11-23: spill scan, decode attention, drafter row, target nt 2
+
+Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` section 8 (releases 2020.8.1).
+
+- Drafter `iqr_m64_kernel` (4-bit table form, the DFlash2 drafter's linears) spills 357 VGPRs (1052 B private) at nt 2 on
+  gfx1100 and runs 8x slower than at M 16 (gate_up 214 -> 1709 us); the R9700 row is flat. Reach confirmed in the engine:
+  the drafter pass on the XTX ranks grows +6.9 ms past 16 rows (five to eight streams = 20-32 rows); realistic ceiling about
+  4.6 ms of the 37.7 ms untraced step (isolated 14.7 ms is an upper bound). The drafter is replicated on all three ranks.
+  Fix design (not the one-pragma shape of the iq8r fix: the arrays are indexed by the unrolled loops) is in section 8.3;
+  implementation is a separate slice (branch iqr-m64-spill).
+- nt 3-4 (M 33-48): bounded lever only for layouts with max-num-seqs above 8, no reach in the shipped config. iq8r nt 3/4
+  are spill-free now (207 / 231 VGPRs); i8a8 SB128 nt 3/4 still spill 2-3 / 35-43 but IQ8R does not use them.
+- MXFP4 decode GEMM spills (240 of 280 instantiations) are out of scope for IQ8R.
+- Target verify pass past 16 rows: the int8 GEMMs at nt 2 are +6.25 ms on the XTX ranks against +0.97 on the R9700
+  (about 3.5 ms of the untraced step); after the iq8r fix the nt 2 row is at the i8a8 rate, so the remainder is nt 2 against
+  nt 1 in both rows, with no spill. Needs a profile; not started.
+- Decode attention (h256 gqa6, fp8 KV) at one KV head is 3.7-5x slower on the XTX than the R9700 at the same per-head work.
+  Two bounded levers, parked: the split law's tiles/2 cap at short context (~0.4 ms a step at ctx 700; derive segments from
+  device and geometry, not a literal) and the gfx11 kernel's per-segment throughput (10x at 32k; spills, the WMMA shim and the
+  software fp8 widen are not separable without a spill-free variant; ~1.0-2.2 ms a step; a larger project).
+
+### 2026-11-23 (later): the nt 2 cost located, open questions
+
+Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sections 8.5-8.8.
+
+- The K-parallel int8 tile's extra cost at nt 2 is the gfx11 iu8 WMMA shim (lane exchanges for both fragments and the
+  accumulator on every k step), not tile structure: a wave per token tile was built and rejected (bandwidth 63-70% of nt 1,
+  nt 2 +5%; archived), an activation-pitch probe and the narrow tile both lost, and converting the accumulator once per
+  scale group is bit-identical and measured 27-37% faster at nt 2-3 in scratch (slice kpar-acc-once). The same shim pattern
+  is in 26 other WMMA sites; logits (the `lm_wmma_kernel`, 240 VGPR with 12 spilled at 17-32 rows) and decode attention are
+  the decode-relevant ones. For the float (bf16) sites the zero-accumulator form keeps the add order; a native accumulate
+  may not (the WMMA's internal order), so bit identity is the first gate there.
+- Drafter M 17-32: four register variants of `iqr_m64_kernel` all still spill; the candidates left are structural (a smaller
+  K chunk per decode) or two launches of the spill-free 16-token tile (not bit-identical to the stock route; needs a
+  numerical qualification, slice drafter-two-m16).
+- Open question, not changed and not measured: `kGdnOutPrefetchSeqs = 4` in the qwen35_fp8 architecture is a hand-picked
+  constant that stops the 8 MiB delta-net out-projection prefetch at 6 and 8 streams (5 or more sequences at depth 3). If the
+  prefetch is ever touched, derive the cap from the cache size and the bytes per sequence instead of a literal. No
+  measurement until the shim items land.
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
