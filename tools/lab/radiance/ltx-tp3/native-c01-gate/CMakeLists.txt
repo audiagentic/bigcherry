@@ -95,6 +95,21 @@ if(LTX_NATIVE_CORE_LIB)
       endif()
     endif()
     add_executable(ltx_c02_lin_declare_test ltx_c02_lin_declare_test.cpp)
+    option(LTX_PASS_UNEVEN "Enable opt-in lab-only DiT block-range placement" OFF)
+    if(LTX_PASS_UNEVEN)
+      find_package(Python3 REQUIRED COMPONENTS Interpreter)
+      execute_process(COMMAND "${Python3_EXECUTABLE}"
+        "${CMAKE_CURRENT_SOURCE_DIR}/generate_pass_range.py"
+        "${LTX_STAGE_ROOT}/arch/ltx2/ltx2.cpp"
+        "${CMAKE_CURRENT_BINARY_DIR}/ltx_pass_eval_range.inc"
+        RESULT_VARIABLE _range_status)
+      if(NOT _range_status EQUAL 0)
+        message(FATAL_ERROR "Native DiT range generator refused this stage")
+      endif()
+      target_compile_definitions(ltx_c02_lin_declare_test PRIVATE LTX_PASS_UNEVEN=1)
+      target_include_directories(ltx_c02_lin_declare_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+    endif()
+
     target_compile_features(ltx_c02_lin_declare_test PRIVATE cxx_std_23)
     target_include_directories(ltx_c02_lin_declare_test PRIVATE
       "${LTX_SOURCE_ROOT}/core" "${LTX_SOURCE_ROOT}/abi"
@@ -257,6 +272,10 @@ if(LTX_NATIVE_CORE_LIB)
       # There is no second AQL build recipe or launcher. Lease-gated:
       # never auto-run this binary as a CTest.
       add_executable(ltx_c06_instancing_aql_test ltx_c02_lin_declare_test.cpp)
+      if(LTX_PASS_UNEVEN)
+        target_compile_definitions(ltx_c06_instancing_aql_test PRIVATE LTX_PASS_UNEVEN=1)
+        target_include_directories(ltx_c06_instancing_aql_test PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+      endif()
       target_compile_features(ltx_c06_instancing_aql_test PRIVATE cxx_std_23)
       target_compile_definitions(ltx_c06_instancing_aql_test PRIVATE __HIP_PLATFORM_AMD__=1)
       get_target_property(_ltx02_aql_includes ltx_c05_issued_aql_test INCLUDE_DIRECTORIES)

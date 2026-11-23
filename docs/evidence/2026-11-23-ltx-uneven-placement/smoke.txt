@@ -1,0 +1,21 @@
+UNEVEN_ROSTER xtx_a=0 xtx_b=1 r9700=2
+PASS_FULL_LOAD device=0 weights=4378 stored_mib=18690.46
+PASS_FULL_LOAD device=1 weights=4378 stored_mib=18690.46
+PASS_FULL_LOAD device=2 weights=4378 stored_mib=18690.46
+UNEVEN_REFERENCE variant=0 r9700_ms=123.498
+UNEVEN_REFERENCE variant=1 r9700_ms=111.772
+UNEVEN_REFERENCE variant=2 r9700_ms=112.032
+UNEVEN_REFERENCE variant=3 r9700_ms=93.268
+UNEVEN_XFULL variant=2 ms=269.984
+UNEVEN_XFULL variant=3 ms=244.019
+UNEVEN_CAL variant=2 r_first_ms=5.350 r_block_ms=2.3884 x_first_ms=11.286 x_block_ms=5.2226
+UNEVEN_CAL variant=3 r_first_ms=3.102 r_block_ms=2.0127 x_first_ms=10.425 x_block_ms=4.6880
+UNEVEN_HANDOFF_CAL variant=2 bytes=3301376 ms=1.875
+UNEVEN_HANDOFF_CAL variant=3 bytes=3301376 ms=0.940
+UNEVEN_CUTS blocks=48 variant2_xtx_blocks=43 variant3_xtx_blocks=48 r_tail_order=2,3 predicted_ms=247.212 capacity_bound_ms=233.333
+UNEVEN_SAME_DEVICE variant=2 cut=43 handoff_ms=1.159 bit_equal=1 video_diffs=0 audio_diffs=0
+UNEVEN_PARALLEL variant=0 same_device_serial_bit_equal=1 r9700_video_diffs=0 r9700_audio_diffs=0 video_rel_rms=0.000000 audio_rel_rms=0.000000
+UNEVEN_PARALLEL variant=1 same_device_serial_bit_equal=1 r9700_video_diffs=0 r9700_audio_diffs=0 video_rel_rms=0.000000 audio_rel_rms=0.000000
+UNEVEN_PARALLEL variant=2 same_device_serial_bit_equal=1 r9700_video_diffs=21801 r9700_audio_diffs=2212 video_rel_rms=0.015345 audio_rel_rms=0.021444
+UNEVEN_PARALLEL variant=3 same_device_serial_bit_equal=1 r9700_video_diffs=21704 r9700_audio_diffs=2212 video_rel_rms=0.015014 audio_rel_rms=0.019776
+UNEVEN_RESULT geom=256x256 frames=17 one_card_ms=440.571 baseline_2_1_1_ms=269.984 uneven_makespan_ms=244.977 improvement_vs_baseline=1.1021 one_card_speedup=1.7984 capacity_bound_ms=233.333 handoff2_ms=0.845 handoff3_ms=0.000
