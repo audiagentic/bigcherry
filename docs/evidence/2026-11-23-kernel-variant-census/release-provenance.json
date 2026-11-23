@@ -1,0 +1,16 @@
+{
+  "config_tree": "1c36575bebaccf74be1ffff3e4a3bdb773b99c14",
+  "engine_tree": "20f6a7035047af593514bd575a15785ace5b789f",
+  "kernel_libraries": {
+    "libr3": {
+      "binary_sha256": "eebf63d91d9bcc7c2242e7faf04709cd6a8fd86cf2ffe93a9e8f425448b1fed5",
+      "bytes": 229171712
+    },
+    "libr4d": {
+      "binary_sha256": "b5e791ecd483798a96e96615d49eded8b0f70b1377d7e971d9a53393bc7a6fc1",
+      "bytes": 122412408
+    }
+  },
+  "rocm_version": "7.2.4",
+  "tag": "bc-radiance-2020.8.0"
+}

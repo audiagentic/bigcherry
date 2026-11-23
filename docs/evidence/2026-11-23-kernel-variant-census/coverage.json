@@ -1,0 +1,170 @@
+{
+  "configurations": {
+    "flashnext-2xtx": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-2xtx-combine": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-2xtx-rdna2-head": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-2xtx-rdna2-tail": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-2xtx-rdna2-tail-combine": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-4gpu": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-4gpu-bf16i8": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-r9700": {
+      "by_architecture": null,
+      "four_sessions": "not_tested",
+      "launched_symbol_count": null,
+      "profile_usable_for_launch_count": false,
+      "request_cases": [
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 13,
+          "sessions": 1
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 33,
+          "sessions": 1
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 257,
+          "sessions": 1
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 1025,
+          "sessions": 1
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 1801,
+          "sessions": 1
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 97,
+          "sessions": 1
+        }
+      ],
+      "trace": "launch-time tracer failed during router_gemm_topk_scatter_bf16 initialization",
+      "workload": "completed_without_kernel_trace"
+    },
+    "flashnext-tp2xtx": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "flashnext-tp2xtx-r9700": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "qwen27b-2xtx": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "qwen27b-tp3": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "profile_usable_for_launch_count": false,
+      "request_cases": [
+        {
+          "decode_generated": 2,
+          "prefill_prompt_tokens": 13
+        },
+        {
+          "decode_generated": 12,
+          "prefill_prompt_tokens": 33
+        },
+        {
+          "decode_generated": 12,
+          "prefill_prompt_tokens": 257
+        },
+        {
+          "decode_generated": 12,
+          "prefill_prompt_tokens": 1025
+        },
+        {
+          "decode_generated": 12,
+          "prefill_prompt_tokens": 1801
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 97,
+          "sessions": 1
+        },
+        {
+          "decode_generated": 1,
+          "prefill_prompt_tokens": 97,
+          "sessions": 4
+        }
+      ],
+      "trace": "attach_failed: ptrace EPERM; launch-time tracer failed during all_reduce kernel initialization",
+      "workload": "completed_without_kernel_trace"
+    },
+    "qwen27b-tp3-capacity": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "qwen27b-tp3-long": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "qwen27b-tp3-long-bf16": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    },
+    "qwen27b-tp3-long-bf16i8": {
+      "by_architecture": null,
+      "launched_symbol_count": null,
+      "trace": "not_collected",
+      "workload": "not_run"
+    }
+  },
+  "release": "bc-radiance-2020.8.0",
+  "symbol_dispatch_sets": "unavailable: attach denied; launch-time profiler causes kernel init errors",
+  "workload_coverage": "not exhaustive"
+}
