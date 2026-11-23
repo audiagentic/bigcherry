@@ -60,7 +60,10 @@ Large: touches engine state management and the kernel; correctness at every acce
 
 
 
+Ceiling basis (2026-11-24): the bound is a share of the 2.29 ms tape op time (the op's own GPU time), so it is a pointer only. Step 1 (the static read of state traffic) must be followed by an isolated replay of the update at the verify row counts before any brief; the serving ceiling comes from an A/B of one candidate.
+
 ## Change Log
 
 - 2026-11-23T21:15:28.492767+00:00 (created-by): Created by agent
 - 2026-11-23T21:16:03.089284+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-23T22:51:49.961768+00:00 (updated-by): Updated: section:notes

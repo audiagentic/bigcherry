@@ -118,6 +118,10 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-24 read-bandwidth ceiling (evidence 2026-11-24-vtp37-replay-warm-and-noise, section 3).** A plain streaming read gets 750-777 GB/s on the XTX at the large-row size (64 MiB; 80% of nominal) and 882 GB/s steady state at 1 GiB (92%); R9700 527-573 GB/s (87%) and 629 GB/s (98%). The shipped K-parallel row is at 91% (XTX) and 99% (R9700) of those ceilings. Larger transfers per launch stream better (an argument for fewer, larger launches, VTP52). Weight-plane address locality and bytes in flight do not move the plain read (3% spread), so the memory-side GEMM item closes; the kernel-owned remainder is about 9 points on the large XTX rows, at most about 1.2 ms a step.
 
+
+
+**2026-11-24 methodology: ceilings come from A/B or on/off measurements, not from tape sums.** The step-phase tape reports each op's own GPU time, which is not its cost on the critical path: ops on a second lane (the weight prefetch beside the collective), ops overlapped by the collective, and launch gaps all hide in or outside the segment sum. Two ceilings taken from tape sums this session were wrong: the prefetch op (2.6 ms a pass on rank 0 as 56 x 21 us; the engine issues it beside the collective by design, and prefetch on against off measured only 0.42 ms at one stream) and the decode-size piece count (1.5-2.3 ms from nine flag values at about 2 us each; the A/B measured -0.27 +- 0.21 ms at 6 streams and +0.08 +- 0.18 at 8). A lever's ceiling is therefore stated as one of: an on/off or A/B measurement; an isolated cold and prefetch-warm replay with the cost of the launch term removed; or an explicit model with its assumption named. A tape share alone is a pointer to where to look, not a bound. The open items VTP46, VTP48, VTP52, VTP53, VTP55 carry a one-line note on how their ceilings are bounded.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -333,3 +337,4 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
 - 2026-11-23T08:41:23.862081+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T11:08:04.931913+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T22:16:12.158310+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:51:24.478196+00:00 (updated-by): Updated: section:notes
