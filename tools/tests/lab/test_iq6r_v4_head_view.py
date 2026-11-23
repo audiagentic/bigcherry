@@ -36,7 +36,7 @@ class HeadViewTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             orig, classified, shard = self.setup(root)
-            out = root / "view"
+            out = root / "iq6r-v4-resume" / "view"
             first = mod.expose_target_head(classified, orig, out, root)
             second = mod.expose_target_head(classified, orig, out, root)
             self.assertEqual(first, second)
@@ -52,25 +52,40 @@ class HeadViewTests(unittest.TestCase):
             root = Path(tmp)
             orig, classified, _ = self.setup(root, include_head=False)
             with self.assertRaisesRegex(ValueError, "physically contain"):
-                mod.expose_target_head(classified, orig, root / "view", root)
+                mod.expose_target_head(classified, orig, root / "iq6r-v4-resume" / "view", root)
 
     def test_refuses_to_write_into_source(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             orig, classified, _ = self.setup(root)
-            with self.assertRaisesRegex(ValueError, "new directory"):
+            with self.assertRaisesRegex(ValueError, "resume area"):
                 mod.expose_target_head(classified, orig, classified, root)
 
     def test_refuses_conflicting_existing_manifest(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             orig, classified, _ = self.setup(root)
-            out = root / "view"
-            out.mkdir()
+            out = root / "iq6r-v4-resume" / "view"
+            out.mkdir(parents=True)
             (out / "model.safetensors.index.json").write_text(
                 json.dumps({"weight_map": {"bogus": "part.safetensors"}}))
             with self.assertRaisesRegex(ValueError, "index differs"):
                 mod.expose_target_head(classified, orig, out, root)
+
+    def test_refuses_output_in_protected_sibling(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            orig, classified, _ = self.setup(root)
+            with self.assertRaisesRegex(ValueError, "resume area"):
+                mod.expose_target_head(classified, orig, root / "other-sibling" / "view", root)
+
+    def test_refuses_symlinked_resume_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            orig, classified, _ = self.setup(root)
+            (root / "iq6r-v4-resume").symlink_to(classified, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, "resume area"):
+                mod.expose_target_head(classified, orig, root / "iq6r-v4-resume" / "view", root)
 
 
 if __name__ == "__main__":

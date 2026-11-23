@@ -41,11 +41,15 @@ def expose_target_head(vhead: Path, original: Path, output: Path, work_root: Pat
     vhead = vhead.resolve()
     original = original.resolve()
     work_root = work_root.resolve()
-    output = output.absolute()
-    if output.is_symlink() or not output.is_relative_to(work_root) or output in (vhead, original):
+    raw_output = output.absolute()
+    if raw_output.is_symlink():
         raise ValueError("the view must be a new directory under the work root")
-    if vhead.is_relative_to(output) or original.is_relative_to(output):
-        raise ValueError("the view must not contain a source")
+    output = raw_output.resolve(strict=False)
+    resume_root = work_root / "iq6r-v4-resume"
+    if not output.is_relative_to(resume_root) or output == resume_root:
+        raise ValueError("the view must be a new directory under the work root's resume area")
+    if output.is_relative_to(vhead) or output.is_relative_to(original):
+        raise ValueError("the view must not modify a source checkpoint")
     base = _index(vhead / "model.safetensors.index.json")
     orig = _index(original / "model.safetensors.index.json")
     head_name = "lm_head.weight"
