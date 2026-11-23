@@ -307,6 +307,11 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
   (#1457). Next candidates by the trace: decode attention (spills, about 1 ms), the W4/W5/W8 A16 and paged-window attention shim sites, the all-reduce
   wait chain (VTP36). A re-trace on 2020.8.3 decides the next brief.
 
+- Serving A/B of the logits accumulate-once change (2020.8.4 against 2020.8.3, two ABBA cycles, 3 seeds x 3 repetitions, within-session): decode ms/step difference
+  -0.91 ms (s.e. 0.69) at 6 streams and -0.03 ms (s.e. 0.23) at 8 streams: inside the noise, predicted effect 0.2-0.3 ms; acceptance and text unchanged
+  (evidence: `docs/evidence/2026-11-24-vtp37-logits-acc-once-ab/README.md`). Placement note: the TP3 split is balanced to bandwidth (XTX ranks carry 1.45x the R9700's weight bytes, floors 9.5 vs 9.8 ms),
+  so the XTX-over-R9700 integer-GEMM gap is per-byte stream efficiency (81-87% of spec against 96-98%), not placement.
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
