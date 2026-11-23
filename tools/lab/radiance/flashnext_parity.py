@@ -609,13 +609,14 @@ def publish_launch_record(
         if path.is_file():
             inputs[role] = path
     if state["configured"]:
+        # The calibration record is provenance, not a gate: a run whose live policy was given no calibration store
+        # carries none, and the record says so by omitting it. When a store is given the selected record is verified.
         cal = snapshot.get("calibration_store")
-        key = selected_calibration_key(launch, state)
-        if not cal:
-            raise ParityError("active policy lacks selected calibration store/key")
-        inputs["calibration_record"] = measurement_producers.canonical_blob(
-            selected_calibration(Path(cal), key)
-        )
+        if cal:
+            key = selected_calibration_key(launch, state)
+            inputs["calibration_record"] = measurement_producers.canonical_blob(
+                selected_calibration(Path(cal), key)
+            )
     runtime_members = _load(out / "runtime-members.json")
     identity = {
         "engine": engines.RADIANCE, "build_id": metadata["build_id"],

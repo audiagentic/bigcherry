@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261123_022558_the-flash-next-parity-measurem_7701",
+  "files": [
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/tests/lab/test_flashnext_parity.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The Flash-Next parity measure no longer refuses to publish a launch record when the live policy ran without a calibration store: the calibration record is provenance and is omitted when none was given, and still verified against the owner's selected key when a store is given.",
+  "timestamp-utc": "2026-11-23T02:25:58.879949Z",
+  "user-summary-candidate": "The Flash-Next parity measurement publishes its run record when the live placement policy ran without a calibration store."
+}
