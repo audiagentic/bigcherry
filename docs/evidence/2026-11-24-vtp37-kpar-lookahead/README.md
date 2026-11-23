@@ -237,3 +237,51 @@ NOT READY — performance gate not met
 | 5120x1536 | 48 | iq8r | 28.32 [27.96-28.40] | 28.32 [28.28-28.36] | +0.00% |
 | 5120x1536 | 48 | i8a8 | 26.12 [26.00-26.28] | 26.28 [26.16-26.36] | +0.61% |
 
+## Stage 5 — other look-ahead opportunities and disposition (inventory only)
+
+**Final disposition: NOT READY, performance acceptance failed.** Do not push,
+merge or ship this variant. The failed gate is independently reproducible
+from 288 replay JSONL records and the per-row, per-shape table above.
+
+The change meaningfully improves the IQ8R row in the M20-32 band:
+at M24, gate_up 97.32 -> 92.52 us (-4.93%), down 58.12 -> 53.84 us
+(-7.36%), inz 50.12 -> 46.56 us (-7.10%), out 30.68 -> 26.52 us
+(-13.56%). By contrast, the I8A8 NT2 path with SB128 intentionally
+remains stock under the model's conservative selector. Its M24 change
+is within noise or slightly worse (gate_up +0.08%, down +0.15%,
+inz +0.08%, out +0.56%), so it cannot satisfy the per-row M17-32
+improvement requirement. Two I8A8 comparisons exceed the repeat
+spread and one NT1 sample did not improve. These are not bit
+divergences: the BF16 2,304-case identity sweep passed.
+
+The live-register model is not a reliable enough predictor to admit
+SB128 NT2 simply to chase the performance gate: its 175->173 unchained
+VGPR change leaves compiled occupancy at 8 waves/SIMD, while NT3/4
+behaviour depends on compiler liveness. Enabling NT2 would require
+a new justified constexpr model and another complete resource,
+bit-identity, build, selftest and cold-replay qualification.
+No per-shape exceptions or occupancy-hint literals were added here.
+
+Read-only inventory of other register rings in this compilation unit:
+
+* The narrow 8-bit/FP8 GEMM (r4d_gemm_fp8a8.hip) uses
+  Stage8 pf[kAF], pfn[kAF] for a one-K-tile-ahead weight ring,
+  with pb[kBP] activation staging and qws/qas scale look-ahead.
+  Potential pressure but source explicitly documents the prefetch
+  as load-bearing; independent evidence is needed. Not changed.
+* The tiled prefill in r4d_gemm_8a8_prefill.h uses
+  Stage8 w0[kPTW], w1[kPTW] as a next-tile weight ring. Source
+  evidence says trying two tiles ahead spills at 240 VGPR
+  and slowed 25-38%; removing this ring has not been measured.
+  Not changed.
+* Scale look-ahead, LDS reduction and shim-exchange variations
+  were excluded: prior ablations found non-identical numerics.
+  No changes were made to these paths or other sessions' files.
+
+**What actually ran:** isolated gfx1100 compilation, full 115-unit
+gfx1100 libr3 + r3_selftest build, five narrow/IQR selftest cases
+(1,247 PASS, zero FAIL/SKIP), four independent bit-check processes
+(2,304 PASS, zero FAIL/SKIP) and 12 separately leased cold-replay
+shape/arm runs yielding 288 records. No serving, ms/step A/B, KLD,
+push or ship was performed.
+
