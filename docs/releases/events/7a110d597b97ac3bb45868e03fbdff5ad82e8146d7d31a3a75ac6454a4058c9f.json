@@ -1,0 +1,13 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261123_052847_two-unmeasured-performance-can_7452",
+  "files": [
+    "docs/archive/unmerged-candidates-2026-11/README.md",
+    "docs/archive/unmerged-candidates-2026-11/rad0038-b16i8-decode-scale-broadcast.patch",
+    "docs/archive/unmerged-candidates-2026-11/moe-remote-gemv-capability-cache.patch"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Kept the two unmerged, unmeasured performance candidates found on retired worktree branches (b16i8 decode scale broadcast, moe-remote GEMV capability cache) as plain patches with a README stating why they were not merged and how to revive them.",
+  "timestamp-utc": "2026-11-23T05:28:47.360974Z",
+  "user-summary-candidate": "Two unmeasured performance candidates from retired worktrees are kept as small patches with notes."
+}

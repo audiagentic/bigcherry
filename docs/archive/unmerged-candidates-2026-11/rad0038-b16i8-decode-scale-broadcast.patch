@@ -1,0 +1,254 @@
+diff --git a/engines/radiance/patches/rad0038_bf16_i8_kv/README.md b/engines/radiance/patches/rad0038_bf16_i8_kv/README.md
+index 064e2fd64..5ab7e963f 100644
+--- a/engines/radiance/patches/rad0038_bf16_i8_kv/README.md
++++ b/engines/radiance/patches/rad0038_bf16_i8_kv/README.md
+@@ -34,6 +34,19 @@ Untested at the PR; the hardware run follows (evidence under `docs/evidence/2026
+ - libr3's native gfx1100 prefill reads the same LDS layout `storeVi8` writes; only the selftest rewrite gained the
+   b16i8 split-row line.
+ 
++### ENG06 decode scale-load optimisation (hardware A/B pending)
++
++Only the `fetchVi8` decode path changes. At TILE 16 and a 32-dimension
++scale group, four lanes in a wave read the same token's scale: lanes
++`kp`, `kp + 8`, `kp + 16`, and `kp + 24`. One elected lane loads the
++f16 value and `__shfl` distributes its exact 16-bit representation;
++other scale-group sizes keep the original direct read. The int8 code
++loads, conversion, f16 multiply, LDS staging, cache row bytes, writer and
++fused gate/quantiser remain unchanged. This is a mechanics-only candidate
++for ENG06, not yet a demonstrated GPU speedup or bit-identity proof.
++Device-independent package tests cover the access mapping and anchors;
++hardware kernel correctness/bit identity and A/B remain required.
++
+ ### Promotion record
+ 
+ Tier: profile-evidence
+diff --git a/engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md b/engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md
+index 10f569d57..165c2fb9a 100644
+--- a/engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md
++++ b/engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md
+@@ -1,7 +1,7 @@
+ # rad0038_bf16_i8_kv
+ 
+ **Status:** validated
+-**Plan item:** VTP43
++**Plan item:** VTP43/ENG06
+ 
+ Scope: one new `--kv-cache-dtype` value, `bf16_i8`: bf16 keys and int8 values with one f16 scale per 32 value dims.
+ 
+@@ -17,7 +17,9 @@ streaming and gfx11 non-native paths are refused at resolve or startup.
+ 
+ ## Outcome
+ 
+-Untested. See README.md.
++The VTP43 layout has historical device and serving evidence (README.md); ENG06's
++decode scale-broadcast optimisation is pending focused bit-identity and hardware
++performance A/B. No throughput improvement is claimed before that measurement.
+ 
+ ## Detail
+ 
+diff --git a/engines/radiance/patches/rad0038_bf16_i8_kv/patch.py b/engines/radiance/patches/rad0038_bf16_i8_kv/patch.py
+index 98c42e684..4b58efebb 100644
+--- a/engines/radiance/patches/rad0038_bf16_i8_kv/patch.py
++++ b/engines/radiance/patches/rad0038_bf16_i8_kv/patch.py
+@@ -50,6 +50,7 @@ PATCHES = (
+         _edit('r4d_attn_decode_h256_gqa6_hip-4', "    // share them: 8 rows = 96 dwords = 0 mod 32). The 128 (o >> 2) term (64 dwords, unseen by the\n    // banks) keeps octet o's last row clear of octet o + 1's first; multiples of 8 halfwords keep the\n    // b128 PV read aligned. NWARPS 1 keeps the plain tile: its 10 workgroups a WGP would not fit.\n    constexpr int VSK  = (V4 && TILE == 16 && CTG && NWARPS >= 2) ? 1 : 0;\n    constexpr int VSKN = HEAD_DIM / 8 - 1;\n    constexpr int VSKX = VSK ? 16 * (VSKN & 3) + 8 * ((VSKN >> 2) & 1) + 128 * (VSKN >> 2) : 0;\n    __shared__ uint16_t sV16[V8 ? 1 : HEAD_DIM * VSTR + VSKX];\n", "    // share them: 8 rows = 96 dwords = 0 mod 32). The 128 (o >> 2) term (64 dwords, unseen by the\n    // banks) keeps octet o's last row clear of octet o + 1's first; multiples of 8 halfwords keep the\n    // b128 PV read aligned. NWARPS 1 keeps the plain tile: its 10 workgroups a WGP would not fit.\n    // bf16_i8's staging is storeV4's map (a key pair's dim octet a thread), so it takes the skew too.\n    constexpr int VSK  = ((V4 || KI) && TILE == 16 && CTG && NWARPS >= 2) ? 1 : 0;\n    constexpr int VSKN = HEAD_DIM / 8 - 1;\n    constexpr int VSKX = VSK ? 16 * (VSKN & 3) + 8 * ((VSKN >> 2) & 1) + 128 * (VSKN >> 2) : 0;\n    __shared__ uint16_t sV16[V8 ? 1 : HEAD_DIM * VSTR + VSKX];\n", "// bf16_i8's staging is storeV4's map (a key pair's dim octet a thread), so it takes the skew too."),
+         _edit('r4d_attn_decode_h256_gqa6_hip-5', "    const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;\n    // The launch is NTHR threads. Stated (k6_v4), so the V4 rounds wholly below NP4 lose their range\n    // test: as exec-masked blocks, each round's loads issued only after the previous round's returned.\n    // fp8_v4 keeps the tested rounds: batched there, its 4-row steps ran 6 % slower.\n    if constexpr (K6) __builtin_assume(tid < NTHR);\n    const int c = lane & 15, h = lane >> 4;\n\n    const int sp = blockIdx.x, kvh = blockIdx.y, seq = blockIdx.z;\n", "    const int tid = threadIdx.x, lane = tid & 31, warp = tid >> 5;\n    // The launch is NTHR threads. Stated (k6_v4), so the V4 rounds wholly below NP4 lose their range\n    // test: as exec-masked blocks, each round's loads issued only after the previous round's returned.\n    // fp8_v4 keeps the tested rounds: batched there, its 4-row steps ran 6 % slower. bf16_i8 states it\n    // too: with the tested rounds its three-wave instance spills 15 VGPRs and its one-wave one 31,\n    // against 0 and 22 batched (-Rpass-analysis=kernel-resource-usage, gfx1201).\n    if constexpr (K6 || KI) __builtin_assume(tid < NTHR);\n    const int c = lane & 15, h = lane >> 4;\n\n    const int sp = blockIdx.x, kvh = blockIdx.y, seq = blockIdx.z;\n", '// fp8_v4 keeps the tested rounds: batched there, its 4-row steps ran 6 % slower. bf16_i8 states it'),
+         _edit('r4d_attn_decode_h256_gqa6_hip-6', '        }\n    };\n\n    auto fetchV = [&](int k0, const int* blks) {\n        #pragma unroll\n        for (int r = 0; r < VREGS; ++r) {\n', "        }\n    };\n\n    // ---- bf16_i8: V's int8 codes and group scales into sV16 as the prefill kernel stages them\n    // (fetchVi8 / storeVi8 there: a key pair's 8 dims a thread, two 8-byte code runs and the pair's\n    // two scales, (0x6400 | (code ^ 0x80)) - 1152 the code as f16, times the scale, one dword a dim),\n    // fetched in the tile like fp8_v4's, in k6_v4's rounds: a partial round (NWARPS 3: the third,\n    // warps 0-1) is a scalar branch on the wave-uniform warp, and the pair's scales stay apart until\n    // the store packs them.\n    constexpr int NPI8 = (TILE / 2) * (HEAD_DIM / 8);\n    constexpr int UI8  = KI ? (NPI8 + NTHR - 1) / NTHR : 1;\n    uint2 vi8c[UI8][2];\n    uint32_t vi8s[UI8][2];\n    auto fetchVi8 = [&](int k0, const int* blks) {\n        #pragma unroll\n        for (int r = 0; r < UI8; ++r) {\n            const int u = tid + r * NTHR;\n            if (NPI8 % NTHR == 0 || (r + 1) * NTHR <= NPI8\n                || (NPI8 % 32 == 0 ? __builtin_amdgcn_readfirstlane(warp) * 32 < NPI8 - r * NTHR\n                                   : u < NPI8)) {\n                const int kp = u % (TILE / 2), o = u / (TILE / 2);\n                #pragma unroll\n                for (int j = 0; j < 2; ++j) {\n                    int kk = min(k0 + 2 * kp + j, ctx - 1);\n                    if (WIN && kk < wlo0) kk = wlo0;\n                    const int bk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];\n                    const uint8_t* base = (const uint8_t*)a.kv + (size_t)bk * a.kv_block_stride\n                                        + (size_t)kvc * a.kv_head_stride + (size_t)(kk % BS) * ROWB;\n                    vi8c[r][j] = *(const uint2*)(base + VBOFF + o * 8);\n                    vi8s[r][j] = *(const uint16_t*)(base + VISOFF + (o * 8 / VG) * 2);\n                }\n            }\n        }\n    };\n    auto storeVi8 = [&]() {\n        typedef _Float16 h2 __attribute__((ext_vector_type(2)));\n        #pragma unroll\n        for (int r = 0; r < UI8; ++r) {\n            const int u = tid + r * NTHR;\n            if (NPI8 % NTHR == 0 || (r + 1) * NTHR <= NPI8\n                || (NPI8 % 32 == 0 ? __builtin_amdgcn_readfirstlane(warp) * 32 < NPI8 - r * NTHR\n                                   : u < NPI8)) {\n                const int kp = u % (TILE / 2), o = u / (TILE / 2);\n                // Two's complement bytes; ^ 0x80 makes them offset binary (value + 128).\n                const uint32_t a0 = vi8c[r][0].x ^ 0x80808080u, b0 = vi8c[r][0].y ^ 0x80808080u;\n                const uint32_t a1 = vi8c[r][1].x ^ 0x80808080u, b1 = vi8c[r][1].y ^ 0x80808080u;\n                const h2 s2 = __builtin_bit_cast(h2, vi8s[r][0] | (vi8s[r][1] << 16));\n                const h2 bias = { (_Float16)1152.0f, (_Float16)1152.0f };\n                uint16_t* dst = &sV16[(o * 8) * VSTR + 2 * kp\n                                      + (VSK ? 16 * (o & 3) + 8 * ((o >> 2) & 1) + 128 * (o >> 2) : 0)];\n                #pragma unroll\n                for (int b = 0; b < 4; ++b) {\n                    const uint32_t sel = (uint32_t)b | 0x0c00u | ((uint32_t)(4 + b) << 16) | 0x0c000000u;\n                    const uint32_t lo = __builtin_amdgcn_perm(a1, a0, sel) | 0x64006400u;   // dim b\n                    const uint32_t hi = __builtin_amdgcn_perm(b1, b0, sel) | 0x64006400u;   // dim 4 + b\n                    const h2 vl = (__builtin_bit_cast(h2, lo) - bias) * s2;\n                    const h2 vh = (__builtin_bit_cast(h2, hi) - bias) * s2;\n                    *(uint32_t*)(dst + b * VSTR)       = __builtin_bit_cast(uint32_t, vl);\n                    *(uint32_t*)(dst + (4 + b) * VSTR) = __builtin_bit_cast(uint32_t, vh);\n                }\n            }\n        }\n    };\n\n    auto fetchV = [&](int k0, const int* blks) {\n        #pragma unroll\n        for (int r = 0; r < VREGS; ++r) {\n", "// ---- bf16_i8: V's int8 codes and group scales into sV16 as the prefill kernel stages them"),
++        _edit('r4d_attn_decode_h256_gqa6_hip-6b', '                    vi8c[r][j] = *(const uint2*)(base + VBOFF + o * 8);\n                    vi8s[r][j] = *(const uint16_t*)(base + VISOFF + (o * 8 / VG) * 2);\n', "                    vi8c[r][j] = *(const uint2*)(base + VBOFF + o * 8);\n                    if constexpr (TILE == 16 && VG == 32) {\n                        // Lanes kp, kp+8, kp+16, kp+24 share the same token's scale.\n                        // Only lanes 0..7 load; shuffle the untouched f16 bits to peers.\n                        uint32_t v_scale_bits = 0;\n                        if ((lane & 24) == 0)\n                            v_scale_bits = *(const uint16_t*)(base + VISOFF + (o * 8 / VG) * 2);\n                        vi8s[r][j] = __shfl(v_scale_bits, lane & 7, 32);\n                    } else {\n                        vi8s[r][j] = *(const uint16_t*)(base + VISOFF + (o * 8 / VG) * 2);\n                    }\n", 'vi8s[r][j] = __shfl(v_scale_bits, lane & 7, 32);'),
+         _edit('r4d_attn_decode_h256_gqa6_hip-7', '            }\n        }\n        if constexpr (V4) { fetchV4(k0, blk); storeV4(); }\n        else { if (!GPREV) fetchV(k0, blk); storeV(); }\n        if (LDSB) lds_barrier(); else __syncthreads();\n        if (GPREV && ti + 1 < t_hi) fetchV(k0 + TILE, blkn);\n', '            }\n        }\n        if constexpr (V4) { fetchV4(k0, blk); storeV4(); }\n        else if constexpr (KI) { fetchVi8(k0, blk); storeVi8(); }\n        else { if (!GPREV) fetchV(k0, blk); storeV(); }\n        if (LDSB) lds_barrier(); else __syncthreads();\n        if (GPREV && ti + 1 < t_hi) fetchV(k0 + TILE, blkn);\n', 'else if constexpr (KI) { fetchVi8(k0, blk); storeVi8(); }'),
+     )),
+     FilePatch(path='libr4d/r4d_attn_paged_h256_gqa6.hip', language="none", description='VTP43 bf16_i8 KV cache', edits=(
+diff --git a/engines/radiance/patches/rad0038_bf16_i8_kv/patch.toml b/engines/radiance/patches/rad0038_bf16_i8_kv/patch.toml
+index 6402f68e9..16f0b4a8b 100644
+--- a/engines/radiance/patches/rad0038_bf16_i8_kv/patch.toml
++++ b/engines/radiance/patches/rad0038_bf16_i8_kv/patch.toml
+@@ -5,7 +5,7 @@ state = "validated"
+ kind = "enhancement"
+ origin = "local"
+ backend = "agnostic"
+-plan-ids = ["VTP43"]
++plan-ids = ["VTP43", "ENG06"]
+ requires = ["rad0037_bf16_fp8_kv"]
+ conflicts = []
+ tags = ["kv-cache"]
+diff --git a/engines/radiance/patches/rad0038_bf16_i8_kv/tests/test_decode_scale_broadcast.py b/engines/radiance/patches/rad0038_bf16_i8_kv/tests/test_decode_scale_broadcast.py
+new file mode 100644
+index 000000000..2a65f47ad
+--- /dev/null
++++ b/engines/radiance/patches/rad0038_bf16_i8_kv/tests/test_decode_scale_broadcast.py
+@@ -0,0 +1,175 @@
++"""Device-independent ENG06 scale lane/bits and managed patch mechanics tests.
++
++These tests verify source transformation and equal scale bits, not GPU throughput
++or arithmetic bit identity. Device A/B remains required before PR/merge.
++"""
++from __future__ import annotations
++
++import ast
++import importlib.util
++import re
++import sys
++import tempfile
++import unittest
++from pathlib import Path
++
++PKG = Path(__file__).resolve().parents[1]
++REPO = PKG.parents[3]
++sys.path.insert(0, str(REPO / "tools"))
++from bigcherry.patcher import FilePatch, apply_all  # noqa: E402
++
++TARGET = "libr4d/r4d_attn_decode_h256_gqa6.hip"
++INITIAL = "r4d_attn_decode_h256_gqa6_hip-6"
++OPT = "r4d_attn_decode_h256_gqa6_hip-6b"
++
++
++def _edits():
++    spec = importlib.util.spec_from_file_location("rad0038_eng06", PKG / "patch.py")
++    assert spec and spec.loader
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    edits = {
++        edit.id: edit for patch in module.PATCHES if patch.path == TARGET
++        for edit in patch.edits
++    }
++    return edits[INITIAL], edits[OPT]
++
++
++def _images():
++    """The exact source text of both managed edits, not duplicated fixtures."""
++    tree = ast.parse((PKG / "patch.py").read_text())
++    output = {}
++    for call in ast.walk(tree):
++        if not (isinstance(call, ast.Call) and
++                isinstance(call.func, ast.Name) and call.func.id == "_edit"):
++            continue
++        name = ast.literal_eval(call.args[0])
++        if name in (INITIAL, OPT):
++            output[name] = ast.literal_eval(call.args[1]), ast.literal_eval(call.args[2])
++    assert set(output) == {INITIAL, OPT}
++    return output
++
++
++def _addr(u: int, j: int, k0: int, ctx: int, bs: int,
++          page_table: list[int]):
++    # For TILE=16, kp=lane&7. o/4 is the 32-dimensional scale group.
++    kp, octet = u % 8, u // 8
++    kk = min(k0 + 2 * kp + j, ctx - 1)
++    return page_table[kk // bs], kk % bs, octet // 4
++
++
++def _raw_f16_bits(key):
++    patterns = (0, 0x0400, 0x3c00, 0x7bff, 0x8000, 0xfc00, 0x0001, 0xffff)
++    b, t, g = key
++    return patterns[(b * 7 + t * 11 + g * 3) % len(patterns)]
++
++
++class TestENG06ScaleBroadcast(unittest.TestCase):
++    def test_warp_sources_address_same_scale_bits_with_1_to_4_warps(self):
++        # h256 TILE16: 256 pairs/octets, a full 32-lane wave per active
++        # round; NWARPS=3's final round leaves one whole wave inactive.
++        npi8 = (16 // 2) * (256 // 8)
++        self.assertEqual(npi8, 256)
++        for nw in (1, 2, 3, 4):
++            nthr = nw * 32
++            for bs in (4, 16):  # QSA and ordinary page geometries
++                for ctx in (1, 2, 4, 17, 257, 8192, 49152, 262144):
++                    table = [(b * 17 + 3) % 1031 for b in range((ctx + bs - 1) // bs)]
++                    for k0 in (0, max(0, ctx - 16)):
++                        original_loads = elected_loads = 0
++                        for r in range((npi8 + nthr - 1) // nthr):
++                            for tid in range(nthr):
++                                u = tid + r * nthr
++                                if u >= npi8:
++                                    continue
++                                lane = tid & 31
++                                leader_tid = (tid & ~31) + (lane & 7)
++                                leader_u = leader_tid + r * nthr
++                                self.assertLess(leader_u, npi8)
++                                for j in (0, 1):
++                                    direct = _addr(u, j, k0, ctx, bs, table)
++                                    elected = _addr(leader_u, j, k0, ctx, bs, table)
++                                    self.assertEqual(direct, elected,
++                                                     (nw, bs, ctx, k0, r, tid, j))
++                                    self.assertEqual(_raw_f16_bits(direct),
++                                                     _raw_f16_bits(elected))
++                                    original_loads += 1
++                                    elected_loads += int((lane & 24) == 0)
++                        self.assertEqual(original_loads, 512)
++                        self.assertEqual(elected_loads, 128)
++
++    def test_guarded_path_keeps_original_reader_and_fallback(self):
++        images = _images()
++        first, old_post = images[INITIAL]
++        old, new = images[OPT]
++        original = "vi8s[r][j] = *(const uint16_t*)(base + VISOFF + (o * 8 / VG) * 2);"
++        broadcast = "vi8s[r][j] = __shfl(v_scale_bits, lane & 7, 32);"
++        self.assertIn(old, old_post)
++        self.assertIn(original, old)
++        self.assertIn("if constexpr (TILE == 16 && VG == 32)", new)
++        self.assertIn("if ((lane & 24) == 0)", new)
++        self.assertIn("uint32_t v_scale_bits = 0;", new)
++        self.assertIn(broadcast, new)
++        self.assertEqual(new.count(original), 1, "other group sizes must load directly")
++        self.assertIn("} else {\n                        " + original, new)
++        # No changes to two-token code loads, layout math, dequantiser or LDS
++        # stores: the new edit replaces only the load, leaving all other code
++        # in the original -6 postimage intact.
++        self.assertEqual(old_post.count(old), 1)
++        self.assertNotIn(broadcast, first)
++        self.assertNotIn(broadcast, old_post)
++        replaced = old_post.replace(old, new, 1)
++        self.assertEqual(replaced.count(broadcast), 1)
++        self.assertIn("const h2 s2 = __builtin_bit_cast(h2,", replaced)
++        self.assertIn("(__builtin_bit_cast(h2, lo) - bias) * s2", replaced)
++        self.assertIn("(__builtin_bit_cast(h2, hi) - bias) * s2", replaced)
++        self.assertIn("*(uint32_t*)(dst + b * VSTR)", replaced)
++        self.assertIn("*(uint32_t*)(dst + (4 + b) * VSTR)", replaced)
++
++    def test_fresh_apply_upgrade_idempotence_and_anchor_failures(self):
++        images = _images()
++        raw, legacy = images[INITIAL]
++        old, new = images[OPT]
++        insertion, broadcast = _edits()
++        patch = FilePatch(path=TARGET, language="none",
++                          description="ENG06 incremental scale edit",
++                          edits=(insertion, broadcast))
++        self.assertNotRegex(raw, re.compile(broadcast.guard_pattern()))
++        self.assertNotRegex(legacy, re.compile(broadcast.guard_pattern()))
++        self.assertRegex(new, re.compile(broadcast.guard_pattern()))
++        with tempfile.TemporaryDirectory() as temp:
++            root = Path(temp)
++            target = root / TARGET
++            target.parent.mkdir(parents=True)
++            target.write_text(raw)
++            first = apply_all([patch], root)
++            self.assertTrue(all(result.ok for result in first), first)
++            self.assertEqual([e.status for result in first for e in result.results],
++                             ["applied", "applied"])
++            expected = legacy.replace(old, new)
++            self.assertEqual(target.read_text(), expected)
++            second = apply_all([patch], root)
++            self.assertTrue(all(result.ok for result in second), second)
++            self.assertEqual([e.status for result in second for e in result.results],
++                             ["already-applied", "already-applied"])
++            self.assertEqual(target.read_text(), expected)
++
++            # Upgrade a historical already-applied source without duplicating
++            # fetchVi8 and without a permissive guard on its old comment.
++            target.write_text(legacy)
++            upgraded = apply_all([patch], root)
++            self.assertTrue(all(result.ok for result in upgraded), upgraded)
++            self.assertEqual([e.status for result in upgraded for e in result.results],
++                             ["already-applied", "applied"])
++            self.assertEqual(target.read_text(), expected)
++
++            for invalid in (legacy.replace(old, old.replace("vi8s[r][j]", "vs_other[r][j]")),
++                            legacy + old):
++                target.write_text(invalid)
++                result = apply_all([patch], root)
++                self.assertTrue(any(not value.ok for value in result), result)
++                self.assertEqual(target.read_text(), invalid)
++
++
++if __name__ == "__main__":
++    unittest.main()
