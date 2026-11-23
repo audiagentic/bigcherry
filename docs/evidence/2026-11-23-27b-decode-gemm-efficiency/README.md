@@ -238,3 +238,30 @@ was measured here, so it is not stated as a share of the step (the decode A/B wi
 gfx1201 (the libr4d code object, resource record only): the same kernel has no spills in any four-wave instantiation
 (SB 256 at NT 1, 2, 3, 4: 150, 197, 210, 240 VGPRs, 0 spilled). The problem is gfx1100's, from its wider WMMA operands,
 so a fix belongs in libr3 only.
+
+### The fix in the engine: 2020.8.1 against 2020.8.0 (decode)
+
+Release 2020.8.1 carries the one-line libr3 change that removes the K-parallel tile's spills at two or more token tiles
+with 256-wide groups. Between the two releases the engine binary, libr4d and the config tree are identical; only the
+gfx1100 kernel library differs. `qwen27b-tp3` as shipped, untraced, A B B A, one launch an arm, three seeds and two
+repetitions an arm (n 12 a release), a 512-token prompt and 192 tokens, engine-reported values, mean and standard
+deviation over the 12:
+
+| streams | 2020.8.0 ms/step | 2020.8.1 ms/step | change | engine decode tok/s |
+|---|---|---|---|---|
+| 6 | 43.79 +/- 2.10 | 36.69 +/- 2.86 | -7.10 ms (-16.2%) | 331 to 418 (+26.0%) |
+| 8 | 48.21 +/- 2.76 | 37.67 +/- 0.80 | -10.54 ms (-21.9%) | 383 to 485 (+26.6%) |
+
+Per arm (A1, B1, B2, A2): 6 streams 44.04 / 37.32 / 36.06 / 43.53; 8 streams 48.52 / 37.95 / 37.39 / 47.91. Tokens a
+step: 14.5 against 15.3 at six streams (acceptance differs by seed, the same seeds in both arms) and 18.4 against 18.3
+at eight, so the gain is the step, not acceptance.
+
+Prefill, separately: median time to first token is level in every arm (six streams about 1030-1075 ms; two early rounds
+of each 2020.8.1 arm read 1250-1300 ms; the eight-stream figure is bimodal, 1.2 or 2.2 s, in one 2020.8.0 arm), and the
+slowest stream's time to first token is level or lower on 2020.8.1. Read as unchanged, as expected: prefill rows use the
+tiled path above 48 rows. No dedicated prefill run.
+
+Against the bound: the isolated bound was about 15 ms a step; the engine took 7.1 ms at six streams and 10.5 at eight
+(about half to 70%). Sample: n 12 a release a row, one launch an arm, the same seeds in both releases. Prefill was not
+separately tested. Five and seven streams were not run. KLD was not run: the rewrite is byte-identical at every M
+1-64, so KLD would be redundant.
