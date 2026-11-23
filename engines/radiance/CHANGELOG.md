@@ -1,5 +1,19 @@
 # Changelog
 
+## [2020.8.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.4...bc-radiance-2020.8.5) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** derive the K-parallel look-ahead from register occupancy (IQ8R 17-32 rows -5..-16%) ([#1462](https://github.com/audiagentic/bigcherry/issues/1462)) ([8debbf9](https://github.com/audiagentic/bigcherry/commit/8debbf9edb6ff3d2a326fab4b8a520489997f381))
+
+## [2020.8.4](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.3...bc-radiance-2020.8.4) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** keep the logits head's 17-32 row int8 partials native per scale block ([#1457](https://github.com/audiagentic/bigcherry/issues/1457)) ([bf37039](https://github.com/audiagentic/bigcherry/commit/bf370391f5f2d05e04ee466a510d0a542d0cc8b1))
+
 ## [2020.8.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.2...bc-radiance-2020.8.3) (2026-11-23)
 
 
