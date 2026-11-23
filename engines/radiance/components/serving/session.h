@@ -199,6 +199,11 @@ struct Hooks {
 struct PlanFailed : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+// A stop request interrupted planning; the owner must still verify all child exits
+// and restore power before reporting a clean stop. A real plan refusal remains PlanFailed.
+struct PlanStopped : PlanFailed {
+    using PlanFailed::PlanFailed;
+};
 struct ReplayFailed : PlanFailed {
     ReplayRefusal reason;
     ReplayFailed(ReplayRefusal why, const std::string& detail) : PlanFailed(detail), reason(why) {}
