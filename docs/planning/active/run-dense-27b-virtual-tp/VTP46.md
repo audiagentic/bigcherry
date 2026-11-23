@@ -15,14 +15,16 @@ priority: P1
 
 ## Description
 
-Source: VTP37 spill scan and a read of a reference gfx1201 decode-attention kernel for the same geometry (24 heads, 4 KV heads, head dim 256, 16-token blocks). Our `r4d_attn_decode_kernel` at h256 gqa6 compiles all 194 instantiations at 256 VGPRs with spills (e.g. NS1 57 / 232 B). Each warp keeps a full 16 x 256 f32 output accumulator (128 VGPRs) plus the query fragments (64 VGPRs) and the prefetch registers. The reference kernel is spill-free at 197 VGPRs: four waves share one K tile staged through LDS, every wave runs the QK chain, the PV step is split by head dimension so each wave holds 4 of 16 output tiles (32 VGPRs), and K fragments are read from LDS with s_wait_dscnt counts that interleave loads with the chained WMMA. Decode attention is 4.5% of the rank 0 traced pass; the XTX is 3.7-5x slower than the R9700 at the same per-head work, about 1.0-2.2 ms a step of lever (VTP37 notes). Caveat: on gfx11 the QK chain repeated in every warp multiplies the WMMA shim cost, so the split only pays together with the accumulate-once change (slice attn-decode-acc-once) and, ideally, native-layout fragments. Not a copy of the reference: it is single-sequence and gathers V with scalar 16-bit loads.
+Decode attention at 256-wide heads with six query heads per KV head compiles every instantiation at the 256-VGPR ceiling with spills (VTP37 spill scan; e.g. one-warp form 57 VGPRs / 232 B spilled). Cause by inspection of our own kernel: each warp holds the whole 16 x 256 f32 output accumulator (128 VGPRs), the query fragments (64 VGPRs) and the value prefetch registers, so nothing is left for the chained matrix-multiply operands. Attention decode is 4.5% of the rank 0 traced pass and the XTX runs it 3.7-5x slower than the R9700 at the same per-head work; the lever is about 1.0-2.2 ms a step (VTP37 notes).
+
+**What we will try.** Give each warp a quarter (or half, at two warps) of the output head dimension for the value step, so the f32 output accumulator per warp falls from 128 to 32 (or 64) VGPRs. The score step (query x key) is then the same for every warp of the block, so the key tile is staged once in LDS and read back as matrix fragments with load-count waits that overlap the chained multiplies; the query fragments stay in registers. The softmax running state and the across-block accumulation order are unchanged, so each output column still sums its terms in the same order. Cost to watch: on gfx1100 the repeated score step multiplies the matrix-multiply shim cost, so this is built on top of the accumulate-once change (slice attn-decode-acc-once) and is judged only against that baseline.
 
 ## Steps
 
-1. Land and A/B the attn-decode-acc-once slice first (it is the baseline for this item).
-2. Resource model: for NWARPS 2 and 4 with the PV accumulator split by head dimension, compute the VGPR budget (Q fragments, 32-VGPR O tile, prefetch) and confirm zero spills in a scratch single-unit build for the shipped instantiations (fp8 KV, F16, CONTIG, splitkv).
-3. Scratch kernel variant in libr3 native (never a vendor edit): PV split by head dimension across warps, S exchanged through LDS or recomputed; byte identity against the current kernel at the same softmax and accumulation order where the order is unchanged, otherwise qualify numerically (the PV order across KV blocks is unchanged, only which warp owns which output columns).
-4. Cold timing replay at ctx 700 / 4k / 32k, 1 and 3 query rows, then decode ms/step ABBA at 6 and 8 streams.
+1. Land and A/B the attn-decode-acc-once slice first; it is the baseline for this item.
+2. Resource model: for one, two and four warps with the value accumulator split by head dimension, count VGPRs (query fragments, accumulator share, prefetch) and confirm zero spills in a scratch single-unit build for the shipped instantiations (fp8 and bf16 KV, f16 probabilities, contiguous layout, split-KV).
+3. Scratch variant in libr3 native (never a vendor edit): value step split by head dimension across warps, key tile through LDS. Compare outputs with the current kernel on random and recorded inputs; byte identity is expected because each column's accumulation order does not change, and any difference is qualified numerically.
+4. Cold timing replay at context 700, 4k and 32k with 1 and 3 query rows, then decode ms/step ABBA at 6 and 8 streams.
 
 ## Detailed Solution & Technical Design
 
@@ -56,10 +58,11 @@ Large. Risk: the repeated QK per warp costs more than the spills it removes on g
 
 ## Notes
 
-
+2026-11-24: started with the resource model (step 2) once the accumulate-once baseline is merged and released.
 
 ## Change Log
 
 - 2026-11-23T20:42:14.800583+00:00 (created-by): Created by agent
 - 2026-11-23T20:43:07.491746+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T20:48:32.456232+00:00 (state-transition): State: pending → in_progress
+- 2026-11-23T20:54:34.802032+00:00 (updated-by): Updated: section:description, section:steps, section:notes
