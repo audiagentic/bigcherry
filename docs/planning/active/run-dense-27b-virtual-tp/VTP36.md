@@ -464,3 +464,5 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 - 2026-11-13T05:15:40.560777+00:00 (updated-by): Updated: section:notes
 - 2026-11-14T06:59:22.719204+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-23T22:16:07.345968+00:00 (updated-by): Updated: section:notes
+
+**2026-11-24 decode-size piece count A/B: NO-GO.** One piece for messages under 524,288 elements (`ts_pieces_min=524288` on the shipped pin) against the shipped four pieces, two ABBA cycles, 3 seeds x 3 repetitions, 2020.8.5: decode ms/step -0.27 ms (s.e. 0.21) at 6 streams and +0.08 ms (s.e. 0.18) at 8 streams; acceptance and text unchanged (evidence: `docs/evidence/2026-11-24-vtp36-pieces-min-ab/README.md`). The flag-value count is not what the per-call fixed part consists of at decode sizes.
