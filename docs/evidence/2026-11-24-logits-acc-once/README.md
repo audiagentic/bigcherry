@@ -167,3 +167,19 @@ New LM VGPR spills=[], private increases=[], waves losses=[]
 - IQR shared logits WMMA body: N×K=1008×640 and 4097×512, table bits TB=2..6, chained and unchained; 20 cases ×64 = **1280 PASS, zero differences**.
 - Total main and IQR checked: **2048 M-values**, zero full-output f32 byte differences, no skipped test of an exposed row, no device error.
 - E4M3 has no registered logits_gemm_fp8 plugin row; its exported r4d_logits_gemm_fp8 function was used for unchained byte checking. E4M3 chained dispatch is not exported and was not claimed tested. Only int8 MT2/FKB2 is modified by Form A, and both its chained and unchained paths were tested.
+
+## Full-plugin r3_selftest logits cases (PASS)
+
+Ran the actual linked `r3_selftest` binary against the freshly built `libr3.so`, one queued GPU lease per case, `--case` selectors, zero failures and zero skips:
+
+| Case | OK assertions | Fail | Skip |
+|---|---:|---:|---:|
+| logits_gemm_i8 | 28 | 0 | 0 |
+| logits_gemm_iqr | 88 | 0 | 0 |
+| logits_gemm_bf16_cols | 21 | 0 | 0 |
+| logits_gemm_vocab_iqr | 67 | 0 | 0 |
+| logit_rerank_i8 | 28 | 0 | 0 |
+| logit_rerank_iqr | 88 | 0 | 0 |
+| **Total** | **320** | **0** | **0** |
+
+Full-plugin build and selftest execution both actually completed; no skipped test case.
