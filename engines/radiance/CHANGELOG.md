@@ -1,5 +1,13 @@
 # Changelog
 
+## [2020.7.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.6.0...bc-radiance-2020.7.0) (2026-11-23)
+
+
+### New and changed
+
+* **moe-remote:** calibrate the live policy from live heat (off by default) ([#1381](https://github.com/audiagentic/bigcherry/issues/1381)) ([7f88e6a](https://github.com/audiagentic/bigcherry/commit/7f88e6a39b13df8d09c8689cd6ac2a86549af9ee))
+* **serving:** ingest the helper's calibration record from its log (off by default) ([#1375](https://github.com/audiagentic/bigcherry/issues/1375)) ([6bf0712](https://github.com/audiagentic/bigcherry/commit/6bf0712e17e90efc80f07240e7676da9bd340f60))
+
 ## [2020.6.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.5.1...bc-radiance-2020.6.0) (2026-11-23)
 
 
