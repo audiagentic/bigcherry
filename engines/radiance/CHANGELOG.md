@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.6.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.5.1...bc-radiance-2020.6.0) (2026-11-23)
+
+
+### New and changed
+
+* **ltx:** pipeline the issued TP FFN with reductions on the second lane ([#1416](https://github.com/audiagentic/bigcherry/issues/1416)) ([f7355c5](https://github.com/audiagentic/bigcherry/commit/f7355c52bb3e5ea4ee6aa315a1da785e8cdeefb0))
+
 ## [2020.5.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.5.0...bc-radiance-2020.5.1) (2026-11-22)
 
 

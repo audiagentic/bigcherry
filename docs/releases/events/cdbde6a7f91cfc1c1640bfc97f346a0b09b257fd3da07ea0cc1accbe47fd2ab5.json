@@ -1,0 +1,11 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261122_224126_fixes-a-flaky-serving-test-tha_6408",
+  "files": [
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The forced-placement serving test gives the owner ten seconds to receive helper0's report: on the loaded CI container a freshly started helper stayed unscheduled past the one-second grace, so the Radiance build failed on main with 'helper0 did not report its forced placement'.",
+  "timestamp-utc": "2026-11-22T22:41:26.263927Z",
+  "user-summary-candidate": "Fixes a flaky serving test that kept the Radiance build red."
+}
