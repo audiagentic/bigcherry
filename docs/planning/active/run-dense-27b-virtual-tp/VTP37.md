@@ -106,6 +106,10 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-23 iq8r at M 17-32 and prefetch (evidence note section 7; corrects the earlier pin reading).** (a) The wave and token-tile pin sweep did not test the decode row: for int8 weights at M <= 48 the launcher takes the K-parallel tile, which `--pin-mw` and `--pin-nt` do not reach, so "pin route closed" means only that those pins are not applicable. (b) `gemm_iq8r_nt_m16` costs 217 us against 134 us for `gemm_i8a8_nt_m16` at 13312x5120 M 32 on an XTX (cold; +62%); equal at M 4. Cause from the compiled resource record: the K-parallel kernel at 256-wide scale groups (iq8r) spills 127 VGPRs at NT 2 (M 17-32), 267 at NT 3, 471 at NT 4, where the 128-wide form (i8a8) has none at NT 2; NT 1 (M <= 16) does not spill. Design (unbuilt): cut the SB 256 body's live state at NT >= 2 bit-identically (int32 group sums are exact). Reach: five to eight streams at draft 3. (c) Weight prefetch on versus off at qwen27b-tp3, untraced ABBA: 1 stream 21.83 vs 22.25 ms/step (on wins by 0.42 ms, 1.9%), 4 streams equal; prefetch stays on, 12 MB / 8 MB as measured here, no size sweep.
 
+
+
+**2026-11-23 iq8r M 17-32: whole-step bound and gfx1201 (evidence note section 7).** Selftest rows on one XTX (cold, six rank-0 shapes summed over a decode step): iq8r 34.6-34.8 ms against 19.7-19.8 ms at the i8a8 row's rate for M 20-32, so up to 14.9-15.0 ms a step if the row reached i8a8's time (every shape 1.6-1.9x; flat across M 20-32 because the cost is the spill). Upper bound from isolated cold rows; no step share measured. gfx1201 (libr4d code object): no spills in any four-wave instantiation (SB 256 NT 1-4: 150/197/210/240 VGPRs, 0 spilled), so the fix is libr3-only. Implementation: slice agent/iq8r-kpar-spill, brief iq8r-kpar-spill in the task gpt-briefs folder; gates are resource record, byte identity at M 1-64, cold timing replay, then a decode ms/step A/B at 6 and 8 streams and KLD.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -257,3 +261,4 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - 2026-11-23T08:13:26.045006+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:29:55.975261+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:38:59.382995+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T08:41:23.862081+00:00 (updated-by): Updated: section:notes
