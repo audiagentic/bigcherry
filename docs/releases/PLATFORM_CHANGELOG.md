@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.67.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.66.0...bc-platform-1.67.0) (2026-11-23)
+
+
+### New and changed
+
+* **ltx:** pipeline the issued TP FFN with reductions on the second lane ([#1416](https://github.com/audiagentic/bigcherry/issues/1416)) ([f7355c5](https://github.com/audiagentic/bigcherry/commit/f7355c52bb3e5ea4ee6aa315a1da785e8cdeefb0))
+* **serving:** ingest the helper's calibration record from its log (off by default) ([#1375](https://github.com/audiagentic/bigcherry/issues/1375)) ([6bf0712](https://github.com/audiagentic/bigcherry/commit/6bf0712e17e90efc80f07240e7676da9bd340f60))
+
 ## [1.66.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.65.0...bc-platform-1.66.0) (2026-11-22)
 
 
