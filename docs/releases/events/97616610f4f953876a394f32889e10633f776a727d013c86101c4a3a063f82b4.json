@@ -1,0 +1,13 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261123_014409_the-f32-weight-scale-precision_2005",
+  "files": [
+    "docs/evidence/2026-11-23-rum15-ltx-iq8r-f32-scale-ab/README.md",
+    "docs/evidence/2026-11-23-rum15-ltx-iq8r-f32-scale-ab/table.md",
+    "docs/planning/active/patching-radiance-upstream/RUM15.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Timed every gemm_nt_q IQ8R shape the LTX graph declares, stock against the F32-scale diagnostic build, on each card. The large-M tiled row is unchanged within noise; the narrow row's median moves under 1% with a tail of single shapes.",
+  "timestamp-utc": "2026-11-23T01:44:09.119706Z",
+  "user-summary-candidate": "The F32 weight-scale precision fix costs nothing on the large matrix multiplies LTX runs."
+}
