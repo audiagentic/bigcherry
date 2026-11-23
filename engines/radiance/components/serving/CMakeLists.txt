@@ -54,7 +54,7 @@ target_link_libraries(bc_feature_state PUBLIC bc_json_dependency)
 set(bc_manifest_writer_sources
   manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
   live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp)
-add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp lab_experiment.cpp)
+add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp calibration_watch.cpp sdk_check.cpp lab_experiment.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -140,6 +140,11 @@ if(BUILD_TESTING)
     ${bc_calibration_fixture}
     BC_CALIBRATION_HASH_ONLY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19-with-hash-only.toml")
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
+  add_executable(bc_calibration_watch_test EXCLUDE_FROM_ALL calibration_watch_test.cpp)
+  target_link_libraries(bc_calibration_watch_test PRIVATE bc_serving)
+  target_compile_definitions(bc_calibration_watch_test PRIVATE
+    BC_EXAMPLE_MANIFEST="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json")
+  add_test(NAME bc_calibration_watch_test COMMAND bc_calibration_watch_test)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
   add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp)

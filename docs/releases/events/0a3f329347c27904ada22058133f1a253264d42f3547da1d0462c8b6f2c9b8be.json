@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_110557_no-user-visible-change_1867",
+  "files": [
+    "engines/radiance/components/serving/calibration_watch.h",
+    "engines/radiance/components/serving/calibration_watch.cpp",
+    "engines/radiance/components/serving/live_policy_ingest.cpp",
+    "engines/radiance/components/serving/session.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Owner-side calibration ingest watcher, off by default: the session watches helper 0's log for the single RHP16_CALIBRATION_JSON line and stores it through the ingest primitive with provenance from its own running manifest. The primitive is split from the lab-manifest checks (live_policy_target_from_manifest), a complete row may replace only a partial one, and a store failure is a warning, never a serving failure. No start enables it yet.",
+  "timestamp-utc": "2026-11-22T11:05:57.108910Z",
+  "user-summary-candidate": "No user-visible change."
+}

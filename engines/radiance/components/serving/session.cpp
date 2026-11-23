@@ -5,6 +5,7 @@
 #include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
+#include "calibration_watch.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
@@ -1399,7 +1400,9 @@ class Owner {
                     event("runtime_guard_ready");
                 }
                 event("running");
+                start_calibration_watch();
                 while (service(s_.timing.poll)) {
+                    poll_calibration_watch();
                     if (s_.runtime_watch)
                         require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
                                          "live heat/policy guard");
@@ -1535,6 +1538,7 @@ class Owner {
     std::string handoff_shm_;
     fs::path engine_log_;
     std::vector<fs::path> helper_logs_;
+    std::optional<CalibrationWatch> calibration_watch_;
     std::vector<int> stop_clients_;
     std::vector<Child> children_;
     EngineStart plan_;
@@ -1596,6 +1600,34 @@ class Owner {
     void record_phase(const char* phase, std::chrono::steady_clock::time_point began) {
         record_["phases_ms"][phase] = std::chrono::duration_cast<std::chrono::milliseconds>(
                                           std::chrono::steady_clock::now() - began).count();
+    }
+
+    // Off unless the session names a store. Any failure to watch or store is reported, never a serving failure.
+    void start_calibration_watch() {
+        if (s_.calibration_ingest_store.empty() || helper_logs_.empty()) return;
+        try {
+            const fs::path admitted = plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest;
+            calibration_watch_.emplace(helper_logs_.front(), s_.calibration_ingest_store,
+                                       live_policy_target_from_manifest(admitted));
+            event("calibration_watch", {{"status", "watching"}, {"log", helper_logs_.front().string()},
+                                        {"key_sha256", calibration_watch_->store_key()}});
+        } catch (const std::exception& e) {
+            std::cerr << "bc-serve: calibration ingest not watching: " << e.what() << '\n';
+            calibration_watch_.reset();
+        }
+    }
+    void poll_calibration_watch() {
+        if (!calibration_watch_) return;
+        try {
+            if (!calibration_watch_->poll()) return;
+            const bool stored = calibration_watch_->state() == CalibrationWatch::State::stored;
+            if (!stored) std::cerr << "bc-serve: " << calibration_watch_->detail() << '\n';
+            event("calibration_ingest", {{"status", stored ? "stored" : "not_stored"},
+                                         {"detail", calibration_watch_->detail()}});
+        } catch (const std::exception& e) {
+            std::cerr << "bc-serve: calibration ingest: " << e.what() << '\n';
+        }
+        if (calibration_watch_->state() != CalibrationWatch::State::waiting) calibration_watch_.reset();
     }
 
     bool event(const std::string& kind, const Json& detail = Json::object()) {

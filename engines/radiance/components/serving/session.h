@@ -238,6 +238,10 @@ struct Session {
     // Fake-engine lifecycle tests explicitly opt in with a v2-shaped fixture.
     bool publish_feature_states = false;
     bool strict_production_features = false;
+    // Default off (empty). A calibration store path makes the owner watch helper 0's log for the one settled
+    // RHP16_CALIBRATION_JSON line and ingest it there with provenance from its own running manifest.
+    // A store write failure is a warning in the session record, never a serving failure.
+    std::filesystem::path calibration_ingest_store;
     // Explicit native-serving diagnostic: per-pass HIP event phases under run_dir;
     // absent means no events, no file and no change to recording.
     bool step_phase_trace = false;
