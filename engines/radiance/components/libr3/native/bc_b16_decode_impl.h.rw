@@ -12,11 +12,13 @@
     constexpr int TREE  = (OPT & O_TREE)  ? 1 : 0;
     typedef DT16<F16> D;
     typedef typename D::frag frag16;
-    // Other instantiations retain their original gfx12-compat WMMA path.
+    // Preserve the shim where Form A raised VGPR spills: i8 unchained,
+    // or fp8 NS1 (both chained and unchained). Other variants are unchanged.
     constexpr bool R3_ACC_ONCE = HEAD_DIM == 256 && GQA == 6 && BS == 16 &&
                                  TILE == 16 && !KVP && F16 && WIN == 0 &&
                                  Layout == RAD_KVQ_NONE &&
-                                 (OPT == 3429947 || OPT == 1177835067);
+                                 ((OPT == 3429947 && NWARPS >= 2) ||
+                                  (OPT == 1177835067 && R3_CHAINED));
 @@ end
 
 @@ find 1
@@ -92,4 +94,28 @@
     // fetch-inactive: the f32 partials read lrow under `if (h == 0)` only (see the prefill kernel's
     // epilogue).
     const float lrow = l_i + swap16_fi(l_i);
+@@ end
+
+# Record whether this body is entered through the chained wrapper, a
+# compile-time distinction that allows protecting spill-prone unchained i8.
+@@ find 1
+template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT,
+         int WIN = 0, RadKVLayout Layout = RAD_KVQ_NONE>
+__device__ __forceinline__
+void r4d_attn_decode_body(const R4DArgs& a, int splits)
+@@ replace
+template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT,
+         int WIN = 0, RadKVLayout Layout = RAD_KVQ_NONE, bool R3_CHAINED = false>
+__device__ __forceinline__
+void r4d_attn_decode_body(const R4DArgs& a, int splits)
+@@ end
+
+@@ find 1
+    r4d_chain_wait_vec();
+    r4d_attn_decode_body<NWARPS, TILE, HEAD_DIM, GQA, BS, KVP, OPT, WIN, Layout>(a, splits);
+    r4d_chain_done();
+@@ replace
+    r4d_chain_wait_vec();
+    r4d_attn_decode_body<NWARPS, TILE, HEAD_DIM, GQA, BS, KVP, OPT, WIN, Layout, true>(a, splits);
+    r4d_chain_done();
 @@ end
