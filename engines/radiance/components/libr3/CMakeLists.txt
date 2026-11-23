@@ -58,6 +58,12 @@ if(NOT n_parsed EQUAL n_listed)
   message(FATAL_ERROR "libr3: parsed ${n_parsed} of libr4d's ${n_listed} unit lines; fix the unit pattern")
 endif()
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt excluded REGEX "^r4d_")
+include(${CMAKE_CURRENT_SOURCE_DIR}/r3_groups.cmake)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups.cmake)
+foreach(group IN LISTS R3_KERNEL_GROUPS)
+  set(r3_group_units_${group} "")
+endforeach()
 set(device "")
 set(built "")
 set(skipped "")
@@ -92,6 +98,8 @@ foreach(line ${unit_lines})
   endif()
   list(APPEND device ${wrapper})
   list(APPEND built ${unit})
+  r3_kernel_group("${unit}" group)
+  list(APPEND r3_group_units_${group} "${unit}")
 endforeach()
 list(LENGTH built n_built)
 list(LENGTH skipped n_skipped)
@@ -112,6 +120,35 @@ rad_add_plugin(libr3 kernels
   GPU_TARGETS ${R3_TARGETS}
   INCLUDES    ${r4d} ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_definitions(libr3 PRIVATE R3_TARGETS="${R3_TARGETS}")
+# Compile a family without linking a partial plugin or making missing-unit stubs.
+# Object dependencies are identical to those of the canonical libr3 plugin.
+if(CMAKE_GENERATOR MATCHES "Ninja")
+  foreach(group IN LISTS R3_KERNEL_GROUPS)
+    set(objects "")
+    foreach(unit IN LISTS r3_group_units_${group})
+      list(APPEND objects "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/libr3.dir/units/${unit}.hip.o")
+    endforeach()
+    if(objects)
+      add_custom_target(r3_group_${group} DEPENDS ${objects})
+    else()
+      add_custom_target(r3_group_${group})
+    endif()
+    list(LENGTH r3_group_units_${group} count)
+    message(STATUS "libr3: group ${group}: ${count} unit(s)")
+  endforeach()
+  add_custom_target(r3_groups_all)
+  foreach(group IN LISTS R3_KERNEL_GROUPS)
+    add_dependencies(r3_groups_all r3_group_${group})
+  endforeach()
+endif()
+# Auditable group assignment (one owner per upstream translation unit).
+set(group_manifest "${CMAKE_CURRENT_BINARY_DIR}/r3_groups.tsv")
+file(WRITE "${group_manifest}" "group\tunit\n")
+foreach(group IN LISTS R3_KERNEL_GROUPS)
+  foreach(unit IN LISTS r3_group_units_${group})
+    file(APPEND "${group_manifest}" "${group}\t${unit}\n")
+  endforeach()
+endforeach()
 # the wrappers' -cuid from their path in the build tree, so a new build directory does not miss the compiler cache
 include(${CMAKE_CURRENT_SOURCE_DIR}/r3_cuid.cmake)
 r3_build_tree_cuid(libr3 ${device})
@@ -147,6 +184,10 @@ target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi ${CMAKE_CURRENT_SOU
 
 include(CTest)
 if(BUILD_TESTING)
+  add_test(NAME r3_groups_test
+    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups_test.py
+      --upstream ${RADIANCE_SRC}/libr4d --manifest ${group_manifest})
+  add_custom_target(r3_groups_test)
   add_test(NAME r3_rewrite_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py
       --source ${RADIANCE_SRC}/libr4d --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
