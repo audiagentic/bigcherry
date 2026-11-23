@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.8.6](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.5...bc-radiance-2020.8.6) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** keep decode attention's WMMA sums native on the reached int8 and fp8 forms ([#1468](https://github.com/audiagentic/bigcherry/issues/1468)) ([2bb15b3](https://github.com/audiagentic/bigcherry/commit/2bb15b3f1bf94971f4a9c90218af59866bd25993))
+
 ## [2020.8.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.4...bc-radiance-2020.8.5) (2026-11-23)
 
 
