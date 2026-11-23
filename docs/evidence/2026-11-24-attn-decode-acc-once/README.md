@@ -415,3 +415,10 @@ Other resource records changed in measured units: 0
 ## Full build (before GPU gates)
 
 Full pinned-source gfx1100 `libr3` module and `r3_selftest` executable built under `nice -n 19` and a single compiler job. All 131 Ninja actions completed; the final two linked `radiance_home/kernels/libr3.so` and `r3_selftest`. The plugin generated zero libr4d stubs. Neither byte identity nor attention selftests had run when this build was recorded.
+
+
+## Stage 3b — Form A bit identity
+
+Validated saved eight context sweeps: **288/288 case PASS; zero differing bytes** across scratch partials and merged output (INT8 and FP8 KV both 144/144). Per KV dtype: ctx 1 = 44, ctx 700 = 36, ctx 4096 = 32, ctx 32768 = 32. Both chain states, sequence counts 1-8, qlen 1-4 (and extended 8/10), ragged inputs and inactive/forced splits were exercised. No cases failed or skipped.
+
+Exact controller: `python3 <scratch>/run-bit-gates.py`; each sweep: `agent-lease acquire gpu --ttl 12m --est 5m --wait -- python3 <scratch>/bit-sweep.py <dtype> <ctx> <baseline-plugin> <candidate-plugin>`. Controller ends `COMPLETE: ALL 8 CONTEXT SWEEPS PASSED (byte exact)`; per-case logs `bit-{i8,fp8}-{1,700,4096,32768}.log` report `diff=0` throughout. **Gate 2 PASS**; selftests and cold replay pending.
