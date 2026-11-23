@@ -265,3 +265,149 @@ Against the bound: the isolated bound was about 15 ms a step; the engine took 7.
 (about half to 70%). Sample: n 12 a release a row, one launch an arm, the same seeds in both releases. Prefill was not
 separately tested. Five and seven streams were not run. KLD was not run: the rewrite is byte-identical at every M
 1-64, so KLD would be redundant.
+
+## 8. Spill scan, decode attention at one KV head, and the drafter's 4-bit row
+
+Method as above (`r3_selftest`-style replay out of tree, `--cold 256`, median of the launches, each launch timed alone,
+one 7900 XTX with the shipped libr3 and the R9700 with libr4d; the replay harness was a scratch copy of the selftest
+source with two added perf functions, nothing committed). Releases: 2020.8.1.
+
+### 8.1 Static spill scan
+
+Every AMDGPU code object of the shipped libr3.so (gfx1100) and libr4d.so (gfx1201), resource notes read with
+`llvm-readobj --notes` (vgpr_count, vgpr_spill_count, private_segment_fixed_size):
+
+| object | kernels | spilling | max VGPRs spilled |
+|---|---|---|---|
+| libr3.so, gfx1100 | 7952 | 2009 | 14818 (vocab sort, not a decode kernel) |
+| libr4d.so, gfx1201 | 7885 | 789 | 2037 |
+
+Largest families on gfx1100 (instantiations / spilling / max spilled VGPRs / max private bytes), decode-relevant first:
+
+| family | inst | spilling | max spill | max private B |
+|---|---|---|---|---|
+| iqr (m16, m64, gemv, gated, tiled) | 948 | 546 | 1310 | 3640 |
+| r4d_gemm_mxfp4a8_decode_kernel | 280 | 240 | 733 | 2280 |
+| r4d_gemm_mxfp4a8_gemv_kernel | 18 | 6 | 3381 | 2076 |
+| r4d_gemm_w4a8_nt_m64 (and chained) | 64 | 38 | 1662 | 3176 |
+| r4d_gemm_w8a8_tiled / w4a8_tiled / w4a8_prefill | 45 | 45 | 1755 | 5004 |
+| r4d_attn_decode_kernel (and chained) | 388 | 258 | 339 | 940 |
+| r4d_attn_prefill_kernel | 91 | 77 | 717 | 904 |
+| r4d_gdn_chunk_scan_kernel | 8 | 8 | 309 | 920 |
+
+A spill is not a defect by itself; the table is a list of where to look. Reach (does a served row use the instantiation)
+is what decides, and the two cases below were checked for it.
+
+### 8.2 Decode attention at the rank-0 shape (one KV head), XTX against R9700
+
+Row `attn_decode_h256_gqa6_fp8kv` (the engine's), q_len 4, one sequence, per call = decode kernel + combine kernel. The
+instantiation the engine launches (kernel trace): `r4d_attn_decode_kernel<2,16,256,6,16,0,3429947,0,0u>`, 256 VGPRs,
+240 B private scratch; the combine kernel is 24 VGPRs, no scratch. The libr3 native override covers only the paged
+prefill kernel; decode is libr4d's source compiled for gfx1100.
+
+us per call, default splits, same KV heads on both cards:
+
+| KV heads | context | XTX | R9700 | ratio |
+|---|---|---|---|---|
+| 1 | 700 | 87.9 | 17.8 | 4.95x |
+| 1 | 8192 | 105.9 | 28.6 | 3.70x |
+| 1 | 32768 | 211.8 | 49.0 | 4.32x |
+| 2 | 700 | 87.8 | 17.7 | 4.97x |
+| 2 | 8192 | 135.7 | 34.7 | 3.91x |
+| 2 | 32768 | 362.7 | 74.8 | 4.85x |
+
+At each card's best split count the ratio is 3.85x (700), 4.1x (8k), 4.3x (32k); the bandwidth ratio is 1.5x in the
+XTX's favour. Splits pinned (1 KV head, XTX / R9700): ctx 700 default (22 segments) 87.9 / 17.8, 64 or more segments
+63.7 / 16.5; at 8k and 32k the default (256) is already the best point on both cards (one segment: 8.2 ms / 0.84 ms at
+8k, 32.6 / 3.26 ms at 32k).
+
+Reading:
+- The split law's `tiles / 2` cap costs the XTX about 24 us a call at ctx 700 (a pin at 64 or more is 28% faster there,
+  7% faster on the R9700): about 0.4 ms a step over 16 layers, nothing at depth. A derivation issue; any fix must derive
+  the segment count from the device and geometry, not a new literal.
+- The larger part is the kernel's per-workgroup throughput on gfx1100: one segment over 32k tokens takes 10x as long on
+  the XTX, and at the best split the XTX moves 16 MiB in 212 us (79 GB/s, 8% of its bandwidth) where the R9700 reaches
+  343 GB/s. The bf16-KV row (no fp8 widen) is still 3.1x / 2.0x / 2.5x slower than the R9700 (58.5 / 77.0 / 194 us against
+  18.8 / 38.2 / 76.6 at 700 / 8k / 32k), and fp8 costs the XTX a further 1.1-1.5x that the R9700 does not pay. Spills,
+  the gfx11 WMMA shim (8-register operands) and the software fp8 widen all contribute; ranking them needs a spill-free
+  variant of the decode unit, which was not built.
+- Consistency with the engine: 16 layers x 87.9 us = 1.41 ms against 16 x 17.8 = 0.28 ms; the perturbed trace read 1.16
+  and 0.22 ms a pass.
+- Verify attention does not grow with the row count (1.18 / 1.26 / 1.54 ms a pass at 16 / 24 / 32 rows on rank 0): the gap
+  is a constant per pass.
+Bound (one stream, one pass a step, if the XTX reached 1.5x the R9700's time): about 1.0 ms a step at ctx 700 and 8k,
+about 2.2 ms at 32k; the split-law part alone about 0.4 ms at ctx 700. Not pursued now (a gfx11 attention variant is a
+larger project).
+
+### 8.3 The DFlash2 drafter's linears: the 4-bit table row at M 17-32
+
+Form (container descriptor, `rad-info`): `affine codes=u4, scale=bf16[1x128], table=i8{1x16}, fwht128` on every drafter
+linear (q 4096x5120, k and v 1024x5120, out 5120x4096, gate_up 34816x5120, down 5120x17408 in 5 layers; fc 5120x25600
+once): the IQR `kTable` form, 4 bits, a bf16 scale per (row, 128). Not a `tiles_form`, so `m64_launch` serves M <= 16
+with the spill-free 16-token tile and M 17-64 with `iqr_m64_kernel` (nt = ceil(M / 16)). The drafter runs 4 rows a
+stream, so five to eight streams are M 20-32.
+
+Resource record, gfx1100, kTable 4 bits, unchained (VGPRs / spilled / private bytes):
+
+| nt | MW 4 | MW 8 |
+|---|---|---|
+| 1 | 240 / 64 / 164 | 256 / 47 / 96 |
+| 2 | 240 / 357 / 1052 | 256 / 298 / 932 |
+| 3 | 240 / 750 / 2280 | 256 / 693 / 2180 |
+| 4 | 256 / 1020 / 3132 | 256 / 970 / 3140 |
+
+Cold replay of `gemm_iqr_nt_m64` (dtype i8a8h) on the XTX, us, M 16 / 20 / 24 / 28 / 32:
+
+| shape (N x K) | M16 | M20 | M24 | M28 | M32 |
+|---|---|---|---|---|---|
+| 34816 x 5120 gate_up | 214 | 1709 | 1706 | 1712 | 1687 |
+| 5120 x 17408 down | 129 | 971 | 973 | 981 | 974 |
+| 4096 x 5120 q | 41 | 287 | 289 | 293 | 297 |
+| 5120 x 4096 out | 40 | 245 | 248 | 251 | 253 |
+| 1024 x 5120 k, v | 18 | 98 | 98 | 100 | 104 |
+| 5120 x 25600 fc | 180 | 1403 | 1405 | 1413 | 1403 |
+
+On the R9700 (libr4d) the same row is flat: gate_up 165 / 189 / 191 us at M 16 / 24 / 32, down 85 / 124 / 124.
+
+Engine reach (step-phase trace, 2020.8.1, six and eight streams, one launch; the draft model pass, compute ms
+median / wall ms by rows a pass):
+
+| rows | 4 | 8 | 16 | 24 | 28 | 32 |
+|---|---|---|---|---|---|---|
+| XTX ranks 0, 1 | 2.86 / 4.6 | 3.18 / 4.9 | 3.28 / 5.2 | 10.2 / 12.2 | 10.4 / 12.3 | 10.5 / 12.5 |
+| R9700 rank 2 | 2.33 / 4.6 | 2.46 / 4.9 | 2.34 / 5.2 | 2.36 / 12.2 | 2.43 / 12.2 | 2.42 / 12.5 |
+
+The drafter runs on all three ranks at near-equal time at M <= 16 (replicated, not sharded; the isolated full-shape
+M16 total is 2.3 ms). Past 16 rows the XTX ranks' pass grows by about 6.9 ms and the step waits for them. The isolated
+figure (17.0 ms against 2.3 ms a pass at full shapes, up to 14.7 ms a step) is an upper bound the engine does not reach
+(+6.9 ms); the traced step is 51.4 ms at six streams and 57.0 ms at eight against 36.7 / 37.7 ms untraced (the trace
+perturbs), so scaling the excess by 37.7 / 57 gives about 4.6 ms of the untraced step (~12%) as the realistic ceiling for
+a fix. Sample: one launch, 49 passes at 24 rows and 47 at 32; the trace perturbs timing, so shares are not additive.
+
+Design of a fix (not done): the same family as the iq8r one, but not a single pragma. In `iqr_m64_body` the unit loop
+(`kU = FK / kBlock = 2`) is unrolled and `pf[]`, `pfn[]` (this and the next chunk's weight codes), `bf[]`, `raw[]`, `out[]`
+are indexed by the unit or token tile, so `unroll 1` would move them to private memory. Candidate cuts that leave the
+arithmetic and fold order untouched, in order: (a) issue the next chunk's fetch after the unit loop so `pf` and `pfn`
+are not both live; (b) hold the staged activation rows across fewer rows; (c) run nt >= 2 as nt 1 passes over the same
+decoded weight tile inside one block. Contract: byte-identical output at every M 1-64.
+
+### 8.4 What else grows past 16 rows in the target pass
+
+Target verify pass (draft_pass 0), per-op tape segments, medians (23 / 47 / 45 passes at 16 / 24 / 32 rows), ms a pass,
+XTX rank 0 | R9700 rank 2:
+
+| op | 16 | 24 | 32 | R9700 16 / 24 / 32 |
+|---|---|---|---|---|
+| gemm_nt_q (288 launches) | 14.00 | 20.25 | 20.73 | 9.70 / 10.67 / 10.82 |
+| gdn_conv_recurrent_update_had | 1.61 | 2.36 | 2.80 | 1.44 / 1.87 / 2.23 |
+| attn_paged | 1.18 | 1.26 | 1.54 | 0.31 / 0.33 / 0.37 |
+| logits_gemm | 0.63 | 0.92 | 0.97 | 0.72 / 0.73 / 0.75 |
+| all_reduce (wait) | 5.63 | 7.21 | 9.32 | 10.47 / 18.01 / 20.66 |
+
+Compute on rank 0 grows 23.95 -> 30.64 ms (+6.7) and on the R9700 18.90 -> 19.46: the int8 GEMMs explain it (+6.25 ms
+against +0.97). Per launch on rank 0: gate_up ~90 us at 16 rows, 125-135 us at 24-32; down ~60 -> ~80 us; the R9700's
+launches do not move. After the 2020.8.1 fix the iq8r nt 2 row runs at the i8a8 rate (137 us at M 32 for 13312x5120),
+so what remains is nt 2 itself against nt 1, in both rows, with no spill (iq8r nt 2 is spill-free, i8a8 SB128 nt 2 is 221
+VGPRs and 0 spills). Excess over the R9700's growth: about 5.3 ms of traced compute, about 3.5 ms of the untraced step
+at six to eight streams. The cause is not visible in the resource record; a profile (VALU, WMMA, LDS and occupancy
+counters) of the six shapes at M 16 against M 17-32 would show it.
