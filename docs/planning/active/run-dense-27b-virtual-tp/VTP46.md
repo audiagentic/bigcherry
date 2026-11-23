@@ -2,7 +2,7 @@
 id: VTP46
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: in_progress
 created-at: '2026-11-23T20:42:14.800583+00:00'
 breadth: ''
 skill: advanced
@@ -62,3 +62,4 @@ Large. Risk: the repeated QK per warp costs more than the spills it removes on g
 
 - 2026-11-23T20:42:14.800583+00:00 (created-by): Created by agent
 - 2026-11-23T20:43:07.491746+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-23T20:48:32.456232+00:00 (state-transition): State: pending → in_progress
