@@ -34,8 +34,48 @@ Writes only the explicitly selected CMake build directory or pytest temporary di
 
 ## Disposition
 
-Experimental lab proof for LT3-03/04/05/07/11/12. Do not promote to shared tooling or production until its ownership/ABI is designed against the RUM-migrated upstream LTX builder and a real device implementation passes numerical parity. Delete only through the tooling disposition/retirement process after an accepted replacement; preserve this reference while cited by the design.
+Concluded experiment, kept as a lab (see the section below): the card-free reference and the model-aware gate remain the
+executable record of the TP3 design and its rejection. Do not promote to shared tooling or production scheduling. Delete only through
+the tooling disposition/retirement process; preserve it while the design or the evidence cites it.
 
+## Concluded: tensor parallel over host-staged reductions is rejected for LTX (2026-11-23)
+
+Status: **concluded, rejected as a speed lever; retained as a lab and a measured reference.** This lab and
+`native-c01-gate/` hold the whole TP3 experiment. Nothing from it is promoted to production scheduling.
+
+Question answered: can LTX-2.5 IQ8R run faster over two or three cards by splitting each layer (tensor parallel) when
+the cards have no peer-to-peer path and every cross-card reduction goes through pinned host memory?
+
+Answer: **no**. One video block at 2048 tokens takes 6.68 ms on the R9700 and 13.05 ms on one RX 7900 XTX. Two XTX with an
+exact all-reduce take 19.7 ms (0.67x one XTX), three cards about 21 ms. Each reduction moves the full activation
+(about 16.8 MB at 2048 tokens, about 260 MB at the largest step) twice per block, about 3 ms each, as long as the block's own
+compute. Rejected variants, all measured: pipelining GEMM against the reduction (no gain at two ranks), the `ts_*` split
+axes (only the three-rank exact path), a 6-bit rotated wire (parity with one card at 5-7x the exact error). The R9700 alone
+beats every tensor-parallel arm. Evidence: `docs/evidence/2026-11-22-ltx03-issued-block-timing/` (timings, kbench rows, int8
+reference).
+
+What replaced it: guidance-pass parallelism (each card runs whole passes, no per-layer reduction), measured in
+`docs/evidence/2026-11-23-ltx-pass-parallel-contention/` and `docs/evidence/2026-11-23-ltx-pass-placement/`
+(`native-c01-gate/ltx_pass_residency.h`, `ltx_pass_full.h`).
+
+What this experiment built and where it lives (each step is on main, with its PR):
+
+| Step | What it proved | Lives in |
+| --- | --- | --- |
+| LT3 reference, C01 weight receipt (#1297) | uneven three-rank slices keep scale-group K cuts and head ownership | this directory, `native-c01-gate/ltx_c01_weight_receipt_test.cpp` |
+| C02 `Lin::declare`, C06 builder (#1306, #1309, #1301, #1315) | the patched TP linear declare and native weight shares/relayout match the checkpoint | patch `rad0060_ltx2_tp3_linear_declare`, `ltx_c02_lin_declare_test.cpp` |
+| C05 all-head QK RMS (#1296), C07/C08 exact reduction, mixed-card AQL (#1262) | exact collective across mixed cards works | `ltx_c05_issued_test.cpp`, `ltx_native_aql_roster.h` |
+| Issued attention at 16/64 rows, all 48 blocks (#1398, #1396), numeric check across XTX and R9700 (#1321) | declarations hold on every block; the two architectures differ numerically | `ltx_c02_lin_declare_test.cpp` |
+| Text and cross-modal attention, FFN and modulation declarations (`d98914ba9`), issued FFN (#1414) | cross-attention, FFN and residual shard correctly | same |
+| Pipelined FFN with reductions, block timing (#1416, #1422) | the timings above | same, evidence directory |
+
+Would reopen the question: a peer-to-peer or other fast cross-card link (the reduction would drop well below the block's
+compute), a reduction that sends far fewer bytes without the lossy wire's error, or models whose tensors per layer are
+small. If tensor parallel is revisited, the all-head QK norm needs only a reduced sum of squares, not the full Q/K (prior-art
+scan), and the 6-bit wire must be re-qualified on generated video, not on a block.
+
+The abandoned worktree tips for this work were not kept as archives: their content is merged above, so the record is
+this section, the PR numbers and the evidence directories.
 
 ## Optional real-model validation (separate test tooling)
 
