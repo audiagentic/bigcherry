@@ -79,3 +79,47 @@ rewrite drift checks and whitespace checks pass.
 | 4 | 256 | 4 | ch | 174/0/0/8 | 174/0/0/8 |
 | 4 | 256 | 4 | un | 171/0/0/8 | 171/0/0/8 |
 
+## Stage 2 — exact BF16 byte identity: HARD STOP / FAIL
+
+The first same-process bit-check, IQ8R unchained, ran under its own queued
+GPU lease with identical deterministic inputs and scales, comparing the
+validated pre-change full plugin with the stage-1 isolated-unit candidate.
+All 576 M/shape checks executed and the harness returned nonzero:
+
+**144 PASS, 0 SKIP, 432 FAIL.** M=1–48 failed on all nine shapes.
+M=49–64 passed on all nine shapes (the NT4 fallback uses the original
+token-fragment route). Every failing check reported equal=0, touched=1:
+destination writes occurred, but the complete BF16 output bytes differed.
+The failure covers KW2 as well as the standard long-K groups and ragged N.
+
+Individual shape totals (all 16 passes per shape are M=49–64):
+
+- SHAPE gate_up      N=13312 K=5120 PASS=16 SKIP=0
+- SHAPE down         N=5120 K=6656 PASS=16 SKIP=0
+- SHAPE delta_in     N=6144 K=5120 PASS=16 SKIP=0
+- SHAPE delta_out    N=5120 K=2304 PASS=16 SKIP=0
+- SHAPE attn_qgate   N=3072 K=5120 PASS=16 SKIP=0
+- SHAPE attn_out     N=5120 K=1536 PASS=16 SKIP=0
+- SHAPE ragged_N_16  N=5136 K=5120 PASS=16 SKIP=0
+- SHAPE kw2_iq       N=5120 K=512 PASS=16 SKIP=0
+- SHAPE kw2_i8       N=5120 K=256 PASS=16 SKIP=0
+
+The numerical cause and first differing byte were **not isolated**; the
+current native token fragment is **not bit-identical** and must not ship.
+No argument based on eliminated exchange instructions or reduced VGPR
+overrides this hard correctness gate.
+
+The guard stopped the sweep at the first failing process. IQ8R chained,
+I8A8 unchained, and I8A8 chained were NOT RUN. The 115-unit full libr3
+build, targeted narrow-row/IQR r3_selftest cases, and cold replay were
+NOT RUN, as required by the hard stop. Consequently no full-build or
+selftest PASS is claimed. No serving run, ms/step A/B, or KLD ran.
+The per-run GPU lease was released; the post-run device check showed
+no active compute PIDs.
+
+**Final disposition: NOT READY — bit identity failed.** The experimental
+branch and resource-gate evidence are retained for review only. No push,
+merge or shipping action was performed; no additional kernels or
+rewrite files were edited. Further work needs a separately authorised
+correction and full requalification starting at the resource gate.
+
