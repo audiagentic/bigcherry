@@ -227,6 +227,9 @@ LivePolicyStartup startup(const S10PolicyPreflight &p,
     out.reason_code = "not_applicable";
   } else if (p.requested == LivePolicyRequested::kOff) {
     out.reason_code = "disabled_by_request";
+  } else if (p.requested == LivePolicyRequested::kCalibrating) {
+    // No record exists for this layout: the helper calibrates in session. Not configured, and not a refusal.
+    out.reason_code = "calibrating";
   } else if (!p.fresh_heat) {
     out.reason_code = "stale_heat_feed";
   } else {

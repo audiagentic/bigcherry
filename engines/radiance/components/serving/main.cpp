@@ -74,6 +74,8 @@ void usage() {
            "      --live-policy FILE   lab-only JSON override of every spec.handoff.placement.live_policy "
            "member; present means\n"
            "                     the helper runs the live placement policy. Nothing is defaulted.\n"
+           "      --auto-calibrate-live-policy  with --calibration FILE, a measured production start with no record for its layout\n"
+           "                           calibrates the live policy in session (default off)\n"
            "      --calibration-run    the lab calibration start: lab profile with the explicit --live-policy "
            "and no\n"
            "                     experiment, so the measured plan is the production plan.\n"
@@ -742,6 +744,7 @@ int main(int argc, char** argv) {
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file, calibration_records_file,
             s8_replay_evidence_file;
+        bool auto_calibrate_live_policy = false;   // default off: no in-session calibration unless asked for
         std::string expected_owner_attempt;
         std::string power_profile;
         // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
@@ -788,6 +791,8 @@ int main(int argc, char** argv) {
                 write_manifest = need_arg("--write-manifest");
             else if (arg == "--unmeasured")
                 unmeasured = true;
+            else if (arg == "--auto-calibrate-live-policy")
+                auto_calibrate_live_policy = true;
             else if (arg == "--live-policy")
                 live_policy_file = need_arg("--live-policy");
             else if (arg == "--calibration-run")
@@ -1071,6 +1076,7 @@ int main(int argc, char** argv) {
             }
             in.measured = bc::serving::MeasuredPlan{*plan, key_inputs};
             in.s10 = s10;
+            in.auto_calibrate = auto_calibrate_live_policy;
             load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
             load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
             const auto built = bc::serving::build_manifest(in);

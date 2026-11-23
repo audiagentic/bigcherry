@@ -393,6 +393,36 @@ static void derive_says_why() {
     assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));                   // store without this key
     assert(why.find("no calibration record for key=") != std::string::npos);
     assert(why.find(store.string()) != std::string::npos);
+
+    // RHP16: with auto-calibration asked for (default off), a start with no record gets the declared objectives and a
+    // heat-age limit derived from the heat period; every other start gets nothing.
+    in.resolved.values = Json{{"layout", {{"name", "flashnext-4gpu"}}}, {"service", {{"objective", "balanced"}}}};
+    Json calibrating_spec = policy_spec;
+    calibrating_spec["handoff"]["telemetry"]["histogram_file"] = "/run/heat.live";
+    calibrating_spec["handoff"]["telemetry"]["period_s"] = 3;
+    why.clear();
+    assert(!sv::derive_manifest_live_calibration(in, calibrating_spec, &why) && why.empty());      // off by default
+    in.auto_calibrate = true;
+    const auto block = sv::derive_manifest_live_calibration(in, calibrating_spec, &why);
+    assert(block);
+    const auto at_cal = sv::CalibrationMatch{"", "flashnext-4gpu", "balanced"};
+    const auto declared = sv::Calibration::standard(store);
+    const int64_t missed = declared.integer("calibration.live_policy.calibration_missed_heat_writes", at_cal);
+    assert(block->at("max_heat_age_ns").get<int64_t>() == 3000000000LL * (missed + 1));
+    assert(block->at("effect_windows").get<int64_t>() ==
+           declared.integer("calibration.live_policy.transaction_effect_windows", at_cal));
+    // Histogram off: no heat to calibrate from.
+    Json no_heat = calibrating_spec;
+    no_heat["handoff"]["telemetry"]["histogram_file"] = nullptr;
+    why.clear();
+    assert(!sv::derive_manifest_live_calibration(in, no_heat, &why) && why.find("heat histogram") != std::string::npos);
+    // No store: nowhere to keep the record.
+    sv::ManifestInputs no_store = in;
+    no_store.calibration_cache.clear();
+    why.clear();
+    assert(!sv::derive_manifest_live_calibration(no_store, calibrating_spec, &why) && why.find("calibration store") != std::string::npos);
+    // The block is not a key input: the key fields are fixed and never name it.
+    assert(sv::policy_calibration_key_fields().dump().find("calibrat") == std::string::npos);
     fs::remove(store);
 }
 

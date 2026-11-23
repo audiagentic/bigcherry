@@ -103,6 +103,21 @@ void not_applicable_and_newline_warning() {
     assert(find(na.entries, "live_policy").at("state") == "inactive");
     assert(na.warnings.empty());
 
+    // RHP16: calibrating is a started feature, not a production warning; it carries the live_calibration block.
+    Json calibrating = manifest(false);
+    calibrating["spec"]["handoff"]["placement"]["live_policy_state"]["requested"] = "calibrating";
+    calibrating["spec"]["handoff"]["placement"]["live_calibration"] = {
+        {"effect_windows", 2}, {"false_revert_rate_ppm", 10000}, {"max_heat_age_ns", 2000000000}};
+    calibrating["spec"]["intent"]["service"]["profile"] = "production";
+    const auto cal = feature::from_manifest(calibrating, "2026-11-19T12:34:56Z");
+    assert(find(cal.entries, "live_policy").at("reason_detail").get<std::string>().find("requested=calibrating") == 0);
+    assert(cal.warnings.empty());
+    Json block_without_state = manifest(false);
+    block_without_state["spec"]["handoff"]["placement"]["live_calibration"] = calibrating["spec"]["handoff"]["placement"]["live_calibration"];
+    bool inconsistent = false;
+    try { (void)feature::from_manifest(block_without_state, "2026-11-19T12:34:56Z"); } catch (const std::exception&) { inconsistent = true; }
+    assert(inconsistent);
+
     Json unsafe = manifest(false);
     unsafe["spec"]["handoff"]["placement"]["live_policy_state"]["reason_detail"] = "first\nsecond";
     const auto snapshot = feature::from_manifest(unsafe, "2026-11-19T12:34:56Z");

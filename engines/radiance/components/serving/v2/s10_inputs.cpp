@@ -88,9 +88,11 @@ Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, 
   const bool has_helpers = !m.spec.processes.helpers.empty();
   const auto &placement = m.spec.handoff ? std::optional(m.spec.handoff->placement) : std::nullopt;
   const bool live = placement && placement->live_policy.has_value();
+  const bool calibrating = placement && placement->live_calibration.has_value();
   in.preflight.requested = !has_helpers ? LivePolicyRequested::kNotApplicable
-                           : live      ? LivePolicyRequested::kOn
-                                       : LivePolicyRequested::kOff;
+                           : live        ? LivePolicyRequested::kOn
+                           : calibrating ? LivePolicyRequested::kCalibrating
+                                         : LivePolicyRequested::kOff;
   in.preflight.applicable = has_helpers && m.spec.processes.engine.device.gpus.size() == 1;
   // The writer has already derived the policy from the heat feed (or been given one in the lab); its presence is the
   // fresh-heat decision.

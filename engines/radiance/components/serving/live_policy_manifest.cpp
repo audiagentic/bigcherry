@@ -5,18 +5,16 @@
 
 #include <algorithm>
 #include <exception>
+#include <unistd.h>
 #include <limits>
 #include <stdexcept>
 
 namespace bc::serving {
-std::optional<DerivedLivePolicy> derive_manifest_live_policy(
-    const ManifestInputs& in, const bc::experts::Container& container, const Json& spec,
-    std::string* skipped_reason) {
-    // An unmeasured manifest is never what a start uses (the measured one follows), so it carries no reason.
-    if (!in.measured) return std::nullopt;
-    // The placement planner (worker_heat.h, worker_share::plan_tail) takes the LAST helper to be the tail and every other helper a head.
-    // Another arrangement would make it treat a head as a tail (flashnext-2xtx has no tail) or override a weighted head split
-    // (flashnext-2xtx-rdna2-head); a layout it was not built for gets no policy, with the reason, until the planner is topology-aware (RHP20).
+namespace {
+// The placement planner (worker_heat.h, worker_share::plan_tail) takes the LAST helper to be the tail and every other helper a head.
+// Another arrangement would make it treat a head as a tail (flashnext-2xtx has no tail) or override a weighted head split
+// (flashnext-2xtx-rdna2-head); a layout it was not built for gets no policy, with the reason, until the planner is topology-aware (RHP20).
+bool planner_arrangement_supported(const ManifestInputs& in, std::string* skipped_reason) {
     if (in.resolved.manifest.is_object() && in.resolved.manifest.contains("process_helpers") &&
         !in.resolved.manifest.at("process_helpers").empty()) {
         const Json& ph = in.resolved.manifest.at("process_helpers");
@@ -31,9 +29,19 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
             if (skipped_reason)
                 *skipped_reason = "the live placement planner needs head helpers followed by exactly one tail helper; this layout's "
                                   "helpers are [" + arrangement + "] (no tail helper, or heads weighted by share, are not supported yet)";
-            return std::nullopt;
+            return false;
         }
     }
+    return true;
+}
+} // namespace
+
+std::optional<DerivedLivePolicy> derive_manifest_live_policy(
+    const ManifestInputs& in, const bc::experts::Container& container, const Json& spec,
+    std::string* skipped_reason) {
+    // An unmeasured manifest is never what a start uses (the measured one follows), so it carries no reason.
+    if (!in.measured) return std::nullopt;
+    if (!planner_arrangement_supported(in, skipped_reason)) return std::nullopt;
     if (in.calibration_cache.empty()) {
         if (skipped_reason) *skipped_reason = "no calibration store was given (bc-serve --calibration)";
         return std::nullopt;
@@ -92,6 +100,44 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
         return derive_live_policy(*record, Calibration::standard(in.calibration_cache), match, stride, budgets);
     } catch (const std::exception& e) {
         return skip(e.what());
+    }
+}
+
+std::optional<Json> derive_manifest_live_calibration(const ManifestInputs& in, const Json& spec, std::string* why) {
+    const auto no = [&](const std::string& reason) -> std::optional<Json> {
+        if (why) *why = reason;
+        return std::nullopt;
+    };
+    if (!in.measured || !in.auto_calibrate) return std::nullopt;
+    if (!planner_arrangement_supported(in, why)) return std::nullopt;
+    if (in.calibration_cache.empty()) return no("auto-calibration needs a calibration store (bc-serve --calibration)");
+    // A store the session cannot write could never keep the record: do not measure for nothing.
+    const auto dir = in.calibration_cache.has_parent_path() ? in.calibration_cache.parent_path() : std::filesystem::path(".");
+    if (::access(dir.c_str(), W_OK) != 0)
+        return no("auto-calibration needs a writable calibration store directory: " + dir.string());
+    const Json& telemetry = spec.at("handoff").at("telemetry");
+    if (!telemetry.contains("histogram_file") || telemetry.at("histogram_file").is_null() || telemetry.at("period_s").get<int64_t>() <= 0)
+        return no("auto-calibration needs the live heat histogram on (handoff.histogram with a period)");
+    try {
+        const std::string key = policy_calibration_key(policy_calibration_inputs(spec));
+        const auto record = read_live_policy_record(in.calibration_cache, key);
+        if (record && live_policy_record_complete(*record)) return std::nullopt;   // derive_manifest_live_policy owns this case
+        const CalibrationMatch match{"", in.resolved.values.at("layout").at("name").get<std::string>(),
+                                     in.resolved.values.at("service").at("objective").get<std::string>()};
+        const Calibration cal = Calibration::standard(in.calibration_cache);
+        const int64_t windows = cal.integer("calibration.live_policy.transaction_effect_windows", match);
+        const int64_t false_rate = cal.integer("calibration.live_policy.false_revert_rate_ppm", match);
+        const int64_t missed = cal.integer("calibration.live_policy.calibration_missed_heat_writes", match);
+        // The heat file is rewritten once per period: a probe may use an observation up to the declared number of missed
+        // writes older than that.
+        const int64_t period_ns = telemetry.at("period_s").get<int64_t>() * 1000000000LL;
+        if (windows <= 0 || false_rate <= 0 || false_rate >= 1000000 || missed < 0 ||
+            period_ns > std::numeric_limits<int64_t>::max() / (missed + 1))
+            return no("declared calibration objectives are out of range");
+        return Json{{"effect_windows", windows}, {"false_revert_rate_ppm", false_rate},
+                    {"max_heat_age_ns", period_ns * (missed + 1)}};
+    } catch (const std::exception& e) {
+        return no(std::string("auto-calibration unavailable: ") + e.what());
     }
 }
 } // namespace bc::serving

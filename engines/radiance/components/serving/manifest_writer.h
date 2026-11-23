@@ -42,6 +42,9 @@ struct ManifestInputs {
     // policy. `live_policy_from` names where it came from, for its provenance record.
     nlohmann::json live_policy;
     std::string live_policy_from;
+    // Default off: a measured start with no usable calibration record then asks the helper to calibrate in session
+    // (spec.handoff.placement.live_calibration). Set only by an explicit setting; see derive_manifest_live_calibration.
+    bool auto_calibrate = false;
     // spec.experiment, lab profile only; null = none. `experiment_from` as above.
     nlohmann::json experiment;
     std::string experiment_from;

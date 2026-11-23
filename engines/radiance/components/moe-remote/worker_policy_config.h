@@ -58,14 +58,18 @@ struct Settings {
 
     /* The calibrating settings, from facts the launch declares: the heat period (the histogram feed's write period, which is
      * also the poll cadence and the freshness horizon of one missed write), the helper shares and the declared objectives.
-     * No planner margin exists yet (the least representable one, one ppm, is used), nothing has to dwell, and the size
-     * of a move is set per probe by the driver's ramp, so the move limits here are only placeholders. */
+     * The heat-age limit is a declared objective (live_calibration.max_heat_age_ns, from calibration.toml), not a literal here.
+     * No planner margin exists yet, nothing has to dwell, no sample count is required, and the size of a move is set
+     * per probe by the driver's ramp. The 1-valued members below (min_residency_ns, min_samples, max_moves,
+     * max_moved_bytes) and the 1e-6 margin are the smallest values controls_valid() accepts, not tuned numbers: they say
+     * "no minimum" until the derived settings replace these. */
     bool calibrating_from(uint64_t heat_period_ns, const std::vector<uint32_t>& shares, int64_t effect_windows,
-                          int64_t false_revert_rate_ppm, std::string* error) {
+                          int64_t false_revert_rate_ppm, int64_t max_heat_age_ns, std::string* error) {
         if (!error) return false;
         if (!heat_period_ns || shares.size() < 2 || effect_windows <= 0 || false_revert_rate_ppm <= 0 ||
-            false_revert_rate_ppm >= 1000000) {
-            *error = "calibrating: want a heat period, at least two helper shares and the declared objectives";
+            false_revert_rate_ppm >= 1000000 ||
+            max_heat_age_ns < int64_t(heat_period_ns)) {
+            *error = "calibrating: want a heat period, at least two helper shares, the declared objectives and a heat-age limit of at least one period";
             return false;
         }
         *this = Settings{};
@@ -78,7 +82,7 @@ struct Settings {
         controls.half_life_observations = 1.0;   // the latest heat window, no memory beyond it
         controls.margin = 1e-6;
         controls.min_residency_ns = 1;
-        controls.max_heat_age_ns = 2 * heat_period_ns;   // the period plus one missed write
+        controls.max_heat_age_ns = uint64_t(max_heat_age_ns);
         controls.min_samples = 1;
         controls.max_moves = 1;
         controls.max_moved_bytes = 1;

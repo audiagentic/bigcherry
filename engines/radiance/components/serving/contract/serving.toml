@@ -146,6 +146,10 @@ path = "/spec/handoff/placement/live_policy_state"
 class = "derived"
 
 [[class_default]]
+path = "/spec/handoff/placement/live_calibration"
+class = "derived"
+
+[[class_default]]
 path = "/spec/experiment"
 class = "diagnostic"
 
@@ -1264,9 +1268,9 @@ doc = "Immutable RHP18 policy startup decision; runtime degradation belongs to r
 [[field]]
 path = "/spec/handoff/placement/live_policy_state/requested"
 kind = "enum"
-values = ["on", "off", "not_applicable"]
+values = ["on", "off", "not_applicable", "calibrating"]
 cpp_type = "LivePolicyRequested"
-doc = "Policy requested on, off or not applicable."
+doc = "Policy requested on, off, not applicable, or calibrating: no calibration record exists for this layout, so the helper measures the live heat and derives the policy in session."
 
 [[field]]
 path = "/spec/handoff/placement/live_policy_state/configured"
@@ -1431,6 +1435,32 @@ min_items = 0
 max_items = 512
 unique_items = true
 doc = "Model-global layer ids the policy never moves, strictly ascending; empty means none."
+
+[[field]]
+path = "/spec/handoff/placement/live_calibration"
+optional = true
+kind = "object"
+cpp = "LiveCalibration"
+doc = "Present only when live_policy_state.requested is calibrating (and then live_policy is absent): the declared, non-measured inputs the helper needs to calibrate the live policy from the live heat. Every member is an objective the owner declares in calibration.toml; none is measured."
+
+[[field]]
+path = "/spec/handoff/placement/live_calibration/effect_windows"
+kind = "ref"
+ref = "positive"
+doc = "Declared objective: effect windows one transaction is judged over (calibration.live_policy.transaction_effect_windows)."
+
+[[field]]
+path = "/spec/handoff/placement/live_calibration/false_revert_rate_ppm"
+kind = "integer"
+minimum = 1
+exclusive_maximum = 1000000
+doc = "Declared objective: tolerated false-revert rate, ppm (calibration.live_policy.false_revert_rate_ppm)."
+
+[[field]]
+path = "/spec/handoff/placement/live_calibration/max_heat_age_ns"
+kind = "ref"
+ref = "positive"
+doc = "Oldest heat observation a calibration probe accepts, ns: the heat period times one plus the declared number of missed heat writes tolerated (calibration.live_policy.calibration_missed_heat_writes)."
 
 [[field]]
 path = "/spec/handoff/telemetry"

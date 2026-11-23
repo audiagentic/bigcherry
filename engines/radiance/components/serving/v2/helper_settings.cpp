@@ -78,6 +78,7 @@ v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_vi
     s.ahalf = c.kernels.ahalf;
 
     s.live_policy = h.placement.live_policy;
+    s.live_calibration = h.placement.live_calibration;
     if (m.spec.experiment && m.spec.experiment->placement) {
         const v2::ExperimentPlacement& e = *m.spec.experiment->placement;
         s.forced = e.forced;

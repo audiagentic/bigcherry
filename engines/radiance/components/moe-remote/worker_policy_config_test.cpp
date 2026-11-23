@@ -131,6 +131,27 @@ int main() {
     WorkerConfig actual(manifest);
     check(actual.configure_placement(manifest,&err) && actual.policy.enabled,
           "production helper configuration accepts exactly a validated tail policy");
+    {   // RHP16: a manifest with live_calibration and no live_policy runs the helper in calibrating mode, from declared values
+        bc::serving::HelperSettings cm=manifest;
+        cm.live_policy.reset();
+        cm.handoff.histogram_period_s=3;
+        cm.live_calibration=bc::serving::v2::LiveCalibration{2,10000,6000000000ll};
+        WorkerConfig calib(cm);
+        err.clear();
+        check(calib.configure_placement(cm,&err) && calib.policy.calibrating && calib.policy.enabled &&
+              calib.policy.cadence_ns==3000000000ull && calib.policy.controls.max_heat_age_ns==6000000000ull &&
+              calib.policy.objective_effect_windows==2,"calibrating helper settings come from the manifest block");
+        cm.handoff.placement="roundrobin";
+        WorkerConfig bad(cm);
+        err.clear();
+        check(!bad.configure_placement(cm,&err) && !bad.policy.enabled,"calibrating refuses an unsupported arrangement too");
+        WorkerConfig none(manifest);
+        manifest.live_policy.reset();
+        err.clear();
+        check(none.configure_placement(manifest,&err) && !none.policy.enabled && !none.policy.calibrating,
+              "without the block the helper does not calibrate");
+        manifest.live_policy=valid();
+    }
     manifest.handoff.placement="roundrobin";
     WorkerConfig head_only(manifest);
     err.clear();
@@ -153,11 +174,16 @@ int main() {
     {   // RHP16: calibrating settings are structural, derived settings equal what the manifest conversion would give.
         r3::policy::Settings c;
         std::string e;
-        check(!c.calibrating_from(0,shares,2,10000,&e) && !c.calibrating_from(1000,{1},2,10000,&e) &&
-              !c.calibrating_from(1000,shares,2,1000000,&e),"calibrating needs its declared facts");
-        check(c.calibrating_from(1000,shares,2,10000,&e) && c.calibrating && c.enabled && !c.effect_gate &&
+        check(!c.calibrating_from(0,shares,2,10000,0,&e) && !c.calibrating_from(1000,{1},2,10000,2*1000,&e) &&
+              !c.calibrating_from(1000,shares,2,1000000,2*1000,&e),"calibrating needs its declared facts");
+        check(c.calibrating_from(1000,shares,2,10000,2*1000,&e) && c.calibrating && c.enabled && !c.effect_gate &&
               c.accept_unwatermarked_heat && c.cadence_ns==1000 && c.controls.max_heat_age_ns==2000 &&
               r3::policy::controls_valid(c.controls),"calibrating settings");
+        {   // the heat-age limit is the declared one, not a multiple of the period
+            r3::policy::Settings w;
+            check(w.calibrating_from(1000,shares,2,10000,5000,&e) && w.controls.max_heat_age_ns==5000 &&
+                  !w.calibrating_from(1000,shares,2,10000,999,&e),"calibrating heat age is the declared objective, at least a period");
+        }
         std::vector<uint64_t> budgets{22ull<<30,22ull<<30};
         nlohmann::json m=nlohmann::json::object();
         m["txn_p50_ns"]=1593403198ull;m["txn_p95_ns"]=3794447513ull;m["copy_bytes_per_s"]=319377397ull;

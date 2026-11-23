@@ -205,6 +205,20 @@ int main() {
     assert(!bad);
   }
 
+  // Startup calibrating is valid, not configured, and preserved.
+  {
+    auto control = make_control();
+    auto journal = make_journal();
+    auto startup = make_startup(false);
+    startup.requested = LivePolicyRequested::kCalibrating;
+    startup.reason_code = "calibrating";
+    auto ok = publish_runtime_receipt("test-run", startup, digest, 7, 99, control, journal);
+    assert(ok);
+    assert(ok.value().at("startup_decision").at("requested") == "calibrating");
+    startup.configured = true;
+    assert(!publish_runtime_receipt("test-run", startup, digest, 7, 99, control, journal));
+  }
+
   // Startup off is valid and preserved.
   {
     auto control = make_control();

@@ -363,7 +363,7 @@ static nlohmann::json calibrated_row() {
 }
 static Settings calibrating_settings() {
     Settings s;std::string error;
-    check(s.calibrating_from(1000,{1,1},2,10000,&error),"calibrating settings from declared facts");
+    check(s.calibrating_from(1000,{1,1},2,10000,2*1000,&error),"calibrating settings from declared facts");
     return s;
 }
 static void test_calibrating_mode() {
@@ -374,8 +374,8 @@ static void test_calibrating_mode() {
               s.objective_effect_windows==2 && s.objective_false_revert_rate_ppm==10000,
               "calibrating settings are structural");
         Settings bad;std::string error;
-        check(!bad.calibrating_from(0,{1,1},2,10000,&error) && !bad.calibrating_from(1000,{1},2,10000,&error) &&
-              !bad.calibrating_from(1000,{1,1},0,10000,&error) && !bad.calibrating_from(1000,{1,1},2,0,&error),
+        check(!bad.calibrating_from(0,{1,1},2,10000,0,&error) && !bad.calibrating_from(1000,{1},2,10000,2*1000,&error) &&
+              !bad.calibrating_from(1000,{1,1},0,10000,2*1000,&error) && !bad.calibrating_from(1000,{1,1},2,0,2*1000,&error),
               "calibrating needs a heat period, two helpers and the declared objectives");
     }
     {   // A calibrating driver needs a probe size, an identity to report under and a service source.

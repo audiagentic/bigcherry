@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_114400_the-live-placement-policy-can_6002",
+  "files": [
+    "engines/radiance/components/serving/contract/serving.toml",
+    "engines/radiance/components/serving/calibration.toml",
+    "engines/radiance/components/serving/live_policy_manifest.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/v2/s10_resolver.cpp",
+    "engines/radiance/components/moe-remote/worker_config.h",
+    "engines/radiance/components/moe-remote/worker_policy_config.h"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Wired the calibrating live policy through the manifest, off by default. The contract gains live_policy_state.requested=calibrating and a live_calibration block of declared objectives (effect windows, false-revert rate, and a heat-age limit derived from the heat period and the declared calibration_missed_heat_writes objective). The writer emits it only with --auto-calibrate-live-policy, a writable calibration store, a heat feed, a supported arrangement and no complete record; S10, the receipt and feature state accept the new state; the helper builds its calibrating settings from the block. The literal 2x heat period heat-age limit is removed and the smallest-valid minimums are documented.",
+  "timestamp-utc": "2026-11-22T11:44:00.968191Z",
+  "user-summary-candidate": "The live placement policy can now be calibrated in session from the manifest when explicitly requested; off by default."
+}

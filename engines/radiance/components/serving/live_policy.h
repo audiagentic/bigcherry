@@ -43,4 +43,12 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
 std::optional<DerivedLivePolicy> derive_manifest_live_policy(const ManifestInputs& in,
     const bc::experts::Container& container, const nlohmann::json& spec,
     std::string* skipped_reason = nullptr);
+// RHP16 in-session calibration: when this start has no usable record, may the helper calibrate instead? Returns the
+// spec.handoff.placement.live_calibration block (the declared objectives only, nothing measured) when the start asked for
+// auto-calibration (ManifestInputs::auto_calibrate), the layout is one the planner supports (heads then one tail), a
+// calibration store that can be written is named, the heat feed is on, and the store holds no complete record for this
+// key. Otherwise nullopt, with the reason in *why when there is one. The block is not part of policy_calibration_inputs,
+// so the key is the same with or without it.
+std::optional<nlohmann::json> derive_manifest_live_calibration(const ManifestInputs& in, const nlohmann::json& spec,
+                                                               std::string* why = nullptr);
 } // namespace bc::serving
