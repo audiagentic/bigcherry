@@ -122,4 +122,3 @@ branch and resource-gate evidence are retained for review only. No push,
 merge or shipping action was performed; no additional kernels or
 rewrite files were edited. Further work needs a separately authorised
 correction and full requalification starting at the resource gate.
-
