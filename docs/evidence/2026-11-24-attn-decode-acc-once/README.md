@@ -411,3 +411,7 @@ Counts by unit: [('r4d_attn_paged_gqa8', 32, 80), ('r4d_attn_paged_h128_gqa1', 1
 Decode resource records changed: 10
 Unsafe decode increases: 0
 Other resource records changed in measured units: 0
+
+## Full build (before GPU gates)
+
+Full pinned-source gfx1100 `libr3` module and `r3_selftest` executable built under `nice -n 19` and a single compiler job. All 131 Ninja actions completed; the final two linked `radiance_home/kernels/libr3.so` and `r3_selftest`. The plugin generated zero libr4d stubs. Neither byte identity nor attention selftests had run when this build was recorded.
