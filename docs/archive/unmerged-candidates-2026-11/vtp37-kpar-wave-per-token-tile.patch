@@ -1,0 +1,131 @@
+diff --git a/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw b/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw
+index cb638cbe6..36d1ec248 100644
+--- a/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw
++++ b/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw
+@@ -61,3 +61,126 @@
+ #pragma unroll ((SB == 256u && NT >= 2u) ? 1u : kUG)  // libr3: SB256 multi-tile
+         for (uint32_t h = 0; h < kUG; ++h) {
+ @@ end
++
++
++# VTP37: one wave per (K stripe, token tile) for NT>=2; NT1 retains the old body.
++@@ find 1
++// The kernel around the body, whose waves past the first return after the fold: CH `r4dchain` is
++@@ replace
++// gfx1100: one token tile's operands and accumulators per wave, rather than NT
++// live tiles. Distinct j waves intentionally re-read the same weight fragments.
++template <uint32_t KW, uint32_t SB, uint32_t NT>
++__device__ __forceinline__ void gemm_i8_kpar_wave_body(R4D_I8KPAR_PARAMS) {
++    constexpr uint32_t kUG = SB / kBlock;
++    __shared__ float s_red[KW][NT][8 * kWave];
++    const uint32_t tid = threadIdx.x, lane = tid & (kWave - 1);
++    const uint32_t wave = __builtin_amdgcn_readfirstlane(tid / kWave);
++    const uint32_t w = wave % KW, j = wave / KW;
++    const uint32_t rt = blockIdx.x, ngrp = cols / SB, nunit = cols / kBlock;
++    const uint32_t ksuper = cols / r4d_fp8::kSuperK;
++    const uint32_t col = frag_c(lane);
++    const uint32_t tok_in = min(j * 16u + col, M - 1u);
++    const int8_t* const xrow = Bp + (size_t)tok_in * b_ld + frag_k0(lane);
++    const float* const xsr = Sb + (size_t)tok_in * sb_ld;
++    const uint8_t* const arow = Ap + (size_t)rt * ksuper * r4d_fp8::kTileBytes +
++                                (size_t)lane * r4d_fp8::kLaneBytes;
++    auto aload = [&](uint32_t u, Stage8 (&a)[2]) {
++#pragma unroll
++        for (uint32_t p = 0; p < 2; ++p)
++            a[p] = stage8_load(arow + (size_t)(2u * u + p) * r4d_fp8::kTileBytes, true);
++    };
++    auto bload = [&](uint32_t u, i2v (&b)[8]) {
++#pragma unroll
++        for (uint32_t ks = 0; ks < 8; ++ks) {
++            const uint2 v = *(const uint2*)(xrow + u * kBlock + ks * kK);
++            b[ks][0] = (int)v.x;
++            b[ks][1] = (int)v.y;
++        }
++    };
++    f8v out = acc_zero();
++    Stage8 ac[2], an[2];
++    i2v bc[8], bn[8];
++    if (w < ngrp) {
++        aload(w * kUG, ac);
++        bload(w * kUG, bc);
++    }
++    for (uint32_t g = w; g < ngrp; g += KW) {
++        f8v raw = acc_zero();
++#pragma unroll ((SB == 256u) ? 1u : kUG)
++        for (uint32_t h = 0; h < kUG; ++h) {
++            const uint32_t u = g * kUG + h;
++            const uint32_t un = h + 1u < kUG ? u + 1u : (g + KW) * kUG;
++            if (un < nunit) {
++                aload(un, an);
++                bload(un, bn);
++            }
++#pragma unroll
++            for (uint32_t ks = 0; ks < kBlock / kK; ++ks)
++                raw = mma8<true>(frag_of(ac[ks / 4u], ks % 4u), bc[ks], raw);
++#pragma unroll
++            for (uint32_t p = 0; p < 2; ++p) ac[p] = an[p];
++#pragma unroll
++            for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
++        }
++        const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
++        const uint32_t qd[4] = { q4.x, q4.y, q4.z, q4.w };
++        const float as = xsr[g];
++#pragma unroll
++        for (uint32_t t = 0; t < 4; ++t) {
++            out[2 * t] = __builtin_fmaf(acc_val<true>(raw[2 * t]),
++                                       __uint_as_float(qd[t] << 16) * as, out[2 * t]);
++            out[2 * t + 1] = __builtin_fmaf(acc_val<true>(raw[2 * t + 1]),
++                                           __uint_as_float(qd[t] & 0xFFFF0000u) * as,
++                                           out[2 * t + 1]);
++        }
++    }
++    if constexpr (KW > 1u) {
++#pragma unroll
++        for (uint32_t t = 0; t < 8; ++t)
++            s_red[w][j][t * kWave + lane] = out[t];
++        __syncthreads();
++        if (w != 0u) return;
++#pragma unroll
++        for (uint32_t t = 0; t < 8; ++t) {
++            float a = 0.0f;
++#pragma unroll
++            for (uint32_t stripe = 0; stripe < KW; ++stripe)
++                a += s_red[stripe][j][t * kWave + lane];
++            out[t] = a;
++        }
++    }
++    const uint32_t tok = j * 16u + col;
++    if (tok < M)
++        *(uint4*)(C + (size_t)tok * rows + rt * 16u + acc_row(lane, 0)) =
++            make_uint4(bf16x2_rne(out[0], out[1]), bf16x2_rne(out[2], out[3]),
++                       bf16x2_rne(out[4], out[5]), bf16x2_rne(out[6], out[7]));
++}
++
++// The kernel around the body, whose waves past the first return after the fold: CH `r4dchain` is
++@@ end
++
++@@ find 1
++__global__ __launch_bounds__(KW * kWave) R4D_WAVES(6)
++void gemm_i8_kpar_kernel(R4D_I8KPAR_PARAMS) {
++    if (CH::on) r4d_chain_wait_vec();
++    gemm_i8_kpar_body<KW, SB, NT>(Ap, Sa, Bp, Sb, C, rows, cols, M, b_ld, sb_ld);
++    if (CH::on) r4d_chain_done();
++}
++@@ replace
++__global__ __launch_bounds__(KW * (NT >= 2u ? NT : 1u) * kWave) R4D_WAVES(6)
++void gemm_i8_kpar_kernel(R4D_I8KPAR_PARAMS) {
++    if (CH::on) r4d_chain_wait_vec();
++    if constexpr (NT >= 2u)
++        gemm_i8_kpar_wave_body<KW, SB, NT>(Ap, Sa, Bp, Sb, C, rows, cols, M, b_ld, sb_ld);
++    else
++        gemm_i8_kpar_body<KW, SB, NT>(Ap, Sa, Bp, Sb, C, rows, cols, M, b_ld, sb_ld);
++    if (CH::on) r4d_chain_done();
++}
++@@ end
++
++@@ find 1
++                           dim3(kw_ * kWave), 0, (const uint8_t*)wq, (const uint16_t*)ws,      \
++@@ replace
++                           dim3(kw_ * (nt_ >= 2u ? nt_ : 1u) * kWave), 0,                      \
++                           (const uint8_t*)wq, (const uint16_t*)ws,                           \
++@@ end
