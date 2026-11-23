@@ -458,3 +458,8 @@ Numbers: median [min-max] microseconds per launch; effective KV throughput in GB
 | i8 | 700 | 8x4 | 1 | 49.563 [49.518-123.739] | 39.835 [39.624-81.077] | 116.6 / 145.1 | +24.4% |
 
 **Performance gate: PASS.** Ten of ten replayed changed forms improve in median (13.3%-72.2%); the two unchanged FP8 NS1 M=1 paths remain flat within measurement spread. No measured regression outside spread. All 12 cases x 3 repeats completed; no serving, step A/B or KLD.
+
+
+## Stage 6 — other WMMA sites (candidates only)
+
+Unmodified follow-on candidates: (1) other decode geometry/flag sets in `bc_b16_decode_impl.h`, QK and PV `D::wmma` for `2*(TILE/16)*(HEAD_DIM/16)` calls per KV tile; (2) `bc_b16_prefill_impl.h` F16/BF16 QK (near 496) and PV (near 594), `2*(TILE/16)*(HEAD_DIM/16)` calls per tile, with separate softmax-rescale proof needed; (3) paged-window `r4d_attn_paged_window.hip` BF16 QK near 870 and F16 PV near 959/964, roughly `HEAD_DIM/16` calls each per key tile, with distinct reduction/merge semantics. h128/gqa1,2,4,7,16; h256/gqa2,4,12; gqa8; and h256/gqa6/bs4 remain outside the guard. Six initial spill regressions illustrate why every follow-on variant needs a fresh resource gate. No other kernel was modified. Form B was not built or measured.
