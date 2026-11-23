@@ -58,6 +58,10 @@ Medium. Risk: acceptance loss from missing the true top candidates costs more th
 
 **2026-11-24 step 1 done: NO-GO.** Static read of the 2020.8.3 step-phase trace (rank 0, 104 drafter passes of 17-32 rows, one pass 6.09 ms wall): the drafter pass has no full-vocabulary logits op. Its candidate path is already a top-k plus rerank: row_topk 0.046 ms, row_topk_merge 0.014, logit_rerank 0.018, dflash_select 0.013, together about 0.09 ms a pass; the pass is gemm_nt_q 2.39, all_reduce 0.79, gemm_nt 0.46 (the drafter's own projections), attention 0.23. The verify pass's logits op (0.88 ms on rank 0, 0.66 on rank 2) is the target's exact head and cannot be approximated without changing the output. Closed; no hardware run.
 
+
+
+**2026-11-24 stays closed (nothing to replace, not a regression).** The drafter pass has no full-vocabulary logits op to approximate; the item has no work left under the no-minimum-gain standard either.
+
 ## Change Log
 
 - 2026-11-23T20:42:29.814399+00:00 (created-by): Created by agent
@@ -65,3 +69,4 @@ Medium. Risk: acceptance loss from missing the true top candidates costs more th
 - 2026-11-23T20:48:17.510291+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T20:48:27.240696+00:00 (state-transition): State: pending → completed
 - 2026-11-23T20:54:48.968405+00:00 (updated-by): Updated: section:description, section:notes
+- 2026-11-23T23:21:31.547288+00:00 (updated-by): Updated: section:notes

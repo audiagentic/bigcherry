@@ -61,7 +61,10 @@ Small. Risk: the lab experiment needs the live-policy calibration store, which t
 
 
 
+**2026-11-24 not workable as written, not a regression.** A serving start is production-only (no lab experiment), so the stamped run cannot be started; the compute side comes from the helper's own kernel timing instead. Left open as an instrumentation question for the product owner.
+
 ## Change Log
 
 - 2026-11-23T21:25:58.957879+00:00 (created-by): Created by agent
 - 2026-11-23T21:26:29.042735+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-23T23:21:51.904383+00:00 (updated-by): Updated: section:notes

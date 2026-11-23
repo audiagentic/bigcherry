@@ -58,12 +58,20 @@ Medium; the audit can end it quickly if gaps are small in the replayed graph.
 
 ## Notes
 
-
-
 **2026-11-24 static audit (qwen27b-tp3, 2020.8.3 step trace, rank 0, 214 verify-type passes of 17+ rows, traced so gaps are inflated by tracing).** Pass wall 20.6 ms; classified op segments 16.4 ms over 411 segments; unclassified 1.4 ms; 2.85 ms (14%) of the wall lies outside every segment, about 7 us per segment of launch gap and bookkeeping. Small ops (average under 12 us a call) are 113-135 calls a pass (rmsnorm / quantise pairs 57, gated quantise 28, gemm_nt 21 at 15 us, prefetch 56 at 21 us). The trace mixes pass types, so the absolute counts are not a full verify pass; a per-pass-type table from the untraced replay is the next step. Ceiling for step 2 (fusion) on these numbers is the 2.85 ms gap at best, about 1 ms realistic.
+
+
+
+Ceiling basis (2026-11-24): rests on a tape sum (2.85 ms of the traced wall outside every segment) and so on a traced run whose gaps are inflated by tracing; downgraded to a pointer. The bound has to come from an untraced replayed-graph measurement of launch gaps, or from a fused-chain A/B of one candidate.
+
+
+
+**2026-11-24 ACCEPT-WORK.** Any fusion that keeps the arithmetic and its order is a cleanup and a gain; gate: byte identity, no regression. The launch-chain test (dependent tiny kernels cost about 3 us each on the GPU side, graph launch gains nothing) says to fuse chains of small dependent kernels rather than to change the submission method.
 
 ## Change Log
 
 - 2026-11-23T21:15:23.514546+00:00 (created-by): Created by agent
 - 2026-11-23T21:15:58.192931+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T21:45:22.185007+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:51:45.053129+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:21:41.669708+00:00 (updated-by): Updated: section:notes

@@ -63,6 +63,14 @@ Withdrawn: not justified by our own measurements.
 
 Reinstated 2026-11-24.
 
+
+
+Ceiling basis (2026-11-24): the 0.5 ms at one stream is a compute-feasibility model (operations per weight byte against the vector dot rate), not a measurement and not a tape sum; it is a hypothesis until the scratch replay exists. Downgraded: no brief before the replay shows a crossover.
+
+
+
+**2026-11-24 ACCEPT-WORK (exploratory).** No regression is expected from adding a row for M <= 8 that is selected only where the replay shows it faster; a hypothesis until the scratch replay exists. The earlier 'likely NO-GO above M 5' stays a prediction, not a gate.
+
 ## Change Log
 
 - 2026-11-23T20:42:25.061342+00:00 (created-by): Created by agent
@@ -73,3 +81,5 @@ Reinstated 2026-11-24.
 - 2026-11-23T21:11:22.195660+00:00 (state-transition): State: pending → deprecated
 - 2026-11-23T21:14:32.596842+00:00 (state-transition): State: deprecated → pending
 - 2026-11-23T21:15:08.429046+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-23T22:51:40.135239+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:21:26.385098+00:00 (updated-by): Updated: section:notes
