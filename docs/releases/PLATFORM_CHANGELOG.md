@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.68.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.67.0...bc-platform-1.68.0) (2026-11-23)
+
+
+### New and changed
+
+* **moe-remote:** calibrate the live policy from live heat (off by default) ([#1381](https://github.com/audiagentic/bigcherry/issues/1381)) ([7f88e6a](https://github.com/audiagentic/bigcherry/commit/7f88e6a39b13df8d09c8689cd6ac2a86549af9ee))
+
 ## [1.67.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.66.0...bc-platform-1.67.0) (2026-11-23)
 
 
