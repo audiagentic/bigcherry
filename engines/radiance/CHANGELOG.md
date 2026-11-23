@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.8.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.7.0...bc-radiance-2020.8.0) (2026-11-23)
+
+
+### New and changed
+
+* **serving:** wire the calibrating live policy through the manifest (off by default) ([#1384](https://github.com/audiagentic/bigcherry/issues/1384)) ([db97ee9](https://github.com/audiagentic/bigcherry/commit/db97ee90c3b60fb74ba748cc10919fec1a184281))
+
 ## [2020.7.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.6.0...bc-radiance-2020.7.0) (2026-11-23)
 
 
