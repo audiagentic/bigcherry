@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.3...bc-platform-1.69.4) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** keep the logits head's 17-32 row int8 partials native per scale block ([#1457](https://github.com/audiagentic/bigcherry/issues/1457)) ([bf37039](https://github.com/audiagentic/bigcherry/commit/bf370391f5f2d05e04ee466a510d0a542d0cc8b1))
+
 ## [1.69.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.2...bc-platform-1.69.3) (2026-11-23)
 
 
