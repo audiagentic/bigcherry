@@ -1,0 +1,7 @@
+variant,matched_cases,mismatched_elements,notes
+waves4,17,0,all 17 expected comparisons pass
+k32,17,0,all 17 expected comparisons pass
+k128,17,0,all 17 expected comparisons pass
+tile256m,17,0,all 17 expected comparisons pass
+tile256n,16,0,N=384 tiled case rejected; not a drop-in kernel
+ldsweight,17,0,all 17 expected comparisons pass

@@ -1,0 +1,8 @@
+variant,waves_per_block,vgpr_count,vgpr_spills,sgpr_count,private_segment_bytes,lds_bytes,lds_only_groups_per_128k_wgp
+baseline,8,240,4,52,20,19456,6
+waves4,4,240,231,56,844,19456,6
+k32,8,240,331,53,1104,11264,11
+k128,8,240,3,52,16,35840,3
+tile256m,16,240,4,52,20,38912,3
+tile256n,8,240,217,55,804,19456,6
+ldsweight,8,254,0,52,0,60416,2
