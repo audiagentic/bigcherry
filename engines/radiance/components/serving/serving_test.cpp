@@ -2492,7 +2492,11 @@ void helper_vram_owner_graph(Fixture& t) {
     owner.quality->output = t.root / "helper-quality-forced-short.json";
     write(authored, yaml);
     ::setenv("TEST_FAKE_FORCED_COMMITTED", "3", 1);
+    // One actual report followed by silence exercises the deadline without
+    // relying on the final SIGUSR1 response racing the last poll.
+    ::setenv("TEST_FAKE_REPORT_ONCE", "1", 1);
     const int short_forced = ss::serve(owner);
+    ::unsetenv("TEST_FAKE_REPORT_ONCE");
     ::unsetenv("TEST_FAKE_FORCED_COMMITTED");
     const auto short_record = ss::read_record(owner.run_dir).value_or(Json::object());
     if (short_forced == 0 || short_record.value("state", "") != "failed" || !ss::alive_recorded(short_record).empty() ||

@@ -1859,6 +1859,13 @@ class Owner {
             seen = std::distance(std::sregex_iterator(text.begin(), text.end(), report_line), std::sregex_iterator());
         }
         std::array<uint64_t, 4> last{};
+        Json last_swaps = Json::array();
+        bool received = false;
+        const auto record_report = [&] {
+            event("forced_placement", {{"expected", expected}, {"attempted", last[0]}, {"committed", last[1]},
+                                       {"aborted", last[2]}, {"inflight", last[3]}, {"swaps", last_swaps},
+                                       {"log", helper->log.string()}});
+        };
         for (;;) {
             ::kill(helper->pid, SIGUSR1);
             const std::string text = read_file(helper->log);
@@ -1871,27 +1878,29 @@ class Owner {
                 m = *it;
                 for (size_t i = 0; i < 4; ++i) last[i] = std::stoull(m[i + 1].str());
                 seen = reports;
-                const bool done = last[0] == expected && last[1] == expected && last[2] == 0 && last[3] == 0;
-                Json swaps = Json::array();
+                received = true;
+                last_swaps = Json::array();
                 for (auto w = std::sregex_iterator(text.begin(), text.end(), swap_line); w != std::sregex_iterator(); ++w)
-                    swaps.push_back({{"transaction", std::stoull((*w)[1].str())},
-                                     {"a", {std::stoull((*w)[3].str()), std::stoull((*w)[4].str())}},
-                                     {"b", {std::stoull((*w)[5].str()), std::stoull((*w)[6].str())}},
-                                     {"a_to_helper", std::stoull((*w)[7].str())},
-                                     {"b_to_helper", std::stoull((*w)[8].str())}});
-                if (done || Clock::now() >= deadline) {
-                    event("forced_placement", {{"expected", expected}, {"attempted", last[0]}, {"committed", last[1]},
-                                               {"aborted", last[2]}, {"inflight", last[3]}, {"swaps", swaps},
-                                               {"log", helper->log.string()}});
-                    if (!done)
-                        throw PlanFailed("quality: forced placement incomplete: committed " + std::to_string(last[1]) +
-                                         " of " + std::to_string(expected) + " (attempted " + std::to_string(last[0]) +
-                                         ", aborted " + std::to_string(last[2]) + ", in flight " +
-                                         std::to_string(last[3]) + "); see " + helper->log.string());
+                    last_swaps.push_back({{"transaction", std::stoull((*w)[1].str())},
+                                          {"a", {std::stoull((*w)[3].str()), std::stoull((*w)[4].str())}},
+                                          {"b", {std::stoull((*w)[5].str()), std::stoull((*w)[6].str())}},
+                                          {"a_to_helper", std::stoull((*w)[7].str())},
+                                          {"b_to_helper", std::stoull((*w)[8].str())}});
+                if (last[0] == expected && last[1] == expected && last[2] == 0 && last[3] == 0) {
+                    record_report();
                     return;
                 }
-            } else if (Clock::now() >= deadline) {
-                throw PlanFailed("quality: helper0 did not report its forced placement; see " + helper->log.string());
+            }
+            if (Clock::now() >= deadline) {
+                if (!received)
+                    throw PlanFailed("quality: helper0 did not report its forced placement; see " + helper->log.string());
+                // A report received earlier remains valid even if the last poll precedes
+                // the helper's next SIGUSR1 response. Never relabel it as missing.
+                record_report();
+                throw PlanFailed("quality: forced placement incomplete: committed " + std::to_string(last[1]) +
+                                 " of " + std::to_string(expected) + " (attempted " + std::to_string(last[0]) +
+                                 ", aborted " + std::to_string(last[2]) + ", in flight " +
+                                 std::to_string(last[3]) + "); see " + helper->log.string());
             }
             if (!service(s_.timing.poll))
                 throw Stop{};
