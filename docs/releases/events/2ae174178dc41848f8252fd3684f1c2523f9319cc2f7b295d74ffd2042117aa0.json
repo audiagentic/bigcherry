@@ -1,0 +1,12 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261123_054311_measured-one-gfx1100-iq8r-int8_7126",
+  "files": [
+    "docs/evidence/2026-11-23-ltx-xtx-int8-row/README.md",
+    "docs/evidence/2026-11-23-ltx-xtx-int8-row/numeric-parity.txt"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Evidence for a scratch native-fold variant of the gfx11 IQ8R GEMM row: byte-identical outputs on 17 shapes, +1.8% geomean over 40 large shapes but only +0.12%/+0.32% on the LTX video FFN up/down; not shipped. Tile, K-unroll and weight-staging variants remain untried.",
+  "timestamp-utc": "2026-11-23T05:43:11.348349Z",
+  "user-summary-candidate": "Measured one gfx1100 IQ8R int8 kernel variant: byte-identical but under 0.4% faster on the dominant LTX FFN; not shipped."
+}
