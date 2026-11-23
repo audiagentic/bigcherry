@@ -295,6 +295,10 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
   prefetch is ever touched, derive the cap from the cache size and the bytes per sequence instead of a literal. No
   measurement until the shim items land.
 
+- Serving A/B of the kpar accumulate-once change (2020.8.2 against 2020.8.1, qwen27b-tp3, ABBA, untraced, speculation depth 3): decode ms/step
+  39.37 -> 35.79 at 6 streams (-9.1%) and 39.06 -> 36.44 at 8 streams (-6.7%); draft acceptance and text unchanged; seed spread about 3 ms
+  (evidence: `docs/evidence/2026-11-24-vtp37-kpar-acc-once-ab/README.md`).
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent

@@ -1,0 +1,114 @@
+# libr3 (VTP37): serve the rotated 4-bit table row at M 17..64 with
+# ordinary 16-token WMMA launches. Every dispatch retains its own chain
+# record and completion count under the AQL backend. The gfx12 source
+# and all other IQR weight forms remain unchanged.
+
+@@ find 1
+constexpr uint32_t kWave = 32, kBlock = 128, kFK = 256;
+@@ replace
+constexpr uint32_t kWave = 32, kBlock = 128, kFK = 256;
+/* One NT1 WMMA token tile; shared by the kernel, launcher and row slicing. */
+constexpr uint32_t kIqrTokenTile = 16u;
+@@ end
+
+@@ find 1
+        tok[j] = min(j * 16u + frag_c(lane), M - 1u);
+@@ replace
+        tok[j] = min(j * kIqrTokenTile + frag_c(lane), M - 1u);
+@@ end
+
+@@ find 1
+            const uint32_t col = j * 16u + frag_c(lane);
+@@ replace
+            const uint32_t col = j * kIqrTokenTile + frag_c(lane);
+@@ end
+
+@@ find 1
+    const uint32_t nt = (M + 15u) / 16u;
+@@ replace
+    const uint32_t nt = (M + kIqrTokenTile - 1u) / kIqrTokenTile;
+@@ end
+
+@@ find 1
+    if (M <= (tiles_form<F>() ? 64u : 16u) && ((uintptr_t)g.y->data & 15u) == 0u)
+        return m16_launch<F>(g, stream);
+    /* At most eight waves a block: each has its own transpose tile in LDS. The wave count changes
+@@ replace
+    if (M <= (tiles_form<F>() ? 64u : kIqrTokenTile) && ((uintptr_t)g.y->data & 15u) == 0u)
+        return m16_launch<F>(g, stream);
+    /* Only the rotated B4 table + BF16 scale route is numerically qualified.
+     * An aligned output stays aligned when advanced by a token row (N is a multiple
+     * of 16). Each ordinary R4D_EMIT below gets its own AQL chain record/target;
+     * the next one waits on all blocks of its predecessor, including the previous
+     * token slice. No split-K scratch or finisher is used on this route. */
+    if constexpr (F::KIND == kTable && F::B == 4u && F::LV == 0u &&
+                  F::L == 0u && F::LRB == 0u && F::SC == kBf16) {
+        if (M > kIqrTokenTile && M <= 64u && g.rotated && ((uintptr_t)g.y->data & 15u) == 0u) {
+            RadTensor act = *g.a, scale = *g.as, out = *g.y;
+            Operands part = g;
+            part.a = &act;
+            part.as = &scale;
+            part.y = &out;
+            for (uint32_t row = 0; row < M; row += kIqrTokenTile) {
+                const uint32_t rows = std::min(kIqrTokenTile, M - row);
+                act.data = (void*)((const uint8_t*)g.a->data + (size_t)row * g.a_ld);
+                scale.data = (void*)((const float*)g.as->data + (size_t)row * g.sa_ld);
+                out.data = (void*)((uint16_t*)g.y->data + (size_t)row * N);
+                act.shape[0] = rows;
+                scale.shape[0] = rows;
+                out.shape[0] = rows;
+                part.M = rows;
+                const int rc = m16_launch<F>(part, stream);
+                if (rc != RAD_OK) return rc;
+            }
+            return RAD_OK;
+        }
+    }
+    /* At most eight waves a block: each has its own transpose tile in LDS. The wave count changes
+@@ end
+
+@@ find 1
+    if (M < 1 || N < 1 || K < 1 || M > 64) return 0;
+    uint32_t ck = 0;
+@@ replace
+    if (M < 1 || N < 1 || K < 1 || M > 64) return 0;
+    /* The slice route has no split-K scratch. If a rare caller passes a
+     * misaligned output, m64_launch falls back to the ordinary narrow kernel
+     * with ksplit=1, also correct without scratch. */
+    const RadTensor* const wt = r4d_opt(a, 2);
+    if (M > kIqrTokenTile && wt) {
+        const Form f = form(wt->dtype & kWordMask);
+        if (f.kind == kTable && f.bits == 4u && f.lv == 0u &&
+            f.L == 0u && f.lrb == 0u && f.scale == kBf16 &&
+            r4d_gets(a, "dtype") && std::strcmp(r4d_gets(a, "dtype"), "i8a8h") == 0)
+            return 0;
+    }
+    uint32_t ck = 0;
+@@ end
+
+# DFlash2 uses the i8a8h rotated input. Weight layout's IQR kernel word
+# does not encode that transform, so check the operation's declared dtype,
+# not Form::rot (which stays zero for GEMM).
+@@ find 1
+#include <algorithm>
+#include <cstdio>
+@@ replace
+#include <algorithm>
+#include <cstdio>
+#include <cstring>
+@@ end
+
+@@ find 1
+    bool chain;   /* the row's `chain` parameter: the chained forms (r4d_chain.h) */
+@@ replace
+    bool chain;   /* the row's `chain` parameter: the chained forms (r4d_chain.h) */
+    bool rotated = false; /* i8a8h operation; not encoded in the IQR GEMM word */
+@@ end
+
+@@ find 1
+    g->chain = r4d_geti_or(a, "chain", 0) != 0;
+@@ replace
+    g->chain = r4d_geti_or(a, "chain", 0) != 0;
+    const char* const dtype = r4d_gets(a, "dtype");
+    g->rotated = dtype && std::strcmp(dtype, "i8a8h") == 0;
+@@ end
