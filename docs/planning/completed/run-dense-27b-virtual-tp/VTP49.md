@@ -15,7 +15,7 @@ priority: P2
 
 ## Description
 
-Source: a reference drafter head scores the whole vocabulary from a 2-bit copy of the head (per-group sums, coarse kernels at 1, 2 and 4 rows), reduces to block winners, runs a bitonic top-N (1024 or 4096 down to 128 candidates), re-ranks the 128 candidates against exact bf16 rows and selects the top 1 or 16. The drafter only proposes; the target still verifies, so output correctness is unchanged and only acceptance can move. Streams about a quarter of the int8 head bytes for the drafter's logits. Our share: the verify-pass logits op is 0.87-0.92 ms of a 41 ms traced verify pass on rank 0 (phase trace, 2020.8.3); the drafter pass's own logits cost is not separated in that trace. The lever exists only if the drafter's head projection plus select is more than about 1 ms of a step.
+Idea considered: score the drafter's vocabulary head from a coarse low-bit copy, take the top candidates, and re-rank only those against exact rows, so the drafter streams a fraction of the head's bytes. The drafter only proposes; the target still verifies, so output correctness is unchanged and only acceptance can move. It pays only if the drafter pays for a full-vocabulary head today.
 
 ## Steps
 
@@ -56,9 +56,12 @@ Medium. Risk: acceptance loss from missing the true top candidates costs more th
 
 **2026-11-24 step 1 done: NO-GO.** Static read of the 2020.8.3 step-phase trace (rank 0, 104 drafter passes of 17-32 rows, one pass 6.09 ms wall): the drafter pass has no full-vocabulary logits op. Its candidate path is already a top-k plus rerank: row_topk 0.046 ms, row_topk_merge 0.014, logit_rerank 0.018, dflash_select 0.013, together about 0.09 ms a pass; the pass is gemm_nt_q 2.39, all_reduce 0.79, gemm_nt 0.46 (the drafter's own projections), attention 0.23. The verify pass's logits op (0.88 ms on rank 0, 0.66 on rank 2) is the target's exact head and cannot be approximated without changing the output. Coarse low-bit candidate scoring has nothing to replace on the drafter side. Closed; no hardware run.
 
+**2026-11-24 step 1 done: NO-GO.** Static read of the 2020.8.3 step-phase trace (rank 0, 104 drafter passes of 17-32 rows, one pass 6.09 ms wall): the drafter pass has no full-vocabulary logits op. Its candidate path is already a top-k plus rerank: row_topk 0.046 ms, row_topk_merge 0.014, logit_rerank 0.018, dflash_select 0.013, together about 0.09 ms a pass; the pass is gemm_nt_q 2.39, all_reduce 0.79, gemm_nt 0.46 (the drafter's own projections), attention 0.23. The verify pass's logits op (0.88 ms on rank 0, 0.66 on rank 2) is the target's exact head and cannot be approximated without changing the output. Closed; no hardware run.
+
 ## Change Log
 
 - 2026-11-23T20:42:29.814399+00:00 (created-by): Created by agent
 - 2026-11-23T20:43:21.663083+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T20:48:17.510291+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T20:48:27.240696+00:00 (state-transition): State: pending → completed
+- 2026-11-23T20:54:48.968405+00:00 (updated-by): Updated: section:description, section:notes
