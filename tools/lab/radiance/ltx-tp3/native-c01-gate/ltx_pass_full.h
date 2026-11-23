@@ -220,3 +220,158 @@ static PassReceipt pass_execute(PassDevice::Pass& p) {
          "full pass output copy refused");
     return ret;
 }
+
+static int run_full_pass_placement(const RadFile& model, const std::string& dir,
+                                   int64_t width,int64_t height,int64_t frames) {
+    ltx_test::require_aql_backend(3);
+    need(width%ltx2::kScale==0 && height%ltx2::kScale==0 &&
+         frames>=ltx2::kFtail &&
+         (frames-ltx2::kFtail)%ltx2::kFpc==0,
+         "full pass geometry not supported");
+    const int64_t latf=(frames-ltx2::kFtail)/ltx2::kFpc+ltx2::kLtail;
+    const int64_t lath=height/ltx2::kScale,latw=width/ltx2::kScale;
+    const int64_t S=latf*lath*latw;
+    const int64_t A=(frames*ltx2::kAudioRate+ltx2::kFps/2)/ltx2::kFps+1;
+    need(S>0 && S<=ltx2::max_video_rows(),"full pass exceeds native video rows");
+    RadVideoGeom geom{};
+    geom.n_text=ltx2::kTextRows; geom.frames=(int32_t)frames;
+    geom.lat_frames=(int32_t)latf; geom.lat_h=(int32_t)lath;
+    geom.lat_w=(int32_t)latw; geom.n_audio=(int32_t)A;
+    // Discover the larger-memory card and the two smaller cards at runtime,
+    // rather than tying guidance ownership to enumeration order.
+    std::array<RadDeviceProps,3> cards{};
+    for(int dev=0;dev<3;++dev)
+        need(rad_dev_props(dev,&cards[(size_t)dev])==RAD_OK,
+             "full pass device properties unavailable");
+    int larger=0;
+    for(int dev=1;dev<3;++dev)
+        if(cards[(size_t)dev].vram_bytes>cards[(size_t)larger].vram_bytes)
+            larger=dev;
+    std::array<int,2> smaller{};
+    int pos=0;
+    for(int dev=0;dev<3;++dev)
+        if(dev!=larger) smaller[(size_t)pos++]=dev;
+    need(pos==2 &&
+         cards[(size_t)larger].vram_bytes>cards[(size_t)smaller[0]].vram_bytes &&
+         cards[(size_t)larger].vram_bytes>cards[(size_t)smaller[1]].vram_bytes,
+         "full pass needs one larger and two smaller discrete cards");
+    const std::array<int,4> assignment{larger,larger,smaller[0],smaller[1]};
+    std::array<std::unique_ptr<PassDevice>,3> devices;
+    std::array<PassDevice::Pass*,4> mapped{};
+    for(int dev=0;dev<3;++dev) {
+        devices[dev]=std::make_unique<PassDevice>();
+        auto& d=*devices[dev];
+        d.device=dev;
+        need(rad_dev_set(dev)==RAD_OK,"full pass device roster refused");
+        d.reg=std::make_unique<Registry>();
+        need(d.reg->set_code_devices({dev})==RAD_OK,
+             "full pass local code-device selection refused");
+        const std::string arch=cards[(size_t)dev].arch;
+        const std::string native_library=
+            arch.rfind("gfx12",0)==0 ? "libr4d" :
+            arch.rfind("gfx11",0)==0 ? "libr3" : "";
+        need(!native_library.empty(),"full pass lacks a native device kernel build");
+        const std::vector<std::string> libraries{native_library,"libref"};
+        need(d.reg->load_dir(dir,libraries)==RAD_OK,
+             "full pass kernel registry load refused");
+        d.builder=pass_dit_graph(model,*d.reg,S,A,ltx2::kTextRows+A+S,
+                                 latw*lath,d.model,true);
+        need(d.builder->program().device_holes(false).empty(),
+             "full pass native DiT has unresolved device kernels");
+        pass_load_weights(model,d);
+        for(int variant=0;variant<4;++variant)
+            if(assignment[variant]==dev) {
+                auto pass=pass_init(d,variant,geom);
+                mapped[variant]=pass.get();
+                d.passes.push_back(std::move(pass));
+            }
+    }
+    // Baseline: all four guidance variants on one R9700, sequentially.
+    // Keep a separate placed-serial receipt to distinguish cross-device
+    // arithmetic differences from races in the concurrent placement.
+    std::array<PassReceipt,4> one_card{},serial{},parallel{};
+    auto& reference=*mapped[0];
+    for(int v=0;v<4;++v) {
+        reference.variant=v;
+        one_card[v]=pass_execute(reference);
+        std::printf("PASS_FULL_ONE_CARD variant=%d ms=%.3f\n",v,one_card[v].ms);
+        std::fflush(stdout);
+    }
+    reference.variant=0;
+    for(int v=0;v<4;++v) {
+        serial[v]=pass_execute(*mapped[v]);
+        std::printf("PASS_FULL_SERIAL variant=%d device=%d ms=%.3f\n",
+                    v,assignment[v],serial[v].ms);
+        std::fflush(stdout);
+    }
+    std::array<std::string,3> errors{};
+    const auto t0=std::chrono::steady_clock::now();
+    std::vector<std::thread> workers;
+    for(int dev=0;dev<3;++dev) {
+        workers.emplace_back([&,dev]{
+            try {
+                for(int v=0;v<4;++v)
+                    if(assignment[v]==dev) parallel[v]=pass_execute(*mapped[v]);
+            } catch(const std::exception& e) {errors[dev]=e.what();}
+        });
+    }
+    for(auto& w:workers) w.join();
+    const double elapsed=std::chrono::duration<double,std::milli>(
+        std::chrono::steady_clock::now()-t0).count();
+    for(const auto& e:errors) need(e.empty(),"parallel full pass: "+e);
+    double one_card_ms=0, placed_serial_ms=0;
+    int cross_device_mismatches=0;
+    for(int v=0;v<4;++v) {
+        const bool exact=parallel[v].video==serial[v].video &&
+                         parallel[v].audio==serial[v].audio;
+        const auto count_diff=[](const auto& lhs,const auto& rhs) {
+            need(lhs.size()==rhs.size(),"full pass output shapes differ");
+            size_t n=0;
+            for(size_t i=0;i<lhs.size();++i) n+=(lhs[i]!=rhs[i]);
+            return n;
+        };
+        const auto bf=[](uint16_t x) {
+            const uint32_t u=(uint32_t)x<<16; float f; std::memcpy(&f,&u,sizeof f); return (double)f;
+        };
+        // Cross-architecture agreement is an error measure: the two ISAs run different kernels and
+        // accumulation orders, so bit equality is only required on the same card.
+        const auto rel_rms=[&](const auto& ref,const auto& got) {
+            need(ref.size()==got.size(),"full pass output shapes differ");
+            double num=0,den=0;
+            for(size_t i=0;i<ref.size();++i) {
+                const double r=bf(ref[i]),d=bf(got[i])-r;
+                num+=d*d; den+=r*r;
+            }
+            return den>0 ? std::sqrt(num/den) : 0.0;
+        };
+        const double vrel=rel_rms(one_card[v].video,parallel[v].video);
+        const double arel=rel_rms(one_card[v].audio,parallel[v].audio);
+        std::printf("PASS_FULL_CROSS_CARD variant=%d device=%d video_rel_rms=%.6g audio_rel_rms=%.6g\n",
+                    v,assignment[v],vrel,arel);
+        const size_t vdiff=count_diff(one_card[v].video,parallel[v].video);
+        const size_t adiff=count_diff(one_card[v].audio,parallel[v].audio);
+        cross_device_mismatches+=(vdiff!=0 || adiff!=0);
+        const auto nonfinite=[](const auto& data) {
+            return std::count_if(data.begin(),data.end(),[](uint16_t x) {
+                return (x & 0x7f80U)==0x7f80U;
+            });
+        };
+        std::printf("PASS_FULL_FINITE variant=%d ref_video_bad=%zu placed_video_bad=%zu ref_audio_bad=%zu placed_audio_bad=%zu\n",
+            v,nonfinite(one_card[v].video),nonfinite(parallel[v].video),
+            nonfinite(one_card[v].audio),nonfinite(parallel[v].audio));
+        std::printf("PASS_FULL_PARALLEL variant=%d device=%d ms=%.3f within_device_bit_equal=%d one_card_video_diffs=%zu/%zu one_card_audio_diffs=%zu/%zu\n",
+                    v,assignment[v],parallel[v].ms,int(exact),
+                    vdiff,parallel[v].video.size(),adiff,parallel[v].audio.size());
+        need(exact,"parallel full DiT differs from serial on the same card");
+        need(nonfinite(parallel[v].video)==0 && nonfinite(parallel[v].audio)==0,
+             "parallel full DiT produced non-finite output");
+        one_card_ms+=one_card[v].ms;
+        placed_serial_ms+=serial[v].ms;
+    }
+    std::printf("PASS_FULL_RESULT passes=4 one_card_ms=%.3f placed_serial_ms=%.3f parallel_makespan_ms=%.3f one_card_speedup=%.3f placed_serial_speedup=%.3f cross_device_bit_equal=%d\n",
+                one_card_ms,placed_serial_ms,elapsed,one_card_ms/elapsed,
+                placed_serial_ms/elapsed,int(cross_device_mismatches==0));
+    std::fflush(stdout);
+    (void)cross_device_mismatches;
+    return 0;
+}

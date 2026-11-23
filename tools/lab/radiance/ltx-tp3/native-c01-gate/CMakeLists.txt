@@ -118,6 +118,12 @@ if(LTX_NATIVE_CORE_LIB)
       "${CMAKE_BINARY_DIR}/rad_include")
     get_target_property(_c01_core_links ltx_c01_weight_receipt_test LINK_LIBRARIES)
     target_link_libraries(ltx_c02_lin_declare_test PRIVATE ${_c01_core_links})
+    if(LTX_NATIVE_GPU)
+      find_library(LTX_NATIVE_HIP NAMES amdhip64 REQUIRED)
+      find_library(LTX_NATIVE_HSA NAMES hsa-runtime64 REQUIRED)
+      target_link_libraries(ltx_c02_lin_declare_test PRIVATE
+        ${LTX_NATIVE_HIP} ${LTX_NATIVE_HSA} avformat avcodec avutil swscale swresample)
+    endif()
     add_test(NAME ltx_c02_actual_lin_declare
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}")
     add_test(NAME ltx_c04_deferred_output_reduce

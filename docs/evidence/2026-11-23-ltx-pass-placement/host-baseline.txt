@@ -1,0 +1,22 @@
+    Start  7: ltx03_text_cross_attention_declarations
+1/3 Test  #7: ltx03_text_cross_attention_declarations ......***Failed    0.00 sec
+I device: host backend, 1 device(s) [0:host]
+LTX2 C02 native Lin failure: C06 invalid native geometry admitted
+
+    Start  9: ltx03_ffn_modulation_residual_declarations
+2/3 Test  #9: ltx03_ffn_modulation_residual_declarations ...   Passed    0.06 sec
+    Start 11: ltx_c06_native_weight_share_contract
+3/3 Test #11: ltx_c06_native_weight_share_contract .........***Failed    0.00 sec
+I device: host backend, 1 device(s) [0:host]
+LTX2 C02 native Lin failure: C06 invalid native geometry admitted
+
+
+33% tests passed, 2 tests failed out of 3
+
+Total Test time (real) =   0.07 sec
+
+The following tests FAILED:
+	  7 - ltx03_text_cross_attention_declarations (Failed)
+	 11 - ltx_c06_native_weight_share_contract (Failed)
+Errors while running CTest
+EXIT=8

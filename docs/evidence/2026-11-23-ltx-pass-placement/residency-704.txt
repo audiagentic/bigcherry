@@ -1,0 +1,6 @@
+I device: AQL backend, 1 device(s) [0:gfx1100]
+W kernel plugin 'libr4d' has no device code for device 0: rank 0 (device 0: the fat binary has code objects for [gfx1201] and this card runs [gfx1100, gfx11-generic]). Its 679 device kernel(s) are left out of selection here.
+PASS_RESIDENCY geom=1216x704 frames=121 lat=16x22x38 video=13376 audio=127 text=1024 step_rows=14527 blocks=48 block_weights=3360 planes=5338
+PASS_RESIDENCY plan raw_weight_mib=18630.46 native_stored_mib=18690.46 arena_mib=2767.06 before_free_mib=24514.00 device_total_mib=24560.00
+PASS_RESIDENCY fit=1 measured=1 after_free_mib=2902.00 headroom_mib=2902.00 used_delta_mib=21612.00 uploaded_planes=5338/5338
+EXIT=0

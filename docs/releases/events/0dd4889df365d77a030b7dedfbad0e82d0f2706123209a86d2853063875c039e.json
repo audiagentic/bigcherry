@@ -1,0 +1,11 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261123_045543_tooling-registry-now-lists-the_2649",
+  "files": [
+    "docs/reference/tooling/TOOL_DISPOSITION.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Registered the two new LTX pass-placement lab headers in the tooling disposition registry.",
+  "timestamp-utc": "2026-11-23T04:55:43.329136Z",
+  "user-summary-candidate": "Tooling registry now lists the LTX pass-placement lab headers."
+}

@@ -1354,8 +1354,10 @@ static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
 
 #ifdef LTX_PASS_UNEVEN
 #include "ltx_pass_eval_range.inc"
+#endif
 #include "ltx_pass_residency.h"
 #include "ltx_pass_full.h"
+#ifdef LTX_PASS_UNEVEN
 #include "ltx_pass_uneven.h"
 #endif
 
@@ -1380,9 +1382,11 @@ int main(int argc, char** argv) {
              std::string(argv[3]) == "--c06-issued-aql-64" ||
              std::string(argv[3]) == "--ltx03-ffn-issued-aql" ||
              std::string(argv[3]) == "--ltx03-block-time-aql" ||
-             std::string(argv[3]) == "--ltx03-wire-error-aql");
-        if (aql) ltx_test::require_aql_backend(argc == 5 && std::string(argv[3]) == "--ltx03-block-time-aql" &&
-                                                  std::getenv("LTX03_TIME_TP1") ? 1 : 3);
+             std::string(argv[3]) == "--ltx03-wire-error-aql" ||
+             std::string(argv[3]) == "--ltx-pass-residency-aql" ||
+             std::string(argv[3]) == "--ltx-pass-full-aql");
+        if (aql) ltx_test::require_aql_backend((argc == 5 && std::string(argv[3]) == "--ltx-pass-residency-aql") ? 1 : (argc == 5 && std::string(argv[3]) == "--ltx03-block-time-aql" &&
+                                                  std::getenv("LTX03_TIME_TP1")) ? 1 : 3);
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
         const auto* row=model.find("dit.blk.0.attn1.qkv.weight");
@@ -1401,6 +1405,16 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 5 && aql && std::string(argv[3]) == "--ltx-pass-full-aql") {
+            long long w=0,h=0,f=0;
+            need(std::sscanf(argv[4],"%lldx%lldx%lld",&w,&h,&f)==3,"expected WIDTHxHEIGHTxFRAMES");
+            return run_full_pass_placement(model,argv[2],w,h,f);
+        }
+        if (argc == 5 && aql && std::string(argv[3]) == "--ltx-pass-residency-aql") {
+            long long w=0,h=0,f=0;
+            need(std::sscanf(argv[4],"%lldx%lldx%lld",&w,&h,&f)==3,"expected WIDTHxHEIGHTxFRAMES");
+            return run_pass_residency(model,reg,w,h,f);
+        }
         if (argc == 5 && aql && std::string(argv[3]) == "--ltx03-wire-error-aql") {
             // Reports (does not gate) the error of an issued block at world argv[4] against the
             // TP1 issue (the exact wire; the lossy WHT6 wire measured 5-7 times this error for a block
