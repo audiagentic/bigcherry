@@ -299,6 +299,14 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
   39.37 -> 35.79 at 6 streams (-9.1%) and 39.06 -> 36.44 at 8 streams (-6.7%); draft acceptance and text unchanged; seed spread about 3 ms
   (evidence: `docs/evidence/2026-11-24-vtp37-kpar-acc-once-ab/README.md`).
 
+- Serving A/B of the drafter two-M16 route (2020.8.3 against 2020.8.2, same harness, within-session): decode ms/step 31.87 -> 28.74 at 6 streams
+  (-9.8%) and 36.27 -> 32.17 at 8 streams (-11.3%); acceptance and fixed-prompt text unchanged
+  (evidence: `docs/evidence/2026-11-24-vtp37-drafter-two-m16-ab/README.md`). The two A/B deltas come from different sessions with different absolute levels
+  and are not additive.
+- Remaining after this: the drafter M 17-32 4-bit row is fixed; the target nt 2 cost is reduced by the kpar change; the logits shim change is pending
+  (#1457). Next candidates by the trace: decode attention (spills, about 1 ms), the W4/W5/W8 A16 and paged-window attention shim sites, the all-reduce
+  wait chain (VTP36). A re-trace on 2020.8.3 decides the next brief.
+
 ## Change Log
 
 - 2026-11-12T23:29:57.750388+00:00 (created-by): Created by agent
