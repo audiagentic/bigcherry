@@ -757,7 +757,7 @@ static int g_perfpaged_kv = 2;                   // libr3: --perfpaged-kv
         for (int i = 1; i < nc && i < 8; ++i) chain_same &= chained[i] == chained[0];
         ok((std::string(nm) + ": NT1 plain/chained dispatches, equal output").c_str(),
            prc == RAD_OK && crc == RAD_OK && plain_same && chain_same &&
-           plain[0] != chained[0] && ch == y);
+           plain[0] != chained[0] && ch == y, std::string("np=") + std::to_string(np) + " nc=" + std::to_string(nc) + " plain_ok=" + std::to_string(plain_same) + " chain_ok=" + std::to_string(chain_same));
     }
     dfree_all();
 }

@@ -21,3 +21,15 @@
 - Five-layer M32 unchained total: 18.4778 -> 4.7292 ms (3.91x).
 - Five-layer M32 chained-kernel total: 18.6023 -> 4.5097 ms (4.12x).
 - Only synthetic kernel timing, no model serving, KLD, A/B, or live AQL chain tape.
+
+### Stage 4 — final IQR selftests and review
+- `gemm_iqr_nt_m64`: 1034 OK, 0 FAIL (includes M16, M17 and M64).
+- `gemm_iqr_tiled`: 129 OK, 0 FAIL.
+- `gemm_iqr_gated`: 36 OK, 0 FAIL.
+- Plain/chained M17/M64 packet count and output equality verified under HIP. Live AQL completion is source-backed but not runtime-tested.
+- Ready for owner review, not shipped. No serving, A/B or KLD.
+
+### Final consistency review
+- Rejected an intermediate partial relink that emitted one stock-M64 packet at M17/M64; the numerical pass alone was insufficient.
+- Rebuilt all four IQR parts and relinked cleanly without instrumentation; final M17/M64 launch checks passed with 2/4 NT1 dispatches. Only then reran the FP64 and cold-replay gates. Root cause of intermediate partial-relink inconsistency was not isolated.
+- Full four-part matched-stock resource census: p0 740, p1 796, p2 840, p3 796 = 3,172 signatures; zero VGPR, spilled-VGPR or private-byte differences.
