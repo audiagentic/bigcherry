@@ -1,0 +1,6 @@
+rocBLAS int8 GEMM (i8 x i8 -> i32), 2048x15360x3840 (the video FFN up-projection), 50 reps, one card each:
+gfx1201 CUs(WGPs)=32 clock=2350 MHz: 2.990 ms = 80.8 TOPS
+gfx1100 CUs(WGPs)=48 clock=2371 MHz: 1.900 ms = 127.2 TOPS
+Engine video FFN (both GEMMs plus activation quantisation, GELU, bias), same token count, one card:
+gfx1201: 3.653 ms  (4.83e11 ops -> 132 TOPS)
+gfx1100: 6.702 ms  (4.83e11 ops ->  72 TOPS)

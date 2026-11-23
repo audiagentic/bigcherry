@@ -1,0 +1,41 @@
+# pin arms (RADIANCE_TUNE), in file order
+## pin-default
+LTX03 time FFN video tokens=2048 TP1(one card): 6.709 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.162 ms/step (0.82x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.191 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 30.813 ms/step (0.43x vs TP1)
+## pin-duplex
+LTX03 time FFN video tokens=2048 TP1(one card): 6.715 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.131 ms/step (0.83x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.164 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 31.264 ms/step (0.42x vs TP1)
+## pin-pieces16-fuse-duplex
+LTX03 time FFN video tokens=2048 TP1(one card): 6.725 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 7.175 ms/step (0.94x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.066 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 24.611 ms/step (0.53x vs TP1)
+## pin-pieces2-fuse-duplex
+LTX03 time FFN video tokens=2048 TP1(one card): 6.684 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 6.569 ms/step (1.02x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.066 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 24.669 ms/step (0.53x vs TP1)
+## pin-pieces4-fuse-duplex
+LTX03 time FFN video tokens=2048 TP1(one card): 6.710 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 6.172 ms/step (1.09x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.189 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 24.551 ms/step (0.54x vs TP1)
+## pin-pieces4-fuse
+LTX03 time FFN video tokens=2048 TP1(one card): 6.711 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.325 ms/step (0.81x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.143 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 27.075 ms/step (0.49x vs TP1)
+## pin-pieces4
+LTX03 time FFN video tokens=2048 TP1(one card): 6.694 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.290 ms/step (0.81x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.122 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 29.150 ms/step (0.45x vs TP1)
+## pin-pieces8-fuse-duplex
+LTX03 time FFN video tokens=2048 TP1(one card): 6.731 ms/step
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 7.201 ms/step (0.93x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.065 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 22.772 ms/step (0.57x vs TP1)
