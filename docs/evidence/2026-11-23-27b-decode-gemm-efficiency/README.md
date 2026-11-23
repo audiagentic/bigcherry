@@ -215,3 +215,26 @@ Reach: only M 17-48 changes, that is five to eight streams of draft 3 (M = 4 x s
 16) are NT 1 and unchanged. Summed over the rank-0 linears at M 32 (isolated, cold, section 2 shapes) the GEMM time is
 about 34.7 ms a step; the i8a8-rate bound of -38% is measured only at 13312 x 5120, so the whole-step bound needs the
 other five shapes measured first.
+
+### Whole-step bound and the gfx1201 record
+
+Selftest rows (`--perfw8 N K M 30 --cold 256`, one XTX, own-weight-copy lines, two repeats), the six rank-0 shapes
+summed over a decode step with 64 gate/up, 64 down, 48 delta-net in, 48 delta-net out, 16 attention q/gate and 16
+attention out launches:
+
+| M | iq8r (ms a step) | i8a8 (ms a step) | bound if iq8r reached the i8a8 row |
+|---|---|---|---|
+| 20 | 34.55 | 19.67 | 14.9 ms |
+| 24 | 34.60 | 19.72 | 14.9 ms |
+| 28 | 34.71 | 19.69 | 15.0 ms |
+| 32 | 34.77 | 19.78 | 15.0 ms |
+
+Per shape at M 32 (iq8r against i8a8, us): 13312 x 5120 217.8 / 134.6; 5120 x 6656 148.9 / 79.6; 6144 x 5120 128.3 /
+67.4; 5120 x 2304 68.8 / 37.2; 3072 x 5120 66.0 / 37.3; 5120 x 1536 49.0 / 28.1. Every shape is 1.6-1.9 times, so the
+gap is not one shape's. The bound is flat across M 20-32 because the cost is the spill, not M. It is an upper bound from
+isolated cold rows of one rank; the two rows read slightly different scale bytes; no step time at five to eight streams
+was measured here, so it is not stated as a share of the step (the decode A/B will give it).
+
+gfx1201 (the libr4d code object, resource record only): the same kernel has no spills in any four-wave instantiation
+(SB 256 at NT 1, 2, 3, 4: 150, 197, 210, 240 VGPRs, 0 spilled). The problem is gfx1100's, from its wider WMMA operands,
+so a fix belongs in libr3 only.
