@@ -10,4 +10,4 @@ Do not commit copies of upstream llama.cpp source under a lab directory. Reviewe
 
 Generated run trees must not be committed beneath the lab directory. Keep raw outputs in ignored `artifacts/`/host-local storage and promote only compact decision-grade evidence to `docs/evidence/`.
 
-When the question is closed, delete the experiment or graduate only the durable capability to maintained analysis/product code. Graduation requires a separate implementation and validation slice; copying a lab script into production is not graduation.
+A closed experiment is either graduated, deleted, or kept as a concluded lab: a kept lab states its outcome, why a rejected approach was rejected, what would reopen it, and where the pieces that mattered now live (its README, with the evidence directory). When the question is closed, delete the experiment or graduate only the durable capability to maintained analysis/product code. Graduation requires a separate implementation and validation slice; copying a lab script into production is not graduation.
