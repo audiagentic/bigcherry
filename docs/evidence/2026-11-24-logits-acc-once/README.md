@@ -159,3 +159,11 @@ code-objects baseline=libr3.so.66.hipv4-amdgcn-amd-amdhsa--gfx1100, candidate=pl
 LM variants=140, baseline total=182, candidate total=182. 2020.8.1 stock against pre-change full-plugin LM resource differences: 0.
 Non-LM records: before=42 after=42 changed=0 missing=0 added=0
 New LM VGPR spills=[], private increases=[], waves losses=[]
+
+## Form A byte-identity gate (PASS)
+
+- Used only short, queued GPU measurement leases, released after each harness invocation; no serving, ms/step A/B, or KLD. Each case compares every f32 output byte between the prechange and new full plugin on deterministic BF16 input, packed weights and scales for M=1..64.
+- Main head: N×K=248320×5120, 4097×512, 4163×128 and 82773×5120; each M=1..64 on int8 unchained, int8 chained and E4M3 exported unchained paths. 12 cases ×64 = **768 PASS, zero differences**. A separate N×K=1280×512 smoke reran all three paths ×64 = 192 PASS.
+- IQR shared logits WMMA body: N×K=1008×640 and 4097×512, table bits TB=2..6, chained and unchained; 20 cases ×64 = **1280 PASS, zero differences**.
+- Total main and IQR checked: **2048 M-values**, zero full-output f32 byte differences, no skipped test of an exposed row, no device error.
+- E4M3 has no registered logits_gemm_fp8 plugin row; its exported r4d_logits_gemm_fp8 function was used for unchained byte checking. E4M3 chained dispatch is not exported and was not claimed tested. Only int8 MT2/FKB2 is modified by Form A, and both its chained and unchained paths were tested.
