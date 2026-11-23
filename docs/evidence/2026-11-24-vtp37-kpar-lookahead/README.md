@@ -97,3 +97,21 @@ its own queued GPU lease (12-minute TTL, 5-minute estimate).
 **Total 2,304 PASS, 0 SKIP, 0 FAIL.**
 No numerical divergence. No serving, ms/step A/B or KLD.
 
+## Stage 3 — complete libr3 build and targeted r3_selftest: PASS
+
+Full linked plugin, R3_NATIVE=ON, R3_ONLY unset, all 115 gfx1100 device units;
+nice -n 19 cmake --build <build-full> --target libr3 r3_selftest -j 3
+finished successfully, with zero stubbed libr4d symbols. The five
+specified narrow/IQR selftest processes were actually run independently,
+each under its own short queued GPU lease. Zero FAIL and zero SKIP.
+
+| r3_selftest --case | PASS | FAIL | SKIP |
+|---|---:|---:|---:|
+| gemm_i8a8_nt_m16 | 13 | 0 | 0 |
+| gemm_iq8r_nt_m16 | 35 | 0 | 0 |
+| gemm_iqr_nt_m64 | 1034 | 0 | 0 |
+| gemm_iqr_tiled | 129 | 0 | 0 |
+| gemm_iqr_gated | 36 | 0 | 0 |
+
+Total: 1247 PASS, 0 FAIL, 0 SKIP.
+
