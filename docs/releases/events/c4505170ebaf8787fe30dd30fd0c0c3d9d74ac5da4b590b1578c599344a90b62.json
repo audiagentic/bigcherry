@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261123_135854_the-xtx-drafters-4-bit-projec_9651",
+  "files": [
+    "engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
+  ],
+  "plan-item-ids": [
+    "VTP37"
+  ],
+  "status": "unreleased",
+  "technical-summary": "gfx1100 libr3 selects separate chained/unchained M16 NT1 launches for rotated B4 table GEMMs at M17-64, using one shared token tile constexpr and per-packet AQL chain accounting. The exact full plugin and r3_selftest builds passed. Seven-shape CPU FP64 numerical qualification passed the owner-approved max-abs/RMS criteria on 115,489,152 outputs per route, and three IQR cases passed with zero failures including M17/M64 chained dispatch checks. Resource records matched on all 840 p2 kernels and synthetic cold kernel replay improved all measured M>16. No model serving, quality KLD, or shipment performed.",
+  "timestamp-utc": "2026-11-23T13:58:54.992853Z",
+  "user-summary-candidate": "The XTX drafter's 4-bit projections now split across small spill-free launches. All seven numerical accuracy checks and the IQR selftests passed; synthetic cold kernel timing improved at every tested height above 16. This is unshipped pending owner review."
+}
