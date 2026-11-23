@@ -100,9 +100,50 @@ history), so on the 7900 XTX it still runs through the compatibility layer.
 
 Which libr3 row serves each op in the running engine (the engine's startup receipt names the attention rows only);
 the step share of attention decode and delta-net decode; the R9700's per-shape table; any effect under graph replay.
-The engine's own per-step phase trace (rad0055, on an unmerged branch) was not used.
+The per-step phase trace is used in section 6 (added later the same day).
 
 ## Not included
 
 No third-party binary, decompiled source, disassembly or symbol list is in this repository. The analysis artifacts
 stay outside it.
+
+## 6. Addendum: step-phase trace and the pin route
+
+### Per-op shares from the engine's own trace
+
+`bc-serve serve qwen27b-tp3 --step-phase-trace` (rad0055), one stream, two repetitions of a 512-token prompt with 192
+new tokens; 438 rows a rank, every row `valid`. Tracing synchronises at the end of each pass: the traced step was
+36.7 ms against about 22 ms untraced, so read shares, not absolute times. `compute_ms` and `collective_ms` overlap
+across lanes and are not used here; the table sums the per-op `tape_segments` of the target-verify pass (draft pass 0,
+4 tokens, 137 passes), medians.
+
+| op | rank 0 (7900 XTX) | rank 2 (R9700) | launches a pass |
+|---|---|---|---|
+| quantised GEMM (`gemm_nt_q`, the IQ8R linears) | 51.5% | 37.0% | 288 |
+| `prefetch` | 12.9% | 16.8% | 175 |
+| `all_reduce` | 11.2% | 29.4% | 129 |
+| delta-net decode update | 5.2% | 3.9% | 48 |
+| norm + rotation + int8 quantise | 5.1% | 4.5% | |
+| paged attention decode | 4.5% | 0.9% | 16 |
+| other GEMMs (`gemm_nt`, `logits_gemm`) | 5.1% | 4.4% | |
+
+- Segment sums are 25.5 ms (rank 0) and 25.3 ms (rank 2) against a median traced pass wall of 31.4 ms. About 6 ms of
+  the traced wall is outside every segment (gaps and the end-of-pass synchronisation) and is not attributed.
+- The GEMM launch count (288) equals the static count in section 3. The three GEMM entries together are about 14.5 ms
+  on rank 0, against 14.3 ms summed from the isolated rows in section 2. Measured against the traced segments, the
+  GEMM share is confirmed; the absolute prize in section 3 is unchanged.
+- The R9700's all-reduce share is mostly waiting for the XTX ranks (VTP36's finding), not link time.
+- `prefetch` is 13-17% of the traced pass on both card types. What the op is has not been established.
+
+### The pin route is closed
+
+`gemm_iq8r_nt_m16`, one XTX, cold, three repeats, the six rank-0 shapes of section 2, wave-count (`--pin-mw`) and
+token-tile (`--pin-nt`) pins against stock:
+
+- M 4 and M 16: the best pin is 0.0-1.8% faster (largest: delta-net in, 49.3 to 48.4 us). Noise level.
+- M 32: 0.2-0.7%.
+
+The small-shape gap is therefore not a wave-count or token-tile matter. Closing it would need a different kernel form
+(split-K, or fusing with neighbouring ops), which is a larger change than a pin. Side observation: the same row at M 32
+costs 2.4-3.0 times its M 4 time (13312 x 5120: 90.8 us at M 4, 217.5 us at M 32), the eight-stream draft-3 case; per
+token that is cheaper, and whether it sits above its memory and compute floors is open.
