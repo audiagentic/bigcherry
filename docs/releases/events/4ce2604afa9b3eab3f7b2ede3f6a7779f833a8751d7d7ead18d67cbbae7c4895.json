@@ -1,0 +1,15 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261123_044340_measured-that-the-full-ltx-dit_4472",
+  "files": [
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_pass_full.h",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_pass_residency.h",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/CMakeLists.txt",
+    "docs/evidence/2026-11-23-ltx-pass-placement/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Lab modes that measure full-DiT residency on one XTX and run four LTX guidance passes across the R9700 and both XTX cards: same-card outputs are bit-identical, cross-card outputs are reported as relative RMS (about 1.5-2%), speedup over one R9700 is 1.75x at 768x512 and 1.58x at 1216x704; evidence added.",
+  "timestamp-utc": "2026-11-23T04:43:40.337945Z",
+  "user-summary-candidate": "Measured that the full LTX DiT fits one XTX at typical resolutions and that placing guidance passes across the three cards is 1.6-1.75x faster than the R9700 alone."
+}

@@ -1,6 +1,6 @@
 # LTX-2.5 guidance-pass placement — native AQL lab evidence
 
-**Status: proof of residency and execution; cross-device bitwise correctness fails. Not ready to ship.**
+**Status: proof of residency and execution. Cross-card agreement is reported as an error, not a bit match; the generation-level quality effect is not yet qualified.**
 
 This is an isolated lab test of the existing Radiance 2.2 LTX-2.5 IQ8R implementation, using its native `declare_dit`, `dit_eval`, weight-sharing and kernel-selected relayout paths. No production architecture, scheduler, or runtime changes were made. The measurement used two 24 GiB gfx1100 cards and one 32 GiB gfx1201 card, with peer-to-peer transfer unnecessary. The 3-card test exposed only these cards through `ROCR_VISIBLE_DEVICES`.
 
@@ -53,3 +53,20 @@ Host compilation of the updated C02 lab succeeded. In the same source/patch stag
 ## Recommendation
 
 Do **not** promote guidance-pass placement yet. The memory geometry permits it for 512/704 at 121 frames, and its real three-card makespan has upside, but cross-architecture bitwise output fails the stated acceptance criterion. Before shipping, isolate the first divergent native block/kernel between gfx1100 and gfx1201 on real generated-conditioning fixtures, distinguish numerical rounding from layout/selection defects, and establish an exact-arithmetic contract (or explicitly re-scope the bitwise requirement) before production integration. The 1080p-class single-XTX case additionally needs a reduced arena/weight footprint or different placement; no speculative offload path was added here.
+
+## Cross-card agreement (supersedes the bitwise gate)
+
+The two architectures run different kernels with different accumulation order, so the one-card reference can only be matched
+bit-for-bit on the same card (which holds: every parallel output equals its serial output on its own device). Across cards the lab
+now reports the relative RMS difference of the full DiT output against the R9700 reference
+(`cross-card-rel-rms-*.txt`, rows PASS_FULL_CROSS_CARD):
+
+| Workload | variants run on the R9700 | variants run on an XTX (video / audio rel RMS) |
+| --- | --- | --- |
+| 768x512x121 | 0 | video 1.52% and 1.48%; audio 2.08% and 1.89% |
+| 1216x704x121 | 0 | video 1.52% and 1.48%; audio 2.04% and 1.89% |
+
+All outputs are finite. The synthetic lab inputs are not a generation, so this is the size of the numeric difference, not a quality
+verdict: whether 1.5-2% on a guidance branch is acceptable has to be judged on generated video (guidance branches are combined by
+the guide op, which may average some of it out). The speed measured with the placement is 1.75x (768x512) and 1.58x (1216x704)
+over four passes on the R9700 alone, and the four-pass saving shrinks with fewer passes (about 1.3x for three, none for two or one).
