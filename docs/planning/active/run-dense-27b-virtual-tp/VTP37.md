@@ -102,6 +102,10 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-23 addendum (same evidence note, section 6).** The step-phase trace (rad0055, `--step-phase-trace`, qwen27b-tp3, one stream) confirms the GEMM share: the three GEMM entries are about 14.5 ms of a 25.5 ms traced segment sum on rank 0 (51.5% for the IQ8R linears alone), matching the 14.3 ms isolated sum; the traced step is perturbed (36.7 ms against about 22 ms untraced), so shares only. Attention decode is 4.5% and delta-net decode 5.2% of rank 0's pass. **The pin route is closed:** wave-count and token-tile pins on `gemm_iq8r_nt_m16` at the six rank-0 shapes gain 0.0-1.8% at M 4 and 16 and 0.2-0.7% at M 32 (noise); the small-shape gap would need a different kernel form (split-K, fusion with neighbours). Open: what the `prefetch` op (13-17% of the traced pass) is; the iq8r cost at M 17-32 against its memory and compute floors.
 
+
+
+**2026-11-23 iq8r at M 17-32 and prefetch (evidence note section 7; corrects the earlier pin reading).** (a) The wave and token-tile pin sweep did not test the decode row: for int8 weights at M <= 48 the launcher takes the K-parallel tile, which `--pin-mw` and `--pin-nt` do not reach, so "pin route closed" means only that those pins are not applicable. (b) `gemm_iq8r_nt_m16` costs 217 us against 134 us for `gemm_i8a8_nt_m16` at 13312x5120 M 32 on an XTX (cold; +62%); equal at M 4. Cause from the compiled resource record: the K-parallel kernel at 256-wide scale groups (iq8r) spills 127 VGPRs at NT 2 (M 17-32), 267 at NT 3, 471 at NT 4, where the 128-wide form (i8a8) has none at NT 2; NT 1 (M <= 16) does not spill. Design (unbuilt): cut the SB 256 body's live state at NT >= 2 bit-identically (int32 group sums are exact). Reach: five to eight streams at draft 3. (c) Weight prefetch on versus off at qwen27b-tp3, untraced ABBA: 1 stream 21.83 vs 22.25 ms/step (on wins by 0.42 ms, 1.9%), 4 streams equal; prefetch stays on, 12 MB / 8 MB as measured here, no size sweep.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -252,3 +256,4 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - 2026-11-15T02:25:50.279040+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:13:26.045006+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:29:55.975261+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T08:38:59.382995+00:00 (updated-by): Updated: section:notes

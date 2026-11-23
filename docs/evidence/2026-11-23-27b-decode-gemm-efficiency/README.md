@@ -135,15 +135,83 @@ across lanes and are not used here; the table sums the per-op `tape_segments` of
 - The R9700's all-reduce share is mostly waiting for the XTX ranks (VTP36's finding), not link time.
 - `prefetch` is 13-17% of the traced pass on both card types. What the op is has not been established.
 
-### The pin route is closed
+### The pin sweep did not test the decode row (corrected in section 7)
 
 `gemm_iq8r_nt_m16`, one XTX, cold, three repeats, the six rank-0 shapes of section 2, wave-count (`--pin-mw`) and
-token-tile (`--pin-nt`) pins against stock:
+token-tile (`--pin-nt`) pins against stock: 0.0-1.8% at M 4 and 16, 0.2-0.7% at M 32, noise level. Reading the source
+afterwards showed why: for an int8 weight at M up to 48 (N below 8192 above that) the launcher takes the K-parallel
+tile (`gemm_i8_kpar_kernel`), which `--pin-mw` and `--pin-nt` do not reach; they act on the narrow tile only. So the
+sweep says nothing about tile geometry on this row. The result stands only as "those two pins are not a lever here".
+Side observation: the same row at M 32 costs 2.4-3.0 times its M 4 time (13312 x 5120: 90.8 us at M 4, 217.5 us at
+M 32), the eight-stream draft-3 case.
 
-- M 4 and M 16: the best pin is 0.0-1.8% faster (largest: delta-net in, 49.3 to 48.4 us). Noise level.
-- M 32: 0.2-0.7%.
+## 7. Prefetch on and off, and the iq8r M 17-32 gap
 
-The small-shape gap is therefore not a wave-count or token-tile matter. Closing it would need a different kernel form
-(split-K, or fusing with neighbouring ops), which is a larger change than a pin. Side observation: the same row at M 32
-costs 2.4-3.0 times its M 4 time (13312 x 5120: 90.8 us at M 4, 217.5 us at M 32), the eight-stream draft-3 case; per
-token that is cheaper, and whether it sits above its memory and compute floors is open.
+### Weight prefetch on versus off (qwen27b-tp3, release 2020.8.0)
+
+What it is, from engine source: a read-only device kernel that loads the leading bytes of the next GEMM's weight into
+the Infinity Cache beside a decode all-reduce (and the delta-net out-projection beside the recurrent update). Three
+sites a layer, 64 + 63 + 48 = 175 a pass, 12 MB at the first two and up to 8 MB at the third, decode steps of up to 32
+rows. The sizes were tuned on MXFP4 at TP2 on two R9700s, not on this configuration.
+
+A/B, untraced, ABBA (on, off, off, on), one launch an arm, three seeds and two repetitions each, 512-token prompt,
+192 tokens, engine-reported `decode_ms_per_step` (tokens a step matched between arms at one stream):
+
+| streams | on | off | off minus on |
+|---|---|---|---|
+| 1 | 21.83 +/- 0.05 ms (n 12) | 22.25 +/- 0.02 ms (n 12) | +0.42 ms (+1.9%) |
+| 4 | 26.21 +/- 0.30 ms (n 12) | 26.31 +/- 0.27 ms (n 12) | +0.09 ms (+0.4%, inside the spread) |
+
+Per arm at one stream: 21.80 / 22.26 / 22.25 / 21.87. The off arms declared 175 fewer ops. Prefetch stays on; no size
+sweep was run (the possible gain is under 2% at one stream).
+
+### iq8r against i8a8 at M 32 (7900 XTX, 13312 x 5120, three repeats, spread under 1%)
+
+| row | warm | cold (own weight copy a launch) |
+|---|---|---|
+| `gemm_i8a8_nt_m16` | 106.3-106.8 us | 134.0 us |
+| `gemm_iq8r_nt_m16` | 169.7-173.4 us | 217.0-217.3 us |
+| `gemm_iq8r_tiled` | 272 us | not run |
+
+At M 4 the two rows are equal (26.0 against 26.4 us at 5120 x 2304). At M 32 iq8r is 60-62% slower than i8a8 and does
+25 against 41 TFLOP/s; it sits 2.4 times above its memory floor and about 5 times above its compute floor.
+
+### Cause: register spills in the K-parallel tile at NT 2 and above with 256-wide groups
+
+Both rows use the same K-parallel kernel (`gemm_i8_kpar_kernel<KW, SB, NT>`: a block is one 16-row weight tile, KW
+waves stride K by scale group, NT token tiles of 16). iq8r runs it at SB 256 (a group is two 128-K units, the inner
+unit loop unrolled twice), i8a8 at SB 128. The kernel's resource record in the gfx1100 build, KW 4, unchained:
+
+| NT (tokens) | SB 128 (i8a8): VGPRs, spilled | SB 256 (iq8r): VGPRs, spilled, scratch |
+|---|---|---|
+| 1 (M 1-16) | 148, 0 | 208, 0, 0 B |
+| 2 (M 17-32) | 221, 0 | 240, **127**, 336 B |
+| 3 (M 33-48) | 240, 2 | 240, **267**, 816 B |
+| 4 (M 49-64, N < 8192) | 240, 35 | 240, **471**, 1584 B |
+
+The pinned occupancy (`R4D_WAVES(6)`) leaves 240 registers a lane; the 256-wide group holds two units' operand
+fragments and the next unit's prefetch live at once, which fits at NT 1 and spills from NT 2. That matches the
+measurements: equal at M <= 16, +62% at M 32. The gfx1201 build was not inspected.
+
+### Design to close it (not started)
+
+The contract: iq8r outputs stay bit-identical. They can, because a group's int32 sums are exact (|sum| <= 256 x 127 x
+127 < 2^24) and the fold order per group and token tile is unchanged by anything below.
+
+1. Cut the live state of the SB 256 body at NT >= 2 without changing arithmetic: do not unroll the unit loop
+   (`#pragma unroll 1` on the two-unit loop) and/or prefetch the next unit's weight and token fragments one token tile
+   at a time. Expected: the NT 2 form reaches the SB 128 form's resource shape (about 220 VGPRs, no spills), so M 17-32
+   runs at i8a8's time (13312 x 5120 cold 217 -> about 134 us at best, -38%). That is a bound, not a promise: the
+   per-group fold and the two-unit group still do the same work.
+2. If the first form cannot reach zero spills at NT 2: run the NT >= 2 case as NT 1 passes over the same weight tile
+   inside one block (the weight fragment re-read from cache), bit-identical by construction, at the cost of extra
+   weight-fragment loads.
+3. Delivery: a libr3 component rewrite of the shared GEMM source (the existing native override for that file is the
+   place), not a vendor edit. Check: selftest bit comparison of the new row against the current one at every M 1-64 on
+   the six shapes, then the kernel replay at M 17-32 on the rank-0 shapes with cold rotation, then a decode ms/step
+   A/B at 5-8 streams and a KLD run.
+
+Reach: only M 17-48 changes, that is five to eight streams of draft 3 (M = 4 x streams); one and four streams (M 4 and
+16) are NT 1 and unchanged. Summed over the rank-0 linears at M 32 (isolated, cold, section 2 shapes) the GEMM time is
+about 34.7 ms a step; the i8a8-rate bound of -38% is measured only at 13312 x 5120, so the whole-step bound needs the
+other five shapes measured first.
