@@ -243,3 +243,12 @@ Timing values are kernel-event medians (microseconds) over 20 cold launches in e
 Analysed 228 timed repeat records, 38 arm comparisons.
 
 Cold gate PASS: 17–32 gains beyond repeat spread, and no measured regressions in other groups.
+
+## Final source review and remaining candidates
+
+- The only BF16 f32 gfx12 WMMA shim in the logits source is in `lm_wmma_body`: one call per K16 iteration for each token tile, across eight K16 iterations in one BF16 scale block. The new native-layout accumulation is compile-time gated to MT=2, FKB=2, I8=true, MH=1, TB=0. Other LM geometry/format/table variants preserve the original shim, avoiding the 54 spill regressions found with the unrestricted rewrite.
+- The M<=2 `mvm_kernel` is not part of the WMMA body and remains unchanged. Adjacent `r4d_gemm_fp8a8.hip` uses an integer I32 WMMA rather than this BF16 f32 shim; it is not a candidate for this same transformation.
+- Future independent gfx1100 BF16 shim audits include `r4d_lora_bf16.hip`, `r4d_moe.hip`, `r4d_gdn_wmma.h`, `r4d_dt16.h`, and `r4d_attn_paged_window.hip`. They were identified by source call-site census only and were not modified, measured or authorized for this slice. Other MT/FKB/TB logits variants would require new resource and bit-identity gates before specialization.
+- The full libr3 build, all 140 linked LM metadata comparisons, all 2048 primary/IQR full-byte identity checks, all six actual r3_selftest cases (320 OK), and the two-shape 228-record cold replay were executed. The target M17–32 speed and no-regression gates passed. Static review: only the native logits rewrite and evidence note changed; no vendor, gfx1201 or IQR source edits; `git diff --check` clean.
+- Form B was intentionally not built or timed; no Form B divergence statistics are claimed. The E4M3 chained entrypoint is not exposed by the plugin ABI, so only its unchained export was tested. That path and all other nonselected instantiations retain the stock shim.
+- **READY for owner review of the Form A int8 M17–32 specialization; not pushed, merged or shipped.** No serving, ms/step A/B or KLD was performed.
