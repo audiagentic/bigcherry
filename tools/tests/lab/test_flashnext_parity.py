@@ -537,6 +537,35 @@ class RunRecordsTests(unittest.TestCase):
                 session_path.write_text(json.dumps(session))
             self.assertEqual(len(store.query()), 1)
 
+    def test_active_policy_without_a_calibration_store_publishes_without_one(self):
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("nostore", [1.0])
+        launch = out / "launch-1"
+        manifest = json.loads((launch / "manifest.json").read_text())
+        manifest["spec"]["handoff"]["placement"]["live_policy_state"] = {
+            "configured": True, "requested": "on",
+            "reason_code": "configured", "calibration_key": "",
+        }
+        manifest["spec"]["handoff"]["placement"]["live_policy"] = {
+            "cadence_ns": 1000000000, "min_samples": 1
+        }
+        (launch / "manifest.json").write_text(json.dumps(manifest))
+        (launch / "launch.json").write_text(json.dumps({"policy": True, "warmup_s": 3.0}))
+        states = json.loads((launch / "feature-states.v1.json").read_text())
+        states[0]["state"] = "active"
+        states[0]["reason_code"] = "configured"
+        (launch / "feature-states.v1.json").write_text(json.dumps(states))
+        provenance = json.loads((launch / "launch-provenance.json").read_text())
+        self.assertFalse(provenance.get("calibration_store"))
+        # Calibration is provenance, not a gate: with no store the record carries none and still publishes.
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            digest = fp.publish_launch_record(out, launch)
+            rec = run_records.RunRecordStore(self.root).get_record(digest)
+            roles = {v["role"] for v in rec["provenance"]["inputs"]}
+            self.assertNotIn("calibration_record", roles)
+            self.assertIn("policy_state", roles)
+
     def test_results_baseline_compare_over_published_launch_records(self):
         from bigcherry.core import results, run_records
 
