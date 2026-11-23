@@ -79,3 +79,21 @@ cells are VGPR/spill/private-bytes/theoretical waves per SIMD.
 | 4 | 256 | 4 | ch | 174/0/0/8 | 174/0/0/8 |
 | 4 | 256 | 4 | un | 171/0/0/8 | 171/0/0/8 |
 
+## Stage 2 — bit-identical BF16 output: PASS
+
+Same-process 2020.8.3 baseline and new single-unit plugin comparisons,
+identical deterministic input/scales, complete output BF16 bytes over
+every M 1–64 for the six TP3 per-rank shapes, ragged N=5136 and
+short-K KW2 cases K=512 and K=256. Each test acquired and released
+its own queued GPU lease (12-minute TTL, 5-minute estimate).
+
+| Row/dispatch | PASS | SKIP | FAIL |
+|---|---:|---:|---:|
+| iq/unchained | 576 | 0 | 0 |
+| iq/chained | 576 | 0 | 0 |
+| i8/unchained | 576 | 0 | 0 |
+| i8/chained | 576 | 0 | 0 |
+
+**Total 2,304 PASS, 0 SKIP, 0 FAIL.**
+No numerical divergence. No serving, ms/step A/B or KLD.
+
