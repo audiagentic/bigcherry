@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.8.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.2...bc-radiance-2020.8.3) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** serve the rotated 4-bit drafter row at 17-64 rows as 16-token launches (3.9x) ([#1453](https://github.com/audiagentic/bigcherry/issues/1453)) ([a11cab5](https://github.com/audiagentic/bigcherry/commit/a11cab58a37c0ae4e39a9c0020565d1e69d247ad))
+
 ## [2020.8.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.1...bc-radiance-2020.8.2) (2026-11-23)
 
 
