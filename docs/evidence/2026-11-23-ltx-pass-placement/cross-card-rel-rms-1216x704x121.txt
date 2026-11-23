@@ -1,0 +1,25 @@
+PASS_FULL_LOAD device=0 weights=4378 stored_mib=18690.46
+PASS_FULL_LOAD device=1 weights=4378 stored_mib=18690.46
+PASS_FULL_LOAD device=2 weights=4378 stored_mib=18690.46
+PASS_FULL_ONE_CARD variant=0 ms=4333.927
+PASS_FULL_ONE_CARD variant=1 ms=4336.245
+PASS_FULL_ONE_CARD variant=2 ms=4315.675
+PASS_FULL_ONE_CARD variant=3 ms=3853.221
+PASS_FULL_SERIAL variant=0 device=2 ms=4360.950
+PASS_FULL_SERIAL variant=1 device=2 ms=4370.493
+PASS_FULL_SERIAL variant=2 device=0 ms=10664.368
+PASS_FULL_SERIAL variant=3 device=1 ms=9924.392
+PASS_FULL_CROSS_CARD variant=0 device=2 video_rel_rms=0 audio_rel_rms=0
+PASS_FULL_FINITE variant=0 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=0 device=2 ms=4355.421 within_device_bit_equal=1 one_card_video_diffs=0/1712128 one_card_audio_diffs=0/16256
+PASS_FULL_CROSS_CARD variant=1 device=2 video_rel_rms=0 audio_rel_rms=0
+PASS_FULL_FINITE variant=1 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=1 device=2 ms=4352.271 within_device_bit_equal=1 one_card_video_diffs=0/1712128 one_card_audio_diffs=0/16256
+PASS_FULL_CROSS_CARD variant=2 device=0 video_rel_rms=0.0152109 audio_rel_rms=0.0203752
+PASS_FULL_FINITE variant=2 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=2 device=0 ms=10673.773 within_device_bit_equal=1 one_card_video_diffs=1514715/1712128 one_card_audio_diffs=14844/16256
+PASS_FULL_CROSS_CARD variant=3 device=1 video_rel_rms=0.0147691 audio_rel_rms=0.01893
+PASS_FULL_FINITE variant=3 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=3 device=1 ms=9945.045 within_device_bit_equal=1 one_card_video_diffs=1506265/1712128 one_card_audio_diffs=14646/16256
+PASS_FULL_RESULT passes=4 one_card_ms=16839.068 placed_serial_ms=29320.204 parallel_makespan_ms=10685.787 one_card_speedup=1.576 placed_serial_speedup=2.744 cross_device_bit_equal=0
+exit=0
