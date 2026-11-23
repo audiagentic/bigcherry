@@ -21,3 +21,7 @@ A preliminary implementation used the weight form's rot bit to select the route;
 These are synthetic kernel-only measurements; no engine serving, end-to-end A/B or KLD was run. The HIP selftest exercises the chained kernel instantiation, not live AQL completion records. AQL source was reviewed: each kernel packet gets its own predecessor target and advances issued count by its workgroups. GPU measurements used short, queued leases; all completed without device errors. Detailed raw tables and commands remain in the external task report.
 
 Owner review and later integration qualification are still required. No push or shipment was performed.
+
+## Controlled four-part resource audit
+
+The IQR compilation family has four parts: p0 740, p1 796, p2 840 and p3 796 kernels (**3,172 total**). All 3,172 kernels have unchanged VGPR, VGPR-spill and private-segment metadata when compared to a matching stock-source build under the same compiler flags. Parts p0/p1/p2 match the cached stock objects directly. Five unrelated p3 prefill kernels initially differed against an older cached object; recompiling unmodified stock p3 source under the candidate build conditions reproduced exactly those five differences. Stock-control versus candidate p3 then matched **796/796** resource triples. These five historical-object differences are therefore not caused by this IQR slicing rewrite.
