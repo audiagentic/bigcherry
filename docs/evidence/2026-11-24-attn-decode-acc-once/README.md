@@ -422,3 +422,13 @@ Full pinned-source gfx1100 `libr3` module and `r3_selftest` executable built und
 Validated saved eight context sweeps: **288/288 case PASS; zero differing bytes** across scratch partials and merged output (INT8 and FP8 KV both 144/144). Per KV dtype: ctx 1 = 44, ctx 700 = 36, ctx 4096 = 32, ctx 32768 = 32. Both chain states, sequence counts 1-8, qlen 1-4 (and extended 8/10), ragged inputs and inactive/forced splits were exercised. No cases failed or skipped.
 
 Exact controller: `python3 <scratch>/run-bit-gates.py`; each sweep: `agent-lease acquire gpu --ttl 12m --est 5m --wait -- python3 <scratch>/bit-sweep.py <dtype> <ctx> <baseline-plugin> <candidate-plugin>`. Controller ends `COMPLETE: ALL 8 CONTEXT SWEEPS PASSED (byte exact)`; per-case logs `bit-{i8,fp8}-{1,700,4096,32768}.log` report `diff=0` throughout. **Gate 2 PASS**; selftests and cold replay pending.
+
+
+## Stage 4 — actual `r3_selftest` cases
+
+Full gfx1100 libr3 plugin and selftest executable were built (131/131 Ninja steps, 115 HIP device units); the test binary was **run** against the candidate plugin in two independently queued short GPU leases. Controller command: `python3 <scratch>/run-selftest-gates.py` (invokes `agent-lease acquire gpu --ttl 12m --est 5m --wait -- <build>/r3_selftest <build>/radiance_home/kernels/libr3.so --case <case>`).
+
+- `attn_decode_h256_gqa6_i8`: **13 OK** (four normal, four numeric, four numeric-negctl, one scratch-coverage).
+- `attn_decode_h256_gqa6_bf16kv`: **3 OK** (normal, decode split law over 24 batches, scratch-coverage).
+
+Total **16/16 OK, zero FAIL, zero skip**; two explicit PASS results and controller COMPLETE. Selftest execution **PASS**. Cold replay pending.
