@@ -70,12 +70,15 @@ Large, but split into independently shippable families. Main risk: native fragme
 
 ## Notes
 
-
-
 **2026-11-24 census and results so far.** Static scan of the 2020.8.4 gfx1100 code objects (exchange instructions per matrix instruction by kernel family) joined with the traced op list ranks the families by exposure x ms: drafter 4-bit m16 tile (2.39 ms rank 0, 7.2 exchanges per WMMA; slice iqr-acc-once), K-parallel int8 tile fragment exchanges (13.4 ms pass), decode attention (1.33 ms, 12 per WMMA; shipped as 2020.8.6), logits (done, within noise). Replacing the exchange primitive (ds_bpermute -> single-instruction half-wave swap) is bit-identical and changes nothing on the K-parallel tile at six rank-0 shapes (-4..+7%, noise): the exchange latency is hidden by the stream-bound tile. **Parked:** the K-parallel tile's token / weight fragments loaded directly in the gfx11 layout (slice kpar-frag-native) failed bit identity on its first sweep (layout mismatch at M 1-48); not requalified, value doubtful after the serving A/Bs; the layout mismatch is the thing to find if it is ever revived. Serving A/Bs so far: accumulate-once -9.1% / -6.7% step (6 / 8 streams), drafter two-M16 -9.8 / -11.3%, logits within noise, look-ahead removal within noise (evidence notes under docs/evidence/2026-11-24-vtp37-*).
+
+
+
+**2026-11-24 IQ6R exposure.** In the 2020.8.5 gfx1100 code objects the four-to-seven-bit IQR families differ: the 16-row decode tile (`iqr_m16`, 404 instantiations) has 2 spilling instances (8 B private) and serves decode, including 17-64 rows as 16-row slices; the wide tile (`iqr_m64`, 544 instantiations) spills in every instantiation (240-256 VGPRs, up to 3640 B private) and serves rows above 64, i.e. prefill. If an IQ6R container ships (trellis-coded 6/7-bit trunk), its prefill and time-to-first-token rows are the exposed ones and the wide tile's spill and shim exposure becomes a real lever then; until then it stays unranked for the IQ8R layouts (which do not use it on shipped paths). Carried in the ranking, not as done.
 
 ## Change Log
 
 - 2026-11-23T21:05:38.143523+00:00 (created-by): Created by agent
 - 2026-11-23T21:06:00.461438+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T21:45:17.328753+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:06:33.668979+00:00 (updated-by): Updated: section:notes
