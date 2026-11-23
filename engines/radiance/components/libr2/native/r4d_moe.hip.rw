@@ -27,33 +27,3 @@ extern "C" int r4d_rad_moe_gemm_w4a8i8_mod4(const RadArgs* a, RadStream s) {
 @@ replace
 // libr2 has no integer WMMA tile.
 @@ end
-
-# Only the RDNA2 device's smaller register file changes the wave cap.
-# The existing tuned value remains the input; no instantiation table is added.
-@@ find 1
-constexpr uint32_t moe_waves(uint32_t ntl, int w4, bool es, bool al, uint32_t fk, bool rs) {
-    return es ? (fk == 256u ? 5u : w4 == 0 ? (rs ? 10u : 11u) : w4 == 1 ? 11u : w4 == 3 ? 9u : 10u)
-         : al ? (ntl == 16u ? (w4 == 1 ? 12u : 9u) : ntl == 8u ? (w4 <= 1 ? 10u : 9u) : 9u)
-              : (w4 <= 1 ? 9u : 8u);
-}
-@@ replace
-constexpr uint32_t moe_waves(uint32_t ntl, int w4, bool es, bool al, uint32_t fk, bool rs) {
-    const uint32_t tuned = es ? (fk == 256u ? 5u : w4 == 0 ? (rs ? 10u : 11u) : w4 == 1 ? 11u : w4 == 3 ? 9u : 10u)
-         : al ? (ntl == 16u ? (w4 == 1 ? 12u : 9u) : ntl == 8u ? (w4 <= 1 ? 10u : 9u) : 9u)
-              : (w4 <= 1 ? 9u : 8u);
-#if defined(__gfx1030__)
-    // Architectural per-lane VGPR file sizes, not workload-specific caps.
-    constexpr uint32_t kRdna2VgprsPerSimdLane = 1024u;
-    constexpr uint32_t kTunedVgprsPerSimdLane = 1536u;
-    // The per-thread VGPR allocation limit bounds the minimum live-wave budget.
-    // The original per-instantiation hint still chooses below this bound.
-    constexpr uint32_t kVgprsPerThreadLimit = 256u;
-    constexpr uint32_t kWaveCap = kRdna2VgprsPerSimdLane / kVgprsPerThreadLimit;
-    const uint32_t scaled = tuned * kRdna2VgprsPerSimdLane / kTunedVgprsPerSimdLane;
-    const uint32_t requested = scaled ? scaled : 1u;
-    return requested < kWaveCap ? requested : kWaveCap;
-#else
-    return tuned;
-#endif
-}
-@@ end
