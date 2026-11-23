@@ -27,3 +27,15 @@ numerical or full-model conversion acceptance test.
 The patch remains `untested` for production. New GPU conversion,
 ASAN/UBSan, 27B artifact, full repository patch suite and model
 declaration are separate gates, none inferred to pass from this build.
+
+## Full repository patch-suite attempt
+
+The requested full `python3 -m unittest discover -s tools/tests/patch -q`
+was executed (1,490 tests). It **did not pass**: 4 failures, 40 errors,
+33 skipped. Investigated errors include executables generated under a
+non-executable temporary directory (`PermissionError`), missing
+`pytest` in the test interpreter, and a separate pre-existing
+`NameError` in generic campaign evidence binding
+(`write_json_atomic`). The new patch's two focused tests still pass.
+Do not count the full suite as qualified or promote the patch based on
+this attempt. These baseline issues were not modified in this slice.
