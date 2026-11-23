@@ -166,7 +166,7 @@ def test_c06_coordinate_allocation_unwind_contract() -> None:
     source = (ROOT / "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp").read_text()
     contract = source.split("static void verify_c06_load_contract", 1)[1].split(
         "static void run_self_attn", 1)[0]
-    assert "issued->owned_device.reserve(program.weights.size()+2)" in contract
+    assert "issued->owned_device.reserve(program.weights.size()+3)" in contract
     allocation = source.split("r.device_cu=rad_dev_alloc", 1)[1].split(
         "need(rad_memcpy_async(r.device_cu", 1)[0]
 

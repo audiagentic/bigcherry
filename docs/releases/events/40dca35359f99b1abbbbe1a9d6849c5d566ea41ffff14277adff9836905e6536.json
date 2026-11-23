@@ -1,0 +1,12 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261122_202303_ltx-tensor-parallel-feed-forwa_3899",
+  "files": [
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/CMakeLists.txt"
+  ],
+  "status": "unreleased",
+  "technical-summary": "LTX03: the first issued feed-forward lane. The checkpoint video and audio FFN (row-sharded up, GELU, column-sharded bias-free down, exact three-rank reduction, audio bias applied once after it) is built by the production Lin/Act/unary and issued on the host reference kernels across three ranks for two head splits at the first and last DiT block, and compared with an issue of the same tensors at TP1 (relative RMS 0.0023-0.0037, below the BF16 unit roundoff); an issue that omits the reduction is detected. The same lane has an AQL mode for the three-card lease.",
+  "timestamp-utc": "2026-11-22T20:23:03.278543Z",
+  "user-summary-candidate": "LTX tensor-parallel feed-forward now runs, not just declares, in a host test that matches the single-card result."
+}

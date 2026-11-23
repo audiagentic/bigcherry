@@ -2454,7 +2454,9 @@ void helper_vram_owner_graph(Fixture& t) {
     in.stored_manifest.clear();   // an explicit replay input is production-only; the schedule needs a fresh plan
     in.lab_experiment = bc::serving::read_lab_placement_experiment(swaps);
     owner.timing.quality_timeout = std::chrono::minutes(1);
-    owner.timing.stop_grace = std::chrono::seconds(1);
+    // The owner waits this long for helper0's forced-placement report (and for a process to stop). A
+    // loaded CI container can leave a freshly started helper unscheduled for a second.
+    owner.timing.stop_grace = std::chrono::seconds(10);
     owner.quality->output = t.root / "helper-quality-forced.json";
     write(reference / "kld.json", "{}");
     write(authored, yaml);   // the measuring admission consumes the authored file
