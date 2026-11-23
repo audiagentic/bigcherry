@@ -717,3 +717,50 @@ static int g_perfpaged_kv = 2;                   // libr3: --perfpaged-kv
                 "             native TP3 rank).\n"
                 "  --pin-mw N, --pin-nt N:  pin the narrow 8-bit GEMM's wave count (1, 2, 4, 8, 16) and\n"
 @@ end
+
+
+# VTP37: B4 BF16 table M17..64 uses several NT1 tiles, like M<=16.
+# Preserve the exact-reference contract for every other form.
+@@ find 1
+    const bool exact = M > (tiles ? 64 : 16) && !f.rowf;
+@@ replace
+    const bool exact = M > (tiles ? 64 : 16) && !f.rowf &&
+                       !(f.kind == 3 && f.B == 4 && f.rot && !f.two && f.rb <= 1 && M <= 64);
+@@ end
+
+# On HIP (no AQL record) compare the ordinary and chained instantiations and
+# verify that the plugin emits exactly ceil(M/16) separate packets, all NT1.
+# AQL per-packet counter and target semantics are checked from source.
+@@ find 1
+    dfree_all();
+}
+
+/* moe_gemm_iqr against the dense IQR GEMM over the same expert buffers. Every expert is an IQR
+@@ replace
+    if (f.kind == 3 && f.B == 4 && f.rot && !f.two && f.rb <= 1 &&
+        (M == 17 || M == 64)) {
+        const int expected = (int)((M + 15) / 16);
+        const void* plain[8] = {};
+        const void* chained[8] = {};
+        pl.record(plain, 8);
+        const int prc = launch(r, tq, gp);
+        const int np = pl.record(nullptr, 0);
+        std::vector<RadParam> cp = gp;
+        cp.push_back(PI("chain", 1));
+        pl.record(chained, 8);
+        const int crc = launch(r, tq, cp);
+        const int nc = pl.record(nullptr, 0);
+        std::vector<uint16_t> ch((size_t)(M * N));
+        st_memcpy(ch.data(), d_y, ch.size() * sizeof(uint16_t), hipMemcpyDeviceToHost);
+        bool plain_same = np == expected, chain_same = nc == expected;
+        for (int i = 1; i < np && i < 8; ++i) plain_same &= plain[i] == plain[0];
+        for (int i = 1; i < nc && i < 8; ++i) chain_same &= chained[i] == chained[0];
+        ok((std::string(nm) + ": NT1 plain/chained dispatches, equal output").c_str(),
+           prc == RAD_OK && crc == RAD_OK && plain_same && chain_same &&
+           plain[0] != chained[0] && ch == y);
+    }
+    dfree_all();
+}
+
+/* moe_gemm_iqr against the dense IQR GEMM over the same expert buffers. Every expert is an IQR
+@@ end
