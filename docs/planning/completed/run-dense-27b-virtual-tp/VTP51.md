@@ -2,7 +2,7 @@
 id: VTP51
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: completed
 created-at: '2026-11-23T21:15:18.602198+00:00'
 breadth: ''
 skill: advanced
@@ -58,12 +58,16 @@ Medium. Risk: the second stream contends for the bandwidth the all-reduce stagin
 
 ## Notes
 
-
-
 **2026-11-24 ceiling retracted; on hold.** The 2.6 ms ceiling came from the tape (56 prefetch ops of about 21 us). The engine already issues the weight prefetch beside the collective (prefetch_beside; on a chained launch it waits for the GEMM and then reads beside the collective without holding it), is read-only, and applies only to decode and verify heights; the whole mechanism measured only 0.42 ms at one stream (on against off) and equal at four. So the item as titled is already implemented. What is left is bounded by a prefetch on / off A/B at 6 and 8 streams (three ABBA cycles, queued after the tp2 comparison): more than 1 ms of off-cost at 6 or 8 streams opens a derived-cap item for the delta-net out-projection read (bytes per sequence against the cache budget, replacing the hand-picked four-sequence limit); within the harness floor closes this item as NO-GO.
+
+
+
+**2026-11-24 closed NO-GO.** Weight prefetch on against off, three ABBA cycles, 2020.8.5, qwen27b-tp3: off costs +0.08 ms (s.e. 0.29) at 6 streams and +0.31 ms (+1.0%, s.e. 0.11) at 8 streams (evidence: `docs/evidence/2026-11-24-vtp51-weight-prefetch-ab/README.md`). The whole mechanism is worth about 0.3 ms at 8 streams, so neither a second-stream placement nor a derived cap for the delta-net out-projection read (below the 1 ms threshold) is worth building.
 
 ## Change Log
 
 - 2026-11-23T21:15:18.602198+00:00 (created-by): Created by agent
 - 2026-11-23T21:15:53.292353+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T22:51:59.751375+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:17:45.678952+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:17:50.756017+00:00 (state-transition): State: pending → completed
