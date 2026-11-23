@@ -25,6 +25,17 @@ Both arms were run separately on one gfx1100 XTX under GPU leases. Each used the
 
 Installed rocBLAS gfx1100 Tensile int8 metadata includes 128×128×32 solutions with 16×16×16 matrix instructions, depth-U 32 and four-wide global reads. The precise solution chosen for the independent 2048×15360×3840 plain-int8 reference benchmark was not traced. The plain-int8 reference at 127.2 TOPS is **not equivalent work** to IQ8R scale folding with bf16 output.
 
-The scratch candidate adds scale-repacking complexity but gains only 0.1–0.3% on the two dominant LTX FFN projections. It remains **unverified for bf16 byte parity**, and cannot be timed as a full issued block with a focused-unit plugin; no candidate AQL block-time result is claimed. Prior baseline evidence for a single gfx1100 XTX at 2048 tokens is 6.702 ms video FFN and 13.046 ms video attention-plus-FFN block; see `docs/evidence/2026-11-22-ltx03-issued-block-timing/`.
+The scratch candidate adds scale-repacking complexity but gains only 0.1–0.3% on the two dominant LTX FFN projections. A separate scratch-only correctness harness now verifies **17/17 bf16 byte-identical IQ8R shapes**, including `M2048 N3840 K4096` (0 mismatches out of 7,864,320 elements; max absolute and relative difference both zero), against the installed full plugin. It cannot be timed as a full issued block with a focused-unit plugin; no candidate AQL block-time result is claimed. Prior baseline evidence for a single gfx1100 XTX at 2048 tokens is 6.702 ms video FFN and 13.046 ms video attention-plus-FFN block; see `docs/evidence/2026-11-22-ltx03-issued-block-timing/`.
 
-**Decision:** retain the existing managed kernel. Do not ship or merge the scratch fold rewrite on timing-only results. Revisit only after byte-parity, a complete issued-block AQL A/B, and additional tile/K/weight-staging comparisons on the actual LTX shapes. No production source was edited for this experiment.
+**Decision:** retain the existing managed kernel. Do not ship or merge the scratch fold rewrite based only on its small observed gains and isolated numerical parity. Revisit only after a complete issued-block AQL A/B and additional tile/K/weight-staging comparisons on the actual LTX shapes. No production source was edited for this experiment.
+
+## Scratch numerical-parity verification
+
+The standalone, scratch-patched `r3_selftest --case gemm_iq8r_tiled` was compiled with the two required units, the GEMM implementation and the Hadamard IQ8R activation quantiser (`r4d_quant_act_fp8`). The test compared output BF16 bytes against the installed production plugin for the same generated inputs, and ran the existing independent numerical-oracle checks where feasible.
+
+- Focused HIP build: **pass** (11/11 steps); forced scratch harness rebuild: **pass** (2/2).
+- GPU lease: acquired, test executed, released.
+- **17/17** comparison shapes passed; **0 byte differences** across all outputs.
+- Relevant tiled cases: M200×N256×K1024, M300×N384×K5120, and M2048×N3840×K4096; for the last, **0/7,864,320 mismatches, max_abs=0, max_rel=0**.
+- The existing numerical suite emitted **50 passing checks** and exited 0.
+- Full output: `numeric-parity.txt`. The test is scoped to the scratch candidate, not an end-to-end LTX graph; exact token counts M6144/M13376/M32640 and complete issued-block timing remain unverified.
