@@ -141,6 +141,10 @@ The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, inclu
 
 **2026-11-24 the R9700's x4 link paces the whole TP3 collective at decode sizes.** qwen27b-tp3 tape (2020.8.3, full verify passes of about 27 rows): 129 all-reduces a pass of 276 KB each (5120 x 27 rows x 2 B, exact wire); 85 us a call on the XTX ranks (10.9 ms a pass), 123 us on the R9700 (15.9 ms). Links read from sysfs: XTX x8 Gen4 15.8 GB/s, R9700 x4 Gen4 7.9 GB/s; plain host-link test (kernel stores / loads to pinned host memory, three cards at once, no contention between cards): XTX 14.2 GB/s, R9700 7.0 GB/s, fixed cost about 8-11 us a hop including launch. The engine already runs the link-weighted two-shot with duplex shard weights 64,64,0 (the R9700 owns no shard: its link carries one message each way, 276 KB, about 39 us a direction; each XTX rank 414 KB, 29 us) and ts_pieces=4, ts_fuse=1, ts_once=1, ts_duplex=1. The bytes-only floor for the R9700 call is about 47 us if its stores and loads overlap, 87 us if serialised, against 108-123 us observed: 21-75 us a call (2.7-9.7 ms a pass bracket) is hop latency, handshakes and fold. ts_pieces=4 was swept at prefill-size messages (2048 rows), not at the 276 KB decode size where four pieces mean four extra handshakes a phase; a config-only A/B (ts_pieces_min) tests that. The only way to cut bytes on the x4 link is the lossy 6-bit wire (25/64 of exact), a product decision that needs a quality answer first and is not tested.
 
+
+
+**2026-11-24 decode-size piece count A/B: NO-GO.** One piece for messages under 524,288 elements (`ts_pieces_min=524288` on the shipped pin) against the shipped four pieces, two ABBA cycles, 3 seeds x 3 repetitions, 2020.8.5: decode ms/step -0.27 ms (s.e. 0.21) at 6 streams and +0.08 ms (s.e. 0.18) at 8 streams; acceptance and text unchanged (evidence: `docs/evidence/2026-11-24-vtp36-pieces-min-ab/README.md`). The flag-value count is not what the per-call fixed part consists of at decode sizes.
+
 ## Results (2026-11-13): the all-reduce
 
 Worktree `perf/vtp36-tp3-performance`. Builds (all `radiance:stock:linux-radiance`, rad0016-rad0030 plus the patches
@@ -464,3 +468,4 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 - 2026-11-13T05:15:40.560777+00:00 (updated-by): Updated: section:notes
 - 2026-11-14T06:59:22.719204+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-23T22:16:07.345968+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:49:19.010908+00:00 (updated-by): Updated: section:notes
