@@ -432,3 +432,29 @@ Full gfx1100 libr3 plugin and selftest executable were built (131/131 Ninja step
 - `attn_decode_h256_gqa6_bf16kv`: **3 OK** (normal, decode split law over 24 batches, scratch-coverage).
 
 Total **16/16 OK, zero FAIL, zero skip**; two explicit PASS results and controller COMPLETE. Selftest execution **PASS**. Cold replay pending.
+
+
+## Stage 5 — corrected cold decode replay
+
+Same-process baseline/candidate HIP-event replay, separate queued 12m TTL lease for each of 12 cases; 3 AB/BA/AB repeats per case, at least 512 MiB of rotated KV copies. Full runner: `python3 <scratch>/run-perf-gates.py`; each measured executable `<scratch>/perf[-i8] <baseline-plugin> <candidate-plugin> <ctx> <seqs> <qlen> <chain> <iters> --cold256` executes within `agent-lease acquire gpu --ttl 12m --est 5m --wait -- ...`.
+
+The initial 128-iteration ctx=700/M=1 replay touched only ~92 MiB, so its noisy INT8 median is not an acceptable cold-cache result. Scratch-only controller corrected to `iters=max(128,min(512,ceil(512 MiB / KV-copy bytes)))`, with a minimum of 256 MiB actually touched. A fresh complete 12-case replay with this rule is tabulated below; preliminary logs remain separately saved.
+
+Numbers: median [min-max] microseconds per launch; effective KV throughput in GB/s, computed from the logical cache bytes consumed per launch. The compile-time guard changes chained INT8 flag 1177835067 NS1-4 and FP8 flag 3429947 NS2-4 both chain modes, for h256/gqa6/bs16/f16 only. FP8 NS1 uses the original shim; 378 other decode instantiations retain unchanged code and metadata.
+
+| KV | ctx | seqs x qlen | chained | Baseline us | Form A us | GB/s base / new | Gain |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| fp8 | 32768 | 1x1 | 0 | 296.754 [296.685-371.247] | 292.699 [288.851-329.241] | 113.1 / 114.6 | +1.4% |
+| fp8 | 32768 | 6x4 | 0 | 1857.285 [1856.983-1926.906] | 1086.057 [1085.011-1104.892] | 108.4 / 185.4 | +71.0% |
+| fp8 | 32768 | 8x4 | 0 | 2442.737 [2440.286-2525.204] | 1418.733 [1417.035-1445.889] | 109.9 / 189.2 | +72.2% |
+| fp8 | 700 | 1x1 | 0 | 40.429 [40.309-61.160] | 40.486 [40.396-50.751] | 17.7 / 17.7 | -0.1% |
+| fp8 | 700 | 6x4 | 0 | 98.194 [97.884-170.430] | 63.724 [63.639-104.878] | 43.8 / 67.5 | +54.1% |
+| fp8 | 700 | 8x4 | 0 | 102.550 [102.123-174.018] | 63.961 [63.469-102.940] | 55.9 / 89.7 | +60.3% |
+| i8 | 32768 | 1x1 | 1 | 118.867 [117.896-194.810] | 104.892 [104.630-144.744] | 284.5 / 322.4 | +13.3% |
+| i8 | 32768 | 6x4 | 1 | 899.450 [894.939-930.496] | 755.674 [738.003-775.334] | 225.6 / 268.5 | +19.0% |
+| i8 | 32768 | 8x4 | 1 | 1173.365 [1171.514-1200.565] | 984.637 [978.013-992.332] | 230.6 / 274.8 | +19.2% |
+| i8 | 700 | 1x1 | 1 | 23.989 [23.897-42.435] | 20.249 [20.204-29.936] | 30.1 / 35.7 | +18.5% |
+| i8 | 700 | 6x4 | 1 | 46.309 [46.200-123.201] | 37.220 [37.195-82.308] | 93.6 / 116.5 | +24.4% |
+| i8 | 700 | 8x4 | 1 | 49.563 [49.518-123.739] | 39.835 [39.624-81.077] | 116.6 / 145.1 | +24.4% |
+
+**Performance gate: PASS.** Ten of ten replayed changed forms improve in median (13.3%-72.2%); the two unchanged FP8 NS1 M=1 paths remain flat within measurement spread. No measured regression outside spread. All 12 cases x 3 repeats completed; no serving, step A/B or KLD.
