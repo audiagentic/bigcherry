@@ -32,3 +32,11 @@ The full libr2 plugin configured, compiled all three HIP units, and linked succe
 - `r3_moe_mailbox_lifetime_test`
 
 These tests are host-only and do not establish GPU bit identity. The device identity and cold replay gates remain pending. No serving, ms/step, A/B, or KLD was run.
+
+## RDNA2 same-process bit-identity gate
+
+The checked 2020.8.5 release and the candidate report ABI 44 with the same ABI-layout fingerprint `0x5cc71b9c5bb7ab40`. Both were loaded in one process, with only the gfx1030 device visible. The queued short measurement lease released after the run.
+
+**PASS: 2,304 of 2,304 bit-identical complete BF16 output comparisons**. Row counts 1–256 were all exercised for gate/up (N1280, K2560, two parts, token order), down (N2560, K640, one part, sorted order) and a second gate/up geometry (N1536, K2048, two parts), with 512 experts and top-10 routes. Each shape used `w4a8h`, `w4nl64a8h`, and `w4nl32a8h` weights with E4M3 activations. 10,610,933,760 bytes compared. Shape output digests: `ed5bdb4eb6ca8943`, `33d97161529a5b83` and `22dfe7068b0df103`.
+
+This proves the candidate exactly matches the shipped GPU result on those inputs; it **does not replace an independent host numeric reference**. Cold timing and full host-reference coverage remain pending. No serving, A/B, KLD or ms/step run was performed.
