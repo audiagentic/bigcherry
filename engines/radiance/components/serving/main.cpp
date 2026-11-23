@@ -3,6 +3,7 @@
 #include "serving_codec.h"
 #include "live_policy_ingest.h"
 #include "manifest_power.h"
+#include "lab_experiment.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
@@ -13,7 +14,6 @@
 #include "sdk_check.h"
 #include "session.h"
 #include "v2/manifest.h"
-#include "v2/p1_live_room.h"
 #include "v2/p1_producer.h"
 #include "v2/s8_rules.h"
 #include <algorithm>
@@ -41,10 +41,6 @@ void usage() {
     std::cout
         << "bc-serve (RSC01 read-only)\n"
            "  --detect [--json] [--sys-root DIR]\n"
-           "  --publish-v2-live-room [--site FILE] [--profile FILE] [--sys-root DIR]\n"
-           "  --publish-v2-p1 FILE [--site FILE] [--profile FILE] [--sys-root DIR]\n"
-           "      native P1-b producer: measuring-start paths, ownership, verified pin room; v2 inactive\n"
-           "      publishes live host/cgroup/AMD pin bytes; v2 still inactive\n"
            "  --schema\n"
            "  --validate <site.toml> [profile.toml] [--set key=value]\n"
            "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
@@ -68,17 +64,6 @@ void usage() {
            "      stays; a miss in the plan cache exits 10. Starts no process. The engine admits the plan the "
            "manifest\n"
            "      carries (expected plan and kv_backing_floor): there is no other way to hand it one.\n"
-           "      --measured-plan FILE --helpers-resident-mib N --engine-resident-mib M   the plan a measuring "
-           "start produced\n"
-           "                     (radiance --plan-memory FILE, helpers up) and the host memory the helpers and "
-           "the engine held\n"
-           "                     there (resident, MiB): the plan is checked against this configuration (host "
-           "pool, host\n"
-           "                     consumers) and stored in the plan cache with the two figures under this "
-           "configuration's key,\n"
-           "                     and the manifest is written from it. The host ledger counts both figures "
-           "against MemAvailable\n"
-           "                     as read now.\n"
            "      --unmeasured   (with --write-manifest; no --plan-cache or --engine-binary) writes the "
            "unmeasured manifest\n"
            "                     of the measuring start instead: owner map and settings, plan.state "
@@ -99,8 +84,6 @@ void usage() {
            "verbatim; part of the key\n"
            "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the "
            "cards\n"
-           "  --rank-demand FILE     (with --measured-plan) the engine's --plan-memory-ranks record of the "
-           "same start\n"
            "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they "
            "match\n"
            "No process is started by these commands.\n"
@@ -132,7 +115,13 @@ void usage() {
            "after current static/live/power checks; refuses changed build/model/devices, missing "
            "attestation or gates; never rewrites FILE\n"
            "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
-           "                 --kld-ref DIR --kld-out FILE   run a finite native KL score\n"
+           "                 --kld-ref DIR --kld-out FILE [--lab-experiment FILE]   run a finite native KL score;\n"
+           "                 the run writes owner-map.json (the helpers' initial experts) to its run dir; with\n"
+           "                 --lab-experiment, FILE is a forced placement schedule (a JSON object holding\n"
+           "                 `placement`, see docs/reference/engines/radiance/SERVING_MANIFEST.md) applied by helper0 during\n"
+           "                 the score on a lab-profile plan measured afresh; the score fails unless every step committed\n"
+            "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
+            "                 --kld-record DIR --kld-corpus FILE   record a KL reference (DIR existing and empty)\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
@@ -141,10 +130,11 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root;
+    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root, lab_experiment_file;
     std::string config_name;
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
+    bool record_requested = false;
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
     fs::path calibration_records;
@@ -201,6 +191,13 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             quality->reference = need();
         } else if (arg == "--kld-out" && quality && quality->output.empty()) {
             quality->output = need();
+        } else if (arg == "--lab-experiment" && quality && lab_experiment_file.empty()) {
+            lab_experiment_file = need();
+        } else if (arg == "--kld-record" && quality && quality->reference.empty()) {
+            quality->reference = need();
+            record_requested = true;
+        } else if (arg == "--kld-corpus" && quality && quality->corpus.empty()) {
+            quality->corpus = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
@@ -233,11 +230,17 @@ int session_command(const std::string& cmd, int argc, char** argv) {
                                  ": --run-dir DIR is required (the session's lock, socket, record, logs)");
     if (!config_name.empty() && !stored_manifest.empty())
         throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
+    // Read and checked whole before any plan, so a bad schedule never costs a measurement.
+    std::optional<bc::serving::LabPlacementExperiment> lab_experiment;
+    if (!lab_experiment_file.empty())
+        lab_experiment = bc::serving::read_lab_placement_experiment(lab_experiment_file);
     if (!config_name.empty())
         opts.sets.push_back("layout.name=" + Json(config_name).dump());
     if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
         throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
+    // The engine identity is stored under the work root: a start of an unchanged runtime does not hash it again.
+    if (!work_root.empty()) bc::serving::set_engine_identity_store(fs::absolute(work_root));
     if (cmd == "stop") {
         const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
         if (!reply) {
@@ -365,10 +368,14 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (quality && step_phase_trace)
         throw std::runtime_error("--step-phase-trace is a serving-only diagnostic");
     if (quality) {
-        if (native_config.empty() || quality->reference.empty() || quality->output.empty())
-            throw std::runtime_error("quality requires named native YAML, --kld-ref DIR and --kld-out FILE");
+        const bool scoring = !quality->output.empty();
+        if (native_config.empty() || quality->reference.empty() || scoring == record_requested ||
+            (record_requested && quality->corpus.empty()) || (!record_requested && !quality->corpus.empty()))
+            throw std::runtime_error("quality requires named native YAML and either --kld-ref DIR --kld-out FILE "
+                                     "(score) or --kld-record DIR --kld-corpus FILE (record)");
         quality->reference = fs::canonical(quality->reference);
-        quality->output = fs::absolute(quality->output);
+        if (scoring) quality->output = fs::absolute(quality->output);
+        if (record_requested) quality->corpus = fs::canonical(quality->corpus);
     }
     const bool installed_native_replay = prefix && !stored_manifest.empty();
     if ((!config_name.empty() || installed_native_replay) && opts.configs.empty()) {
@@ -395,6 +402,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.named_config = config_name;
     inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
+    inputs.lab_experiment = std::move(lab_experiment);
     inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_records_file = std::move(calibration_records);
 
@@ -522,6 +530,7 @@ int explain_command(int argc, char** argv) {
     opts.sets.push_back("layout.name=" + Json(name).dump());
     namespace ss = bc::serving::session;
     const fs::path self = fs::read_symlink("/proc/self/exe");
+    if (!work_root.empty()) bc::serving::set_engine_identity_store(fs::absolute(work_root));
     if (const auto prefix = bc::serving::installed_prefix(self)) {
         // An installed bundle binds its own runtime home and engine, as a start does.
         if (!engine_binary.empty() && fs::canonical(engine_binary) != fs::canonical(*prefix / "bin/radiance"))
@@ -597,22 +606,6 @@ const std::string cache_note = work_root.empty()
 }
 
 } // namespace
-
-static uint64_t parse_mib(const std::string& text, const char* flag, bool zero_allowed) {
-    size_t used = 0;
-    unsigned long long n = 0;
-    try {
-        n = std::stoull(text, &used);
-    } catch (const std::exception&) {
-        used = 0;
-    }
-    if (used != text.size() || text.empty() || text[0] == '-' || (n == 0 && !zero_allowed))
-        throw std::runtime_error(std::string(flag) +
-                                 (zero_allowed ? " must be a whole number of MiB, is \""
-                                               : " must be a positive integer (MiB), is \"") +
-                                 text + "\"");
-    return n;
-}
 
 /* A JSON object an operator supplies (a live policy, a lab experiment): read once, never defaulted; empty path
  * = none. `from` names the file for the member's provenance record. */
@@ -743,13 +736,11 @@ int main(int argc, char** argv) {
         Options opts;
         bool detection = false, schema = false, validation = false;
         bool explanation = false, json = false;
-        fs::path measured_plan_file;
-        std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
         std::string expected_plan_key;
         int native_config_fd = -1;
         fs::path plan_cache, engine_binary;
-        fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file,
+        fs::path write_manifest, live_policy_file, experiment_file, calibration_records_file,
             s8_replay_evidence_file;
         std::string expected_owner_attempt;
         std::string power_profile;
@@ -757,8 +748,6 @@ int main(int argc, char** argv) {
         // explicit live policy and NO experiment, so the plan it measures is the production plan.
         bool calibration_run = false;
         bool unmeasured = false;
-        bool publish_v2_live_room = false;
-        std::string publish_v2_p1;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -775,10 +764,6 @@ int main(int argc, char** argv) {
                 detection = true;
             else if (arg == "--schema")
                 schema = true;
-            else if (arg == "--publish-v2-live-room")
-                publish_v2_live_room = true;
-            else if (arg == "--publish-v2-p1")
-                publish_v2_p1 = need_arg("--publish-v2-p1");
             else if (arg == "--validate")
                 validation = true;
             else if (arg == "--explain")
@@ -819,8 +804,6 @@ int main(int argc, char** argv) {
                 if (error != std::errc{} || end != value.data() + value.size() || native_config_fd < 3)
                     throw std::runtime_error("--bc-native-config-fd requires a descriptor greater than 2");
             }
-            else if (arg == "--rank-demand")
-                rank_demand_file = need_arg("--rank-demand");
             else if (arg == "--expected-owner-attempt")
                 expected_owner_attempt = need_arg("--expected-owner-attempt");
             else if (arg == "--calibration-records")
@@ -829,14 +812,6 @@ int main(int argc, char** argv) {
                 s8_replay_evidence_file = need_arg("--s8-replay-evidence");
             else if (arg == "--power-profile")
                 power_profile = need_arg("--power-profile");
-            else if (arg == "--measured-plan")
-                measured_plan_file = need_arg("--measured-plan");
-            else if (arg == "--helpers-resident-mib")
-                helpers_resident_mib =
-                    parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib", true);
-            else if (arg == "--engine-resident-mib")
-                engine_resident_mib =
-                    parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib", false);
             else if (arg == "--plan-cache")
                 plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary")
@@ -855,8 +830,7 @@ int main(int argc, char** argv) {
                 bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
             throw std::runtime_error(*refusal);
         const int modes = int(detection) + int(schema) + int(validation) + int(explanation) +
-                          int(!write_manifest.empty()) + int(publish_v2_live_room) +
-                          int(!publish_v2_p1.empty());
+                          int(!write_manifest.empty());
         const bool plan_mode = !write_manifest.empty();
         if (native_config_fd >= 0 && !plan_mode)
             throw std::runtime_error("--bc-native-config-fd is an internal --write-manifest input");
@@ -867,10 +841,6 @@ int main(int argc, char** argv) {
             // before the strict v3 writer can reject the missing snapshot.
             if (native_config_fd < 3)
                 throw std::runtime_error("v3 --write-manifest requires --bc-native-config-fd");
-            if (!measured_plan_file.empty() || !rank_demand_file.empty())
-                throw std::runtime_error(
-                    "v3 --write-manifest does not import --measured-plan or --rank-demand; "
-                    "measurement results must come from the session-owned attempt");
         }
         if (!plan_mode && !opts.run_dir.empty())
             throw std::runtime_error("--run-dir in resolver mode is internal to --write-manifest");
@@ -882,11 +852,6 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--s8-replay-evidence requires a measured --write-manifest");
         if (write_manifest.empty() && (!calibration_records_file.empty() || !power_profile.empty()))
             throw std::runtime_error("--calibration-records and --power-profile go with --write-manifest");
-        if (measured_plan_file.empty() != rank_demand_file.empty())
-            throw std::runtime_error("--measured-plan and --rank-demand go together (the engine's "
-                                     "--plan-memory and --plan-memory-ranks)");
-        if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
-            throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
         if (plan_mode && !unmeasured &&
             expected_owner_attempt.empty())
             throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
@@ -904,68 +869,8 @@ int main(int argc, char** argv) {
                                      "(the production plan is measured)");
         if (write_manifest.empty() && (unmeasured || !live_policy_file.empty() || !experiment_file.empty()))
             throw std::runtime_error("--unmeasured, --live-policy and --experiment go with --write-manifest");
-        if (write_manifest.empty() && !measured_plan_file.empty())
-            throw std::runtime_error("--measured-plan goes with --write-manifest");
-        if (unmeasured && !measured_plan_file.empty())
-            throw std::runtime_error("--unmeasured has no plan: it takes no --measured-plan");
-        if (measured_plan_file.empty() != (!helpers_resident_mib && !engine_resident_mib))
-            throw std::runtime_error(
-                "--helpers-resident-mib and --engine-resident-mib go with --measured-plan (the host memory the "
-                "helpers and the engine held in the measuring start that produced the plan), both or neither");
-        if (!measured_plan_file.empty() && (!helpers_resident_mib || !engine_resident_mib))
-            throw std::runtime_error(
-                "--measured-plan needs both --helpers-resident-mib and --engine-resident-mib");
         if (modes != 1)
             throw std::runtime_error("choose one mode (see --help)");
-        if (!publish_v2_p1.empty()) {
-            if (!positional.empty() || !opts.calibration_cache.empty() || json || unmeasured ||
-                !measured_plan_file.empty() || !plan_extra.empty() || !live_policy_file.empty() ||
-                !experiment_file.empty() || calibration_run || helpers_resident_mib || engine_resident_mib)
-                throw std::runtime_error("--publish-v2-p1 accepts only --site/--profile/--set/--sys-root");
-            std::ifstream in(publish_v2_p1, std::ios::binary);
-            if (!in)
-                throw std::runtime_error("P1 cannot open request " + publish_v2_p1);
-            const std::string bytes((std::istreambuf_iterator<char>(in)), {});
-            const auto request = bc::serving::parse_plan_json(bytes, publish_v2_p1);
-            const auto facts = bc::serving::detect(opts.sys_root);
-            const auto resolved = bc::serving::resolve(opts, facts);
-            bc::serving::ManifestInputs manifest_inputs;
-            manifest_inputs.resolved = resolved;
-            const auto record = bc::serving::v2::produce_p1_inputs(manifest_inputs, facts, opts.sys_root, request);
-            std::cout << record.dump(2) << '\n';
-            return 0;
-        }
-        if (publish_v2_live_room) {
-            if (!positional.empty() || !opts.calibration_cache.empty() || json || unmeasured ||
-                !measured_plan_file.empty() || !plan_extra.empty() || !live_policy_file.empty() ||
-                !experiment_file.empty() || calibration_run)
-                throw std::runtime_error(
-                    "--publish-v2-live-room accepts only --site/--profile/--set/--sys-root");
-            // Native live-room publication is NOT a v2 startup manifest or a
-            // substitute for fresh engine/owner-map/worker measurements.
-            const auto facts = bc::serving::detect(opts.sys_root);
-            const auto resolved = bc::serving::resolve(opts, facts);
-            std::vector<std::string> selected = resolved.typed.layout.engine_cards;
-            selected.insert(selected.end(), resolved.typed.layout.helper_cards.begin(),
-                            resolved.typed.layout.helper_cards.end());
-            const auto measured = bc::serving::v2::measure_live_room(facts, opts.sys_root, selected);
-            if (!measured)
-                throw std::runtime_error("P1 live-room refusal: " + measured.error().path + ": " +
-                                         measured.error().message);
-            const auto& room = measured.value();
-            Json record = {{"schema_version", 1},
-                           {"kind", "bc_serve_v2_live_room"},
-                           {"layout", resolved.typed.layout.name},
-                           {"engine_bdfs", resolved.typed.layout.engine_cards},
-                           {"helper_bdfs", resolved.typed.layout.helper_cards},
-                           {"resource_inputs",
-                            {{"mem_available_bytes", room.mem_available_bytes},
-                             {"cgroup_headroom_bytes", room.cgroup_headroom_bytes},
-                             {"pin_available_bytes", room.pin_available_bytes}}},
-                           {"provenance", room.evidence}};
-            std::cout << record.dump(2) << '\n';
-            return 0;
-        }
         if (schema) {
             if (!positional.empty())
                 throw std::runtime_error("--schema takes no files");
@@ -1087,29 +992,8 @@ int main(int argc, char** argv) {
             if (!expected_plan_key.empty() && bc::serving::plan_key(key_inputs) != expected_plan_key)
                 throw std::runtime_error(
                     "the effective measured-manifest inputs differ from the session's frozen plan key");
-            // The manifest for this configuration from its measured plan: given by a measuring start
-            // (--measured-plan, checked against the configuration and stored in the cache under this key) or
-            // found in the cache. A miss is exit 10: a manifest without a measured plan is not written.
-            std::optional<bc::serving::CachedPlan> plan;
-            if (!measured_plan_file.empty()) {
-                std::ifstream in(measured_plan_file, std::ios::binary);
-                if (!in)
-                    throw std::runtime_error("cannot read " + measured_plan_file.string());
-                std::ostringstream plan_text;
-                plan_text << in.rdbuf();
-                const Json measured =
-                    bc::serving::parse_plan_json(plan_text.str(), measured_plan_file.string());
-                bc::serving::check_plan_for_configuration(
-                    v, bc::serving::decode_engine_plan(measured, measured_plan_file.string()));
-                Json ranks;
-                std::string ranks_from;
-                load_json_input(rank_demand_file, "--rank-demand", &ranks, &ranks_from);
-                bc::serving::plan_cache_store(
-                    plan_cache, key_inputs, measured, ranks,
-                    bc::serving::HostResident{*helpers_resident_mib, *engine_resident_mib});
-                std::cerr << "plan: stored " << bc::serving::plan_key(key_inputs) << '\n';
-            }
-            plan = bc::serving::plan_cache_lookup(plan_cache, key_inputs);
+            // Read the session-owned measured plan from the cache. A miss exits 10.
+            auto plan = bc::serving::plan_cache_lookup(plan_cache, key_inputs);
             if (!plan) {
                 std::cerr << "bc-serve: no measured plan for this configuration (key "
                           << bc::serving::plan_key(key_inputs).substr(0, 16)

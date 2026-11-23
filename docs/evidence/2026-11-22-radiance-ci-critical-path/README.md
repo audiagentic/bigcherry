@@ -49,3 +49,27 @@ declared test target, then ctest. Job wall also includes about 35 to 50 s pullin
 
 Ninja's own critical path (`.ninja_log` is only reported as a sum of HIP durations), per-target ccache misses (the log
 has the totals only), and cold-cache runs (the force-cold option was not run).
+
+## After the session-test split (A/B)
+
+`bc_session_test` (35 tests, one ctest, 158 to 196 s on the runners) became four ctests of about equal run time, and the
+gate runs `ctest --parallel` sized from the CPUs the process may use. Same runner type, warm cache; the phase is
+"component-tests" as the log shows it (from the command line to `component-tests: PASS`).
+
+| Run | Phase | Session tests (wall) |
+|---|---|---|
+| main 01:46 UTC, before | 312 s | one test, 165 s |
+| main 07:30 UTC, before | 483 s | one test, 196 s |
+| main 08:01 UTC, before | 348 s | one test, 158 s |
+| PR before the split | 346 to 376 s | one test, 168 to 185 s |
+| PR #1343 (after) | **170 s** | four tests, 52, 69, 77 and 79 s side by side |
+
+The serving component's ctest took 130.5 s (was 234 s serial, 198 s with `-j8` on the same tests, measured locally):
+it is now bounded by the slowest group (79 s) plus the other serving tests running beside it. The libr3 and moe-remote
+phases are unchanged (a few seconds). One run per arm after, so the 170 s is one sample against five before; the groups
+are balanced on measured times (about 50 s each locally, 52 to 79 s on the shared runner), and CI variance between
+runs of the same arm was 312 to 483 s before, so the saving (about 140 to 310 s) is well outside it.
+
+Found on the way: the split briefly left the session test without `NDEBUG` removed (its ctests no longer carried the
+executable's name, so the build's per-test `-UNDEBUG` loop skipped it, and every `assert` became a no-op); the loop now
+covers every `*_test` executable and the test refuses to build with `NDEBUG`.

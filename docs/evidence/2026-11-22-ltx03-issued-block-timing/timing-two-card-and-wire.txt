@@ -1,0 +1,74 @@
+## tp2-nopipe
+LTX03 time FFN video tokens=2048 TP1(one card): 6.673 ms/step
+LTX03 time FFN video tokens=2048 TP3 8,8,16: 8.968 ms/step (0.74x vs TP1)
+LTX03 time FFN video tokens=2048 TP3 10,10,12: 8.444 ms/step (0.79x vs TP1)
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.110 ms/step (0.82x vs TP1)
+LTX03 time FFN video tokens=2048 TP3 14,14,4: 6.993 ms/step (0.95x vs TP1)
+LTX03 time FFN video tokens=2048 TP2 (two gfx1100) 16,16: 6.452 ms/step (1.03x vs TP1)
+LTX03 time FFN audio tokens=2048 TP1(one card): 1.966 ms/step
+LTX03 time FFN audio tokens=2048 TP3 8,8,16: 4.113 ms/step (0.48x vs TP1)
+LTX03 time FFN audio tokens=2048 TP3 10,10,12: 3.985 ms/step (0.49x vs TP1)
+LTX03 time FFN audio tokens=2048 TP3 12,12,8: 3.909 ms/step (0.50x vs TP1)
+LTX03 time FFN audio tokens=2048 TP3 14,14,4: 3.801 ms/step (0.52x vs TP1)
+LTX03 time FFN audio tokens=2048 TP2 (two gfx1100) 16,16: 2.618 ms/step (0.75x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.139 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 8,8,16: 32.289 ms/step (0.41x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP3 10,10,12: 31.338 ms/step (0.42x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 30.689 ms/step (0.43x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP3 14,14,4: 30.146 ms/step (0.44x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP2 (two gfx1100) 16,16: 19.693 ms/step (0.67x vs TP1)
+LTX03 time attention+FFN block audio tokens=2048 TP1(one card): 4.619 ms/step
+LTX03 time attention+FFN block audio tokens=2048 TP3 8,8,16: 15.600 ms/step (0.30x vs TP1)
+## tp2-pipe
+LTX03 time FFN video tokens=2048 TP1(one card): 6.782 ms/step
+LTX03 time FFN video tokens=2048 TP3 8,8,16: 8.400 ms/step (0.81x vs TP1)
+LTX03 time FFN video tokens=2048 TP3 10,10,12: 8.518 ms/step (0.80x vs TP1)
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.157 ms/step (0.83x vs TP1)
+LTX03 time FFN video tokens=2048 TP3 14,14,4: 7.810 ms/step (0.87x vs TP1)
+LTX03 time FFN video tokens=2048 TP2 (two gfx1100) 16,16: 6.611 ms/step (1.03x vs TP1)
+LTX03 time FFN audio tokens=2048 TP1(one card): 1.999 ms/step
+LTX03 time FFN audio tokens=2048 TP3 8,8,16: 3.940 ms/step (0.51x vs TP1)
+LTX03 time FFN audio tokens=2048 TP3 10,10,12: 3.881 ms/step (0.51x vs TP1)
+LTX03 time FFN audio tokens=2048 TP3 12,12,8: 4.001 ms/step (0.50x vs TP1)
+LTX03 time FFN audio tokens=2048 TP3 14,14,4: 3.866 ms/step (0.52x vs TP1)
+LTX03 time FFN audio tokens=2048 TP2 (two gfx1100) 16,16: 2.614 ms/step (0.76x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.109 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP3 8,8,16: 30.189 ms/step (0.43x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP3 10,10,12: 31.443 ms/step (0.42x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 30.805 ms/step (0.43x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP3 14,14,4: 30.215 ms/step (0.43x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP2 (two gfx1100) 16,16: 19.888 ms/step (0.66x vs TP1)
+LTX03 time attention+FFN block audio tokens=2048 TP1(one card): 4.559 ms/step
+LTX03 time attention+FFN block audio tokens=2048 TP3 8,8,16: 14.719 ms/step (0.31x vs TP1)
+## wire-time-exact
+LTX03 time FFN video tokens=2048 TP1(one card): 6.712 ms/step
+LTX03 time FFN video tokens=2048 TP2 (two gfx1100) 16,16: 6.483 ms/step (1.04x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.114 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP2 (two gfx1100) 16,16: 19.684 ms/step (0.67x vs TP1)
+## wire-time-wht6
+LTX03 time FFN video tokens=2048 TP1(one card): 6.818 ms/step
+LTX03 time FFN video tokens=2048 TP2 (two gfx1100) 16,16: 6.277 ms/step (1.09x vs TP1)
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.079 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP2 (two gfx1100) 16,16: 13.259 ms/step (0.99x vs TP1)
+## wire-err-exact
+LTX03 wire=exact world=2 FFN block=0 video tokens=512: rel_rms_vs_tp1=0.0027904 max_abs=2 replicas_equal=1
+LTX03 wire=exact world=2 FFN block=0 audio tokens=512: rel_rms_vs_tp1=0.0027192 max_abs=0.5 replicas_equal=1
+LTX03 wire=exact world=2 FFN block=47 video tokens=512: rel_rms_vs_tp1=0.00274261 max_abs=2 replicas_equal=1
+LTX03 wire=exact world=2 FFN block=47 audio tokens=512: rel_rms_vs_tp1=0.0027068 max_abs=2 replicas_equal=1
+LTX03 wire=exact world=2 mod+FFN+residual block=0 video tokens=512: rel_rms_vs_tp1=0.0032144 max_abs=2 replicas_equal=1
+LTX03 wire=exact world=2 mod+FFN+residual block=0 audio tokens=512: rel_rms_vs_tp1=0.00320023 max_abs=2 replicas_equal=1
+LTX03 wire=exact world=2 mod+FFN+residual block=47 video tokens=512: rel_rms_vs_tp1=0.00331928 max_abs=8 replicas_equal=1
+LTX03 wire=exact world=2 mod+FFN+residual block=47 audio tokens=512: rel_rms_vs_tp1=0.00307383 max_abs=4 replicas_equal=1
+LTX03 wire=exact world=2 attention+FFN block=0 video tokens=512: rel_rms_vs_tp1=0.0073356 max_abs=3 replicas_equal=1
+LTX03 wire=exact world=2 attention+FFN block=47 video tokens=512: rel_rms_vs_tp1=0.00575152 max_abs=8 replicas_equal=1
+## wire-err-wht6
+LTX03 wire=wht6 world=2 FFN block=0 video tokens=512: rel_rms_vs_tp1=0.016362 max_abs=2.14844 replicas_equal=1
+LTX03 wire=wht6 world=2 FFN block=0 audio tokens=512: rel_rms_vs_tp1=0.0166876 max_abs=1 replicas_equal=1
+LTX03 wire=wht6 world=2 FFN block=47 video tokens=512: rel_rms_vs_tp1=0.0142871 max_abs=2 replicas_equal=1
+LTX03 wire=wht6 world=2 FFN block=47 audio tokens=512: rel_rms_vs_tp1=0.0159127 max_abs=2 replicas_equal=1
+LTX03 wire=wht6 world=2 mod+FFN+residual block=0 video tokens=512: rel_rms_vs_tp1=0.0166745 max_abs=4 replicas_equal=1
+LTX03 wire=wht6 world=2 mod+FFN+residual block=0 audio tokens=512: rel_rms_vs_tp1=0.0163308 max_abs=2 replicas_equal=1
+LTX03 wire=wht6 world=2 mod+FFN+residual block=47 video tokens=512: rel_rms_vs_tp1=0.0133214 max_abs=8 replicas_equal=1
+LTX03 wire=wht6 world=2 mod+FFN+residual block=47 audio tokens=512: rel_rms_vs_tp1=0.0143827 max_abs=4 replicas_equal=1
+LTX03 wire=wht6 world=2 attention+FFN block=0 video tokens=512: rel_rms_vs_tp1=0.0250712 max_abs=7.5 replicas_equal=1
+LTX03 wire=wht6 world=2 attention+FFN block=47 video tokens=512: rel_rms_vs_tp1=0.0215247 max_abs=14 replicas_equal=1

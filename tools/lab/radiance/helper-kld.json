@@ -1,5 +1,5 @@
 {
- "_comment": "Output quality of the production R9700 + two-XTX-helper layout, each arm a native YAML (native-arms/helper-kld/*.yaml, recipes in native-arms.json) scored by bc-serve quality against a STORED reference. Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus; bc-serve quality only scores, so record it beforehand into KLD_REF_DIR with its reference.json (pin, layout, recorded_on) and set KLD_REF_DIR; a lab run that needs a new reference records it with the engine's KL mode on the exact two-XTX layout (KLD ~0.06 was the XTX re-chunking floor on this corpus). KL mode is prefill-only: max-num-batched-tokens 64 is the helper lane cap and handoff.max-rows 64 sends every step's owned routes through the helpers; speculative drafting is off (a KL run scores the trunk's own rows). The control arm (R9700 alone) holds every expert itself and needs host-pool-mib 45056. Thresholds from the first dev runs (2026-10-17, men11-kld-10171438 and -10171457): KL limits sit well above the 0.0004 mean and 0.05 P99 spread between the two arms; the PPL ratio limit is 0.05 because on this 4-document corpus PPL moves 3% between arms while KL shows no change. Set RAD_BIN (<lane build>/bin/radiance), BC_MODEL_ROOT and KLD_REF_DIR before use; the owner derives the cards and model from each YAML. Static check without a GPU: bc-serve explain NAME --native-config YAML --model-root ROOT --engine-binary BIN.",
+ "_comment": "Output quality of the production R9700 + two-XTX-helper layout, each arm a native YAML (native-arms/helper-kld/*.yaml, recipes in native-arms.json) scored by bc-serve quality against a reference this job records first. Arm 'helper-off' is the control (the R9700 alone, no helper: the layout's own distance to the reference); 'helper-on' is gated against it. The reference is the exact two-XTX helper-off run (tp 2, exact wire) over the 4-document corpus; The native owner records it once, on first use, from quality.record (native-arms/helper-kld/reference.yaml, the exact two-XTX tp 2 exact-wire layout; KLD ~0.06 was the XTX re-chunking floor on this corpus) into KLD_REF_DIR, which must not hold a reference yet; delete the record and corpus keys to reuse an existing one. KL mode is prefill-only: max-num-batched-tokens 64 is the helper lane cap and handoff.max-rows 64 sends every step's owned routes through the helpers; speculative drafting is off (a KL run scores the trunk's own rows). The control arm (R9700 alone) holds every expert itself and needs host-pool-mib 45056. Thresholds from the first dev runs (2026-10-17, men11-kld-10171438 and -10171457): KL limits sit well above the 0.0004 mean and 0.05 P99 spread between the two arms; the PPL ratio limit is 0.05 because on this 4-document corpus PPL moves 3% between arms while KL shows no change. Set RAD_BIN (<lane build>/bin/radiance), BC_MODEL_ROOT and KLD_REF_DIR before use; the owner derives the cards and model from each YAML. Static check without a GPU: bc-serve explain NAME --native-config YAML --model-root ROOT --engine-binary BIN.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -19,7 +19,13 @@
    "max_top1_drop_points": 1.0,
    "max_ppl_ratio_increase": 0.05
   },
-  "reference_metadata": "${KLD_REF_DIR}/reference.json"
+  "corpus": "${BC_WORK_ROOT}/corpus/rad-kld-corpus-4.jsonl",
+  "record": {
+   "serving": {
+    "config": "flashnext-tp2xtx",
+    "native_config": "tools/lab/radiance/native-arms/helper-kld/reference.yaml"
+   }
+  }
  },
  "arms": [
   {

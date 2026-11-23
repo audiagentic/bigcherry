@@ -222,3 +222,12 @@ pairs. The newest source interval remains available for comparison
 without overwriting the spaced samples. The measured route rate and
 ring capacity determine the initial spacing, and the observed span
 determines subsequent coarsening, independent of evaluation cadence.
+
+## Owner ingest (off by default)
+
+A session given a calibration store path (`Session::calibration_ingest_store`; empty is off, and no start sets it yet)
+watches helper 0's log for the single `RHP16_CALIBRATION_JSON` line and stores it with provenance taken from its own
+running manifest (`live_policy_target_from_manifest`, `CalibrationWatch`). The first complete marker line decides, once.
+A complete row replaces only a partial row for the same key; a complete row is never replaced and a partial row never
+displaces another. A store that cannot be written, or a record that is refused, is a warning on stderr and a
+`calibration_ingest` event in the session record, never a serving failure.

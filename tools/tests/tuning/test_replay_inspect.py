@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry import __main__ as bc_main  # noqa: E402
+from bigcherry.cli import main as bc_main  # noqa: E402
 from bigcherry.tuning import replay_inspect # noqa: E402
 from bigcherry.tuning.catalog import build_descriptor  # noqa: E402
 

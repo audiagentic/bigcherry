@@ -167,7 +167,17 @@ jobs:
             export CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=content
             mkdir -p work/upstream work/.ccache
             ccache -z
-            trap "ccache -s" EXIT
+            # The restored cache carries the limit the previous main build set (twice its touched bytes), so it starts
+            # full. A limit that is already reached makes every new object evict the least recently used entry, which
+            # is an entry this build has not reached yet (the large libr3 HIP units are built late): they then miss and
+            # recompile (86% hits and 35 minutes instead of 97% and 7). Build unbounded; the trim below runs after the
+            # build, on the entries this build touched.
+            ccache --max-size 0
+            # How much of the restored cache this build used: ccache refreshes the modification time of every entry it
+            # hits or writes, so the bytes of the files newer than this marker are the touched working set.
+            touch /src/work/.ccache-start-marker
+            ccache_touched() { find "$CCACHE_DIR" -type f -newer /src/work/.ccache-start-marker -printf "%s\n" | awk "{s+=\$1} END {print s+0}"; }
+            trap "ccache -s; echo ccache-touched-bytes=\$(ccache_touched); echo ccache-total-bytes=\$(du -sb \$CCACHE_DIR | cut -f1)" EXIT
             if [ -d work/upstream/radiance.git ]; then
               git -C work/upstream/radiance.git worktree prune
               # The restored clone is normally current: fetch (every ref, all tags) only when it lacks the pin, and
@@ -197,6 +207,12 @@ jobs:
             python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
             # Fingerprint the successful build inside the CI compiler image.
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
+            # The cache holds the working set of this build and the previous one (a pin or toolchain bump replaces nearly all of
+            # it once), not a fixed 5 GiB of entries nothing uses: twice the bytes this build touched (hit or wrote).
+            # Only a successful build gets here, so a failed one never shrinks the limit. Main saves the trimmed cache.
+            touched=$(ccache_touched)
+            ccache --max-size "$(( (2 * touched + 1048575) / 1048576 ))M"
+            ccache --cleanup
           '
 
       # Only main writes the shared caches (one entry per main build, found by the restore-keys prefix above); a PR

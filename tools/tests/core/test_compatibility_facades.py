@@ -54,18 +54,14 @@ def _python_files(root: Path):
 
 
 class CompatibilityFacadeTests(unittest.TestCase):
-    def test_entrypoint_private_helpers_are_identity_aliases(self) -> None:
+    def test_entrypoint_reexports_nothing(self) -> None:
         from bigcherry import __main__ as entrypoint
-        from bigcherry.cli import patch as cli_patch
-        from bigcherry.release import records
 
-        self.assertIs(entrypoint._copy_overlay, cli_patch._copy_overlay)
-        self.assertIs(entrypoint._restore_overlay, cli_patch._restore_overlay)
-        self.assertIs(
-            entrypoint._apply_exact_selection,
-            cli_patch._apply_exact_selection,
-        )
-        self.assertIs(entrypoint._record_for, records.record_for_checkout)
+        public = {
+            name for name in vars(entrypoint)
+            if not (name.startswith("__") and name.endswith("__"))
+        }
+        self.assertEqual(public - {"importlib", "sys", "cast", "Any", "annotations"}, {"main"})
 
     def test_retired_root_facades_stay_removed(self) -> None:
         for name in RETIRED_ROOT_FACADES:

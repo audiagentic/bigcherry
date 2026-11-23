@@ -1,0 +1,10 @@
+## one-card-gfx1201 (the R9700 alone)
+LTX03 time FFN video tokens=2048 TP1(one card): 3.653 ms/step
+LTX03 time FFN audio tokens=2048 TP1(one card): 0.971 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 6.679 ms/step
+LTX03 time attention+FFN block audio tokens=2048 TP1(one card): 2.210 ms/step
+## one-card-gfx1100 (one XTX alone)
+LTX03 time FFN video tokens=2048 TP1(one card): 6.702 ms/step
+LTX03 time FFN audio tokens=2048 TP1(one card): 1.892 ms/step
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.046 ms/step
+LTX03 time attention+FFN block audio tokens=2048 TP1(one card): 4.385 ms/step

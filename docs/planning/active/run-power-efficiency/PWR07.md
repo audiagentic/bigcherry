@@ -52,24 +52,25 @@ Fixture tests for every named case, a read-only probe test on this host, and the
 
 A start never fails because a power feature is absent; every run records its observed power state; an explicit request on unsupported hardware refuses before any write with the reason.
 
+**Transferred PWR04 acceptance (independent gate):** Carry original PWR04 startup-host observability contract under the existing portable power probe/receipt: warn, do not fail, when optional configured power state differs from observed state or when the CPU package RAPL/energy read rule is unavailable; distinguish missing capability, unreadable sensor, permission and intentional observe-only. Every start still records source/BDF/CPU observations; no power writes in observe-only or unsupported-host paths and no false success from ambiguous cap=0. Use PWR07's existing read-only probe and receipt, never a second host check or implicit power apply.
+
 ## Notes
 
 Plan: gateway request req_main_8ad977841284 (power slice 1). Brief: runs/rad49-gpt-review/followups/POWER-PORTABILITY-PLAN-BRIEF.md. Parent PWR04.
+
+CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement is now owned here. PWR07 is the already deployed read-only CPU/GPU capability and receipt owner, and PWR04 explicitly delegates probe and warning work to it. Neither this transfer nor previous observational power results satisfy live device, rollback or v2 migration acceptance.
 
 ## Change Log
 
 - 2026-11-10T13:12:56.453273+00:00 (created-by): Created by agent
 
-
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
 Scope narrowed to portability and observability: CPU probe (PR #810), GPU capability probe, receipt types. Manifest-owned profiles moved to PWR08 (bigcherry/v2) and the transactional controller to PWR09; no manifest field is added by this item.
 
-
 ## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
 
 R9700 receipt fields (from PWR06): MES/KIQ/SMC firmware, kernel, amdgpu srcversion, measured idle watts, gpu_busy_percent, VDDGFX (GFXOFF-active proxy) and queue count where observable; observation only, kernel/firmware are host prerequisites.
-
 
 ## Implementation status: 2026-11-10
 
@@ -81,7 +82,6 @@ The October `pwr01-baseline-10271708` vs `pwr01-baseline-10272216` comparison ca
 
 For each XTX BDF and each phase, require a receipt of: exact real cap/default/min/max with sensor identification and status, requested/actual OD SCLK max and effective clock distribution, VDDGFX offset and voltage, DPM/perf/profile mode (observation only), frequency, board watts, busy, temperature/fan/throttle, firmware MES/SMU, kernel/amdgpu srcversion, ROCm, model/build/layout/MTP, sampler source/cadence, ambient or **unknown**, time-window markers, token counts and GPU+CPU energy. Preserve supported/unsupported/unreadable distinctions. Do not infer from a single numeric zero that a control is supported. This is **a requirement for future instrumentation**, not a claim that current receipts expose those fields or that a live probe has been performed. See ranked acceptance in the November power evidence appendix.
 
-
 ## Recheck instrumentation failure modes — 2026-11-11
 
 The `xtx-undervolt-ab/watts.sh` source measures 1-Hz `power1_average` via DRM `card0/card1` without recording their BDF identities; October's `pwr01-baseline.sh` used BDF-mapped AMD-SMI `SOCKET_POWER` and CPU RAPL. These are related *averaged socket/SoC power* interfaces, not proven identical on this host; `power1_input` (when available) is instantaneous, not interchangeable with the averaged output. Demand simultaneous time-aligned `amd-smi SOCKET_POWER`, BDF-mapped hwmon `power1_average` and `power1_input` in the **same stock and -125 mV decode windows**, plus a readback of `pp_od_clk_voltage` at apply, at mid-decode and before stop. Capture real clocks `freq1_input`/AMD-SMI, DPM occupancy, power cap (zero in prior journal ambiguous), MES/SMU, temperature/hotspot, busy, fan and throttle, with thermal baselines. Record phase boundaries for 40-s October-harness phases. No current XTX A/B has demonstrated during-decode offset persistence, sensor equivalence, or matched thermal state. Existing `summarise.py` only prints power sample **counts**, not a watt or energy comparison. This is a requirement for future receipts, not a completed capability.
@@ -91,3 +91,8 @@ The `xtx-undervolt-ab/watts.sh` source measures 1-Hz `power1_average` via DRM `c
 Every `runs/pwr-sclk/<arm>/applied.txt` captures both XTX OverDrive readbacks, and each `wl.*.log` points to an indexed, versioned `result.json`. The `pwr-phases@1` JSON explicitly records `power_sensor: sysfs:power1_average`, while the campaign was described as AMD-SMI board watt sampling; do not silently equate the two sensor identities. Reconcile with paired BDF-mapped AMD-SMI `SOCKET_POWER` in a future receipt. Throughput and watts are phase-specific; 44K doc and six-stream results are *not* paired energy measurements. CPU power was `not_sampled`. The R9700 and 6900 XT settings were unmodified.
 
 For a **validating** `xtx-cap2700-uv125` profile, bind per-BDF selected OD max, offset and actual effective SCLK/voltage, sensor and sampling interval, model/build/kernel/driver, manifest/owner map, phase workload ID, identity hashes and output checks, thermal/health, transaction journal/readback/restore and soak/replication refs. `runs/pwr-sclk/soak27uv125` has no completion status at inspection, and container `dmesg` was denied: require **host-side amdgpu errors/resets** check. Do not accept an ambiguous `power1_cap=0` as a real cap. Future MCLK (reported 97–1250 MHz per XTX, verify fresh) and pp_power_profile_mode experiments also require full capability, reversible snapshot, receipt and no-regression validation before an apply plan can refer to them. Reference table: `docs/reference/power-tuning-evidence-2026-11.md`.
+
+## Reviews
+
+- RV4545
+- 2026-11-22T11:42:13.063598+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

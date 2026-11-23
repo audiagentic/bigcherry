@@ -74,46 +74,6 @@ class RootLock final {
     int fd_ = -1;
 };
 
-void fsync_dir(const fs::path& dir) {
-    const int fd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-    require(fd >= 0, ErrorCode::io, "cannot sync release directory: " + dir.string());
-    const int outcome = ::fsync(fd);
-    ::close(fd);
-    require(outcome == 0, ErrorCode::io, "release directory flush failed");
-}
-
-std::string nonce() {
-    const auto nanos = std::chrono::steady_clock::now().time_since_epoch().count();
-    return std::to_string(::getpid()) + "-" + std::to_string(nanos);
-}
-
-void write_atomic(const fs::path& dest, const std::string& bytes) {
-    const auto pending = fs::path(dest.string() + ".pending-" + nonce());
-    const int fd = ::open(pending.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
-    require(fd >= 0, ErrorCode::io, "cannot stage release state: " + dest.string());
-    try {
-        size_t offset = 0;
-        while (offset < bytes.size()) {
-            const ssize_t written = ::write(fd, bytes.data() + offset, bytes.size() - offset);
-            require(written > 0, ErrorCode::io, "cannot write staged release state");
-            offset += static_cast<size_t>(written);
-        }
-        require(::fsync(fd) == 0, ErrorCode::io, "cannot sync staged release state");
-    } catch (...) {
-        ::close(fd);
-        fs::remove(pending);
-        throw;
-    }
-    ::close(fd);
-    try {
-        fs::rename(pending, dest);
-    } catch (...) {
-        fs::remove(pending);
-        throw;
-    }
-    fsync_dir(dest.parent_path());
-}
-
 std::string installed_at() {
     const auto now = std::chrono::system_clock::now();
     const std::time_t time = std::chrono::system_clock::to_time_t(now);
@@ -215,7 +175,7 @@ Json load_receipt(const fs::path& root, const std::string& tag) {
     return receipt;
 }
 
-Json verify_one(const fs::path& root, const fs::path& sdk, const std::string& tag) {
+Json verify_one(const fs::path& root, const fs::path& sdk, const std::string& tag, bool trust_stamps = false) {
     const auto prefix = root / "releases" / tag;
     const auto receipt = load_receipt(root, tag);
     const auto& record = receipt.at("record");
@@ -227,7 +187,7 @@ Json verify_one(const fs::path& root, const fs::path& sdk, const std::string& ta
     require(version == required_text(record, "rocm_version", ErrorCode::wrong_identity),
             ErrorCode::sdk_mismatch, "installed engine SDK differs from selected host SDK");
     const auto manifest = read_json(prefix / "bundle.json");
-    verify_installed_files(prefix, record, manifest, tag);
+    verify_installed_files(prefix, record, manifest, tag, root / "stamps" / (tag + ".json"), trust_stamps);
     require(required_text(receipt, "engine_sha256", ErrorCode::wrong_identity) ==
                     required_text(manifest["files"]["bin/radiance"], "sha256", ErrorCode::wrong_identity) &&
                 required_text(receipt, "bc_serve_sha256", ErrorCode::wrong_identity) ==
@@ -254,6 +214,7 @@ void prune_old_previous(const fs::path& root, const Json& old_index, const Json&
     if (updated["current"] == old || updated["previous"] == old)
         return;
     const auto obsolete = root / "releases" / old;
+    fs::remove(root / "stamps" / (old + ".json"));
     // The old previous was verified before the index update; do not blindly
     // delete unknown directories or anything pointed to by a symlink.
     require(!fs::is_symlink(fs::symlink_status(obsolete)), ErrorCode::conflict,
@@ -349,8 +310,13 @@ Json verify(const fs::path& source, const fs::path& sdk) {
             {"root", root.string()}};
 }
 
-Json status(const fs::path& root, const fs::path& sdk) {
-    return verify(root, sdk);
+Json verify_current(const fs::path& source, const fs::path& sdk) {
+    const auto root = fs::absolute(source).lexically_normal();
+    RootLock lock(root);
+    const auto index = load_index(root);
+    require(index["current"].is_string(), ErrorCode::invalid_install, "no current installed engine");
+    verify_one(root, sdk, index["current"].get<std::string>(), true);
+    return {{"status", "verified"}, {"current", index["current"]}, {"root", root.string()}};
 }
 
 Json rollback(const fs::path& source, const fs::path& sdk) {

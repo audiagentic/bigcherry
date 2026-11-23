@@ -6,9 +6,9 @@
   "method": "Lexical FilePatch/Edit definitions for the union of exact declared source compositions. Anchors count non-create Edit entries; anchor_sites sum expect_matches (potential matches, not probed). anchor_bytes count raw regex UTF-8 bytes, inserted_bytes count Edit.text UTF-8 bytes (replacement body, not net diff). Created-file edits have no upstream anchor; non-create edits on patch-created files remain anchors, but not upstream anchors. Does not prove anchor applicability or semantics at the pin.",
   "compositions": {
     "radiance": [
-      "rad0002_moe_remote_handoff",
       "rad0008_hc_upmix_rt_sweep",
       "rad0009_serving_manifest",
+      "rad0002_moe_remote_handoff",
       "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
@@ -41,10 +41,10 @@
       "rad0055_step_phase_trace"
     ],
     "radiance-diag": [
-      "rad0002_moe_remote_handoff",
-      "rad0004_moe_remote_diagnostics",
       "rad0008_hc_upmix_rt_sweep",
       "rad0009_serving_manifest",
+      "rad0002_moe_remote_handoff",
+      "rad0004_moe_remote_diagnostics",
       "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
@@ -78,9 +78,9 @@
     ],
     "radiance-native": [],
     "radiance-routing-evidence": [
-      "rad0002_moe_remote_handoff",
       "rad0008_hc_upmix_rt_sweep",
       "rad0009_serving_manifest",
+      "rad0002_moe_remote_handoff",
       "rad0010_routing_evidence",
       "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
@@ -114,9 +114,9 @@
       "rad0055_step_phase_trace"
     ],
     "radiance-vtp44-evidence": [
-      "rad0002_moe_remote_handoff",
       "rad0008_hc_upmix_rt_sweep",
       "rad0009_serving_manifest",
+      "rad0002_moe_remote_handoff",
       "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
@@ -155,13 +155,13 @@
   },
   "totals": {
     "composed_patches": 39,
-    "edits": 665,
-    "anchors": 633,
-    "upstream_anchors": 598,
+    "edits": 671,
+    "anchors": 639,
+    "upstream_anchors": 604,
     "created_target_anchors": 35,
-    "anchor_sites": 656,
-    "anchor_bytes": 79225,
-    "inserted_bytes": 579374,
+    "anchor_sites": 662,
+    "anchor_bytes": 79461,
+    "inserted_bytes": 592769,
     "created_edits": 32,
     "upstream_files": 81
   },
@@ -273,6 +273,59 @@
       "created_edits": 3
     },
     {
+      "patch": "rad0002_moe_remote_handoff",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "abi/bc_moe_remote.h",
+        "arch/common/bc_moe_remote_block.h",
+        "arch/common/rad_arch.h",
+        "arch/common/rad_block_hc.h",
+        "arch/common/rad_block_moe_fp8.h",
+        "core/engine.cpp",
+        "core/engine.h",
+        "core/engine_bringup.cpp",
+        "core/place/bc_moe_remote.cpp",
+        "core/place/bc_moe_remote_engine.h",
+        "core/place/bc_moe_remote_place.h",
+        "core/place/planner.cpp",
+        "core/runtime/ctx.cpp",
+        "core/runtime/ctx.h",
+        "tests/arch_fakes.h"
+      ],
+      "upstream_files": [
+        "arch/common/rad_arch.h",
+        "arch/common/rad_block_hc.h",
+        "arch/common/rad_block_moe_fp8.h",
+        "core/engine.cpp",
+        "core/engine.h",
+        "core/engine_bringup.cpp",
+        "core/place/planner.cpp",
+        "core/runtime/ctx.cpp",
+        "core/runtime/ctx.h",
+        "tests/arch_fakes.h"
+      ],
+      "created_files": [
+        "abi/bc_moe_remote.h",
+        "arch/common/bc_moe_remote_block.h",
+        "core/place/bc_moe_remote.cpp",
+        "core/place/bc_moe_remote_engine.h",
+        "core/place/bc_moe_remote_place.h"
+      ],
+      "edits": 46,
+      "anchors": 41,
+      "upstream_anchors": 41,
+      "created_target_anchors": 0,
+      "anchor_sites": 41,
+      "anchor_bytes": 2309,
+      "inserted_bytes": 52899,
+      "created_edits": 5
+    },
+    {
       "patch": "rad0016_vtp14_rank_code_selection",
       "sources": [
         "radiance",
@@ -375,55 +428,6 @@
       "anchor_bytes": 3080,
       "inserted_bytes": 27756,
       "created_edits": 0
-    },
-    {
-      "patch": "rad0002_moe_remote_handoff",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "abi/bc_moe_remote.h",
-        "arch/common/bc_moe_remote_block.h",
-        "arch/common/rad_block_hc.h",
-        "arch/common/rad_block_moe_fp8.h",
-        "core/engine.cpp",
-        "core/engine.h",
-        "core/engine_bringup.cpp",
-        "core/place/bc_moe_remote.cpp",
-        "core/place/bc_moe_remote_engine.h",
-        "core/place/bc_moe_remote_place.h",
-        "core/place/planner.cpp",
-        "core/runtime/ctx.cpp",
-        "tests/arch_fakes.h"
-      ],
-      "upstream_files": [
-        "arch/common/rad_block_hc.h",
-        "arch/common/rad_block_moe_fp8.h",
-        "core/engine.cpp",
-        "core/engine.h",
-        "core/engine_bringup.cpp",
-        "core/place/planner.cpp",
-        "core/runtime/ctx.cpp",
-        "tests/arch_fakes.h"
-      ],
-      "created_files": [
-        "abi/bc_moe_remote.h",
-        "arch/common/bc_moe_remote_block.h",
-        "core/place/bc_moe_remote.cpp",
-        "core/place/bc_moe_remote_engine.h",
-        "core/place/bc_moe_remote_place.h"
-      ],
-      "edits": 40,
-      "anchors": 35,
-      "upstream_anchors": 35,
-      "created_target_anchors": 0,
-      "anchor_sites": 35,
-      "anchor_bytes": 2073,
-      "inserted_bytes": 39741,
-      "created_edits": 5
     },
     {
       "patch": "rad0036_prefill_governor",
@@ -1394,7 +1398,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 4,
       "anchor_bytes": 222,
-      "inserted_bytes": 5540,
+      "inserted_bytes": 5777,
       "created_edits": 1
     },
     {
@@ -1538,10 +1542,10 @@
         "rad0053_v4_kv_layouts",
         "rad0054_attn_prefill_fp8"
       ],
-      "anchors": 32,
-      "anchor_sites": 32,
-      "anchor_bytes": 2434,
-      "inserted_bytes": 20677,
+      "anchors": 33,
+      "anchor_sites": 33,
+      "anchor_bytes": 2479,
+      "inserted_bytes": 21390,
       "patch_count": 13
     },
     {
@@ -1632,10 +1636,10 @@
         "rad0045_expert_route_replay",
         "rad0055_step_phase_trace"
       ],
-      "anchors": 44,
-      "anchor_sites": 44,
-      "anchor_bytes": 5352,
-      "inserted_bytes": 28563,
+      "anchors": 43,
+      "anchor_sites": 43,
+      "anchor_bytes": 5333,
+      "inserted_bytes": 28525,
       "patch_count": 7
     },
     {
@@ -1701,8 +1705,8 @@
       ],
       "anchors": 21,
       "anchor_sites": 21,
-      "anchor_bytes": 1290,
-      "inserted_bytes": 9348,
+      "anchor_bytes": 1287,
+      "inserted_bytes": 9384,
       "patch_count": 6
     },
     {
@@ -1751,6 +1755,20 @@
       "patch_count": 4
     },
     {
+      "path": "core/runtime/ctx.h",
+      "patch_ids": [
+        "rad0002_moe_remote_handoff",
+        "rad0044_expert_route_record",
+        "rad0045_expert_route_replay",
+        "rad0055_step_phase_trace"
+      ],
+      "anchors": 16,
+      "anchor_sites": 16,
+      "anchor_bytes": 1036,
+      "inserted_bytes": 5662,
+      "patch_count": 4
+    },
+    {
       "path": "libr4d/r4d_attn_paged_gqa8.hip",
       "patch_ids": [
         "rad0049_qwen4exp_e4m3_kv",
@@ -1776,6 +1794,20 @@
       "anchor_sites": 13,
       "anchor_bytes": 1002,
       "inserted_bytes": 2197,
+      "patch_count": 4
+    },
+    {
+      "path": "arch/common/rad_arch.h",
+      "patch_ids": [
+        "rad0002_moe_remote_handoff",
+        "rad0018_vtp14_n2_tp_ownership",
+        "rad0019_vtp14_n2_tp_ownership_fp8",
+        "rad0054_attn_prefill_fp8"
+      ],
+      "anchors": 9,
+      "anchor_sites": 9,
+      "anchor_bytes": 1560,
+      "inserted_bytes": 12595,
       "patch_count": 4
     },
     {
@@ -1830,19 +1862,6 @@
       "anchor_sites": 17,
       "anchor_bytes": 1347,
       "inserted_bytes": 3506,
-      "patch_count": 3
-    },
-    {
-      "path": "core/runtime/ctx.h",
-      "patch_ids": [
-        "rad0044_expert_route_record",
-        "rad0045_expert_route_replay",
-        "rad0055_step_phase_trace"
-      ],
-      "anchors": 13,
-      "anchor_sites": 13,
-      "anchor_bytes": 915,
-      "inserted_bytes": 5210,
       "patch_count": 3
     },
     {
@@ -1908,19 +1927,6 @@
       "anchor_sites": 6,
       "anchor_bytes": 256,
       "inserted_bytes": 546,
-      "patch_count": 3
-    },
-    {
-      "path": "arch/common/rad_arch.h",
-      "patch_ids": [
-        "rad0018_vtp14_n2_tp_ownership",
-        "rad0019_vtp14_n2_tp_ownership_fp8",
-        "rad0054_attn_prefill_fp8"
-      ],
-      "anchors": 6,
-      "anchor_sites": 6,
-      "anchor_bytes": 1468,
-      "inserted_bytes": 12385,
       "patch_count": 3
     },
     {
@@ -2067,7 +2073,7 @@
       "anchors": 2,
       "anchor_sites": 2,
       "anchor_bytes": 112,
-      "inserted_bytes": 596,
+      "inserted_bytes": 892,
       "patch_count": 2
     },
     {
@@ -2166,7 +2172,7 @@
       "anchors": 4,
       "anchor_sites": 4,
       "anchor_bytes": 267,
-      "inserted_bytes": 184,
+      "inserted_bytes": 282,
       "patch_count": 1
     },
     {

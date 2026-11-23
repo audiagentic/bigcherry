@@ -45,6 +45,7 @@ extern char** environ;
 
 namespace {
 volatile std::sig_atomic_t g_stop = 0;
+volatile std::sig_atomic_t g_report = 0;
 void on_stop(int) { g_stop = 1; }
 // Test-only POSIX mailbox creator: graceful exits retire their own name;
  // SIGKILL intentionally bypasses this destructor to exercise owner cleanup.
@@ -287,6 +288,12 @@ int main(int argc, char** argv) {
             m["ngram_placement"] = spec.at("processes").at("engine").at("execution").at("ngram_placement");
             if (spec.contains("handoff"))
                 m["shm"] = spec.at("handoff").at("transport").at("shm");
+            // A forced placement schedule in the manifest: helper0 reports it, as the real worker does on SIGUSR1.
+            if (spec.contains("experiment") && spec.at("experiment").contains("placement") &&
+                spec.at("experiment").at("placement").contains("forced")) {
+                const auto& forced = spec.at("experiment").at("placement").at("forced");
+                m["forced_transactions"] = forced.at("steps").size() * forced.at("repeat").get<size_t>();
+            }
             if (const char* behaviour = apply_behaviour ? std::getenv("TEST_FAKE_BEHAVIOUR") : nullptr) {
                 const json given = json::parse(behaviour, nullptr, false);
                 if (!given.is_object()) {
@@ -342,6 +349,7 @@ int main(int argc, char** argv) {
             return 8;
         std::signal(SIGINT, h.value("ignore_sigint", false) ? SIG_IGN : on_stop);
         std::signal(SIGTERM, on_stop);
+        std::signal(SIGUSR1, [](int) { g_report = 1; });
         const auto up = Clock::now();
         const auto ready_at = up + std::chrono::milliseconds(h.value("ready_delay_ms", 0));
         const auto die_after = std::chrono::milliseconds(h.value("die_after_ms", -1));
@@ -355,8 +363,33 @@ int main(int argc, char** argv) {
                 std::fflush(stdout);
                 ready = true;
             }
+            if (g_report) {
+                g_report = 0;
+                if (role == "helper0" && m.contains("forced_transactions")) {
+                    const unsigned long long attempted = m.at("forced_transactions").get<unsigned long long>();
+                    const char* committed_override = std::getenv("TEST_FAKE_FORCED_COMMITTED");
+                    const unsigned long long committed =
+                        committed_override ? std::strtoull(committed_override, nullptr, 10) : attempted;
+                    std::printf("forced resolved transaction=1 epoch=2 swap=0:3:0:9 helpers=1:0\n");
+                    std::printf("forced placement helper=0 attempted=%llu committed=%llu aborted=%llu inflight=0 "
+                                "bytes_planned=0\n",
+                                attempted, committed, attempted - committed);
+                    std::fflush(stdout);
+                }
+            }
             ::usleep(10000);
         }
+        return 0;
+    }
+    const std::string record_dir = arg_after(argc, argv, "--kld-record");
+    if (!record_dir.empty()) {
+        const std::string corpus = arg_after(argc, argv, "--kld-corpus");
+        if (corpus.empty() || !std::filesystem::path(record_dir).is_absolute() ||
+            !std::filesystem::path(corpus).is_absolute() || !std::filesystem::is_regular_file(corpus) ||
+            !arg_after(argc, argv, "--kld-ref").empty() || !arg_after(argc, argv, "--kld-out").empty() ||
+            !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
+            return 9;
+        std::ofstream(std::filesystem::path(record_dir) / "kld.json") << json{{"positions", 1}}.dump() << '\n';
         return 0;
     }
     const std::string reference = arg_after(argc, argv, "--kld-ref");
@@ -396,7 +429,10 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < cards.size(); ++i)
             plan_doc["vram"]["cards"].push_back(
                 {{"capacity", 10}, {"free", 10}, {"engine_expert_plane", 0}, {"expert_unit_max", 1}});
-        if (m.value("ngram_placement", std::string()) == "ram")
+        // As the engine does for an "auto" tier: it resolves one (RAM here) and its rank receipt names the choice.
+        const std::string requested_ngram = m.value("ngram_placement", std::string());
+        const std::string ngram = requested_ngram == "auto" ? "ram" : requested_ngram;
+        if (ngram == "ram")
             plan_doc["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
                                         {"residence", "pinned"}, {"from", "engine plan (fake measurement)"},
                                         {"remedy", ""}});
@@ -408,6 +444,8 @@ int main(int argc, char** argv) {
         json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
                       {"gpu", json::array()},
                       {"resident_other_bytes", resident_other_bytes}};
+        if (requested_ngram == "auto")
+            ranks["ngram_placement"] = ngram;
         for (const auto& bdf : cards)
             ranks["gpu"].push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
                                     {"claimable_bytes", 10}, {"evidence", "rad0011 fake measurement"}});

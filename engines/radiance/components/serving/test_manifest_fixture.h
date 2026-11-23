@@ -9,7 +9,7 @@ namespace sv = serving;
 
 /* A native P1 measurement record (bc_serve_v2_measured_inputs) consistent with the manifest `unmeasured`
  * describes: its owner map and helpers, a host pool that sums to `pool_mib` with the given margin, and live
- * room far above the need. Test-only: real records come from bc-serve --publish-v2-p1 on the cards. */
+ * room far above the need. Test-only: real records come from the session-owned P1 producer on the cards. */
 inline Json p1_record_for(const Json& unmeasured, int64_t pool_mib, int64_t margin_mib, int64_t reserve_mib) {
     constexpr int64_t MiB = 1048576;
     const Json& spec = unmeasured.at("spec");

@@ -1,0 +1,13 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_112108_no-user-visible-change_6655",
+  "files": [
+    "engines/radiance/recipes.toml",
+    "docs/evidence/radiance-patch-footprint/footprint.json",
+    "docs/evidence/radiance-patch-footprint/footprint.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Drop the empty host-compat and serving-manifest patch-set definitions and their selections from the radiance source recipes. Resolved patch composition per source is identical; no patch package is touched. The committed patch footprint is regenerated (patch order within compositions only).",
+  "timestamp-utc": "2026-11-22T11:21:08.115173Z",
+  "user-summary-candidate": "No user-visible change."
+}

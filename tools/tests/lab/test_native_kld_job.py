@@ -33,7 +33,11 @@ class NativeKldJobTests(unittest.TestCase):
                                              f"x-bigcherry.kernels.attn-native={native}",
                                              "x-bigcherry.kernels.moe-native=false"])
                 self.assertEqual(committed.read_text(), out.read_text())
-        self.assertNotIn("record", job["quality"])
+        record = job["quality"]["record"]["serving"]
+        self.assertEqual(set(record), {"config", "native_config"})
+        self.assertNotEqual(record["config"], BASE.stem, "the reference is recorded on a different layout than the control")
+        self.assertTrue((REPO / record["native_config"]).is_file())
+        self.assertNotIn("reference_metadata", job["quality"])
 
 
 if __name__ == "__main__":

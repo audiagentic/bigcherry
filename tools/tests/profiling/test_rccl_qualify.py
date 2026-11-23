@@ -185,6 +185,30 @@ def test_wrong_result_classified_from_rccl_wrong_field(tmp_path: Path):
     assert result.correct is False
 
 
+
+@pytest.mark.parametrize("counts", [
+    ["0.8"],
+    [0.8],
+    [False],
+    ["-1", "1"],
+    ["+0"],
+])
+def test_invalid_correctness_counters_never_verify(
+    tmp_path: Path, counts: list,
+):
+    result = _run_fake(tmp_path, f"""
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{{"wrong": count}} for count in {counts!r}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.correct is None
+    assert result.plan_verification is None
+
+
 def test_timeout_kills_process_group(tmp_path: Path):
     result = _run_fake(
         tmp_path,
@@ -556,6 +580,82 @@ def test_matched_plan_classified_pass_with_verified_marker(tmp_path: Path):
     """, case=case)
     assert result.classification == rq.PASS
     assert result.plan_verification == rq.PLAN_VERIFIED
+
+
+
+@pytest.mark.parametrize("channels", [1, 2])
+def test_channel_request_is_not_attested_by_observed_plan(tmp_path: Path, channels: int):
+    # -M 1 reports the selected channel count but build_command does not
+    # request one. Matching by coincidence is not executed-candidate proof.
+    case = _fake_case(algorithm="Ring", protocol="Simple", channels=channels)
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """, case=case)
+    assert result.requested_channels == channels
+    assert result.observed_channels == 2
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification == rq.PLAN_REQUEST_NOT_APPLIED
+    assert result.correct is None
+    assert "not applied" in result.detail
+
+
+def test_channel_request_without_plan_observation_is_not_verified(tmp_path: Path):
+    case = _fake_case(channels=2)
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification in {
+        rq.PLAN_UNVERIFIED, rq.PLAN_REQUEST_NOT_APPLIED,
+    }
+
+
+@pytest.mark.parametrize("second_row", [
+    "    TREE    SIMPLE           2",
+    "    RING    LL128           2",
+    "    RING    SIMPLE           4",
+])
+def test_conflicting_observed_plan_rows_are_not_verified(
+    tmp_path: Path, second_row: str,
+):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, f"""
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{{"wrong": "0"}}, {{"wrong": "0"}}], f)
+        print("    RING    SIMPLE           2")
+        print({second_row!r})
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification == rq.PLAN_UNVERIFIED
+    assert result.correct is None
+
+
+def test_repeated_identical_observed_plan_rows_are_verified(tmp_path: Path):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}, {"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.PASS
+    assert result.plan_verification == rq.PLAN_VERIFIED
+    assert result.observed_channels == 2
 
 
 def test_explicit_decline_marked_explicit_declined(tmp_path: Path):

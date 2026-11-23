@@ -22,6 +22,20 @@ void ingest_live_policy_record(const std::filesystem::path& log,
                                const std::string& objective,
                                const std::string& target_store_key,
                                const LivePolicyProvenance& provenance);
+// The strict single-line marker payload (JSON after RHP16_CALIBRATION_JSON ): the one writer. A complete row replaces
+// only a partial one for the same key; a complete row is never replaced and a partial row never displaces another.
+void ingest_live_policy_marker(const std::string& payload, const std::filesystem::path& cache,
+                               const std::string& key, const std::string& layout,
+                               const std::string& objective,
+                               const std::string& target_store_key,
+                               const LivePolicyProvenance& provenance);
+// Everything the primitive needs, taken from one strict serving manifest (no lab-run checks).
+struct LivePolicyTarget {
+    std::string plan_key, layout, objective, store_key;
+    LivePolicyProvenance provenance;
+};
+LivePolicyTarget live_policy_target_from_manifest(const std::filesystem::path& manifest);
+// The lab calibration-run entry: checks that the manifest is a lab calibration run, then ingests.
 void ingest_live_policy_log(const std::filesystem::path& log,
                             const std::filesystem::path& cache,
                             const std::filesystem::path& manifest,

@@ -31,6 +31,7 @@
 
 #include "callback_boundary.h"
 #include "helper_vram.h"
+#include "lab_experiment.h"
 #include "serving.h"
 #include "stored_manifest.h"
 #include "v2/manifest.h"
@@ -141,6 +142,9 @@ struct EngineStart {
     nlohmann::json plan_reuse = nlohmann::json::object();
     nlohmann::json phase_ms = nlohmann::json::object();
     std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
+    // A quality score with a forced placement schedule: the placement transactions the helper must have committed
+    // when scoring ends (steps x repeat); 0 for every other start.
+    std::uint64_t forced_transactions = 0;
     // Set only by a native preflight: the inspector's strict receipt for the admitted YAML (no child was started).
     nlohmann::json native_preflight_receipt = nlohmann::json::object();
     // The resolver's values after the admitted YAML is applied: what the serve path plans from.
@@ -221,7 +225,10 @@ struct PowerHook {
 PowerHook hooks_for_power_transaction(power::SessionPower& transaction);
 
 struct QualityScore {
-    std::filesystem::path reference, output;
+    // Score: `reference` is a recorded KL directory and `output` the report to write. Record: `corpus` is set,
+    // `reference` is an existing empty directory the engine writes the reference into, and `output` is empty.
+    std::filesystem::path reference, output, corpus;
+    bool record() const { return !corpus.empty(); }
 };
 struct Session {
     PowerHook power_hook;
@@ -231,6 +238,10 @@ struct Session {
     // Fake-engine lifecycle tests explicitly opt in with a v2-shaped fixture.
     bool publish_feature_states = false;
     bool strict_production_features = false;
+    // Default off (empty). A calibration store path makes the owner watch helper 0's log for the one settled
+    // RHP16_CALIBRATION_JSON line and ingest it there with provenance from its own running manifest.
+    // A store write failure is a warning in the session record, never a serving failure.
+    std::filesystem::path calibration_ingest_store;
     // Explicit native-serving diagnostic: per-pass HIP event phases under run_dir;
     // absent means no events, no file and no change to recording.
     bool step_phase_trace = false;
@@ -264,16 +275,6 @@ int start_detached(const std::vector<std::string>& self_argv, const std::filesys
 /* The control socket client: "status" or "stop". The owner's reply (JSON), or nothing when no owner answers. */
 std::optional<nlohmann::json> control(const std::filesystem::path& run_dir, const std::string& command,
                                       std::chrono::milliseconds timeout);
-
-/* Control-socket safety (used by the owner before it accepts; public so the tests exercise each check).
- * run_dir_refusal: why `dir` is not a directory owned by `owner` closed to group and world; nullopt when it is.
- * socket_refusal: why `path` is not a socket (a symlink is not) owned by `owner` with exactly `mode`.
- * control_peer_allowed: whether a client with effective uid `peer` may use the socket of an owner running as
- * `owner`: the owner itself, or root (which reaches the 0600 socket and the owner's processes regardless). */
-std::optional<std::string> run_dir_refusal(const std::filesystem::path& dir, uid_t owner);
-std::optional<std::string> socket_refusal(const std::filesystem::path& path, uid_t owner, mode_t mode);
-bool control_peer_allowed(uid_t peer, uid_t owner);
-std::optional<uid_t> peer_uid(int fd);
 
 /* The last session record in the run directory, if any. */
 std::optional<nlohmann::json> read_record(const std::filesystem::path& run_dir);
@@ -387,6 +388,9 @@ struct EnginePlanInputs {
     // engine or helper child. It needs native_admission and takes no GPU.
     bool native_preflight = false;
     bool quality_score = false; // this owner must be the admitted runtime home's executable
+    // Quality score only: the forced placement schedule (`quality --lab-experiment FILE`). The manifest is then a
+    // lab-profile one carrying it, measured afresh and never stored under the named config.
+    std::optional<LabPlacementExperiment> lab_experiment;
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default
 };

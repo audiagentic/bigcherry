@@ -1,0 +1,13 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261122_214009_ltx-tensor-parallel-test-lane_4816",
+  "files": [
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp",
+    "engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/patch.py",
+    "tools/tests/lab/test_ltx_tp3_builder_patch.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "LTX03: the issued tensor-parallel lane now chains the modulated norm, the FFN and the gated residual, and runs self-attention plus FFN as one block, compared with a TP1 issue on the host and on the three cards (reductions counted per rank). A warm-step timing mode measures one card, three cards at several head splits, and two cards. The rad0060 declare guards take the tensor-parallel world size from the geometry (at least two) instead of a fixed three. Measured at 2048 tokens the exact reductions dominate: TP3 is slower than one card, and two cards roughly break even on the FFN.",
+  "timestamp-utc": "2026-11-22T21:40:09.126409Z",
+  "user-summary-candidate": "LTX tensor-parallel test lane now covers a full attention and feed-forward block and measures its speed."
+}
