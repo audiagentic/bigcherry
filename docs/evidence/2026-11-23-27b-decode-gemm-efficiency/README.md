@@ -439,3 +439,28 @@ state; waves of a pair read the same weight fragments (L1/L2, no extra DRAM if i
 per-token-tile fold keep today's order, so output bytes are identical by construction. Estimated nt 2 row 100-115 us on
 13312x5120 (between nt 1's 93 and today's 137), about 2.5-2.8 ms of the untraced step. To measure: effective bytes against the
 nt 1 row, the LDS reduction at KW x NT waves, occupancy per instantiation.
+
+### 8.6 Wave-per-token-tile trial rejected; two probes of the nt 2 cost
+
+The wave-per-token-tile design of 8.5 was built and measured (archived: PR 1447). Registers and bit identity passed (VGPRs at
+the nt 1 level, no spills, 2,304 of 2,304 outputs identical), but the gates failed: cold effective bandwidth at M 32 was 63-70%
+of the nt 1 row (gate 80%), 13312 x 5120 nt 2 took 143-144 us against 137 us (+5%, both rows), nt 3 was slower, and the
+small shapes were mixed (-14% to +5%). The LDS-reduction gate was not run. The duplicate weight read therefore costs time; the
+cause is not attributable without counters. The fit t = 49 + 44 x NT explains the cost; the fix that follows from it does not work as designed.
+
+Two scratch probes (one XTX, cold, 30 launches, timing only, nothing committed) then tested a second reading, that each block's
+re-read of the whole activation (grid N/16 blocks, every block reading the [M, K] token fragments) limits the tile:
+
+| probe | 13312 x 5120 M 4 / 16 | M 20 / 32 (nt 2) | M 48 (nt 3) | 5120 x 6656 M 20 / 32 |
+|---|---|---|---|---|
+| stock K-parallel tile, i8a8 / iq8r (us) | 91.7 / 91.6, 93.9 / 93.8 | 133.8 / 131.4, 134.2 / 133.3 | 187 / 183 | 79.9 / 83.1 |
+| activation row pitch 128 B instead of K (rows overlap; wrong numerics), i8a8 | 91.7, 93.8 | 134.1, 135.1 | 185.6 | 80.0 |
+| narrow tile (`r4d_gemm_i8a8_pin_split_waves` 1024 target), i8a8 / iq8r | 105.6 / 103.6, 105.4 / 103.7 | 163 / 159, 167 / 164 | 277 / 265 | 93.8 / 90.9 |
+
+- Collapsing the activation footprint per block (about 12 times fewer distinct bytes) changes nothing at any M or shape (within
+  0.5 us except 5120 x 1536, 1-2 us): the activation re-read is not the limit, so a block owning several weight row tiles to
+  share it would not help.
+- The narrow tile, forced by the split-waves pin (targets 256, 512, 1024 tried), is slower everywhere: at M 20-32 on 13312 x 5120
+  it is 159-185 us against 131-134 us, at M 4 and 16 it is 12-17 us slower, and at M 48 much slower. The kernel choice in the launcher is right.
+- What stays: nt 2 costs about 44 us a token tile on 13312 x 5120 (iq8r and i8a8 alike), it is not weight DRAM, not activation
+  fetch and not block geometry (wave-per-tile moved it by only +5%), and the remaining candidates (per-wave WMMA and fold issue, or LDS) cannot be told apart without counters.
