@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.8.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.0...bc-radiance-2020.8.1) (2026-11-23)
+
+
+### Performance
+
+* **libr3:** keep the IQ8R K-parallel tile's 256-K unit loop rolled at two or more token tiles (VTP37) ([#1442](https://github.com/audiagentic/bigcherry/issues/1442)) ([29346d9](https://github.com/audiagentic/bigcherry/commit/29346d96b62c461cf4a600c04be2461e382771f0))
+
 ## [2020.8.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.7.0...bc-radiance-2020.8.0) (2026-11-23)
 
 
