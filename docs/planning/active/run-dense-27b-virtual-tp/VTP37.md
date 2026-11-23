@@ -110,6 +110,10 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-23 iq8r M 17-32: whole-step bound and gfx1201 (evidence note section 7).** Selftest rows on one XTX (cold, six rank-0 shapes summed over a decode step): iq8r 34.6-34.8 ms against 19.7-19.8 ms at the i8a8 row's rate for M 20-32, so up to 14.9-15.0 ms a step if the row reached i8a8's time (every shape 1.6-1.9x; flat across M 20-32 because the cost is the spill). Upper bound from isolated cold rows; no step share measured. gfx1201 (libr4d code object): no spills in any four-wave instantiation (SB 256 NT 1-4: 150/197/210/240 VGPRs, 0 spilled), so the fix is libr3-only. Implementation: slice agent/iq8r-kpar-spill, brief iq8r-kpar-spill in the task gpt-briefs folder; gates are resource record, byte identity at M 1-64, cold timing replay, then a decode ms/step A/B at 6 and 8 streams and KLD.
 
+
+
+**2026-11-23 iq8r spill fix in the engine (2020.8.1 against 2020.8.0, evidence note section 7).** The libr3 rewrite (#1442, one-line unroll count for 256-wide groups at 2+ token tiles) cut decode ms/step at qwen27b-tp3, untraced ABBA, n 12 a release: 6 streams 43.79 -> 36.69 ms (-16.2%), 8 streams 48.21 -> 37.67 ms (-21.9%); engine decode tok/s +26% at both. Tokens a step level at 8 streams (14.5 vs 15.3 at 6, seed-dependent). Prefill (TTFT) unchanged within noise, as expected (tiled path above 48 rows). Gain is 7.1 and 10.5 ms against an isolated bound of about 15 ms. One and four streams unchanged by construction (NT 1). Not run: five and seven streams, KLD.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -262,3 +266,4 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - 2026-11-23T08:29:55.975261+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:38:59.382995+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:41:23.862081+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T11:08:04.931913+00:00 (updated-by): Updated: section:notes
