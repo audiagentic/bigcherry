@@ -183,3 +183,63 @@ Ran the actual linked `r3_selftest` binary against the freshly built `libr3.so`,
 | **Total** | **320** | **0** | **0** |
 
 Full-plugin build and selftest execution both actually completed; no skipped test case.
+
+## Cold replay measurement gate (PASS)
+
+- Run `replay <stock-libr3.so> <candidate-libr3.so> <N> 5120 i8` under a short queued GPU lease for N=248320 and N=82773. Each row uses 256 MiB D2D cache flush per launch, three rotating weight copies, three repeats, 20 cold kernel launches per repeat, and interleaved stock/candidate arms. Full 228 records preserved in the external scratch run.
+- All M17–32 comparisons improve beyond separated repeat ranges; M1/2, M3–16, and M33–64 show no spread-separated regression. Main M32 median 2996.24 -> 2315.39 microseconds (-22.72%), shard M32 965.97 -> 763.97 (-20.91%).
+
+# Cold replay: 256 MiB D2D flush; three rotated weight copies; three repeats
+
+Timing values are kernel-event medians (microseconds) over 20 cold launches in each repeat. Spread is min..max across the three repeats.
+
+| N×K | dtype | M | stock median µs (spread) | Form A median µs (spread) | delta | spread separation |
+|---|---|---:|---:|---:|---:|---|
+| 82773×5120 | logits_gemm_i8 | 1 | 511.37 (510.89–511.41) | 511.25 (511.21–511.49) | -0.02% | overlap |
+| 82773×5120 | logits_gemm_i8 | 2 | 515.37 (514.97–515.69) | 515.13 (514.93–515.41) | -0.05% | overlap |
+| 82773×5120 | logits_gemm_i8 | 4 | 631.13 (625.09–631.25) | 631.45 (629.01–632.13) | +0.05% | overlap |
+| 82773×5120 | logits_gemm_i8 | 8 | 638.97 (638.65–640.33) | 640.37 (639.61–641.25) | +0.22% | overlap |
+| 82773×5120 | logits_gemm_i8 | 16 | 652.41 (651.85–654.01) | 650.81 (650.77–652.49) | -0.25% | overlap |
+| 82773×5120 | logits_gemm_i8 | 17 | 934.21 (933.73–936.21) | 737.09 (736.77–737.17) | -21.10% | faster |
+| 82773×5120 | logits_gemm_i8 | 20 | 947.97 (947.17–951.25) | 745.89 (743.57–749.21) | -21.32% | faster |
+| 82773×5120 | logits_gemm_i8 | 21 | 952.33 (947.73–953.21) | 746.81 (745.57–748.57) | -21.58% | faster |
+| 82773×5120 | logits_gemm_i8 | 24 | 959.65 (954.85–959.89) | 752.05 (750.01–752.49) | -21.63% | faster |
+| 82773×5120 | logits_gemm_i8 | 25 | 961.25 (960.17–964.41) | 754.25 (754.13–757.29) | -21.53% | faster |
+| 82773×5120 | logits_gemm_i8 | 28 | 966.41 (965.85–966.73) | 759.81 (755.93–762.93) | -21.38% | faster |
+| 82773×5120 | logits_gemm_i8 | 29 | 967.73 (967.05–969.21) | 761.41 (757.17–762.53) | -21.32% | faster |
+| 82773×5120 | logits_gemm_i8 | 32 | 965.97 (965.29–977.05) | 763.97 (760.13–765.13) | -20.91% | faster |
+| 82773×5120 | logits_gemm_i8 | 33 | 1339.02 (1336.02–1344.54) | 1343.10 (1340.82–1350.10) | +0.30% | overlap |
+| 82773×5120 | logits_gemm_i8 | 37 | 1366.38 (1351.38–1377.78) | 1365.82 (1362.34–1373.22) | -0.04% | overlap |
+| 82773×5120 | logits_gemm_i8 | 41 | 1380.82 (1361.54–1382.42) | 1382.54 (1370.50–1387.26) | +0.12% | overlap |
+| 82773×5120 | logits_gemm_i8 | 45 | 1377.42 (1375.66–1398.02) | 1373.90 (1371.10–1375.66) | -0.26% | overlap |
+| 82773×5120 | logits_gemm_i8 | 48 | 1394.46 (1393.38–1395.18) | 1392.58 (1392.22–1399.78) | -0.13% | overlap |
+| 82773×5120 | logits_gemm_i8 | 64 | 2052.43 (2042.27–2060.35) | 2041.79 (2037.31–2061.87) | -0.52% | overlap |
+| 248320×5120 | logits_gemm_i8 | 1 | 1501.98 (1501.30–1505.50) | 1502.90 (1501.54–1503.50) | +0.06% | overlap |
+| 248320×5120 | logits_gemm_i8 | 2 | 1509.14 (1508.18–1511.22) | 1509.90 (1507.98–1510.18) | +0.05% | overlap |
+| 248320×5120 | logits_gemm_i8 | 4 | 1908.18 (1892.42–1910.74) | 1911.46 (1895.14–1920.18) | +0.17% | overlap |
+| 248320×5120 | logits_gemm_i8 | 8 | 1927.78 (1917.94–1928.30) | 1924.42 (1920.74–1927.50) | -0.17% | overlap |
+| 248320×5120 | logits_gemm_i8 | 16 | 1953.38 (1949.54–1960.54) | 1950.78 (1945.78–1984.94) | -0.13% | overlap |
+| 248320×5120 | logits_gemm_i8 | 17 | 2866.51 (2865.55–2876.99) | 2237.91 (2234.03–2242.63) | -21.93% | faster |
+| 248320×5120 | logits_gemm_i8 | 20 | 2890.59 (2880.83–2913.71) | 2253.83 (2251.59–2262.87) | -22.03% | faster |
+| 248320×5120 | logits_gemm_i8 | 21 | 2910.95 (2900.47–2931.59) | 2266.07 (2259.99–2269.79) | -22.15% | faster |
+| 248320×5120 | logits_gemm_i8 | 24 | 2949.47 (2917.07–2961.99) | 2302.63 (2285.43–2306.07) | -21.93% | faster |
+| 248320×5120 | logits_gemm_i8 | 25 | 2944.76 (2927.11–2980.95) | 2286.43 (2275.27–2310.23) | -22.36% | faster |
+| 248320×5120 | logits_gemm_i8 | 28 | 2968.80 (2928.11–2986.23) | 2290.63 (2286.43–2317.95) | -22.84% | faster |
+| 248320×5120 | logits_gemm_i8 | 29 | 2996.07 (2981.91–2996.11) | 2308.31 (2301.83–2326.63) | -22.96% | faster |
+| 248320×5120 | logits_gemm_i8 | 32 | 2996.24 (2971.36–3003.27) | 2315.39 (2309.51–2320.67) | -22.72% | faster |
+| 248320×5120 | logits_gemm_i8 | 33 | 4027.05 (4022.57–4027.73) | 4022.61 (4020.81–4034.17) | -0.11% | overlap |
+| 248320×5120 | logits_gemm_i8 | 37 | 4069.45 (4064.05–4079.37) | 4100.49 (4060.77–4101.25) | +0.76% | overlap |
+| 248320×5120 | logits_gemm_i8 | 41 | 4113.13 (4107.89–4121.37) | 4111.77 (4111.01–4117.61) | -0.03% | overlap |
+| 248320×5120 | logits_gemm_i8 | 45 | 4154.01 (4146.29–4176.65) | 4171.69 (4151.69–4175.01) | +0.43% | overlap |
+| 248320×5120 | logits_gemm_i8 | 48 | 4176.81 (4170.53–4179.57) | 4181.81 (4173.21–4181.93) | +0.12% | overlap |
+| 248320×5120 | logits_gemm_i8 | 64 | 6121.67 (6093.71–6122.19) | 6112.91 (6104.07–6123.51) | -0.14% | overlap |
+
+## Effective head-weights bandwidth
+- 82773×5120, logits_gemm_i8, M=16: 430419600 weight bytes; stock=659.74 GB/s, Form A=661.36 GB/s
+- 82773×5120, logits_gemm_i8, M=32: 430419600 weight bytes; stock=445.58 GB/s, Form A=563.40 GB/s
+- 248320×5120, logits_gemm_i8, M=16: 1291264000 weight bytes; stock=661.04 GB/s, Form A=661.92 GB/s
+- 248320×5120, logits_gemm_i8, M=32: 1291264000 weight bytes; stock=430.96 GB/s, Form A=557.69 GB/s
+
+Analysed 228 timed repeat records, 38 arm comparisons.
+
+Cold gate PASS: 17–32 gains beyond repeat spread, and no measured regressions in other groups.
