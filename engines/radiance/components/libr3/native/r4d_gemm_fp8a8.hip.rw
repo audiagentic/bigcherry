@@ -50,3 +50,14 @@
 @@ replace
     const bool full = ((uint32_t)N % fm == 0) &&   // libr3: tokens are always guarded, so M may be ragged
 @@ end
+
+# VTP37: keep the 256-K group's two 128-K WMMA units rolled for NT >= 2 on gfx1100.
+# Reduces the lifetime of weight/token prefetches across token tiles without changing
+# integer accumulation, scale folds or wave reduction. SB128 and NT1 keep full unrolling.
+@@ find 1
+#pragma unroll
+        for (uint32_t h = 0; h < kUG; ++h) {
+@@ replace
+#pragma unroll ((SB == 256u && NT >= 2u) ? 1u : kUG)  // libr3: SB256 multi-tile
+        for (uint32_t h = 0; h < kUG; ++h) {
+@@ end
