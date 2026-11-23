@@ -1,4 +1,5 @@
 #include "worker_policy_replay.h"
+#include "worker_policy_probe.h"
 #include <cstdio>
 #include <cstdlib>
 #include <numeric>
@@ -178,6 +179,55 @@ static void test_strict_move_budgets() {
               "per-transaction movement respects byte and count limits");
 }
 
+// The calibration probe on recorded heat: the planner limits come from the ramp (one stride, doubled), the margin is the
+// least representable one, and a probe counts only if it is tail-involved with a positive predicted gain.
+static ReplayConfig probe_config(const ProbeRamp& ramp) {
+    ReplayConfig c = config();
+    c.margin = 1e-6;
+    c.half_life_observations = 1;
+    c.max_moves = ramp.moves();
+    c.max_moved_bytes = uint64_t(ramp.moves()) * c.stride;
+    return c;
+}
+// The first ramp size at which the replayed first step proposes, or 0 when none up to the cap does.
+static uint32_t first_probe_size(const std::vector<std::vector<uint32_t>>& snaps, ReplayResult* first) {
+    ProbeRamp ramp(10, {150, 150, 100});
+    for (;;) {
+        const ReplayResult r = replay(probe_config(ramp), snaps, start_owner());
+        check(r.valid, "probe replay is valid");
+        if (r.transactions) {
+            if (first) *first = r;
+            return ramp.moves();
+        }
+        if (ramp.moves() == ramp.cap()) return 0;
+        ramp.grow();
+    }
+}
+static void test_probe_ramps_to_the_first_group_and_gains() {
+    const auto snaps = series(8, range(30, 40));   // the hot experts sit on the tail
+    ReplayResult r;
+    const uint32_t size = first_probe_size(snaps, &r);
+    check(size >= 2 && size <= 10, "one stride cannot move a group (an expert needs its partner); the ramp finds the size");
+    check(r.steps.front().tail_share_before > 0.9 || r.steps[0].proposed || r.transactions >= 1, "a probe proposed");
+    bool tail_involved = false;
+    for (const auto& st : r.steps)
+        if (st.proposed) { tail_involved = st.tail_share_after < st.tail_share_before; break; }
+    check(tail_involved, "the first probe lowers the tail's heat share");
+    check(r.experts_moved >= 2, "a group, not a single expert");
+}
+static void test_probe_has_no_natural_gain() {
+    // The hot experts already sit on a head: the static plan changes nothing, so no probe size yields a transaction and the
+    // ramp ends at the cap. Tail gain stays unmeasured (a partial record), never forced.
+    const auto snaps = series(8, range(0, 10));
+    check(first_probe_size(snaps, nullptr) == 0, "no positive-gain move: no probe at any size");
+}
+static void test_degenerate_workload_never_crosses() {
+    // A single workload: the hot set never moves, so the drift half-life is never observed, whatever was probed.
+    const auto snaps = series(40, range(0, 10));
+    const ReplayResult r = replay(probe_config(ProbeRamp(10, {150, 150, 100})), snaps, start_owner());
+    check(r.valid && r.drift_half_life_observations == 0, "a workload that never shifts has no drift crossing");
+}
+
 int main() {
     test_converges_off_the_tail();
     test_a_settled_layout_is_a_fixed_point();
@@ -188,5 +238,8 @@ int main() {
     test_a_counter_that_goes_back_credits_nothing();
     test_no_future_lookahead();
     test_strict_move_budgets();
+    test_probe_ramps_to_the_first_group_and_gains();
+    test_probe_has_no_natural_gain();
+    test_degenerate_workload_never_crosses();
     std::puts("r3_policy_replay_test: ok");
 }

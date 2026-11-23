@@ -3,6 +3,7 @@
 // Every member is explicit there (no defaults, scaled integers), so this only converts and re-checks the control invariants
 // the policy relies on; a policy that is absent from the manifest never constructs a Settings.
 #include "worker_policy_input.h"
+#include "worker_policy_derive.h"
 #include "worker_share.h"
 #include "serving_types.h"
 #include <chrono>
@@ -49,6 +50,77 @@ struct Settings {
     PolicyControls controls{};
     std::vector<uint32_t> head_shares;   // the launch's helper shares from the manifest, one weight a helper
     std::vector<uint32_t> protected_layers;
+    // RHP16 calibration: no record exists for this layout yet, so the settings below are structural, not derived. The driver
+    // measures, then replaces them with settings derived from what it measured (Driver::adopt). Off unless set by
+    // calibrating().
+    bool calibrating = false;
+    int64_t objective_effect_windows = 0, objective_false_revert_rate_ppm = 0;   // the declared objectives the derivation needs
+
+    /* The calibrating settings, from facts the launch declares: the heat period (the histogram feed's write period, which is
+     * also the poll cadence and the freshness horizon of one missed write), the helper shares and the declared objectives.
+     * No planner margin exists yet (the least representable one, one ppm, is used), nothing has to dwell, and the size
+     * of a move is set per probe by the driver's ramp, so the move limits here are only placeholders. */
+    bool calibrating_from(uint64_t heat_period_ns, const std::vector<uint32_t>& shares, int64_t effect_windows,
+                          int64_t false_revert_rate_ppm, std::string* error) {
+        if (!error) return false;
+        if (!heat_period_ns || shares.size() < 2 || effect_windows <= 0 || false_revert_rate_ppm <= 0 ||
+            false_revert_rate_ppm >= 1000000) {
+            *error = "calibrating: want a heat period, at least two helper shares and the declared objectives";
+            return false;
+        }
+        *this = Settings{};
+        enabled = calibrating = true;
+        accept_unwatermarked_heat = true;   // the file-fed heat is unwatermarked; the record says so as measured
+        effect_gate = false;                // no derived window yet
+        cadence_ns = abort_cooldown_ns = learned_eligibility_ttl_ns = heat_period_ns;
+        effect_window_samples = effect_min_quiet_windows = 1;   // inert while the gate is off
+        effect_revert_ttl_ns = heat_period_ns;
+        controls.half_life_observations = 1.0;   // the latest heat window, no memory beyond it
+        controls.margin = 1e-6;
+        controls.min_residency_ns = 1;
+        controls.max_heat_age_ns = 2 * heat_period_ns;   // the period plus one missed write
+        controls.min_samples = 1;
+        controls.max_moves = 1;
+        controls.max_moved_bytes = 1;
+        head_shares = shares;
+        objective_effect_windows = effect_windows;
+        objective_false_revert_rate_ppm = false_revert_rate_ppm;
+        if (!controls_valid(controls)) {
+            *error = "calibrating: invalid structural controls";
+            return false;
+        }
+        return true;
+    }
+
+    /* The settings the derivation produced for a calibrated record (same mapping as from_manifest). */
+    bool derived_from(const derive::PolicyValues& v, const Settings& calibrating_settings, std::string* error) {
+        if (!error) return false;
+        *this = Settings{};
+        enabled = true;
+        effect_gate = v.effect_gate;
+        accept_unwatermarked_heat = v.accept_unwatermarked_heat;
+        cadence_ns = v.cadence_ns;
+        abort_cooldown_ns = v.abort_cooldown_ns;
+        learned_eligibility_ttl_ns = v.learned_eligibility_ttl_ns;
+        effect_window_samples = v.effect_window_samples;
+        effect_min_quiet_windows = v.effect_min_quiet_windows;
+        effect_revert_ttl_ns = v.effect_revert_ttl_ns;
+        effect_noise_multiplier = double(v.effect_noise_multiplier_milli) / 1000.0;
+        controls.margin = double(v.margin_ppm) / 1e6;
+        controls.half_life_observations = double(v.half_life_observations_milli) / 1000.0;
+        controls.max_moves = uint32_t(v.max_moves);
+        controls.max_moved_bytes = v.max_moved_bytes;
+        controls.min_residency_ns = v.min_residency_ns;
+        controls.max_heat_age_ns = v.max_heat_age_ns;
+        controls.min_samples = v.min_samples;
+        head_shares = calibrating_settings.head_shares;
+        protected_layers = calibrating_settings.protected_layers;
+        if (v.max_moves > UINT32_MAX || !controls_valid(controls)) {
+            *error = "live_policy: invalid derived controls";
+            return false;
+        }
+        return true;
+    }
 
     /* The enabled policy of a manifest the shared reader accepted (ranges and exclusions were checked there). `shares` are
      * the helpers' shares: the live plan is the static placer's, so it reads the shares the launch placed with. False with
