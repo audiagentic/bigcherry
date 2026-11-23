@@ -162,3 +162,78 @@
                 for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
             }
 @@ end
+
+# VTP50: native row-major token fragments for the gfx11 K-parallel integer tile.
+# The two wave halves each load the same contiguous 16-K row. Keep the existing
+# weight-layout conversion and the scale-group accumulator conversion unchanged.
+@@ find 1
+    const int8_t* xrow[NT];
+@@ replace
+    // With extra token tiles the overlapping B loads change register liveness.
+    // Native row loads retain or improve compiled resources at NT3 and when
+    // the token-tile count fits the 128-K units in the scale group.
+    constexpr bool kNativeB = (NT == 3u) || (NT <= SB / 128u);
+    using BFrag = std::conditional_t<kNativeB, r3_i4, i2v>;
+    const int8_t* xrow[NT];
+@@ end
+
+@@ find 1
+        xrow[j] = Bp + (size_t)tok * b_ld + frag_k0(lane);
+@@ replace
+        xrow[j] = Bp + (size_t)tok * b_ld + (kNativeB ? 0u : frag_k0(lane));
+@@ end
+
+@@ find 1
+    auto bload = [&](uint32_t j, uint32_t u, i2v (&b)[8]) {
+#pragma unroll
+        for (uint32_t ks = 0; ks < 8; ++ks) {
+            const uint2 v = *(const uint2*)(xrow[j] + u * kBlock + ks * kK);
+            b[ks][0] = (int)v.x;
+            b[ks][1] = (int)v.y;
+        }
+    };
+@@ replace
+    auto bload = [&](uint32_t j, uint32_t u, BFrag (&b)[8]) {
+#pragma unroll
+        for (uint32_t ks = 0; ks < 8; ++ks) {
+            if constexpr (kNativeB) {
+                const uint4 v = *(const uint4*)(xrow[j] + u * kBlock + ks * kK);
+                b[ks] = r3_i4{(int)v.x, (int)v.y, (int)v.z, (int)v.w};
+            } else {
+                const uint2 v = *(const uint2*)(xrow[j] + u * kBlock + ks * kK);
+                b[ks][0] = (int)v.x;
+                b[ks][1] = (int)v.y;
+            }
+        }
+    };
+    auto bfrag11 = [&](BFrag v) -> r3_i4 {
+        if constexpr (kNativeB) return v;
+        else {
+            r3_i2 half;
+            __builtin_memcpy(&half, &v, sizeof(half));
+            return r3_bytes_12_to_11(half, lane);
+        }
+    };
+@@ end
+
+@@ find 1
+    constexpr uint32_t kRingRegs = (sizeof(Stage8[2]) + sizeof(i2v[8])) / sizeof(uint32_t);
+    constexpr uint32_t kLiveRegs =
+        (sizeof(Stage8[2]) + sizeof(i2v[8]) + sizeof(i2v[2][8]) +
+@@ replace
+    constexpr uint32_t kRingRegs = (sizeof(Stage8[2]) + sizeof(BFrag[8])) / sizeof(uint32_t);
+    constexpr uint32_t kLiveRegs =
+        (sizeof(Stage8[2]) + sizeof(BFrag[8]) + sizeof(BFrag[2][8]) +
+@@ end
+
+@@ find 1
+    i2v bc[8], bn[8], bq[2][8];
+@@ replace
+    BFrag bc[8], bn[8], bq[2][8];
+@@ end
+
+@@ find 1
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, bq[j & 1u][ks]), lane), raw11[j], false);
+@@ replace
+                        true, bfrag11(bq[j & 1u][ks]), raw11[j], false);
+@@ end
