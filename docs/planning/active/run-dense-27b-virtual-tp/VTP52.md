@@ -64,9 +64,14 @@ Medium; the audit can end it quickly if gaps are small in the replayed graph.
 
 Ceiling basis (2026-11-24): rests on a tape sum (2.85 ms of the traced wall outside every segment) and so on a traced run whose gaps are inflated by tracing; downgraded to a pointer. The bound has to come from an untraced replayed-graph measurement of launch gaps, or from a fused-chain A/B of one candidate.
 
+
+
+**2026-11-24 ACCEPT-WORK.** Any fusion that keeps the arithmetic and its order is a cleanup and a gain; gate: byte identity, no regression. The launch-chain test (dependent tiny kernels cost about 3 us each on the GPU side, graph launch gains nothing) says to fuse chains of small dependent kernels rather than to change the submission method.
+
 ## Change Log
 
 - 2026-11-23T21:15:23.514546+00:00 (created-by): Created by agent
 - 2026-11-23T21:15:58.192931+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T21:45:22.185007+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T22:51:45.053129+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:21:41.669708+00:00 (updated-by): Updated: section:notes

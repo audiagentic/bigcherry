@@ -65,9 +65,14 @@ Ceiling basis (2026-11-24): the 6.8 ms gap is a per-request model fitted from wh
 
 **2026-11-24 closed NO-GO on the GEMM and placement side.** (1) The waves-per-SIMD cap experiment (a constexpr rule for gfx10.3) was bit-identical but slower in 26 of 54 cold cases, and the source audit shows production decode on the tail never reaches the grouped expert GEMM that carried the spills: helper rows 1-8 use the dedicated GEMV kernels and 9-32 the dedicated few-rows kernels. (2) The helper's own kernels (gfx1030, 2020.8.5) are spill-free: GEMV forms 31-114 VGPRs, the few-rows forms 77-184 VGPRs, wave32, most using the packed dot instruction. (3) Placement is derived from capacity and heat, not from a speed ratio: the two XTX helpers take candidate experts in heat order until each VRAM budget is full and the tail takes the remainder from the cold end (9546 + 9546 + 5986 of 25078; total budget 59.5 GiB against 59.3 GiB of experts, so the cards are full), leaving the tail 24% of the experts and 14% of the routes. (4) Stage times, tail against XTX (large lane): routes 1.7x, gate/up 1.9x, quant 1.5x, down 1.0x, reduce 1.9x, against the 1.875x nominal memory-bandwidth ratio of the two cards: the tail sits at its card's memory and latency class. What remains is the per-request floor (about 190 us against 105 us), a launch-chain question tracked separately as a bounded replay before any brief.
 
+
+
+**2026-11-24 split verdict.** REJECT the waves-per-SIMD rule for the RDNA2 helper (bit-identical but slower in 26 of 54 cold cases; production never reaches the kernel). ACCEPT-WORK, ranked and not started: a fused front end for the helper request (the four route kernels and the activation preparation as one or two launches; about 0.5-0.7 ms a pass; risk: it changes the helper request path and needs byte identity on routes), after the larger items.
+
 ## Change Log
 
 - 2026-11-23T21:26:04.398434+00:00 (created-by): Created by agent
 - 2026-11-23T21:26:33.858915+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T22:51:54.858796+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:11:26.103416+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:21:57.000342+00:00 (updated-by): Updated: section:notes
