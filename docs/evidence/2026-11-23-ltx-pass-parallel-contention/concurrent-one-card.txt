@@ -1,0 +1,12 @@
+dev0   per-rank median step: r0=6.695 ms
+dev0 LTX03 time FFN video tokens=2048 TP1(one card): 6.695 ms/step
+dev0   per-rank median step: r0=13.018 ms
+dev0 LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.018 ms/step
+dev1   per-rank median step: r0=6.940 ms
+dev1 LTX03 time FFN video tokens=2048 TP1(one card): 6.940 ms/step
+dev1   per-rank median step: r0=13.574 ms
+dev1 LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.574 ms/step
+dev2   per-rank median step: r0=3.672 ms
+dev2 LTX03 time FFN video tokens=2048 TP1(one card): 3.672 ms/step
+dev2   per-rank median step: r0=6.678 ms
+dev2 LTX03 time attention+FFN block video tokens=2048 TP1(one card): 6.678 ms/step

@@ -1,0 +1,12 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261123_035129_evidence-that-independent-ltx_1248",
+  "files": [
+    "docs/evidence/2026-11-23-ltx-pass-parallel-contention/README.md",
+    "docs/evidence/2026-11-23-ltx-pass-parallel-contention/concurrent-one-card.txt"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Measured three independent one-card LTX blocks running concurrently on the three cards: block times match the solo timings within 4%, so guidance-pass parallelism has no cross-card contention.",
+  "timestamp-utc": "2026-11-23T03:51:29.140208Z",
+  "user-summary-candidate": "Evidence that independent LTX passes on the three cards do not slow each other down."
+}
