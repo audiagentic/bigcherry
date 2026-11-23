@@ -10,7 +10,7 @@
                 for (uint32_t t = 0; t < MT; ++t) part[t] = (f8v)(0.0f);
 @@ replace
                 r3_v8f part11[MT];  /* native gfx11 layout, f32 summation order unchanged */
-                const r3_v8f zero11 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+                const r3_v8f zero11 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 #pragma unroll
                 for (uint32_t t = 0; t < MT; ++t) part11[t] = zero11;
 @@ end
