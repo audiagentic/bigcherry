@@ -1,5 +1,23 @@
 # VTP37: gfx1100 K-parallel look-ahead qualification
 
+## Decision (lead, after the qualification below)
+
+The qualification below records its own acceptance gate as not met: that gate required a gain beyond the
+repeat spread on both rows (IQ8R and I8A8) at 17-32 rows. The result is accepted and shipped anyway, for these reasons:
+
+- The 27B decode config serves the IQ8R row. There the rule gives -4.6% to -16% at 17-32 rows on every
+  measured shape (gate_up M24 97.3 to 92.5 us, down 58.1 to 53.8 us, 6144x5120 50.1 to 46.6 us, 5120x2304 30.7 to 26.5 us)
+  and -1% to -9% at 1-16 rows, with 40-48 rows unchanged.
+- The I8A8 row at two token tiles stays on the stock look-ahead by the rule (the model does not predict an
+  occupancy change there), so it is neutral within about 1%; the two median regressions beyond spread are
+  +0.4% (13312x5120 M32) and +1.0% (5120x6656 M16).
+- The change is pure scheduling: BF16 outputs are bit-identical (2,304 of 2,304), no new spill and no occupancy loss
+  in any instantiation, and the on/off choice is a constexpr rule over the body's own register types and the
+  gfx1100 register file, not a per-shape table.
+
+The "NOT READY" lines below are the original qualification text, kept unchanged as the record.
+
+
 ## Stage 1 — compile-time occupancy rule and resource gate: PASS
 
 Only the gfx1100 native rewrite's K-parallel body is changed. The formula
