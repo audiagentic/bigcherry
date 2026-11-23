@@ -114,6 +114,10 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-23 iq8r spill fix in the engine (2020.8.1 against 2020.8.0, evidence note section 7).** The libr3 rewrite (#1442, one-line unroll count for 256-wide groups at 2+ token tiles) cut decode ms/step at qwen27b-tp3, untraced ABBA, n 12 a release: 6 streams 43.79 -> 36.69 ms (-16.2%), 8 streams 48.21 -> 37.67 ms (-21.9%); engine decode tok/s +26% at both. Tokens a step level at 8 streams (14.5 vs 15.3 at 6, seed-dependent). Prefill (TTFT) unchanged within noise, as expected (tiled path above 48 rows). Gain is 7.1 and 10.5 ms against an isolated bound of about 15 ms. One and four streams unchanged by construction (NT 1). Not run: five and seven streams, KLD.
 
+
+
+**2026-11-24 read-bandwidth ceiling (evidence 2026-11-24-vtp37-replay-warm-and-noise, section 3).** A plain streaming read gets 750-777 GB/s on the XTX at the large-row size (64 MiB; 80% of nominal) and 882 GB/s steady state at 1 GiB (92%); R9700 527-573 GB/s (87%) and 629 GB/s (98%). The shipped K-parallel row is at 91% (XTX) and 99% (R9700) of those ceilings. Larger transfers per launch stream better (an argument for fewer, larger launches, VTP52). Weight-plane address locality and bytes in flight do not move the plain read (3% spread), so the memory-side GEMM item closes; the kernel-owned remainder is about 9 points on the large XTX rows, at most about 1.2 ms a step.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -328,3 +332,4 @@ Evidence: `docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md` sectio
 - 2026-11-23T08:38:59.382995+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T08:41:23.862081+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T11:08:04.931913+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T22:16:12.158310+00:00 (updated-by): Updated: section:notes
