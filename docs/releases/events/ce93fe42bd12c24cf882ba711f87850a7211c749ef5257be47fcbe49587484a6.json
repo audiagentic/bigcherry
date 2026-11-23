@@ -1,0 +1,12 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261122_221205_ltx-tensor-parallel-test-lane_2471",
+  "files": [
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp",
+    "engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/patch.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "LTX03: the deferred-bias projection declares its all-reduce at overlap 1 and issues a row range of it, and the issued lane runs the FFN in two row pieces with each piece's exact reduction on the second lane (the pattern of the Qwen pipelined prefill). Correct against TP1 at 512 rows on the three cards. At 2048 tokens with the three-rank all-reduce axes pinned (ts_pieces 4, fuse, duplex) the FFN is on par with one card and the attention-plus-FFN block improves from 0.54x to 0.61x of one card with the pipelined FFN.",
+  "timestamp-utc": "2026-11-22T22:12:05.071012Z",
+  "user-summary-candidate": "LTX tensor-parallel test lane overlaps reductions with compute."
+}
