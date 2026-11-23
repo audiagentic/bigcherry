@@ -463,3 +463,10 @@ Numbers: median [min-max] microseconds per launch; effective KV throughput in GB
 ## Stage 6 — other WMMA sites (candidates only)
 
 Unmodified follow-on candidates: (1) other decode geometry/flag sets in `bc_b16_decode_impl.h`, QK and PV `D::wmma` for `2*(TILE/16)*(HEAD_DIM/16)` calls per KV tile; (2) `bc_b16_prefill_impl.h` F16/BF16 QK (near 496) and PV (near 594), `2*(TILE/16)*(HEAD_DIM/16)` calls per tile, with separate softmax-rescale proof needed; (3) paged-window `r4d_attn_paged_window.hip` BF16 QK near 870 and F16 PV near 959/964, roughly `HEAD_DIM/16` calls each per key tile, with distinct reduction/merge semantics. h128/gqa1,2,4,7,16; h256/gqa2,4,12; gqa8; and h256/gqa6/bs4 remain outside the guard. Six initial spill regressions illustrate why every follow-on variant needs a fresh resource gate. No other kernel was modified. Form B was not built or measured.
+
+
+## Final plugin-assisted review and readiness
+
+Read-only plugin-assisted shell review of the actual generated decode body and branch diff: Form A keeps zero-C native WMMA products, preserves the original ordered f32 additions, applies the alpha rescale elementwise in the native layout, and converts only before softmax/epilogue consumers. The chained wrapper alone enables the chained template bit. Pinned-source `r3_rewrite.py --check` produced `{"failures": {}}`; independent parsing confirmed **388** resource rows, **10** improvements and **0** worsened entries or occupancy losses. `git diff --check` passed, with changes confined to this one native rewrite and its evidence. Full plugin/selftest build **131/131**, bit comparison **288/288** byte-identical, actual decode selftests **16/16 OK**, corrected cold replay **12 x 3 repeats** (10 changed replay rows faster, two untouched FP8 M=1 rows within spread).
+
+**READY for lead review, NOT SHIPPED.** No Form B, engine serving, ms/step A/B, KLD, merge or push.
