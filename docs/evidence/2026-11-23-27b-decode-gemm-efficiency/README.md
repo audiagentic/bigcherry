@@ -411,3 +411,31 @@ so what remains is nt 2 itself against nt 1, in both rows, with no spill (iq8r n
 VGPRs and 0 spills). Excess over the R9700's growth: about 5.3 ms of traced compute, about 3.5 ms of the untraced step
 at six to eight streams. The cause is not visible in the resource record; a profile (VALU, WMMA, LDS and occupancy
 counters) of the six shapes at M 16 against M 17-32 would show it.
+
+### 8.5 The nt 2 cost: counters unreadable, cost model from the sweeps
+
+A hardware-counter profile of the K-parallel tile (iq8r SB 256 and i8a8 SB 128; 13312x5120 and 5120x6656; M 16, 24, 32) was
+attempted on the standalone replay with `rocprofv3 --pmc` (three counter sets, then twelve single counters). Only `SQ_WAVES`
+(3328 = 832 blocks x 4 waves) and `SQ_BUSY_CYCLES` (about 11.2 M at nt 1, 14.7 M at nt 2) returned values; occupancy, VALU and LDS
+busy, bank conflicts, memory-unit busy, L2 hit/miss and the SQ wait counters read 0 on every kernel. No device error. Kernel
+trace of the nt 2 launch: 224 VGPRs, no scratch, 8192 B LDS, 128-thread blocks, 832 blocks: 6 waves a SIMD (nt 1: 7 for iq8r at
+200-208 VGPRs, 10 for i8a8 at 148).
+
+The post-iq8r-fix cold sweeps give the shape instead (iq8r and i8a8 within 3%, us):
+
+| N x K | M16 (nt 1) | M20-32 (nt 2) | M40-48 (nt 3) |
+|---|---|---|---|
+| 13312 x 5120 | 93.4 | 137.3 | 191 |
+| 5120 x 6656 | 55.5 | 86.0 | 115 |
+
+Time is linear in the token tiles with a constant: t = 49 + 44 x NT us for the first shape (nt 1 93, nt 2 137, nt 3 181
+against 191 measured). The weight stream alone is about 71 us at 960 GB/s and nt 1 already runs at 76% of it; one token tile's
+math at 90 TOPS would take 24 us. Each extra token tile instead adds 44 us (about 50 TOPS marginal, 32 TOPS overall at M 32), so the
+per-tile WMMA and fold work is added to the weight-stream time inside each wave, not hidden under it.
+
+Design (not done; sound on paper, with three points to measure): run the token tiles in parallel waves instead of looping them
+inside a wave, a block of KW x NT waves with wave (w, j) taking K stripe w and token tile j. Each wave then carries the nt 1 live
+state; waves of a pair read the same weight fragments (L1/L2, no extra DRAM if it holds); the cross-wave reduction and every
+per-token-tile fold keep today's order, so output bytes are identical by construction. Estimated nt 2 row 100-115 us on
+13312x5120 (between nt 1's 93 and today's 137), about 2.5-2.8 ms of the untraced step. To measure: effective bytes against the
+nt 1 row, the LDS reduction at KW x NT waves, occupancy per instantiation.
