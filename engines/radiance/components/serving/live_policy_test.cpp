@@ -32,6 +32,8 @@ static sv::DerivedLivePolicy derive_logged(const sv::LivePolicyRecord& record, c
                       out.policy.dump() + "\n" + out.provenance.dump() + "\n";
     return out;
 }
+static bool g_write_derive_golden = false; // --write-derive-golden regenerates the golden instead of comparing
+
 static void check_derive_parity() {
     {   // The verbatim native production record (2026-11-20 store) through the same derivation.
         const char* prod_key = "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
@@ -41,7 +43,7 @@ static void check_derive_parity() {
                       {"", "flashnext-4gpu", "balanced"}, 2500000, {1000000000, 1000000000});
     }
     std::ifstream in(BC_LIVE_POLICY_DERIVE_GOLDEN);
-    if (std::getenv("BC_WRITE_DERIVE_GOLDEN")) {
+    if (g_write_derive_golden) {
         std::ofstream(BC_LIVE_POLICY_DERIVE_GOLDEN, std::ios::binary) << g_derive_trace;
         return;
     }
@@ -424,7 +426,8 @@ static void derive_says_why() {
     fs::remove(store);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    g_write_derive_golden = argc > 1 && std::string(argv[1]) == "--write-derive-golden";
     derive_says_why();
     const std::string key = key_for('a');
     const fs::path file = write_fixture("schema_version = 1\n");

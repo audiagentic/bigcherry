@@ -1,0 +1,34 @@
+  per-rank median step: r0=6.693 ms
+LTX03 time FFN video tokens=2048 TP1(one card): 6.693 ms/step
+  per-rank median step: r0=8.808 r1=8.830 r2=8.831 ms
+LTX03 time FFN video tokens=2048 TP3 8,8,16: 8.865 ms/step (0.75x vs TP1)
+  per-rank median step: r0=8.421 r1=8.425 r2=8.382 ms
+LTX03 time FFN video tokens=2048 TP3 10,10,12: 8.443 ms/step (0.79x vs TP1)
+  per-rank median step: r0=8.080 r1=8.080 r2=8.073 ms
+LTX03 time FFN video tokens=2048 TP3 12,12,8: 8.095 ms/step (0.83x vs TP1)
+  per-rank median step: r0=7.666 r1=7.696 r2=7.639 ms
+LTX03 time FFN video tokens=2048 TP3 14,14,4: 7.724 ms/step (0.87x vs TP1)
+  per-rank median step: r0=7.581 r1=7.586 r2=7.562 ms
+LTX03 time FFN video tokens=2048 TP3 15,15,2: 7.626 ms/step (0.88x vs TP1)
+  per-rank median step: r0=1.969 ms
+LTX03 time FFN audio tokens=2048 TP1(one card): 1.969 ms/step
+  per-rank median step: r0=3.992 r1=3.989 r2=3.985 ms
+LTX03 time FFN audio tokens=2048 TP3 8,8,16: 4.018 ms/step (0.49x vs TP1)
+  per-rank median step: r0=4.022 r1=4.030 r2=4.030 ms
+LTX03 time FFN audio tokens=2048 TP3 10,10,12: 4.048 ms/step (0.49x vs TP1)
+  per-rank median step: r0=3.843 r1=3.836 r2=3.853 ms
+LTX03 time FFN audio tokens=2048 TP3 12,12,8: 3.866 ms/step (0.51x vs TP1)
+  per-rank median step: r0=3.834 r1=3.875 r2=3.839 ms
+LTX03 time FFN audio tokens=2048 TP3 14,14,4: 3.891 ms/step (0.51x vs TP1)
+  per-rank median step: r0=3.740 r1=3.739 r2=3.737 ms
+LTX03 time FFN audio tokens=2048 TP3 15,15,2: 3.759 ms/step (0.52x vs TP1)
+  per-rank median step: r0=13.114 ms
+LTX03 time attention+FFN block video tokens=2048 TP1(one card): 13.114 ms/step
+  per-rank median step: r0=32.319 r1=32.248 r2=32.264 ms
+LTX03 time attention+FFN block video tokens=2048 TP3 8,8,16: 32.357 ms/step (0.41x vs TP1)
+  per-rank median step: r0=31.547 r1=31.547 r2=31.548 ms
+LTX03 time attention+FFN block video tokens=2048 TP3 10,10,12: 31.646 ms/step (0.41x vs TP1)
+  per-rank median step: r0=30.775 r1=30.740 r2=30.786 ms
+LTX03 time attention+FFN block video tokens=2048 TP3 12,12,8: 30.858 ms/step (0.42x vs TP1)
+  per-rank median step: r0=30.050 r1=30.053 r2=29.991 ms
+LTX03 time attention+FFN block video tokens=2048 TP3 14,14,4: 30.053 ms/step (0.44x vs TP1)

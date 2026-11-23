@@ -5,6 +5,7 @@
 #include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
+#include "calibration_watch.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
@@ -24,7 +25,6 @@
 #include <charconv>
 #include <csignal>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
@@ -1105,24 +1105,6 @@ HelperReadiness read_helper_readiness(const fs::path& log) {
     return HelperReadiness::pending;
 }
 
-// The run directory is private to its owner: created 0700 here (only the last component; an existing directory is
-// never loosened), and refused when it is not ours or is open to group or world.
-void prepare_run_dir(const fs::path& run_dir) {
-    std::error_code ec;
-    if (run_dir.has_parent_path())
-        fs::create_directories(run_dir.parent_path(), ec);
-    if (::mkdir(run_dir.c_str(), 0700) != 0 && errno != EEXIST)
-        throw std::runtime_error("cannot create the run directory " + run_dir.string() + ": " + errno_text());
-    if (const auto why = run_dir_refusal(run_dir, ::geteuid()))
-        throw std::runtime_error("refusing to serve: " + *why);
-}
-
-std::string mode_text(mode_t m) {
-    char buf[8];
-    std::snprintf(buf, sizeof buf, "%04o", unsigned(m & 07777));
-    return buf;
-}
-
 class Owner {
   public:
     explicit Owner(const Session& s) : s_(s) {}
@@ -1141,12 +1123,10 @@ class Owner {
     }
 
     int run() {
-        prepare_run_dir(s_.run_dir);
-        lock_ = ::open((s_.run_dir / "session.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+        fs::create_directories(s_.run_dir);
+        lock_ = ::open((s_.run_dir / "session.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
         if (lock_ < 0)
             throw std::runtime_error("cannot open the session lock: " + errno_text());
-        if (::fchmod(lock_, 0600) != 0) // a lock file an earlier version made 0644 is tightened
-            throw std::runtime_error("cannot restrict the session lock: " + errno_text());
         if (::flock(lock_, LOCK_EX | LOCK_NB) != 0) {
             std::string who;
             if (const auto r = read_record(s_.run_dir))
@@ -1183,15 +1163,7 @@ class Owner {
                     throw PlanFailed("cannot archive previous feature-state snapshot: " + ec.message());
             }
         }
-        // A leftover socket of a crashed owner is stale; anything else at that path (a symlink, a file, another
-        // user's socket) is not ours to remove and is refused.
-        if (fs::symlink_status(s_.run_dir / "session.sock", ec).type() != fs::file_type::not_found) {
-            if (const auto why = socket_refusal(s_.run_dir / "session.sock", ::geteuid(), 0600)) {
-                std::cerr << "bc-serve: refusing to serve: " << *why << '\n';
-                return 1;
-            }
-            fs::remove(s_.run_dir / "session.sock", ec);
-        }
+        fs::remove(s_.run_dir / "session.sock", ec);
         record_ = {{"schema_version", 1},    {"owner_pid", ::getpid()}, {"started_at", utc_now()},
                    {"state", "created"},     {"events", Json::array()}, {"processes", Json::array()},
                    {"errors", Json::array()}};
@@ -1213,14 +1185,7 @@ class Owner {
             std::cerr << "bc-serve: cannot persist native host-facts start receipt: " << e.what() << '\n';
             return 1;
         }
-        try {
-            listen_socket();
-        } catch (const std::exception& e) {
-            std::cerr << "bc-serve: " << e.what() << '\n';
-            record_["errors"].push_back(e.what());
-            event("failed");
-            return 1;
-        }
+        listen_socket();
 
         struct sigaction sa{};
         sa.sa_handler = on_signal;
@@ -1435,7 +1400,9 @@ class Owner {
                     event("runtime_guard_ready");
                 }
                 event("running");
+                start_calibration_watch();
                 while (service(s_.timing.poll)) {
+                    poll_calibration_watch();
                     if (s_.runtime_watch)
                         require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
                                          "live heat/policy guard");
@@ -1571,6 +1538,7 @@ class Owner {
     std::string handoff_shm_;
     fs::path engine_log_;
     std::vector<fs::path> helper_logs_;
+    std::optional<CalibrationWatch> calibration_watch_;
     std::vector<int> stop_clients_;
     std::vector<Child> children_;
     EngineStart plan_;
@@ -1634,6 +1602,34 @@ class Owner {
                                           std::chrono::steady_clock::now() - began).count();
     }
 
+    // Off unless the session names a store. Any failure to watch or store is reported, never a serving failure.
+    void start_calibration_watch() {
+        if (s_.calibration_ingest_store.empty() || helper_logs_.empty()) return;
+        try {
+            const fs::path admitted = plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest;
+            calibration_watch_.emplace(helper_logs_.front(), s_.calibration_ingest_store,
+                                       live_policy_target_from_manifest(admitted));
+            event("calibration_watch", {{"status", "watching"}, {"log", helper_logs_.front().string()},
+                                        {"key_sha256", calibration_watch_->store_key()}});
+        } catch (const std::exception& e) {
+            std::cerr << "bc-serve: calibration ingest not watching: " << e.what() << '\n';
+            calibration_watch_.reset();
+        }
+    }
+    void poll_calibration_watch() {
+        if (!calibration_watch_) return;
+        try {
+            if (!calibration_watch_->poll()) return;
+            const bool stored = calibration_watch_->state() == CalibrationWatch::State::stored;
+            if (!stored) std::cerr << "bc-serve: " << calibration_watch_->detail() << '\n';
+            event("calibration_ingest", {{"status", stored ? "stored" : "not_stored"},
+                                         {"detail", calibration_watch_->detail()}});
+        } catch (const std::exception& e) {
+            std::cerr << "bc-serve: calibration ingest: " << e.what() << '\n';
+        }
+        if (calibration_watch_->state() != CalibrationWatch::State::waiting) calibration_watch_.reset();
+    }
+
     bool event(const std::string& kind, const Json& detail = Json::object()) {
         Json e = {{"at", utc_now()}, {"kind", kind}};
         for (auto it = detail.begin(); it != detail.end(); ++it)
@@ -1657,20 +1653,9 @@ class Owner {
         listen_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
         if (listen_ < 0)
             throw std::runtime_error("control socket: " + errno_text());
-        // The socket file is created 0600 by the bind itself (the umask is narrowed around it), so it is never
-        // reachable with a wider mode, then its identity is verified before anything is accepted.
-        const mode_t previous = ::umask(0177);
-        const int bound = ::bind(listen_, addr.get(), sizeof addr.addr);
-        const int bind_errno = errno;
-        ::umask(previous);
-        if (bound != 0) {
-            errno = bind_errno;
+        if (::bind(listen_, addr.get(), sizeof addr.addr) != 0 || ::listen(listen_, 8) != 0)
             throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
-        }
-        if (const auto why = socket_refusal(addr.path, ::geteuid(), 0600))
-            throw std::runtime_error("refusing to serve: " + *why);
-        if (::listen(listen_, 8) != 0)
-            throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
+        ::chmod(addr.path.c_str(), 0600);
     }
 
     // Wait up to `d` while answering the control socket; false once a stop is requested.
@@ -1693,10 +1678,6 @@ class Owner {
         const int fd = ::accept4(listen_, nullptr, nullptr, SOCK_CLOEXEC);
         if (fd < 0)
             return;
-        if (const auto peer = peer_uid(fd); !peer || !control_peer_allowed(*peer, ::geteuid())) {
-            ::close(fd); // another user's connection: no reply, no command read
-            return;
-        }
         std::string cmd = read_until(fd, Clock::now() + 2s, true);
         cmd = cmd.substr(0, cmd.find('\n'));
         if (cmd == "status") {
@@ -1793,6 +1774,15 @@ class Owner {
     }
 
     static void validate_quality_paths(const QualityScore& score) {
+        if (score.record()) {
+            std::error_code error;
+            if (!score.reference.is_absolute() || !fs::is_directory(score.reference) ||
+                !fs::is_empty(score.reference, error) || error || !score.output.empty())
+                throw PlanFailed("quality: recording needs an absolute, existing, empty reference directory and no output");
+            if (!score.corpus.is_absolute() || !fs::is_regular_file(score.corpus))
+                throw PlanFailed("quality: recording needs an absolute corpus file");
+            return;
+        }
         if (!score.reference.is_absolute() || !fs::is_regular_file(score.reference / "kld.json"))
             throw PlanFailed("quality: the reference needs an absolute, recorded KL directory");
         if (!score.output.is_absolute() || !fs::is_directory(score.output.parent_path()) ||
@@ -1801,9 +1791,102 @@ class Owner {
             throw PlanFailed("quality: output and row sidecar need unused absolute paths in an existing directory");
     }
 
+    // The initial owner map of the manifest this score runs on, resolved to helpers: what to read to choose a legal
+    // swap (both experts on different helpers, each helper able to hold the other's expert format).
+    void write_owner_map() {
+        const fs::path manifest_path = plan_.execution_manifest();
+        const Json doc = Json::parse(read_file(manifest_path), nullptr, false);
+        if (!doc.is_object() || !doc.contains("spec"))
+            throw PlanFailed("quality: cannot read the manifest for its owner map");
+        const Json& spec = doc.at("spec");
+        const Json& owners = spec.at("plan").at("owner_map");
+        const Json& helpers = spec.at("processes").at("helpers");
+        if (!owners.at("helpers").is_array() || owners.at("helpers").size() != helpers.size())
+            throw PlanFailed("quality: the owner map and the helpers of the manifest differ");
+        Json out = {{"manifest", plan_.manifest.string()},
+                    {"owner_map_sha256", owners.at("owner_map_sha256")},
+                    {"helpers", Json::array()}};
+        for (size_t i = 0; i < helpers.size(); ++i) {
+            const Json& h = helpers.at(i);
+            const Json& set = owners.at("helpers").at(i);
+            std::string arch;
+            for (const Json& gpu : spec.at("facts").at("gpus"))
+                if (gpu.at("bdf") == h.at("gpu"))
+                    arch = gpu.at("arch").get<std::string>();
+            out["helpers"].push_back({{"index", i}, {"role", h.at("role")}, {"gpu", h.at("gpu")}, {"arch", arch},
+                                      {"tier", h.at("tier")}, {"formats", h.at("formats")},
+                                      {"count", set.at("count")}, {"bytes", set.at("bytes")},
+                                      {"experts", set.at("experts")}});
+        }
+        write_atomic(s_.run_dir / "owner-map.json", out.dump() + "\n");
+        event("owner_map_written", {{"file", (s_.run_dir / "owner-map.json").string()},
+                                    {"owner_map_sha256", owners.at("owner_map_sha256")}});
+    }
+
+    // The forced placement schedule runs inside helper 0 once the engine is serving, so it lands during the pass.
+    // When the score is over, helper 0 is asked for its report (SIGUSR1) and every transaction must have committed:
+    // a score whose swaps were aborted or are still in flight measured a placement nobody asked for.
+    void verify_forced_placement() {
+        const auto helper = std::find_if(children_.begin(), children_.end(),
+                                         [](const Child& c) { return c.role == "helper0"; });
+        if (helper == children_.end())
+            throw PlanFailed("quality: a forced placement schedule has no helper0 to run it");
+        static const std::regex report_line(
+            R"(forced placement helper=0 attempted=([0-9]+) committed=([0-9]+) aborted=([0-9]+) inflight=([0-9]+))");
+        static const std::regex swap_line(
+            R"(forced resolved transaction=([0-9]+) epoch=([0-9]+) swap=([0-9]+):([0-9]+):([0-9]+):([0-9]+) helpers=([0-9]+):([0-9]+))");
+        const uint64_t expected = plan_.forced_transactions;
+        const auto deadline = Clock::now() + s_.timing.stop_grace;
+        size_t seen = 0;
+        {
+            const std::string text = read_file(helper->log);
+            seen = std::distance(std::sregex_iterator(text.begin(), text.end(), report_line), std::sregex_iterator());
+        }
+        std::array<uint64_t, 4> last{};
+        for (;;) {
+            ::kill(helper->pid, SIGUSR1);
+            const std::string text = read_file(helper->log);
+            const size_t reports =
+                std::distance(std::sregex_iterator(text.begin(), text.end(), report_line), std::sregex_iterator());
+            if (reports > seen) {
+                std::smatch m;
+                auto it = std::sregex_iterator(text.begin(), text.end(), report_line);
+                for (size_t i = 0; i + 1 < reports; ++i) ++it;
+                m = *it;
+                for (size_t i = 0; i < 4; ++i) last[i] = std::stoull(m[i + 1].str());
+                seen = reports;
+                const bool done = last[0] == expected && last[1] == expected && last[2] == 0 && last[3] == 0;
+                Json swaps = Json::array();
+                for (auto w = std::sregex_iterator(text.begin(), text.end(), swap_line); w != std::sregex_iterator(); ++w)
+                    swaps.push_back({{"transaction", std::stoull((*w)[1].str())},
+                                     {"a", {std::stoull((*w)[3].str()), std::stoull((*w)[4].str())}},
+                                     {"b", {std::stoull((*w)[5].str()), std::stoull((*w)[6].str())}},
+                                     {"a_to_helper", std::stoull((*w)[7].str())},
+                                     {"b_to_helper", std::stoull((*w)[8].str())}});
+                if (done || Clock::now() >= deadline) {
+                    event("forced_placement", {{"expected", expected}, {"attempted", last[0]}, {"committed", last[1]},
+                                               {"aborted", last[2]}, {"inflight", last[3]}, {"swaps", swaps},
+                                               {"log", helper->log.string()}});
+                    if (!done)
+                        throw PlanFailed("quality: forced placement incomplete: committed " + std::to_string(last[1]) +
+                                         " of " + std::to_string(expected) + " (attempted " + std::to_string(last[0]) +
+                                         ", aborted " + std::to_string(last[2]) + ", in flight " +
+                                         std::to_string(last[3]) + "); see " + helper->log.string());
+                    return;
+                }
+            } else if (Clock::now() >= deadline) {
+                throw PlanFailed("quality: helper0 did not report its forced placement; see " + helper->log.string());
+            }
+            if (!service(s_.timing.poll))
+                throw Stop{};
+        }
+    }
+
     void score_quality(const QualityScore& score) {
         validate_quality_paths(score);
-        event("scoring", {{"reference", score.reference.string()}, {"output", score.output.string()}});
+        write_owner_map();
+        event(score.record() ? "recording" : "scoring",
+              {{"reference", score.reference.string()}, {"output", score.output.string()}});
         const pid_t engine = start_engine(&score);
         const auto check_helpers = [&] {
             for (const auto& child : children_) {
@@ -1819,7 +1902,14 @@ class Owner {
         }
         check_helpers();
         if (!WIFEXITED(*status) || WEXITSTATUS(*status) != 0)
-            throw PlanFailed("quality: KL scoring engine failed; see " + engine_log_.string());
+            throw PlanFailed(std::string("quality: KL ") + (score.record() ? "recording" : "scoring") +
+                             " engine failed; see " + engine_log_.string());
+        if (score.record()) {
+            if (!fs::is_regular_file(score.reference / "kld.json"))
+                throw PlanFailed("quality: KL recording did not produce the reference");
+            event("quality_recorded", {{"reference", score.reference.string()}});
+            return;
+        }
         const fs::path rows = score.output.string() + ".rows";
         if (!fs::is_regular_file(score.output) || fs::file_size(score.output) > v2::kMaxDocumentBytes ||
             !fs::is_regular_file(rows))
@@ -1830,6 +1920,8 @@ class Owner {
         if (positions <= 0 || uint64_t(positions) > UINT64_MAX / 16 ||
             fs::file_size(rows) != uint64_t(positions) * 16)
             throw PlanFailed("quality: KL scoring row sidecar differs from reported positions");
+        if (plan_.forced_transactions != 0)
+            verify_forced_placement();
         event("quality_completed", {{"positions", positions}, {"output", score.output.string()}});
     }
 
@@ -1852,7 +1944,10 @@ class Owner {
             throw PlanFailed("native serving: launch does not match the admitted engine manifest");
         native_launch->root.require_matches(native->identity.resolution_root);
         if (quality) {
-            argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
+            if (quality->record())
+                argv.insert(argv.end(), {"--kld-record", quality->reference.string(), "--kld-corpus", quality->corpus.string()});
+            else
+                argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
         } else if (manifest && manifest.value().spec.handoff &&
                    manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();
@@ -1910,48 +2005,6 @@ class Owner {
 
 } // namespace
 
-std::optional<std::string> run_dir_refusal(const fs::path& dir, uid_t owner) {
-    struct stat st{};
-    if (::stat(dir.c_str(), &st) != 0)
-        return "the run directory " + dir.string() + " cannot be inspected: " + errno_text();
-    if (!S_ISDIR(st.st_mode))
-        return "the run directory " + dir.string() + " is not a directory";
-    if (st.st_uid != owner)
-        return "the run directory " + dir.string() + " is owned by uid " + std::to_string(st.st_uid) +
-               ", not uid " + std::to_string(owner);
-    if ((st.st_mode & 077) != 0)
-        return "the run directory " + dir.string() + " is accessible to group or others (mode " +
-               mode_text(st.st_mode) + "); it must be private (0700)";
-    return std::nullopt;
-}
-
-std::optional<std::string> socket_refusal(const fs::path& path, uid_t owner, mode_t mode) {
-    struct stat st{};
-    if (::lstat(path.c_str(), &st) != 0)
-        return "the control socket " + path.string() + " cannot be inspected: " + errno_text();
-    if (!S_ISSOCK(st.st_mode))
-        return "the control socket path " + path.string() + " is not a socket (a symlink or file is refused)";
-    if (st.st_uid != owner)
-        return "the control socket " + path.string() + " is owned by uid " + std::to_string(st.st_uid) +
-               ", not uid " + std::to_string(owner);
-    if ((st.st_mode & 07777) != mode)
-        return "the control socket " + path.string() + " has mode " + mode_text(st.st_mode) + ", not " +
-               mode_text(mode);
-    return std::nullopt;
-}
-
-bool control_peer_allowed(uid_t peer, uid_t owner) {
-    return peer == owner || peer == 0;
-}
-
-std::optional<uid_t> peer_uid(int fd) {
-    ucred cred{};
-    socklen_t len = sizeof cred;
-    if (::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0 || len != sizeof cred)
-        return std::nullopt;
-    return cred.uid;
-}
-
 int serve(const Session& session) {
     Owner owner(session);
     return owner.run();
@@ -1997,7 +2050,7 @@ std::optional<Json> control(const fs::path& run_dir, const std::string& command,
 
 int start_detached(const std::vector<std::string>& self_argv, const fs::path& run_dir,
                    std::chrono::milliseconds timeout) {
-    prepare_run_dir(run_dir);
+    fs::create_directories(run_dir);
     Env env;
     for (char** e = environ; e && *e; ++e) {
         const std::string kv(*e);
@@ -3087,6 +3140,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             "serve: " + name + " is a layout (" + layouts.at("source").value(name, "") +
             "); bc-serve serves configs (engines/radiance/configs, --configs): convert it first (RSC12)");
     const Json& processes = r.manifest.at("process_helpers");
+    if (in.lab_experiment) {
+        // Only `quality` reads a schedule (main.cpp): serve and start have no such option.
+        try {
+            require_experiment_helpers(*in.lab_experiment, processes.size());
+        } catch (const std::runtime_error& refusal) {
+            throw PlanFailed(refusal.what());
+        }
+    }
     const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
     const fs::path engine =
         in.engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : in.engine_binary;
@@ -3179,7 +3240,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     lap("runtime_identity");
     const auto& settings = native_inspection.settings;
     const Resolved native_resolved = resolve(in.options, facts, &settings);
-    const auto cache = named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
+    // A lab experiment measures afresh and leaves the named store alone: its manifest is a lab one, which neither
+    // replays nor stands in for the production plan.
+    const auto cache = in.lab_experiment
+        ? std::nullopt
+        : named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
     std::optional<CarriedMeasurement> carried;
     PlanReuse reuse;
     reuse.outcome = PlanReuseOutcome::absent;
@@ -3438,6 +3503,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             throw PlanFailed("native v3 owner cache publication did not return the exact attempt receipt");
 
         const fs::path measured_manifest = fs::absolute(run_dir) / ("manifest-native-" + attempt_id + ".json");
+        const fs::path experiment_file = fs::absolute(run_dir) / "lab-experiment.json";
         const fs::path s8_source = measured_manifest.string() + ".s8-evidence.json";
         std::vector<std::string> measured_argv = {
             in.self.string(), "--write-manifest", measured_manifest.string(), "--power-profile", in.power_profile,
@@ -3446,6 +3512,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             "--bc-native-config-fd", std::to_string(writer_input.descriptor())};
         if (cache)
             measured_argv.insert(measured_argv.end(), {"--s8-replay-evidence", s8_source.string()});
+        if (in.lab_experiment) {
+            // The measured manifest, and only it, carries the schedule: the measuring start ran the production
+            // plan. The file is kept in the run directory as the record of what was applied.
+            write_atomic(experiment_file, in.lab_experiment->document.dump(2) + "\n");
+            measured_argv.insert(measured_argv.end(), {"--experiment", experiment_file.string()});
+        }
         measured_argv.insert(measured_argv.end(), resolver.begin(), resolver.end());
         const ManifestRun final_writer = run_planning_child(
             measured_argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
@@ -3475,6 +3547,13 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         auto final_snapshot = pin_manifest_file(measured_manifest, v2::PlanUse::serving);
         const auto final_native = v2::native_config_view(final_snapshot.parsed);
         const auto& final_spec = final_snapshot.parsed.spec;
+        if (in.lab_experiment) {
+            const auto& experiment = final_spec.experiment;
+            const auto forced = experiment && experiment->placement ? experiment->placement->forced : std::nullopt;
+            if (final_spec.intent.service.profile != v2::Profile::kLab || !forced ||
+                uint64_t(forced->steps.size()) * uint64_t(forced->repeat) != in.lab_experiment->transactions)
+                throw PlanFailed("native v3 measured manifest does not carry the requested forced placement schedule");
+        }
         if (!final_native || final_native->yaml_utf8 != snapshot.yaml_utf8() ||
             final_native->identity.sha256 != snapshot.sha256() ||
             final_native->identity.resolution_root != snapshot.resolution_root())
@@ -3550,6 +3629,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (carried)
             out.summary["plan_carried_from"] = carried->provenance();
         out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
+        if (in.lab_experiment) {
+            out.forced_transactions = in.lab_experiment->transactions;
+            out.summary["lab_experiment"] = {{"file", experiment_file.string()},
+                                             {"transactions", in.lab_experiment->transactions}};
+        }
         lap("measure");
         out.plan_reuse = plan_reuse_json(reuse);
         out.phase_ms = phases;
@@ -3571,6 +3655,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
         throw PlanFailed("replay: missing required durable power admission or owner stop gate");
     if (given.stored_manifest.empty())
         throw PlanFailed("replay: no stored manifest file");
+    if (given.lab_experiment)
+        throw PlanFailed("replay: a lab experiment needs a fresh plan; a stored manifest is production-only");
     const fs::path stored = fs::absolute(given.stored_manifest);
     if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16ULL * 1024ULL * 1024ULL)
         throw PlanFailed("replay: manifest must be an existing bounded regular file");

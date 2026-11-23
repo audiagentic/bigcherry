@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
 
+from ..core.json_io import read_jsonl
+
 
 @dataclass(frozen=True)
 class RollupRow:
@@ -67,15 +69,6 @@ class RollupRow:
         }
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    rows = []
-    for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line:
-            rows.append(json.loads(line))
-    return rows
-
-
 def _load_campaign_identity(campaign_dir: Path) -> dict[str, str]:
     """Pull the identity fields a rollup row needs from the campaign's own
     receipt. Fails closed: a campaign directory without a receipt is not
@@ -103,7 +96,7 @@ def _load_execution_audit(campaign_dir: Path) -> dict[str, dict[str, Any]]:
     if not audit_path.is_file():
         return {}
     out: dict[str, dict[str, Any]] = {}
-    for row in _read_jsonl(audit_path):
+    for row in read_jsonl(audit_path):
         dispatch = row.get("dispatch")
         if dispatch:
             out[dispatch] = row
@@ -118,7 +111,7 @@ def build_rollup(campaign_dirs: Iterable[str | Path]) -> list[RollupRow]:
         audit_by_dispatch = _load_execution_audit(campaign_dir)
 
         promoted_path = campaign_dir / "promoted.jsonl"
-        for promoted_row in _read_jsonl(promoted_path):
+        for promoted_row in read_jsonl(promoted_path):
             if promoted_row.get("kind") == "header":
                 continue
             if promoted_row.get("promotion_status") != "promoted":

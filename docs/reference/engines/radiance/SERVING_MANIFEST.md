@@ -46,7 +46,7 @@ bc-serve explain CONFIG --native-config NAME.yaml --model-root DIR              
   plan (`--plan-memory FILE --plan-memory-ranks FILE` on an unmeasured manifest) and exits, and the owner writes the measured manifest from
   that plan and stores it. An engine that does not come up on a stored plan drops the entry, so the next start measures. `start --manifest FILE
   --run-dir DIR` replays one named file. Run a measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
-- A serving start is production-only: it takes no lab experiment, live-policy override or calibration option.
+- A serving start is production-only: it takes no lab experiment, live-policy override or calibration option. Only `bc-serve quality` takes a forced placement schedule (below).
 - A lab arm that changes a setting authors its own YAML (`tools/lab/radiance/arm_yaml.py` writes a copy of a config with targeted changes);
   see [Campaign arms](#campaign-arms).
 
@@ -128,6 +128,42 @@ arm's own YAML, written with `tools/lab/radiance/arm_yaml.py` (a repository-rela
 which plans, seals and runs the finite KL score under the owner (helpers included). `bc-serve quality` only scores, so the job names a
 stored reference (`quality.reference_dir` and `quality.reference_metadata`) rather than recording one; `quality.args` must be empty. See
 `tools/lab/radiance/27b-native-kld.json`. Throughput arms that serve from a native YAML are not wired into the campaign harness yet.
+
+### Forced placement in a quality score
+
+`bc-serve quality ... --lab-experiment FILE` scores with a forced placement schedule (`serve` and `start` have no such option). FILE is the
+JSON object the writer puts in `spec.experiment`, holding only `placement` with `mode: "forced_churn"` and a `forced` schedule; it is read and
+checked whole before any plan (the manifest's own rules: a swap names both experts, a move names a destination helper, a step list of 1 to 1024,
+`repeat` 1 to 1000000). The run measures afresh on the production plan, then writes a lab-profile manifest carrying the schedule (kept as
+`lab-experiment.json` in the run dir); the named-config store is not read or written. Helper 0 issues one proposal per step once the engine
+has completed its first lane request, so the swaps land during the scoring pass, not before it; `pace_requests` spreads them over completed
+lane requests. When the score is over the owner asks helper 0 for its report and fails the score unless every transaction committed with none
+aborted or in flight; the `forced_placement` event of the session record carries the counts and each resolved swap (layer, expert, destination
+helper).
+
+Every quality run (with or without the file) writes `owner-map.json` to the run dir before scoring: per helper its index, role, GPU, arch, tier,
+formats, expert count and bytes, and `experts` as `[layer, expert]` pairs (the initial owner map; the layout is deterministic, so the control arm's
+file serves for the arms that follow). A swap is legal when its two experts are on different helpers and each helper holds the other expert's
+format: a tail helper (gfx1030) holds `w4nl64` only, so pick pairs whose experts are `w4nl64` on both sides; helper indexes in `move` and
+`auto_swap` are the `index` of that file.
+
+An explicit swap list (two transactions, repeated twice):
+
+```json
+{"placement": {"mode": "forced_churn", "forced": {"repeat": 2, "steps": [
+  {"kind": "swap", "a_layer": 0, "a_expert": 3, "b_layer": 0, "b_expert": 9},
+  {"kind": "swap", "a_layer": 0, "a_expert": 4, "b_layer": 0, "b_expert": 12}]}}}
+```
+
+`auto_swap` exchanges the lowest-numbered eligible (layer, expert) pair owned by helper `a_layer` and helper `a_expert` (here the two helper
+indexes x and y, not a layer and expert), excluding the experts moved by the previous transaction:
+
+```json
+{"placement": {"mode": "forced_churn", "forced": {"repeat": 8, "pace_requests": 16, "steps": [
+  {"kind": "auto_swap", "a_layer": 0, "a_expert": 2}]}}}
+```
+
+`move` (`a_layer`, `a_expert`, `destination`) sends one expert to another helper.
 
 `R3_MOE_WORKER_*` arm settings, `R3_MOE_WORKER_LAYOUT` and `BC_SERVING_MANIFEST` are gone. Jobs that used them and could not be migrated
 are archived in `experiments/radiance/archive-helper-env-jobs/` and `experiments/radiance/archive-engine-only-jobs/`.

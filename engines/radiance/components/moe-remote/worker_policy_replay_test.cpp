@@ -136,6 +136,48 @@ static void test_a_counter_that_goes_back_credits_nothing() {
     check(r.valid, "a counter regression is tolerated, not a fault");
 }
 
+// The old simulator also checked causality; exercise the real policy instead.
+static void test_no_future_lookahead() {
+    const auto prefix = series(8, range(30, 40));
+    const auto next = series(5, range(0, 10), prefix.back());
+    auto extended = prefix;
+    extended.insert(extended.end(), next.begin() + 1, next.end());
+    const auto short_run = replay(config(), prefix, start_owner());
+    const auto long_run = replay(config(), extended, start_owner());
+    check(short_run.valid && long_run.valid &&
+          long_run.steps.size() >= short_run.steps.size(), "replay inputs valid");
+    for (size_t i = 0; i < short_run.steps.size(); ++i) {
+        const auto& a = short_run.steps[i];
+        const auto& b = long_run.steps[i];
+        check(a.snapshot == b.snapshot && a.observations == b.observations &&
+              a.proposed == b.proposed && a.moved == b.moved &&
+              a.tail_share_before == b.tail_share_before &&
+              a.tail_share_after == b.tail_share_after,
+              "future heat does not alter past decisions");
+    }
+}
+
+// No implicit floor: a zero move limit leaves the ownership map untouched.
+static void test_strict_move_budgets() {
+    const auto snaps = series(8, range(30, 40));
+    for (bool byte_limit : {false, true}) {
+        ReplayConfig cfg = config();
+        if (byte_limit) cfg.max_moved_bytes = 0;
+        else cfg.max_moves = 0;
+        const auto r = replay(cfg, snaps, start_owner());
+        check(r.valid && r.transactions == 0 && r.experts_moved == 0 &&
+              r.owner == start_owner(), "zero movement budget holds owners");
+    }
+    ReplayConfig cfg = config();
+    cfg.max_moves = cfg.experts / 4;
+    cfg.max_moved_bytes = cfg.stride * cfg.max_moves;
+    const auto r = replay(cfg, snaps, start_owner());
+    check(r.valid && r.transactions > 0, "bounded replay makes a capped transaction");
+    for (const auto& step : r.steps)
+        check(step.moved <= cfg.max_moves &&
+              step.moved * cfg.stride <= cfg.max_moved_bytes,
+              "per-transaction movement respects byte and count limits");
+}
 
 // The calibration probe on recorded heat: the planner limits come from the ramp (one stride, doubled), the margin is the
 // least representable one, and a probe counts only if it is tail-involved with a positive predicted gain.
@@ -194,6 +236,8 @@ int main() {
     test_residency_holds_experts_in_place();
     test_bad_input_is_refused();
     test_a_counter_that_goes_back_credits_nothing();
+    test_no_future_lookahead();
+    test_strict_move_budgets();
     test_probe_ramps_to_the_first_group_and_gains();
     test_probe_has_no_natural_gain();
     test_degenerate_workload_never_crosses();

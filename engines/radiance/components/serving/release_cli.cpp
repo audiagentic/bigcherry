@@ -15,7 +15,7 @@ using bc::release::ErrorCode;
     throw Error(ErrorCode::invalid_input,
                 error + "\nusage: bc-release install --tag TAG --record FILE --archive FILE --root DIR --sdk "
                         "DIR [--allow-downgrade true|false]"
-                        "\n       bc-release verify|status|rollback --root DIR --sdk DIR");
+                        "\n       bc-release verify|rollback --root DIR --sdk DIR");
 }
 
 std::map<std::string, std::string> options(int argc, const char* const argv[]) {
@@ -61,17 +61,15 @@ int main(int argc, const char* const argv[]) {
             }
             bc::release::install({needed(args, "tag"), needed(args, "record"), needed(args, "archive"), root,
                                   sdk, allow_downgrade});
-            std::cout << bc::release::status(root, sdk).dump(2) << '\n';
-        } else if (command == "verify" || command == "status" || command == "rollback") {
+            std::cout << bc::release::verify(root, sdk).dump(2) << '\n';
+        } else if (command == "verify" || command == "rollback") {
             if (args.size() != 2)
-                usage("verify/status/rollback accept only --root and --sdk");
+                usage("verify/rollback accept only --root and --sdk");
             bc::release::Json state;
             if (command == "rollback")
                 state = bc::release::rollback(root, sdk);
-            else if (command == "verify")
-                state = bc::release::verify(root, sdk);
             else
-                state = bc::release::status(root, sdk);
+                state = bc::release::verify(root, sdk);
             std::cout << state.dump(2) << '\n';
         } else {
             usage("unknown bc-release operation: " + command);

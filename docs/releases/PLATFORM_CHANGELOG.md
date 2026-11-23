@@ -1,5 +1,76 @@
 # Changelog
 
+## [1.67.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.66.0...bc-platform-1.67.0) (2026-11-23)
+
+
+### New and changed
+
+* **ltx:** pipeline the issued TP FFN with reductions on the second lane ([#1416](https://github.com/audiagentic/bigcherry/issues/1416)) ([f7355c5](https://github.com/audiagentic/bigcherry/commit/f7355c52bb3e5ea4ee6aa315a1da785e8cdeefb0))
+* **serving:** ingest the helper's calibration record from its log (off by default) ([#1375](https://github.com/audiagentic/bigcherry/issues/1375)) ([6bf0712](https://github.com/audiagentic/bigcherry/commit/6bf0712e17e90efc80f07240e7676da9bd340f60))
+
+## [1.66.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.65.0...bc-platform-1.66.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** bc-serve quality applies forced placement steps before scoring ([#1385](https://github.com/audiagentic/bigcherry/issues/1385)) ([110518d](https://github.com/audiagentic/bigcherry/commit/110518d9f970977935c55e3f83fd89d6870535ce))
+
+## [1.65.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.64.1...bc-platform-1.65.0) (2026-11-22)
+
+
+### New and changed
+
+* **ltx:** declare the TP3 FFN, modulation and gated residual across all DiT blocks ([#1407](https://github.com/audiagentic/bigcherry/issues/1407)) ([d98914b](https://github.com/audiagentic/bigcherry/commit/d98914ba92bff208849c3a5c7af94057760117c2))
+
+## [1.64.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.64.0...bc-platform-1.64.1) (2026-11-22)
+
+
+### Fixes
+
+* **release:** radiance release line lists the patch sets the 2.2 recipe uses ([#1408](https://github.com/audiagentic/bigcherry/issues/1408)) ([69cd518](https://github.com/audiagentic/bigcherry/commit/69cd518bf0b3172d7bb0bd1de3aae2a572ab3945))
+
+## [1.64.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.4...bc-platform-1.64.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** bc-serve quality records a KL reference; helper-kld records its own ([#1365](https://github.com/audiagentic/bigcherry/issues/1365)) ([21d5002](https://github.com/audiagentic/bigcherry/commit/21d50020a73d57bc6edfe4ea439825a4fe9d92f9))
+
+
+### Fixes
+
+* **serving:** authorize power apply by AGENT_INSTANCE only ([#1369](https://github.com/audiagentic/bigcherry/issues/1369)) ([b8f544e](https://github.com/audiagentic/bigcherry/commit/b8f544e36ef728e1ae2f60edcd161bdc00d70768))
+
+## [1.63.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.3...bc-platform-1.63.4) (2026-11-22)
+
+
+### Fixes
+
+* **campaign:** require verified RCCL qualification before benchmark ([#1394](https://github.com/audiagentic/bigcherry/issues/1394)) ([1448943](https://github.com/audiagentic/bigcherry/commit/1448943beedcb45949861a5d5058710a81666db3))
+
+## [1.63.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.2...bc-platform-1.63.3) (2026-11-22)
+
+
+### Fixes
+
+* **profiling:** refuse unattested RCCL channel candidates ([#1390](https://github.com/audiagentic/bigcherry/issues/1390)) ([e832084](https://github.com/audiagentic/bigcherry/commit/e8320843c3d0ebe4d39a059c17d9beb3c5fdf89a))
+* **profiling:** reject conflicting RCCL plan observations ([#1391](https://github.com/audiagentic/bigcherry/issues/1391)) ([750e52e](https://github.com/audiagentic/bigcherry/commit/750e52eedede57076abaf589f12cefe88167936e))
+* **profiling:** require nonnegative RCCL error counts ([#1393](https://github.com/audiagentic/bigcherry/issues/1393)) ([17e3ed1](https://github.com/audiagentic/bigcherry/commit/17e3ed16f677d55aa6a4f4255196e46defa62e62))
+
+## [1.63.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.1...bc-platform-1.63.2) (2026-11-22)
+
+
+### Fixes
+
+* **tests:** the declared moe-remote test list includes r3_bootstrap_timing_test (red on main since [#1347](https://github.com/audiagentic/bigcherry/issues/1347)) ([#1364](https://github.com/audiagentic/bigcherry/issues/1364)) ([87fa31c](https://github.com/audiagentic/bigcherry/commit/87fa31ce6c070a5fb40b81bdc71ceaf7db8102f4))
+
+
+### Performance
+
+* a start hashes neither the runtime nor the installed prefix when nothing changed ([#1330](https://github.com/audiagentic/bigcherry/issues/1330)) ([336942d](https://github.com/audiagentic/bigcherry/commit/336942dff18b41dfed652a291218e2000769aae3))
+* **moe-remote:** time the helper expert bootstrap stages at startup ([#1347](https://github.com/audiagentic/bigcherry/issues/1347)) ([ac4e07e](https://github.com/audiagentic/bigcherry/commit/ac4e07e7e04e2ec2fe82f576a8fd3b4cdc3e3d5e))
+* run the session tests as four balanced CTest groups and ctest in parallel ([#1343](https://github.com/audiagentic/bigcherry/issues/1343)) ([ca3d68d](https://github.com/audiagentic/bigcherry/commit/ca3d68df282c15c1638321b0b5cb3bb471cdddec))
+
 ## [1.63.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.0...bc-platform-1.63.1) (2026-11-22)
 
 

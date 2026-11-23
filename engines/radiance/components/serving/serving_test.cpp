@@ -16,6 +16,7 @@
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
+#include "lab_experiment.h"
 #include "session.h"
 #include "sha256.h"
 #include "serving_codec.h"
@@ -96,6 +97,10 @@ int select_free_port() {
     return int(ntohs(addr.sin_port));
 }
 
+std::string read_text(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
 void write(const fs::path& path, const std::string& content) {
     fs::create_directories(path.parent_path());
     std::ofstream out(path);
@@ -1290,25 +1295,102 @@ void serve_has_no_lab_options() {
     }
 }
 
-void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
-    const auto no_snapshot = run_bc_serve(
-        {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
-         "missing-ranks.json"});
-    if (no_snapshot.exit_code != 2 ||
-        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos ||
-        no_snapshot.output.find("cannot read missing-plan.json") != std::string::npos)
-        throw std::runtime_error("v3 writer did not reject a missing sealed snapshot before plan-file access: " +
-                                 no_snapshot.output);
+// `quality --lab-experiment FILE` takes a forced placement schedule and nothing else; every malformed file is refused
+// before any plan, and serve (above) still has no such option.
+void quality_lab_experiment_file(Fixture& t) {
+    const auto read = [&](const std::string& name, const std::string& text) {
+        return bc::serving::read_lab_placement_experiment(t.file(name.c_str(), text));
+    };
+    const auto refused = [&](const std::string& name, const std::string& text, const std::string& why) {
+        try {
+            read(name, text);
+        } catch (const std::runtime_error& e) {
+            if (std::string(e.what()).find(why) != std::string::npos) return;
+            throw std::runtime_error("lab experiment " + name + " refused for another reason: " + e.what());
+        }
+        throw std::runtime_error("lab experiment " + name + " was accepted");
+    };
+    const auto swaps = read("lab-swaps.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":2,"steps":[
+        {"kind":"swap","a_layer":0,"a_expert":3,"b_layer":0,"b_expert":9},
+        {"kind":"move","a_layer":1,"a_expert":4,"destination":1}]}}})");
+    if (swaps.transactions != 4 || swaps.helper_limit != 2)
+        throw std::runtime_error("lab experiment: the explicit swap list was not counted");
+    const auto automatic = read("lab-auto.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":3,"steps":[
+        {"kind":"auto_swap","a_layer":0,"a_expert":2}]}}})");
+    if (automatic.transactions != 3 || automatic.helper_limit != 3)
+        throw std::runtime_error("lab experiment: the auto_swap schedule was not counted");
+    bc::serving::require_experiment_helpers(automatic, 3);
+    for (const size_t too_few : {size_t{0}, size_t{1}, size_t{2}}) {
+        try {
+            bc::serving::require_experiment_helpers(automatic, too_few);
+        } catch (const std::runtime_error&) {
+            continue;
+        }
+        throw std::runtime_error("lab experiment: a schedule naming helper 2 was accepted for " +
+                                 std::to_string(too_few) + " helpers");
+    }
+    refused("lab-not-json.json", "{", "is not a JSON object");
+    refused("lab-array.json", "[]", "is not a JSON object");
+    refused("lab-shape.json", R"({"shape":{"helper_common":{"gemv":{"h2":4}}}})", "must hold exactly `placement`");
+    refused("lab-two.json", R"({"placement":{"mode":"observe"},"diagnostics":{}})", "must hold exactly `placement`");
+    refused("lab-observe.json", R"({"placement":{"mode":"observe"}})", "forced_churn");
+    refused("lab-cycle.json", R"({"placement":{"mode":"forced_churn","epoch_cycle_s":5,"forced":{"repeat":1,"steps":[
+        {"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})", "forced_churn");
+    refused("lab-no-steps.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[]}}})", "steps");
+    refused("lab-swap-b.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"swap","a_layer":0,"a_expert":3}]}}})", "swap names both experts");
+    refused("lab-move.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"move","a_layer":0,"a_expert":3}]}}})", "a move needs a destination");
+    refused("lab-same.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"auto_swap","a_layer":1,"a_expert":1}]}}})", "two different helpers");
+    refused("lab-unknown.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"auto_swap","a_layer":0,"a_expert":1,"colour":1}]}}})", "colour");
+    try {
+        bc::serving::read_lab_placement_experiment(t.root / "no-such-experiment.json");
+        throw std::runtime_error("a missing lab experiment file was accepted");
+    } catch (const std::runtime_error& e) {
+        if (std::string(e.what()).find("cannot read") == std::string::npos) throw;
+    }
 
-    const auto raw_import = run_bc_serve(
-        {"--write-manifest", "unused.json", "--bc-native-config-fd", "3", "--measured-plan",
-         "missing-plan.json", "--rank-demand", "missing-ranks.json"});
-    if (raw_import.exit_code != 2 ||
-        raw_import.output.find("v3 --write-manifest does not import --measured-plan or --rank-demand") ==
-            std::string::npos ||
-        raw_import.output.find("cannot read missing-plan.json") != std::string::npos)
-        throw std::runtime_error("v3 writer did not refuse raw measured-plan imports before file access: " +
-                                 raw_import.output);
+    // Through the command line: quality names the file, a bad one is refused before the plan; serve and start never
+    // read it.
+    const std::string bad = t.file("lab-cli-bad.json", R"({"placement":{"mode":"observe"}})").string();
+    const std::string good = t.file("lab-cli-good.json", R"({"placement":{"mode":"forced_churn","forced":{
+        "repeat":1,"steps":[{"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})").string();
+    const auto quality = [&](const std::string& file) {
+        return run_bc_serve({"quality", "qwen27b-tp3", "--run-dir", (t.root / "lab-cli-run").string(),
+                             "--lab-experiment", file});
+    };
+    const auto refusal = quality(bad);
+    if (refusal.exit_code == 0 || refusal.output.find("--lab-experiment") == std::string::npos ||
+        refusal.output.find("forced_churn") == std::string::npos)
+        throw std::runtime_error("quality did not refuse a non-forced experiment: " + refusal.output);
+    const auto accepted = quality(good);
+    if (accepted.output.find("--lab-experiment") != std::string::npos)
+        throw std::runtime_error("quality refused a valid forced placement file: " + accepted.output);
+    for (const char* cmd : {"serve", "start"}) {
+        const auto served = run_bc_serve({cmd, "qwen27b-tp3", "--run-dir", (t.root / "lab-cli-run").string(),
+                                          "--lab-experiment", good});
+        if (served.exit_code == 0 || served.output.find(std::string(cmd) + ": unknown option --lab-experiment") ==
+                                         std::string::npos)
+            throw std::runtime_error(std::string(cmd) + " accepted --lab-experiment: " + served.output);
+    }
+}
+
+void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
+    const auto no_snapshot = run_bc_serve({"--write-manifest", "unused.json"});
+    if (no_snapshot.exit_code != 2 ||
+        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos)
+        throw std::runtime_error("v3 writer accepted a missing sealed snapshot: " + no_snapshot.output);
+
+    for (const auto* flag : {"--measured-plan", "--rank-demand", "--helpers-resident-mib",
+                             "--engine-resident-mib", "--publish-v2-p1", "--publish-v2-live-room"}) {
+        const auto result = run_bc_serve({"--write-manifest", "unused.json", flag});
+        if (result.exit_code != 2 ||
+            result.output.find(std::string("unknown option ") + flag) == std::string::npos)
+            throw std::runtime_error(std::string("writer accepted removed option ") + flag + ": " +
+                                     result.output);
+    }
 
     // A native v3 measured writer must accept the frozen-key guard too. Use an
     // invalid descriptor so the CLI reaches sealed-snapshot loading without
@@ -1438,7 +1520,6 @@ void session_engine_plan(Fixture& t) {
                 tweak(pre.native_admission->runtime_overrides);
                 const fs::path pre_run = run / ("native-preflight-" + std::to_string(++preflight_runs));
                 fs::create_directories(pre_run);
-                fs::permissions(pre_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
                 std::vector<ss::ChildKind> kinds;
                 ss::Hooks hooks;
                 hooks.wait = [](std::chrono::milliseconds) { return true; };
@@ -1474,7 +1555,6 @@ void session_engine_plan(Fixture& t) {
                         .dump();
                 const fs::path tuned_run = run / "native-preflight-tuning";
                 fs::create_directories(tuned_run);
-                fs::permissions(tuned_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
                 const ss::EngineStart tuned = ss::plan_engine_only(pre, tuned_run, ss::Hooks{});
                 const Json& tuning = tuned.native_preflight_values.at("tuning");
                 assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
@@ -1537,7 +1617,6 @@ void session_engine_plan(Fixture& t) {
         }
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
-        fs::permissions(gated_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         // The measured manifest is stored for the next start of this config, from any run dir, in the work root.
         const fs::path cache_tripwire = ss::named_store_index(t.work_root(), gated.named_config);
         int writer_calls = 0;
@@ -1747,7 +1826,6 @@ void session_engine_plan(Fixture& t) {
         replay_admissions = 0;
         const fs::path later_run = run / "native-later-start";
         fs::create_directories(later_run);
-        fs::permissions(later_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const auto later = ss::plan_engine_only(gated, later_run, stored_hooks);
         assert(later.manifest == original_manifest && later.summary.at("replay") == true &&
@@ -1760,7 +1838,6 @@ void session_engine_plan(Fixture& t) {
         // identity is kept as provenance, and the new manifest replaces the stored one.
         const fs::path rebuilt_run = run / "native-rebuilt-start";
         fs::create_directories(rebuilt_run);
-        fs::permissions(rebuilt_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         auto rebuilt = gated;
         // The installed layout of a newer release: <root>/releases/<tag>/radiance_home.
@@ -1795,7 +1872,6 @@ void session_engine_plan(Fixture& t) {
             for (const auto& file : fs::directory_iterator(attempt_cache)) fs::remove(file.path());
             const fs::path unusable_run = run / "native-unusable-store";
             fs::create_directories(unusable_run);
-            fs::permissions(unusable_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
             std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
             const size_t before = inspector_roles.size();
             std::ostringstream miss_err;
@@ -1858,7 +1934,6 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
         fs::create_directories(owner_run);
-        fs::permissions(owner_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         ss::EnginePlanInputs fresh = gated;
         fresh.work_root = t.root / "work-owner-measures";   // no stored measurement here: this owner measures
         fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
@@ -1937,7 +2012,6 @@ void session_engine_plan(Fixture& t) {
         assert(!fs::exists(native_yaml));
         owner.run_dir = run / "native-stored-owner";
         fs::create_directories(owner.run_dir);
-        fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         fresh.stored_manifest = original_manifest;
         assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
         serving_power_verified = cleared_children = serving_handoff_seen = false;
@@ -1953,7 +2027,6 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path low_room_run = run / "native-low-room";
         fs::create_directories(low_room_run);
-        fs::permissions(low_room_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         const fs::path meminfo = t.root / "proc/meminfo";
         std::ifstream prior_room_file(meminfo);
         const std::string prior_room((std::istreambuf_iterator<char>(prior_room_file)), std::istreambuf_iterator<char>());
@@ -2020,7 +2093,6 @@ void session_engine_plan(Fixture& t) {
             drift_yaml, native_root, gated.native_admission->runtime_overrides};
         const fs::path drift_run = t.root / "native-runtime-drift-run";
         fs::create_directories(drift_run);
-        fs::permissions(drift_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         ss::Hooks drift_hooks;
         std::map<pid_t, std::string> drift_roles;
         std::vector<std::string> drift_role_order;
@@ -2173,7 +2245,6 @@ void helper_vram_owner_graph(Fixture& t) {
     ss::Session owner;
     owner.run_dir = t.root / "native-helper-owner";
     fs::create_directories(owner.run_dir);
-    fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
     owner.timing.health_timeout = owner.timing.helper_timeout = std::chrono::seconds(6);
     owner.timing.health_interval = owner.timing.helper_interval = std::chrono::milliseconds(30);
     owner.timing.stop_grace = std::chrono::seconds(1);
@@ -2331,6 +2402,36 @@ void helper_vram_owner_graph(Fixture& t) {
         throw std::runtime_error("native helper finite score did not complete and clean up: " + quality.dump());
     assert(admissions.size() == 5 && fs::file_size(owner.quality->output.string() + ".rows") == 16);
 
+    // Recording a reference is the same finite run with --kld-record DIR --kld-corpus FILE: no --kld-ref or --kld-out,
+    // and it only succeeds when the engine wrote the reference's kld.json.
+    {
+        const fs::path recorded = t.root / "recorded-reference";
+        fs::create_directory(recorded);
+        const fs::path corpus = t.root / "record-corpus.jsonl";
+        write(corpus, "{\"prompt\":\"a\"}\n");
+        owner.quality = ss::QualityScore{recorded, {}, corpus};
+        const int recorded_exit = ss::serve(owner);
+        const auto record_run = ss::read_record(owner.run_dir).value_or(Json::object());
+        const auto& record_args = record_run.at("processes").back().at("argv");
+        const auto record_events = record_run.at("events").dump();
+        if (recorded_exit != 0 || record_run.value("state", "") != "stopped" || !ss::alive_recorded(record_run).empty() ||
+            record_args.size() != 9 || record_args[5] != "--kld-record" || record_args[6] != recorded.string() ||
+            record_args[7] != "--kld-corpus" || record_args[8] != corpus.string() ||
+            !fs::is_regular_file(recorded / "kld.json") ||
+            record_events.find("quality_recorded") == std::string::npos ||
+            record_events.find("power_restored") == std::string::npos)
+            throw std::runtime_error("native finite reference recording did not complete and clean up: " + record_run.dump());
+        // A reference directory that already holds one, or a missing corpus, is refused before any child starts.
+        const int again = ss::serve(owner);
+        assert(again != 0);
+        owner.quality = ss::QualityScore{t.root / "no-such-reference", {}, corpus};
+        assert(ss::serve(owner) != 0);
+        fs::create_directory(t.root / "empty-reference");
+        owner.quality = ss::QualityScore{t.root / "empty-reference", {}, t.root / "no-corpus.jsonl"};
+        assert(ss::serve(owner) != 0);
+        owner.quality = ss::QualityScore{reference, t.root / "helper-quality.json"};
+    }
+
     // A finite run that times out still stops every helper and restores power.
     owner.quality->output = t.root / "helper-quality-timeout.json";
     owner.timing.quality_timeout = std::chrono::milliseconds(100);
@@ -2342,6 +2443,61 @@ void helper_vram_owner_graph(Fixture& t) {
         timeout_record.at("errors").dump().find("KL scoring timed out") == std::string::npos ||
         timeout_record.at("events").dump().find("power_restored") == std::string::npos)
         throw std::runtime_error("native helper finite score timeout did not clean up: " + timeout_record.dump());
+
+    // A forced placement schedule: measured afresh into a lab-profile manifest that carries it, the named store left
+    // as it was, helper0's report read when the score ends, and the owner map written for the next schedule.
+    const fs::path stored_before = stored;
+    const auto stored_bytes_before = read_text(stored_before);
+    const fs::path swaps = t.file("lab-swaps-run.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":2,
+        "steps":[{"kind":"swap","a_layer":0,"a_expert":3,"b_layer":0,"b_expert":9},
+                 {"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})");
+    in.stored_manifest.clear();   // an explicit replay input is production-only; the schedule needs a fresh plan
+    in.lab_experiment = bc::serving::read_lab_placement_experiment(swaps);
+    owner.timing.quality_timeout = std::chrono::minutes(1);
+    // The owner waits this long for helper0's forced-placement report (and for a process to stop). A
+    // loaded CI container can leave a freshly started helper unscheduled for a second.
+    owner.timing.stop_grace = std::chrono::seconds(10);
+    owner.quality->output = t.root / "helper-quality-forced.json";
+    write(reference / "kld.json", "{}");
+    write(authored, yaml);   // the measuring admission consumes the authored file
+    const int forced = ss::serve(owner);
+    const auto forced_record = ss::read_record(owner.run_dir).value_or(Json::object());
+    const auto forced_events = forced_record.at("events").dump();
+    if (forced != 0 || forced_record.value("state", "") != "stopped" || !ss::alive_recorded(forced_record).empty() ||
+        forced_events.find("\"forced_placement\"") == std::string::npos ||
+        forced_events.find("\"committed\":4") == std::string::npos ||
+        forced_events.find("\"swaps\"") == std::string::npos ||
+        forced_events.find("owner_map_written") == std::string::npos)
+        throw std::runtime_error("forced placement score did not complete and report: " + forced_record.dump());
+    const auto lab_manifest = bc::serving::v2::load_manifest(fs::path(forced_record.at("manifest").get<std::string>()),
+                                                             bc::serving::v2::PlanUse::serving);
+    if (!lab_manifest || lab_manifest.value().spec.intent.service.profile != bc::serving::v2::Profile::kLab ||
+        !lab_manifest.value().spec.experiment || !lab_manifest.value().spec.experiment->placement ||
+        !lab_manifest.value().spec.experiment->placement->forced ||
+        lab_manifest.value().spec.experiment->placement->forced->steps.size() != 2 ||
+        lab_manifest.value().spec.experiment->placement->forced->steps[0].kind != bc::serving::v2::ForcedKind::kSwap ||
+        lab_manifest.value().spec.experiment->placement->forced->steps[1].kind != bc::serving::v2::ForcedKind::kAutoSwap ||
+        lab_manifest.value().spec.experiment->placement->forced->repeat != 2)
+        throw std::runtime_error("the forced schedule did not reach the manifest the engine ran");
+    if (read_text(stored_before) != stored_bytes_before ||
+        read_text(owner.run_dir / "lab-experiment.json").find("auto_swap") == std::string::npos)
+        throw std::runtime_error("a lab experiment changed the stored plan, or its file was not kept");
+    const Json owner_map = Json::parse(read_text(owner.run_dir / "owner-map.json"));
+    if (owner_map.at("helpers").size() != 2 || owner_map.at("helpers").at(0).at("role") != "helper0" ||
+        owner_map.at("helpers").at(0).at("experts").size() != owner_map.at("helpers").at(0).at("count") ||
+        !owner_map.at("helpers").at(0).contains("arch") || !owner_map.at("helpers").at(1).contains("tier"))
+        throw std::runtime_error("the owner map dump is incomplete: " + owner_map.dump());
+
+    // Swaps that did not all commit fail the score, and the report names them.
+    owner.quality->output = t.root / "helper-quality-forced-short.json";
+    write(authored, yaml);
+    ::setenv("TEST_FAKE_FORCED_COMMITTED", "3", 1);
+    const int short_forced = ss::serve(owner);
+    ::unsetenv("TEST_FAKE_FORCED_COMMITTED");
+    const auto short_record = ss::read_record(owner.run_dir).value_or(Json::object());
+    if (short_forced == 0 || short_record.value("state", "") != "failed" || !ss::alive_recorded(short_record).empty() ||
+        short_record.at("errors").dump().find("forced placement incomplete: committed 3 of 4") == std::string::npos)
+        throw std::runtime_error("an incomplete forced schedule did not fail the score: " + short_record.dump());
 }
 
 int main(int argc, char** argv) {
@@ -2367,6 +2523,7 @@ int main(int argc, char** argv) {
         host_ledger_plan();
         measured_plan_cache(t);
         serve_has_no_lab_options();
+        quality_lab_experiment_file(t);
         v3_writer_cli_rejects_unowned_imports(t);
         build_tree_runtime_home(t);
         session_engine_plan(t);

@@ -1,0 +1,21 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_113723_bc-serve-quality-can-score-a-r_4660",
+  "files": [
+    "engines/radiance/components/serving/lab_experiment.h",
+    "engines/radiance/components/serving/lab_experiment.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/v2/manifest.cpp",
+    "engines/radiance/components/serving/v2/manifest.h",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-serve quality takes --lab-experiment FILE, a forced placement schedule (placement only, validated whole before any plan with the manifest's own rules). The run measures afresh on the production plan, writes a lab-profile manifest carrying the schedule (named store untouched), and after scoring asks helper0 for its report and fails unless every transaction committed; the forced_placement event records counts and resolved swaps. Every quality run writes owner-map.json to its run dir. serve and start still have no such option.",
+  "timestamp-utc": "2026-11-22T11:37:23.143579Z",
+  "user-summary-candidate": "bc-serve quality can score a run with forced expert placement swaps applied, and writes the owner map it ran with."
+}

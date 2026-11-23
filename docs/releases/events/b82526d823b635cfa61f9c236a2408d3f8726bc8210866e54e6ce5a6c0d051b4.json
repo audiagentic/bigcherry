@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_113045_no-user-visible-change_1916",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_policy_probe.h",
+    "engines/radiance/components/moe-remote/worker_policy_driver.h",
+    "engines/radiance/components/moe-remote/worker_policy_config.h",
+    "engines/radiance/components/moe-remote/r3_moe_worker.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Policy driver CALIBRATING mode, off by default: structural settings from declared facts, a pure probe module (static placer plan, tail-involved and positive predicted gain only, ramped by factor two from one expert stride and capped by the smallest helper budget), probes only until the record settles, then Driver::adopt swaps in settings derived with the shared derivation between epochs and logs RHP16_POLICY_ACTIVE. The helper reports its calibration record under the launch identity without requiring the lab profile. Nothing sets the calibrating mode yet; the manifest wiring follows.",
+  "timestamp-utc": "2026-11-22T11:30:45.546410Z",
+  "user-summary-candidate": "No user-visible change."
+}

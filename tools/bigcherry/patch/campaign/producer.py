@@ -1,5 +1,6 @@
 """Validation-producer execution runtime for the patch-validation campaign
-(distinct from bigcherry.patch.validation_producer, which owns the
+(distinct from bigcherry.hardware.power_receipt import write_json_atomic
+from bigcherry.patch.validation_producer, which owns the
 producer spec/result contract)."""
 
 from __future__ import annotations
@@ -27,7 +28,6 @@ from bigcherry.patch.campaign.benchmark import (
     run_paired_llama_benchmark,
 )
 from bigcherry.patch.campaign.build import (
-    _atomic_write_json,
     _full_requested_cmake_args,
     _hip_env,
     _hip_only,
@@ -745,7 +745,7 @@ def _bind_producer_correctness(
     }
 
     path = binding.run_dir / "correctness.json"
-    _atomic_write_json(path, document)
+    write_json_atomic(path, document, ensure_ascii=False, sync_directory=False, newline="\n")
     artifact = {
         "path": path.relative_to(binding.run_dir).as_posix(),
         "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
@@ -2237,7 +2237,7 @@ def _write_producer_outcome(
         "evidence_record": str(record_path) if record_path is not None else None,
     }
     outcome_path = run_dir / "producer-execution.json"
-    _atomic_write_json(outcome_path, outcome_doc)
+    write_json_atomic(outcome_path, outcome_doc, ensure_ascii=False, sync_directory=False, newline="\n")
 
     _print(
         f"validation producer {args.patch}/{producer_id}: "
@@ -2397,7 +2397,7 @@ def _run_validation_producer(
         )
     except ValidationProducerBlocked as exc:
         blocked_path = run_dir / "producer-blocked.json"
-        _atomic_write_json(
+        write_json_atomic(
             blocked_path,
             {
                 "patch_id": args.patch,
@@ -2407,6 +2407,7 @@ def _run_validation_producer(
                 "timed_lanes_run": False,
                 "evidence_record": None,
             },
+            ensure_ascii=False, sync_directory=False, newline="\n",
         )
         _print(
             f"validation producer {args.patch}/{producer_id}: BLOCKED -- {exc} "
