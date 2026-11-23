@@ -21,10 +21,16 @@ not link the plugin. The existing `libr3` target compiles *and links*
 everything. Family targets depend on the *same object files* as `libr3`;
 running a full build afterward reuses completed compilation.
 
+**Run one build command at a time per Ninja build directory.** Concurrent
+Ninja processes sharing the same build tree can damage its dependency log,
+causing unnecessary recompilation. Use separate build trees for parallel
+experiments, and finish family compilations before the full plugin link.
+
 `BUILD_DIR/r3_groups.tsv` records exactly one build-family owner per
 upstream translation unit. CTest's `r3_groups_test` verifies that every
 upstream unit is covered exactly once and that key kernels remain assigned
-to their expected families. A new upstream unit defaults to `core` until it
+to their expected families in a full build. Intentionally partial `R3_ONLY`
+configurations omit that coverage test. A new upstream unit defaults to `core` until it
 is classified explicitly; review the manifest at every pin bump.
 
 Models and engine rows **do not define compilation boundaries**: a model

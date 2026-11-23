@@ -184,10 +184,13 @@ target_include_directories(libr3 PRIVATE ${RADIANCE_SRC}/abi ${CMAKE_CURRENT_SOU
 
 include(CTest)
 if(BUILD_TESTING)
-  add_test(NAME r3_groups_test
-    COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups_test.py
-      --upstream ${RADIANCE_SRC}/libr4d --manifest ${group_manifest})
-  add_custom_target(r3_groups_test)
+  # Coverage checks apply only to the full shimmed-kernel build, not R3_ONLY probes.
+  if(NOT R3_ONLY)
+    add_test(NAME r3_groups_test
+      COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups_test.py
+        --upstream ${RADIANCE_SRC}/libr4d --manifest ${group_manifest})
+    add_custom_target(r3_groups_test)
+  endif()
   add_test(NAME r3_rewrite_check
     COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py
       --source ${RADIANCE_SRC}/libr4d --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
