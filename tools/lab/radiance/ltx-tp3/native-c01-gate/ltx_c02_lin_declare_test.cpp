@@ -1352,15 +1352,29 @@ static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
          "LTX03 FFN/modulation native Builder finish failed");
 }
 
+#ifdef LTX_PASS_UNEVEN
+#include "ltx_pass_eval_range.inc"
+#endif
 #include "ltx_pass_residency.h"
 #include "ltx_pass_full.h"
+#ifdef LTX_PASS_UNEVEN
+#include "ltx_pass_uneven.h"
+#endif
 
 int main(int argc, char** argv) {
-    if(argc!=3 && argc!=4 && argc!=5) {
+    if(argc!=3 && argc!=4 && argc!=5 && argc!=7) {
         std::fprintf(stderr,"usage: ltx_c02_lin_declare_test MODEL.rad PLUGIN_KERNEL_DIR\n");
         return 2;
     }
     try {
+#ifdef LTX_PASS_UNEVEN
+        if(argc==7 && std::string(argv[3])=="--ltx-pass-uneven") {
+            RadFile f;
+            need(f.open(argv[1])==RAD_OK,"cannot open native IQ8R model");
+            return run_full_pass_uneven(f,argv[2],std::stoll(argv[4]),
+                                        std::stoll(argv[5]),std::stoll(argv[6]));
+        }
+#endif
         const bool aql = argc >= 4 &&
             (std::string(argv[3]) == "--c06-instances-aql" ||
              std::string(argv[3]) == "--c06-issued-aql" ||

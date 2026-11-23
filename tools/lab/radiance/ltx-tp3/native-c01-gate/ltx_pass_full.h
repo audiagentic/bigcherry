@@ -1,6 +1,5 @@
-// Experimental independent guidance-pass placement using the *native*
-// LTX2 DiT declaration and issue path, without a second attention/FFN engine.
-// This is a lab entrypoint: no production scheduling or model routing is changed.
+// Lab-only native DiT load, context and receipt helpers for uneven placement.
+// No second attention/FFN engine and no production routing change.
 #pragma once
 
 struct PassDevice {
@@ -11,6 +10,7 @@ struct PassDevice {
     std::vector<void*> weights;
     struct Pass {
         int device=0, variant=0;
+        int64_t range_begin=0, range_end=0;
         ltx2::Model* model=nullptr;
         std::unique_ptr<rad::Ctx> ctx;
         std::vector<void*> extra;
@@ -40,7 +40,11 @@ static void pass_dit_step(RadCtx* c, const RadBatch*) {
     }
     const int branch=p->variant==1 ? 1:0;
     const bool stg=p->variant==2, iso=p->variant==3;
-    ltx2::dit_eval(c,&p->gen,*p->model,0,branch,stg,iso);
+    if(p->range_end>0)
+        ltx2::pass_dit_eval_range(c,&p->gen,*p->model,0,branch,stg,iso,
+                            p->range_begin,p->range_end);
+    else
+        ltx2::dit_eval(c,&p->gen,*p->model,0,branch,stg,iso);
 }
 
 // The same selected plane gather and native relayout contract exercised by
