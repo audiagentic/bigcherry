@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261123_052700_measured-that-splitting-ltx-gu_3151",
+  "files": [
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_pass_uneven.h",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/generate_pass_range.py",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_pass_full.h",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/CMakeLists.txt",
+    "docs/evidence/2026-11-23-ltx-uneven-placement/README.md",
+    "docs/reference/tooling/TOOL_DISPOSITION.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Opt-in lab mode that splits LTX guidance passes by native block range across the R9700 and both XTX cards with a pinned-host hand-off: 4.0% (768x512x121) and 8.8% (1216x704x121) faster than the 2/1/1 placement including transfer, 1.82x and 1.73x over the R9700 alone; same-card outputs bit-identical, cross-card about 1.5-2% relative RMS. Also records that gfx1030 cannot run the text encoder or VAE with the current libr2 rows.",
+  "timestamp-utc": "2026-11-23T05:27:00.087621Z",
+  "user-summary-candidate": "Measured that splitting LTX guidance passes by block range gives 1.7-1.8x over the R9700 alone."
+}

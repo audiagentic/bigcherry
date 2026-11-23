@@ -1,0 +1,12 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261123_052306_the-ltx-tensor-parallel-experi_5357",
+  "files": [
+    "tools/lab/radiance/ltx-tp3/README.md",
+    "tools/lab/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recorded the concluded LTX TP3 experiment in its lab README: tensor parallel over host-staged reductions is rejected with the measured numbers, the rejected variants, the replacement (guidance-pass parallelism), where each step of the work lives on main, and what would reopen it; the lab README now allows a concluded lab to be kept with a documented disposition.",
+  "timestamp-utc": "2026-11-23T05:23:06.077877Z",
+  "user-summary-candidate": "The LTX tensor-parallel experiment is documented as a concluded lab, with why it was rejected and where its pieces live."
+}

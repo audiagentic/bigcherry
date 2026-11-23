@@ -1,0 +1,32 @@
+I device: AQL backend, 3 device(s) [0:gfx1100 1:gfx1100 2:gfx1201]
+I kernel plugin 'libr3': its 679 device kernel(s) are offered only to the ranks whose card runs them; not to rank 2 (device 2: the fat binary has code objects for [gfx1100] and this card runs [gfx1201, gfx12-generic])
+I kernel plugin 'libr4d': its 679 device kernel(s) are offered only to the ranks whose card runs them; not to rank 0 (device 0: the fat binary has code objects for [gfx1201] and this card runs [gfx1100, gfx11-generic]), rank 1 (device 1: the fat binary has code objects for [gfx1201] and this card runs [gfx1100, gfx11-generic])
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libr4d
+PASS_FULL_LOAD device=0 weights=4378 stored_mib=18690.46
+I arena: 2.70 GiB device + 0 B scratch = 2.70 GiB, charged to the VRAM budget before it was split
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libr4d
+PASS_FULL_LOAD device=1 weights=4378 stored_mib=18690.46
+I arena: 2.70 GiB device + 0 B scratch = 2.70 GiB, charged to the VRAM budget before it was split
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libr3
+PASS_FULL_LOAD device=2 weights=4378 stored_mib=18690.46
+I arena: 2.70 GiB device + 0 B scratch = 2.70 GiB, charged to the VRAM budget before it was split
+I arena: 2.70 GiB device + 0 B scratch = 2.70 GiB, charged to the VRAM budget before it was split
+PASS_FULL_ONE_CARD variant=0 ms=4334.470
+PASS_FULL_ONE_CARD variant=1 ms=4330.577
+PASS_FULL_ONE_CARD variant=2 ms=4309.885
+PASS_FULL_ONE_CARD variant=3 ms=3847.999
+PASS_FULL_SERIAL variant=0 device=2 ms=4358.822
+PASS_FULL_SERIAL variant=1 device=2 ms=4365.853
+PASS_FULL_SERIAL variant=2 device=0 ms=10672.544
+PASS_FULL_SERIAL variant=3 device=1 ms=9912.210
+PASS_FULL_FINITE variant=0 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=0 device=2 ms=4354.284 within_device_bit_equal=1 one_card_video_diffs=0/1712128 one_card_audio_diffs=0/16256
+PASS_FULL_FINITE variant=1 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=1 device=2 ms=4353.552 within_device_bit_equal=1 one_card_video_diffs=0/1712128 one_card_audio_diffs=0/16256
+PASS_FULL_FINITE variant=2 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=2 device=0 ms=10679.883 within_device_bit_equal=1 one_card_video_diffs=1514715/1712128 one_card_audio_diffs=14844/16256
+PASS_FULL_FINITE variant=3 ref_video_bad=0 placed_video_bad=0 ref_audio_bad=0 placed_audio_bad=0
+PASS_FULL_PARALLEL variant=3 device=1 ms=9945.599 within_device_bit_equal=1 one_card_video_diffs=1506265/1712128 one_card_audio_diffs=14646/16256
+PASS_FULL_RESULT passes=4 one_card_ms=16822.930 placed_serial_ms=29309.428 parallel_makespan_ms=10682.432 one_card_speedup=1.575 placed_serial_speedup=2.744 cross_device_bit_equal=0
+LTX2 C02 native Lin failure: cross-architecture full DiT output differs bit-for-bit
+EXIT=1
