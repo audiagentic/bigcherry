@@ -61,3 +61,33 @@
 #pragma unroll ((SB == 256u && NT >= 2u) ? 1u : kUG)  // libr3: SB256 multi-tile
         for (uint32_t h = 0; h < kUG; ++h) {
 @@ end
+
+# VTP37: keep the iu8 WMMA sum in gfx11 accumulator layout within each scale group.
+# Convert once per group, before the existing float scale fold; other kernels are unchanged.
+@@ find 1
+        f8v raw[NT];   /* int32 sums */
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j) raw[j] = acc_zero();
+@@ replace
+        f8v raw[NT];   /* gfx12 layout for the scale fold */
+        r3_i8 raw11[NT];   /* accumulate in the native gfx11 layout across this group */
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j) raw11[j] = r3_i8{0, 0, 0, 0, 0, 0, 0, 0};
+@@ end
+
+@@ find 1
+                    raw[j] = mma8<true>(frag_of(ac[ks / 4u], ks % 4u), bq[j & 1u][ks], raw[j]);
+@@ replace
+                    raw11[j] = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag_of(ac[ks / 4u], ks % 4u)), lane),
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, bq[j & 1u][ks]), lane), raw11[j], false);
+@@ end
+
+@@ find 1
+        const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
+@@ replace
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j)
+            raw[j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11[j], lane));
+        const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
+@@ end
