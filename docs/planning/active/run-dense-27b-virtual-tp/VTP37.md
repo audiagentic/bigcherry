@@ -94,6 +94,10 @@ Consolidated 2026-11-13. Carries RAD48's open work (superseded into this item) a
 
 **2026-11-15 step 3a done (`docs/evidence/2026-11-15-vtp37-narrow-gemm-ragged-m/README.md`).** Token-tile pins gave nothing; the cost at M 17-31 was the guard form: libr4d's `Full` needs M to be whole tiles and drops the weight-row, K and token guards together. libr3 `native/r4d_gemm_fp8a8.hip.rw` keeps the token guard always and keys `Full` on N and K alone. Kernel (one XTX, cold weights): M 17-31 now costs what M 32 does (5120x5120 100-102 -> 83-84 us, 11264x5120 137-140 -> 125-127, 5120x1920 42-43 -> 33); +2 us at M <= 16 on 5120x1920. Engine, `qwen27b-tp3-int8-556-long`, R V V R x2: decode-only +9.9 / +11.3 / +8.2% at 5 / 6 / 7 streams, 4 and 8 level, 1 stream -0.9%. Identity: PPL equal, top-1 1.0, KLD max 2.7e-8 (M = 1, now the `Full` form); selftest narrow rows 0 FAIL; stress 12/12. The 6-stream dip is gone. Step 3a's expected +9-22% at 6-8 streams: met at 5-7, not at 8 (already whole tiles).
 
+
+
+**2026-11-23 decode GEMV at the TP3 per-rank shapes (`docs/evidence/2026-11-23-27b-decode-gemm-efficiency/README.md`).** Step 5's NO-GO for the decode GEMV was taken from the model-sized fixture shapes (72-94% of nominal bandwidth). `gemm_iq8r_nt_m16` at rank 0's real shapes on one XTX (cold, M 4, three repeats, spread about 1%): MLP gate/up 13312x5120 90.8 us (751 GB/s, 78%), MLP down 5120x6656 55.3 us (64%), delta-net in 6144x5120 49.4 us (66%), delta-net out 5120x2304 27.5 us (45%), attention q/gate 3072x5120 27.9 us (59%), attention k/v 256x5120 16.0 us (9%), attention out 5120x1536 21.4 us (38%). Summed over a step: 14.3 ms of GEMM time on rank 0 against the 22.2 ms decode step (the remainder is by subtraction, not traced). Lifting the sub-target rows to 650 / 751 GB/s saves 0.88 / 1.84 ms per step (4.0 / 8.3%), above the 0.5 ms floor. Upper bound from isolated rows only; not a patch yet. Hypothesis to test: the small shapes are launch- or tail-bound (about 15 us a launch), so fewer-wave tiles, split-K or fusing delta-net out and attention out with their neighbours may beat tuning the same kernel. Next: rad-kbench replay at these shapes with the wave and token-tile pins, then the R9700's table, then ABBA and KLD. Attention decode and delta-net decode have no owner in this plan; this note does not take them.
+
 ## Results (2026-11-13)
 
 Builds: base `9a5d8194a35fcffae6b8b43c2450d586` (main, rad0016-rad0029); with rad0030
@@ -242,3 +246,4 @@ then 4 streams generating 1500 tokens with a 6144-token prompt beside them.
 - 2026-11-14T06:59:30.762472+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-14T23:11:20.472887+00:00 (updated-by): Updated: section:notes
 - 2026-11-15T02:25:50.279040+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T08:13:26.045006+00:00 (updated-by): Updated: section:notes
