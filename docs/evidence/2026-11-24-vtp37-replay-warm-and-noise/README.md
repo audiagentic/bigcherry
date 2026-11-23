@@ -39,3 +39,19 @@ Consequence: report cold and prefetch-warm side by side for every kernel replay 
 
 A two-cycle A/B at 6 streams cannot show a difference below about 0.85 ms; at 8 streams it can show about 0.26 ms. The A/B notes of this session read against these floors: kpar accumulate-once and the drafter
 two-M16 route are well above them; the logits change (predicted 0.2-0.3 ms) and the look-ahead removal are below the 6-stream floor and at or below the 8-stream floor.
+
+## 3. Read-bandwidth ceiling, and what the K-parallel tile reaches of it
+
+A plain streaming read (16-byte loads, no matrix math, bounded to a fixed byte count a launch, same 256 MiB device-to-device flush before each launch, launch included in the time), one launch over 64 MiB, the size of the large rows' weights:
+
+| card | read ceiling at 64 MiB | steady state at 1 GiB | nominal | K-parallel row, 13312 x 5120 M 16 cold (weights 68.7 MB) | the row as a share of the ceiling |
+|---|---|---|---|---|---|
+| RX 7900 XTX (gfx1100) | 750-777 GB/s (80% of 960) | 882 GB/s (92%) | 960 | 701 GB/s (libr3, shipped) | 91% |
+| R9700 (gfx1201) | 527-573 GB/s (87% of 640) | 629 GB/s (98%) | 640 | 549 GB/s (libr4d, shipped) | 99% |
+
+Varying the access pattern of the plain read changes nothing beyond the 3% spread: chunk-contiguous streams of 16 / 64 / 80 / 256 KiB per workgroup against a 4 KiB interleaved grid-stride, 128 / 256 / 512 / 1024 threads a workgroup, 1-8 sixteen-byte loads in flight a lane,
+192-768 workgroups (XTX 740-777 GB/s, R9700 527-573 GB/s). So address locality of the weight planes and bytes in flight a lane are not limits of the memory system at this size; they are not worth a kernel experiment.
+
+Reading. Against nominal bandwidth the XTX GEMM rows look 20 points behind the R9700's (73% against 86% raw), but the XTX's own plain-read ceiling at the same size is 80% of nominal against 87% for the R9700, and the rows reach 91% (XTX) and 99% (R9700) of those ceilings.
+The part that belongs to the kernel is about 9 points on the large XTX rows, bounded above by about 9% of the quantised-GEMM time (13.4 ms on rank 0, so about 1.2 ms a step if every row reached its ceiling, which the small launch-dominated rows cannot). The dequantise, fold and reduction instruction path, not the memory system, is where it would come from.
+The DRAM-rate views of section 1 (launch removed, prefetched bytes subtracted) are approximate: they assume the 12 MiB prefetched bytes stay resident through the call. The XTX figures are the libr3 code and the R9700's the libr4d code, kernel as shipped on each card.
