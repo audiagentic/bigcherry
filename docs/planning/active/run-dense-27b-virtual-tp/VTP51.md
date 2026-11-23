@@ -2,7 +2,7 @@
 id: VTP51
 order: 0
 plan: run-dense-27b-virtual-tp
-state: completed
+state: in_progress
 created-at: '2026-11-23T21:15:18.602198+00:00'
 breadth: ''
 skill: advanced
@@ -64,6 +64,10 @@ Medium. Risk: the second stream contends for the bandwidth the all-reduce stagin
 
 **2026-11-24 closed NO-GO.** Weight prefetch on against off, three ABBA cycles, 2020.8.5, qwen27b-tp3: off costs +0.08 ms (s.e. 0.29) at 6 streams and +0.31 ms (+1.0%, s.e. 0.11) at 8 streams (evidence: `docs/evidence/2026-11-24-vtp51-weight-prefetch-ab/README.md`). The whole mechanism is worth about 0.3 ms at 8 streams, so neither a second-stream placement nor a derived cap for the delta-net out-projection read (below the 1 ms threshold) is worth building.
 
+
+
+**2026-11-24 ACCEPT-WORK, reopened under the no-minimum-gain standard.** The four-sequence limit on the delta-net out-projection read is a hand-picked literal and a defect whatever it is worth; the whole mechanism measured +0.31 ms at 8 streams, so a derived rule can only help or be neutral. Replacement: derive the limit from the recurrent-state bytes per sequence and the pinned bytes against the device's cache size (managed engine patch; the prefetch is read-only, so output is unchanged by construction; the A/B is a regression check). Brief written (worktree gdnout-prefetch-derive). The earlier 'ceiling retracted / NO-GO' text above stands as the measurement; only the decision changed.
+
 ## Change Log
 
 - 2026-11-23T21:15:18.602198+00:00 (created-by): Created by agent
@@ -71,3 +75,5 @@ Medium. Risk: the second stream contends for the bandwidth the all-reduce stagin
 - 2026-11-23T22:51:59.751375+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:17:45.678952+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:17:50.756017+00:00 (state-transition): State: pending → completed
+- 2026-11-23T23:20:41.183102+00:00 (state-transition): State: completed → in_progress
+- 2026-11-23T23:21:11.045838+00:00 (updated-by): Updated: section:notes

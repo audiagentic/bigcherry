@@ -153,6 +153,10 @@ The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, inclu
 
 **2026-11-24 flashnext-4gpu collective.** The verify pass's 10.7 ms mailbox wait is paced by the RDNA2 tail helper's per-request floor (about 190 us a layer against about 105 us on the XTX helpers; 49 layers: about 9 ms against 5 ms), so about 6.8 ms of the wait is the tail-against-XTX floor difference plus transport. Any tail-side latency cut converts about one to one up to that figure, which makes the helper's launch chain the largest remaining flashnext lever; its bound comes from a launch-chain replay, not from the tape or the whole-run helper averages.
 
+
+
+**2026-11-24 ranked, not started (no-minimum-gain standard).** (1) Derive the decode-size piece count instead of the literal four: pieces from the per-hop fixed cost against the bytes per piece at the link rate, computed from the link table at plan time; the one-piece A/B was within noise (-0.27 +-0.21 ms at 6 streams, +0.08 +-0.18 at 8), so the derived rule ships if it shows no regression. (2) The three-rank fused all-reduce, residual add, norm and int8 quantiser (a row-sharded two-shot family; removes one bf16 rounding of the reduced sum, so it needs the reordering KLD gate; larger and riskier than (1)). (3) Row-sharded lossless gather of the quantised rows (graph redesign). Order: lowest risk first.
+
 ## Results (2026-11-13): the all-reduce
 
 Worktree `perf/vtp36-tp3-performance`. Builds (all `radiance:stock:linux-radiance`, rad0016-rad0030 plus the patches
@@ -479,3 +483,4 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 - 2026-11-23T22:49:19.010908+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T22:51:30.022120+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:11:30.985833+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:22:02.105504+00:00 (updated-by): Updated: section:notes

@@ -68,6 +68,10 @@ Reinstated 2026-11-24. Ranked against the census table (CENSUS-8.4) after the na
 
 Ceiling basis (2026-11-24): the 0.4-0.8 ms estimate rests on the isolated replay and the XTX-over-R9700 per-head ratio, with a tape share (1.33 ms a pass) only as a pointer. Not yet a serving bound: the serving effect of the native-accumulate decode attention (2020.8.6) comes from its own A/B and decides whether this item is worth a brief.
 
+
+
+**2026-11-24 ACCEPT-WORK.** A spill-free decode attention is a cleanup whatever its serving effect; the native-accumulate decode attention is released (2020.8.6), so the baseline exists. Gates: resource table without spills, byte identity, no regression in replay (cold and warm) and the 6/8-stream A/B.
+
 ## Change Log
 
 - 2026-11-23T20:42:14.800583+00:00 (created-by): Created by agent
@@ -80,3 +84,4 @@ Ceiling basis (2026-11-24): the 0.4-0.8 ms estimate rests on the isolated replay
 - 2026-11-23T21:14:27.767439+00:00 (state-transition): State: deprecated → pending
 - 2026-11-23T21:15:03.676137+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-23T22:51:35.249468+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:21:16.169320+00:00 (updated-by): Updated: section:notes

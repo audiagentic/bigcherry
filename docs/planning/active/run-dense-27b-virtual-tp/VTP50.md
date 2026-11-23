@@ -76,9 +76,14 @@ Large, but split into independently shippable families. Main risk: native fragme
 
 **2026-11-24 IQ6R exposure.** In the 2020.8.5 gfx1100 code objects the four-to-seven-bit IQR families differ: the 16-row decode tile (`iqr_m16`, 404 instantiations) has 2 spilling instances (8 B private) and serves decode, including 17-64 rows as 16-row slices; the wide tile (`iqr_m64`, 544 instantiations) spills in every instantiation (240-256 VGPRs, up to 3640 B private) and serves rows above 64, i.e. prefill. If an IQ6R container ships (trellis-coded 6/7-bit trunk), its prefill and time-to-first-token rows are the exposed ones and the wide tile's spill and shim exposure becomes a real lever then; until then it stays unranked for the IQ8R layouts (which do not use it on shipped paths). Carried in the ranking, not as done.
 
+
+
+**2026-11-24 accept/reject under the no-regression standard.** ACCEPT-WORK: accumulate-once families (drafter IQR tile in progress, attention, prefill GEMMs when their bit identity and replay pass); single-instruction half-wave swap in the compatibility header: bit-identical and cleaner, but the K-parallel replay showed +3..+7% on three M 32 cells (3072x5120, 5120x2304, 13312x5120) inside a noisy driver, so it is accepted only if a full-plugin cold and warm replay shows no regression beyond spread (re-run, not assumed). REJECT: K-parallel token and weight fragments loaded directly in the gfx11 layout (failed bit identity on its first sweep, 432 of 576 cases); wave-per-token-tile (slower); the waves-per-SIMD cap rule for the RDNA2 helper (26 of 54 cold cases slower, production never reaches that kernel). Iqr wide-tile spills (prefill) stay ranked, not done.
+
 ## Change Log
 
 - 2026-11-23T21:05:38.143523+00:00 (created-by): Created by agent
 - 2026-11-23T21:06:00.461438+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T21:45:17.328753+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:06:33.668979+00:00 (updated-by): Updated: section:notes
+- 2026-11-23T23:21:36.583650+00:00 (updated-by): Updated: section:notes
