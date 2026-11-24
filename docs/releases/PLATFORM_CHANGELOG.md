@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.69.7](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.6...bc-platform-1.69.7) (2026-11-24)
+
+
+### Fixes
+
+* **serving:** a stop during the measured writer ends cleanly; report classification at the deadline ([#1490](https://github.com/audiagentic/bigcherry/issues/1490)) ([e48e6d0](https://github.com/audiagentic/bigcherry/commit/e48e6d0ec38bee2704c2cc30f92a2da585739152))
+
 ## [1.69.6](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.5...bc-platform-1.69.6) (2026-11-23)
 
 
