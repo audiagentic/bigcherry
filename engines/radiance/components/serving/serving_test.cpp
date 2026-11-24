@@ -2271,19 +2271,19 @@ void helper_vram_owner_graph(Fixture& t) {
     owner.power_hook.restore = [] { return bc::serving::v2::Status{}; };
     const auto serve_and_stop = [&](const std::vector<std::string>& expected_roles) {
         auto stop = std::async(std::launch::async, [&] {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-            while (std::chrono::steady_clock::now() < deadline) {
+            // A slow but healthy measured writer must not be stopped by a test deadline.
+            // Wait for the owner's durable running event; CTest owns the overall test timeout.
+            for (;;) {
                 const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
                 const auto state = record.value("state", std::string{});
-                if (state == "failed") return false;
+                if (state == "failed" || state == "exit_unverified") return false;
                 if (state == "running") {
                     const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
                     return reply && reply->value("ok", false);
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                // This schedules a recheck; elapsed time never authorizes a stop.
+                std::this_thread::sleep_for(owner.timing.poll);
             }
-            (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
-            return false;
         });
         const int code = ss::serve(owner);
         const bool stopped = stop.get();
@@ -2492,12 +2492,49 @@ void helper_vram_owner_graph(Fixture& t) {
     owner.quality->output = t.root / "helper-quality-forced-short.json";
     write(authored, yaml);
     ::setenv("TEST_FAKE_FORCED_COMMITTED", "3", 1);
+    // One actual report followed by silence exercises the deadline without
+    // relying on the final SIGUSR1 response racing the last poll.
+    ::setenv("TEST_FAKE_REPORT_ONCE", "1", 1);
     const int short_forced = ss::serve(owner);
+    ::unsetenv("TEST_FAKE_REPORT_ONCE");
     ::unsetenv("TEST_FAKE_FORCED_COMMITTED");
     const auto short_record = ss::read_record(owner.run_dir).value_or(Json::object());
     if (short_forced == 0 || short_record.value("state", "") != "failed" || !ss::alive_recorded(short_record).empty() ||
         short_record.at("errors").dump().find("forced placement incomplete: committed 3 of 4") == std::string::npos)
         throw std::runtime_error("an incomplete forced schedule did not fail the score: " + short_record.dump());
+
+    // Force a fresh measured plan and request an operator stop at the writer's
+    // registered pre-exec gate. This is an event, not a timing guess: the owner
+    // must stop/reap the writer and measuring helpers before acknowledging stop.
+    in.stored_manifest.clear();
+    in.lab_experiment.reset();
+    in.work_root = t.root / "writer-stop-cache";
+    write(authored, yaml);
+    ss::Session stop_owner = owner;
+    stop_owner.run_dir = t.root / "writer-stop";
+    stop_owner.quality.reset();
+    bool saw_writer = false;
+    stop_owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
+        ss::Hooks observing = hooks;
+        observing.started = [&](ss::ChildKind kind, const std::string& role, pid_t pid, const fs::path& log) {
+            hooks.started.require("session.hooks.started", kind, role, pid, log);
+            if (role == "native v3 measured writer") {
+                saw_writer = true;
+                ::raise(SIGTERM); // installed owner handler: legal operator stop during the writer
+            }
+        };
+        return ss::plan_engine_only(in, dir, observing);
+    };
+    const int interrupted = ss::serve(stop_owner);
+    const auto interrupted_record = ss::read_record(stop_owner.run_dir).value_or(Json::object());
+    const auto interrupted_events = interrupted_record.value("events", Json::array()).dump();
+    if (!saw_writer || interrupted != 0 || interrupted_record.value("state", "") != "stopped" ||
+        !interrupted_record.value("errors", Json::array()).empty() ||
+        !ss::alive_recorded(interrupted_record).empty() ||
+        interrupted_events.find("stop_requested") == std::string::npos ||
+        interrupted_events.find("power_restored") == std::string::npos ||
+        interrupted_events.find("segment_retired") == std::string::npos)
+        throw std::runtime_error("native measured-writer stop failed to clean up: " + interrupted_record.dump());
 }
 
 int main(int argc, char** argv) {

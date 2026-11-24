@@ -1287,7 +1287,7 @@ class Owner {
                 record_["handoff_shm"] = name; // journal name even if the planner fails after helpers start
                 event("segment_selected");
             };
-            plan_ = require_callback(s_.plan.invoke("session.plan", s_.run_dir, hooks), "session.plan");
+            plan_ = s_.plan.require("session.plan", s_.run_dir, hooks);
             if (s_.power_hook.begin_manifest && !power_admitted_)
                 throw PlanFailed("planner returned without DURABLE authenticated pre-measure power admission");
             if (s_.power_hook.verify_serving)
@@ -1420,21 +1420,37 @@ class Owner {
         } catch (const Failed&) {
             if (code == 0)
                 code = 1; // an explicit failure never looks successful
+        } catch (const PlanStopped& e) {
+            if (stop_requested()) {
+                if (s_.quality) code = 1;
+                event("stop_requested", {{"by", stop_reason()}});
+            } else {
+                failures.push_back(e.what());
+                code = 97;
+            }
         } catch (const PlanFailed& e) {
             failures.push_back(e.what());
             code = 97;
         } catch (const callback::Failure& failure) {
             bool plan_refusal = false;
+            bool plan_stopped = false;
             if (failure.cause()) {
                 try {
                     std::rethrow_exception(failure.cause());
+                } catch (const PlanStopped&) {
+                    plan_stopped = true;
                 } catch (const PlanFailed&) {
                     plan_refusal = true;
                 } catch (...) {
                 }
             }
-            failures.push_back(failure.what());
-            code = plan_refusal ? 97 : 1;
+            if (plan_stopped && stop_requested()) {
+                if (s_.quality) code = 1;
+                event("stop_requested", {{"by", stop_reason()}});
+            } else {
+                failures.push_back("callback failed: " + std::string(failure.what()));
+                code = (plan_refusal || plan_stopped) ? 97 : 1;
+            }
         } catch (const std::exception& e) {
             failures.push_back(e.what());
             if (code == 0)
@@ -1843,6 +1859,13 @@ class Owner {
             seen = std::distance(std::sregex_iterator(text.begin(), text.end(), report_line), std::sregex_iterator());
         }
         std::array<uint64_t, 4> last{};
+        Json last_swaps = Json::array();
+        bool received = false;
+        const auto record_report = [&] {
+            event("forced_placement", {{"expected", expected}, {"attempted", last[0]}, {"committed", last[1]},
+                                       {"aborted", last[2]}, {"inflight", last[3]}, {"swaps", last_swaps},
+                                       {"log", helper->log.string()}});
+        };
         for (;;) {
             ::kill(helper->pid, SIGUSR1);
             const std::string text = read_file(helper->log);
@@ -1855,27 +1878,29 @@ class Owner {
                 m = *it;
                 for (size_t i = 0; i < 4; ++i) last[i] = std::stoull(m[i + 1].str());
                 seen = reports;
-                const bool done = last[0] == expected && last[1] == expected && last[2] == 0 && last[3] == 0;
-                Json swaps = Json::array();
+                received = true;
+                last_swaps = Json::array();
                 for (auto w = std::sregex_iterator(text.begin(), text.end(), swap_line); w != std::sregex_iterator(); ++w)
-                    swaps.push_back({{"transaction", std::stoull((*w)[1].str())},
-                                     {"a", {std::stoull((*w)[3].str()), std::stoull((*w)[4].str())}},
-                                     {"b", {std::stoull((*w)[5].str()), std::stoull((*w)[6].str())}},
-                                     {"a_to_helper", std::stoull((*w)[7].str())},
-                                     {"b_to_helper", std::stoull((*w)[8].str())}});
-                if (done || Clock::now() >= deadline) {
-                    event("forced_placement", {{"expected", expected}, {"attempted", last[0]}, {"committed", last[1]},
-                                               {"aborted", last[2]}, {"inflight", last[3]}, {"swaps", swaps},
-                                               {"log", helper->log.string()}});
-                    if (!done)
-                        throw PlanFailed("quality: forced placement incomplete: committed " + std::to_string(last[1]) +
-                                         " of " + std::to_string(expected) + " (attempted " + std::to_string(last[0]) +
-                                         ", aborted " + std::to_string(last[2]) + ", in flight " +
-                                         std::to_string(last[3]) + "); see " + helper->log.string());
+                    last_swaps.push_back({{"transaction", std::stoull((*w)[1].str())},
+                                          {"a", {std::stoull((*w)[3].str()), std::stoull((*w)[4].str())}},
+                                          {"b", {std::stoull((*w)[5].str()), std::stoull((*w)[6].str())}},
+                                          {"a_to_helper", std::stoull((*w)[7].str())},
+                                          {"b_to_helper", std::stoull((*w)[8].str())}});
+                if (last[0] == expected && last[1] == expected && last[2] == 0 && last[3] == 0) {
+                    record_report();
                     return;
                 }
-            } else if (Clock::now() >= deadline) {
-                throw PlanFailed("quality: helper0 did not report its forced placement; see " + helper->log.string());
+            }
+            if (Clock::now() >= deadline) {
+                if (!received)
+                    throw PlanFailed("quality: helper0 did not report its forced placement; see " + helper->log.string());
+                // A report received earlier remains valid even if the last poll precedes
+                // the helper's next SIGUSR1 response. Never relabel it as missing.
+                record_report();
+                throw PlanFailed("quality: forced placement incomplete: committed " + std::to_string(last[1]) +
+                                 " of " + std::to_string(expected) + " (attempted " + std::to_string(last[0]) +
+                                 ", aborted " + std::to_string(last[2]) + ", in flight " +
+                                 std::to_string(last[3]) + "); see " + helper->log.string());
             }
             if (!service(s_.timing.poll))
                 throw Stop{};
@@ -2197,7 +2222,7 @@ ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& 
         while (running(pid, &st)) {
             if (wait && !wait.require("session.hooks.wait", 100ms)) {
                 finish(stop_child(pid, SIGTERM, 10s));
-                throw PlanFailed(role == "manifest writer" ? "plan: stopped while bc-serve wrote a manifest"
+                throw PlanStopped(role == "manifest writer" ? "plan: stopped while bc-serve wrote a manifest"
                                                              : "plan: stopped while " + role + " was running");
             }
             if (!wait)
@@ -2706,7 +2731,7 @@ void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::p
                 break;
             if (hooks.wait) {
                 if (!require_callback(hooks.wait.invoke("session.hooks.wait", 200ms), "hooks.wait"))
-                    throw PlanFailed(h.role + ": measurement stopped during helper readiness");
+                    throw PlanStopped(h.role + ": measurement stopped during helper readiness");
             } else {
                 std::this_thread::sleep_for(200ms);
             }
@@ -2807,13 +2832,19 @@ void release_measuring_helpers(MeasuringHelpers& group, const vram::Baseline& ba
     group.stop();
     // A reaped helper may still have pending VRAM accounting in the driver.
     vram::Hardware io = in.helper_vram;
+    bool stopped = false;
     if (!io.wait && hooks.wait)
         io.wait = [&](std::chrono::milliseconds delay) {
-            return require_callback(hooks.wait.invoke("session.hooks.wait", delay), "helper VRAM release wait");
+            const bool continuing =
+                require_callback(hooks.wait.invoke("session.hooks.wait", delay), "helper VRAM release wait");
+            stopped |= !continuing;
+            return continuing;
         };
     try {
         vram::await_release(baseline, in.options.sys_root, hooks.helper_stop_timeout, io);
     } catch (const vram::Refused& error) {
+        if (stopped)
+            throw PlanStopped(error.what());
         throw PlanFailed(error.what());
     }
 }
@@ -2821,6 +2852,7 @@ void release_measuring_helpers(MeasuringHelpers& group, const vram::Baseline& ba
 int wait_measuring_engine(pid_t pid, const MeasuringHelpers& helpers, const Hooks& hooks) {
     std::optional<int> status;
     std::string refusal;
+    bool stopped = false;
     try {
         const auto check_helpers = [&] {
             for (size_t i = 0; i < helpers.pids.size(); ++i) {
@@ -2829,7 +2861,10 @@ int wait_measuring_engine(pid_t pid, const MeasuringHelpers& helpers, const Hook
             }
         };
         status = wait_for_finite_engine(pid, Clock::now() + 30min, check_helpers, [&] {
-            return require_callback(hooks.wait.invoke("session.hooks.wait", 200ms), "measuring wait");
+            const bool continuing =
+                require_callback(hooks.wait.invoke("session.hooks.wait", 200ms), "measuring wait");
+            stopped |= !continuing;
+            return continuing;
         });
         if (!status)
             refusal = "plan: the measuring start was stopped (a stop request or 30 min)";
@@ -2842,8 +2877,11 @@ int wait_measuring_engine(pid_t pid, const MeasuringHelpers& helpers, const Hook
         throw PlanFailed("plan: a process of the measuring engine's group survived SIGKILL");
     if (hooks.ended)
         require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
-    if (!refusal.empty())
+    if (!refusal.empty()) {
+        if (stopped)
+            throw PlanStopped(refusal);
         throw PlanFailed(refusal);
+    }
     // A helper can exit between the last live-engine poll and the engine reap.
     for (size_t i = 0; i < helpers.pids.size(); ++i)
         if (!running(helpers.pids[i]))

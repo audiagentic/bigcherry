@@ -517,13 +517,15 @@ void stop_during_plan() {
             if (!result.value())
                 break;
         }
-        throw ss::PlanFailed("plan: stopped while measuring");
+        throw ss::PlanStopped("plan: stopped while measuring");
     };
     const pid_t owner = c.owner();
     c.wait_state({"planning"});
     assert(ss::control(c.run, "status", 2s)->at("state") == "planning");
-    ss::control(c.run, "stop", 10s);
-    assert(exit_code(owner) == 97);
+    const auto reply = ss::control(c.run, "stop", 10s);
+    assert(reply && reply->value("ok", false));
+    assert(exit_code(owner) == 0 && c.record().at("state") == "stopped" &&
+           c.record().at("errors").empty());
     assert(c.record().at("processes").empty());
 }
 

@@ -354,6 +354,8 @@ int main(int argc, char** argv) {
         const auto ready_at = up + std::chrono::milliseconds(h.value("ready_delay_ms", 0));
         const auto die_after = std::chrono::milliseconds(h.value("die_after_ms", -1));
         bool ready = false;
+        const bool report_once = std::getenv("TEST_FAKE_REPORT_ONCE") != nullptr;
+        bool reported = false;
         while (!g_stop) {
             const auto elapsed = Clock::now() - up;
             if (die_after.count() >= 0 && elapsed >= die_after) return 7;
@@ -365,7 +367,8 @@ int main(int argc, char** argv) {
             }
             if (g_report) {
                 g_report = 0;
-                if (role == "helper0" && m.contains("forced_transactions")) {
+                if (role == "helper0" && m.contains("forced_transactions") && (!report_once || !reported)) {
+                    reported = true;
                     const unsigned long long attempted = m.at("forced_transactions").get<unsigned long long>();
                     const char* committed_override = std::getenv("TEST_FAKE_FORCED_COMMITTED");
                     const unsigned long long committed =
