@@ -404,7 +404,7 @@ def stored_serving_manifest_build_refs(root: Path) -> tuple[dict[str, list[str]]
                     doc = json.loads(saved.read_text(encoding="utf-8"))
                     if (not isinstance(doc, dict)
                             or doc.get("kind") != "ServingManifest"
-                            or doc.get("apiVersion") not in ("bigcherry/v1", "bigcherry/v2")):
+                            or doc.get("apiVersion") not in ("bigcherry/v1", "bigcherry/v2", "bigcherry/v3")):
                         raise ValueError("invalid stored serving manifest identity")
                     processes = doc.get("spec", {}).get("processes", {})
                     engine = processes.get("engine", {})
