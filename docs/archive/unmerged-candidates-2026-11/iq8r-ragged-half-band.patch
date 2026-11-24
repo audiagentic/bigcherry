@@ -1,0 +1,149 @@
+# IQ8R ragged prefill half band (rejected)
+# commit "libr3: specialize IQ8R ragged prefill half bands" (cecebde48); diff of its engine files, unchanged
+# applies to engines/radiance/components/libr3/native/ at the 2020.11.2 sources
+diff --git a/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw b/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw
+index b6e56d6f1..668f9965a 100644
+--- a/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw
++++ b/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw
+@@ -84,3 +84,60 @@
+                     raw[i][j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(__builtin_bit_cast(r3_i8, raw[i][j]), lane));
+         }
+ @@ end
++
++# Ragged IQ8R tail: vary only the activation-wave geometry, not the per-row arithmetic.
++
++@@ find 1
++template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock>
++@@ replace
++template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, uint32_t BandM = kPBM>
++@@ end
++
++@@ find 1
++    static_assert(kPBM * 2u == kPWaves * kWave, "two threads stage an activation row");
++@@ replace
++    constexpr uint32_t BandWA = BandM / (kPTA * 16u);
++    constexpr uint32_t BandWaves = kPWW * BandWA;
++    static_assert(BandM == kPBM || BandM == kPBM / 2u, "supported band heights");
++    static_assert(BandWA * kPTA * 16u == BandM, "whole activation wave rows");
++    static_assert(BandM * 2u == BandWaves * kWave, "two threads stage an activation row");
++    static_assert(BandM == kPBM || (I8 && RB == 0 && !ROWF && SB == 2u * kBlock),
++                  "half band is only qualified for IQ8R geometry");
++@@ end
++
++@@ find 1
++    __shared__ __attribute__((aligned(16))) uint8_t s_a[2][kPBM * P];
++    static_assert(sizeof(s_a) == kPrefillLds, "the staging LDS a begin hook may borrow");
++    // The activation scales of the current and the next 128-column block, one per block row.
++    __shared__ float s_as[2][kPBM];
++@@ replace
++    __shared__ __attribute__((aligned(16))) uint8_t s_a[2][BandM * P];
++    static_assert(sizeof(s_a) == 2u * BandM * (kPFK + 8u), "the staging LDS a begin hook may borrow");
++    // The activation scales of the current and the next 128-column block, one per block row.
++    __shared__ float s_as[2][BandM];
++@@ end
++
++@@ find 1
++    const uint32_t m0 = bm * kPBM, n0 = bn * kPBN;
++@@ replace
++    const uint32_t m0 = bm * BandM, n0 = bn * kPBN;
++@@ end
++
++@@ find 1
++    const float* const ssrc = Sa + (size_t)min(m0 + tid % kPBM, M - 1u) * sa_ld;
++@@ replace
++    const float* const ssrc = Sa + (size_t)min(m0 + tid % BandM, M - 1u) * sa_ld;
++@@ end
++
++@@ find 1
++    s_as[0][tid % kPBM] = ssrc[0];
++@@ replace
++    s_as[0][tid % BandM] = ssrc[0];
++@@ end
++
++@@ find 1
++        if (half == kTPB - 1u) s_as[(kb + 1u) % 2u][tid % kPBM] = scn;
++@@ replace
++        if (half == kTPB - 1u) s_as[(kb + 1u) % 2u][tid % BandM] = scn;
++@@ end
++
+diff --git a/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw b/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw
+index 6cf033194..40a33ac48 100644
+--- a/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw
++++ b/engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw
+@@ -162,3 +162,76 @@
+                 for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
+             }
+ @@ end
++
++# Ragged IQ8R tail: full prefix and half-height tail use the same ordered prefill body.
++
++@@ find 1
++template <bool I8, int RB = 0, uint32_t SB = kBlock>
++__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++void gemm_8a8_prefill_kernel(const uint8_t* __restrict__ A, const float* __restrict__ Sa,
++                             const uint8_t* __restrict__ W, const uint16_t* __restrict__ Sw,
++                             uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N,
++                             uint32_t a_ld, uint32_t sa_ld, uint32_t sw_ld) {
++    gemm_8a8_prefill_body<I8, RB, PrefillPlain, false, SB>(A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld,
++                                                          sw_ld, PrefillPlain{});
++}
++@@ replace
++template <bool I8, int RB = 0, uint32_t SB = kBlock>
++__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++void gemm_8a8_prefill_kernel(const uint8_t* __restrict__ A, const float* __restrict__ Sa,
++                             const uint8_t* __restrict__ W, const uint16_t* __restrict__ Sw,
++                             uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N,
++                             uint32_t a_ld, uint32_t sa_ld, uint32_t sw_ld) {
++    gemm_8a8_prefill_body<I8, RB, PrefillPlain, false, SB>(A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld,
++                                                          sw_ld, PrefillPlain{});
++}
++
++// Only the plain wide-group int8 row uses this wrapper. Full-height symbols stay unchanged.
++constexpr uint32_t kPrefillHalfM = kPBM / 2u;
++constexpr uint32_t kPrefillHalfWaves = kPWW * (kPWA / 2u);
++static_assert(kPWA % 2u == 0u && kPrefillHalfM * 2u == kPrefillHalfWaves * kWave,
++              "half band stages two threads per activation row");
++template <uint32_t SB>
++__global__ __launch_bounds__(kPrefillHalfWaves * kWave) R4D_WAVES(6)
++void gemm_iq8r_prefill_half_kernel(const uint8_t* __restrict__ A, const float* __restrict__ Sa,
++                                  const uint8_t* __restrict__ W, const uint16_t* __restrict__ Sw,
++                                  uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N,
++                                  uint32_t a_ld, uint32_t sa_ld, uint32_t sw_ld) {
++    gemm_8a8_prefill_body<true, 0, PrefillPlain, false, SB, kPrefillHalfM>(
++        A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, PrefillPlain{});
++}
++@@ end
++
++@@ find 1
++    const dim3 grid(((uint32_t)M + kPBM - 1) / kPBM, (uint32_t)N / kPBN, 1);
++@@ replace
++    // The tiled row is unchained. Both emits use its original stream, and neither
++    // adds a chain wait/done. The existing eligibility checks above apply to both views:
++    // same K/N and weight planes; N divisible by kPBN keeps the tail C aligned.
++    if constexpr (I8 && RB == 0 && SB == R4D_I8_GROUP_WIDE) {
++        const uint32_t rem = (uint32_t)M % kPBM;
++        const uint32_t prefix = (uint32_t)M - rem;
++        if (prefix && rem && rem <= kPrefillHalfM) {
++            const RadStream s = (RadStream)(uintptr_t)stream;
++            const dim3 prefix_grid(prefix / kPBM, (uint32_t)N / kPBN, 1);
++            const int rc = R4D_EMIT(s, (gemm_8a8_prefill_kernel<I8, RB, SB>), prefix_grid,
++                                   dim3(kPWaves * kWave), 0, (const uint8_t*)a, (const float*)ascale,
++                                   (const uint8_t*)wq, (const uint16_t*)ws, (uint16_t*)c, prefix,
++                                   (uint32_t)K, (uint32_t)N, (uint32_t)a_ld, (uint32_t)sa_ld,
++                                   (uint32_t)sw_ld);
++            if (rc != RAD_OK || hipGetLastError() != hipSuccess) return -6;
++            const dim3 tail_grid(1, (uint32_t)N / kPBN, 1);
++            const int tail_rc = R4D_EMIT(s, (gemm_iq8r_prefill_half_kernel<SB>), tail_grid,
++                                        dim3(kPrefillHalfWaves * kWave), 0,
++                                        (const uint8_t*)a + (size_t)prefix * a_ld,
++                                        (const float*)ascale + (size_t)prefix * sa_ld,
++                                        (const uint8_t*)wq, (const uint16_t*)ws,
++                                        (uint16_t*)c + (size_t)prefix * N, rem,
++                                        (uint32_t)K, (uint32_t)N, (uint32_t)a_ld,
++                                        (uint32_t)sa_ld, (uint32_t)sw_ld);
++            return tail_rc == RAD_OK && hipGetLastError() == hipSuccess ? 0 : -6;
++        }
++    }
++    const dim3 grid(((uint32_t)M + kPBM - 1) / kPBM, (uint32_t)N / kPBN, 1);
++@@ end
++
