@@ -37,7 +37,7 @@ constexpr uint64_t kMaxPax = 64ULL * 1024;
 constexpr size_t kBlock = 512;
 // The native profiles a release may carry: configs/NAME.yaml, one per named serving config, exactly the set the packer
 // approves (tools/bigcherry/release/runtime_assets.py NATIVE_RELEASE_PROFILES; a test keeps the two lists equal).
-constexpr std::array<std::string_view, 16> kNativeProfiles = {
+constexpr std::array<std::string_view, 18> kNativeProfiles = {
     "flashnext-2xtx-combine",
     "flashnext-2xtx-rdna2-head",
     "flashnext-2xtx-rdna2-tail-combine",
@@ -50,8 +50,10 @@ constexpr std::array<std::string_view, 16> kNativeProfiles = {
     "flashnext-tp2xtx",
     "qwen27b-2xtx",
     "qwen27b-tp3-capacity",
+    "qwen27b-tp3-iq6r",
     "qwen27b-tp3-long-bf16",
     "qwen27b-tp3-long-bf16i8",
+    "qwen27b-tp3-long-iq6r",
     "qwen27b-tp3-long",
     "qwen27b-tp3",
 };
