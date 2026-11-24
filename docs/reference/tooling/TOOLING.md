@@ -510,11 +510,14 @@ re-apply it. Do not edit managed blocks in `AGENTS.md` or `CLAUDE.md`
 directly.
 
 
-Historical Flash-Next v1.17.0 `flashnext-4gpu-parity.json` is **read-only
-and unreproducible**: its original manifest/heat bytes were never captured.
-The 2026-11-19 four-arm A/B evidence contains path-based parity summaries
-without the complete immutable v1 host/policy/feature provenance, so no
-MRC05 baseline or policy-confound verdict can be synthesized from it.
-Completion of MRC05 Step 6 requires a new qualified two-launch hardware
-reference and four newly recorded arms with provenance; do not claim the
-historical 2026-11-19 data satisfies that acceptance gate.
+The Flash-Next parity reference `docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json`
+is a portable `bigcherry results baseline` record over two independent runs of
+release 2020.11.2 (one launch each, so distinct run ids): cold prefill, decode at 1
+and 6 streams, 8 sessions and two long contexts, each embedded with its SHA-verified
+run record and provenance blobs. Its tolerances are the measured spread between the
+two launches, so a gate fires only past what the host itself varies; re-record it
+(two fresh runs, `flashnext-parity.sh baseline`) when the reference release changes.
+`flashnext-parity.sh compare --baseline` reads it. The earlier v1.17.0 and 2026-11-19
+summary files were not run-record baselines (their manifest and heat bytes were never
+captured), could not be read by `compare`, and were removed rather than kept behind a
+reader.
