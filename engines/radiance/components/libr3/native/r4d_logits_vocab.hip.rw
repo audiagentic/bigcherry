@@ -1,0 +1,77 @@
+# VTP57: the vocabulary head's integer sums stay in the gfx11 accumulator layout across a 128-K block's
+# high and low planes (the 128x scale is an integer shift, which commutes with the layout permutation)
+# and are converted to the gfx12 layout once, before the float fold. Integer sums are exact: the
+# logits are bit-identical to the shim form by construction.
+
+@@ find 1
+    f8v raw[NT], acc[NT];
+#pragma unroll
+    for (uint32_t j = 0; j < NT; ++j) { raw[j] = acc_zero(); acc[j] = acc_zero(); }
+@@ replace
+    f8v raw[NT], acc[NT];
+    r3_i8 raw11[NT];   /* the block's sums, gfx11 layout */
+#pragma unroll
+    for (uint32_t j = 0; j < NT; ++j) { raw[j] = acc_zero(); acc[j] = acc_zero(); }
+@@ end
+
+@@ find 1
+            Stage8 a8[2];
+            frag(w, tr, lane, a8);
+            /* hi: 128 times its sum, exactly, in the accumulator; then lo on top */
+@@ replace
+            Stage8 a8[2];
+            frag(w, tr, lane, a8);
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j) raw11[j] = r3_i8{0, 0, 0, 0, 0, 0, 0, 0};
+            /* hi: 128 times its sum, exactly, in the accumulator; then lo on top */
+@@ end
+
+@@ find 1
+                const i2v af = frag_of(a8[kk / 4u], kk % 4u);
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) raw[j] = mma8<true>(af, frag<FK>(s_bh, j * 16, ks, lane), raw[j]);
+@@ replace
+                const r3_i4 a11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag_of(a8[kk / 4u], kk % 4u)), lane);
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j)
+                    raw11[j] = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
+                        true, a11,
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag<FK>(s_bh, j * 16, ks, lane)), lane),
+                        raw11[j], false);
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j)
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    raw[j][t] = __int_as_float(__float_as_int(raw[j][t]) << 7);
+@@ replace
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j) raw11[j] = raw11[j] << 7;
+@@ end
+
+@@ find 1
+                const i2v af = frag_of(a8[kk / 4u], kk % 4u);
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) raw[j] = mma8<true>(af, frag<FK>(s_bl, j * 16, ks, lane), raw[j]);
+@@ replace
+                const r3_i4 a11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag_of(a8[kk / 4u], kk % 4u)), lane);
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j)
+                    raw11[j] = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
+                        true, a11,
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag<FK>(s_bl, j * 16, ks, lane)), lane),
+                        raw11[j], false);
+@@ end
+
+@@ find 1
+            /* the block's factor (shared by every row) times each token's activation scale */
+            const float f = alive ? fold_f32<F>(c, wrow0, kb) : 0.0f;
+@@ replace
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j)
+                raw[j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11[j], lane));
+            /* the block's factor (shared by every row) times each token's activation scale */
+            const float f = alive ? fold_f32<F>(c, wrow0, kb) : 0.0f;
+@@ end
