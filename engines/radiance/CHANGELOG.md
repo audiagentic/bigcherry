@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.11.4](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.3...bc-radiance-2020.11.4) (2026-11-24)
+
+
+### Performance
+
+* **libr3:** fused single-band IQR prefill tile (65-128 rows, no global plane) ([#1530](https://github.com/audiagentic/bigcherry/issues/1530)) ([c2cb8c1](https://github.com/audiagentic/bigcherry/commit/c2cb8c17b81b618a158c2ae325ba9c09171798c2))
+
 ## [2020.11.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.2...bc-radiance-2020.11.3) (2026-11-24)
 
 
