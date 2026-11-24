@@ -3,6 +3,10 @@
 **Status:** untested
 **Plan item:** VTP57
 
+No production recipe selects this patch.
+
+## Summary
+
 The vocabulary-weighted head tool builds its width classes for two ranks only (it splits the vocabulary in halves). The engine
 shards a class by rows over the rank count and needs every rank's slice of a class to be the same number of rows, a multiple
 of 256, holding exactly the ids of that rank's vocabulary share; a row whose id lies outside the rank's share is dropped by the
@@ -15,4 +19,11 @@ pads the shorter ranks' slices of a class to the longest slice rounded up to 256
 share) and whose weights repeat that rank's own rows, and writes `vrow` as the class width in the top four bits and the row
 rank-major (rank * rows per rank + position) below, as the staging gather reads it.
 
-Status: untested; the unit test applies the patch to a copy of the pinned tool and builds synthetic heads.
+## Outcome
+
+Untested. The unit test applies the patch to a copy of the pinned tool and builds synthetic heads: world 2 is byte-identical to the old tool, world 3 gives equal 256-multiple per-rank class slices with in-share ascending ids, pad ids outside every share, a rank-major `vrow`, and the head kernel's direct-store and staging-gather rules emulated. At three ranks with the real class file the padding adds 33.6% head rows.
+
+## Detail
+
+the unit test applies the patch to a copy of the pinned tool and builds synthetic heads.
+

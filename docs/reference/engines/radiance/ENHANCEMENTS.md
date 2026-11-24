@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (41)
+## Engine patches (42)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -54,6 +54,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0055_step_phase_trace](../../../../engines/radiance/patches/rad0055_step_phase_trace/SUMMARY.md) | `validated` | Off by default. The serving owner hands the engine a run-directory path only for a start given `--step-phase-trace`; the engine writes per-pass HIP-event timing per rank. Timing is perturbed when on, so throughput comes from an untraced run. |
 | [rad0060_ltx2_tp3_linear_declare](../../../../engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/SUMMARY.md) | `diagnostic` | Optional `C01Slice` in the real 2.2 / ABI44 LTX `Lin::declare`. Fused QKV/KV row shards record per-bank code, two-level IQ8R scales and BF16 bias spans. Output columns use native aligned `RAD_SHARD_COL` views. Biasless columns declare no bias; biased columns require `C01Slice::columns_deferred`, record `Lin::deferred_bias`, and declare **no partial-rank bias weight or table-add**. C04 reuses Radiance 2.2 exact all_reduce, then adds BF16 bias once per reduced output replica. The C05 Q/K RMS subset now runs under native GPU AQL; complete C06 self-attention and architecture integration remain gates. |
 | [rad0061_iq8r_f32_scale](../../../../engines/radiance/patches/rad0061_iq8r_f32_scale/SUMMARY.md) | `diagnostic` | Preserve the exact FP32 product of the U8 per-group and BF16 per-row IQ8R scales in the existing native `libr4d` group-256 relayout and GEMM readers; use BigCherry's existing native rewrite of that source for the XTX `libr3` plugin. The CPU `libref` reference is unchanged. |
+| [rad0063_vhead_world_ranks](../../../../engines/radiance/patches/rad0063_vhead_world_ranks/SUMMARY.md) | `untested` | The vocabulary-weighted head tool builds its width classes for two ranks only (it splits the vocabulary in halves). The engine shards a class by rows over the rank count and needs every rank's slice of a class to be the same number of rows, a multiple of 256, holding exactly the ids of that rank's vocabulary share; a row whose id lies outside the rank's share is dropped by the head kernel (it is never written, never read back). |
 
 ## Components (6)
 
