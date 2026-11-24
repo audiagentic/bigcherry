@@ -376,7 +376,7 @@ def measurement_record_build_refs(root: Path) -> tuple[dict[str, list[str]], lis
 
 
 def stored_serving_manifest_build_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
-    """Pin typed runtime paths in saved v1/v2 serving manifests.
+    """Pin typed runtime paths in saved v1, v2 and v3 serving manifests.
 
     bc-serve writes manifest-*.json directly under its chosen run directory,
     normally a named site directory one level beneath the work root. Replay
@@ -404,7 +404,7 @@ def stored_serving_manifest_build_refs(root: Path) -> tuple[dict[str, list[str]]
                     doc = json.loads(saved.read_text(encoding="utf-8"))
                     if (not isinstance(doc, dict)
                             or doc.get("kind") != "ServingManifest"
-                            or doc.get("apiVersion") not in ("bigcherry/v1", "bigcherry/v2")):
+                            or doc.get("apiVersion") not in ("bigcherry/v1", "bigcherry/v2", "bigcherry/v3")):
                         raise ValueError("invalid stored serving manifest identity")
                     processes = doc.get("spec", {}).get("processes", {})
                     engine = processes.get("engine", {})

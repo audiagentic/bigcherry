@@ -970,6 +970,19 @@ class CacheInventory(unittest.TestCase):
         saved.write_text("{invalid")
         self.assertIn("stored manifest", " ".join(self.decisions()[other.name]["reasons"]))
 
+    def test_stored_v3_serving_manifest_runtime_build_is_pinned(self):
+        pinned = self.build("a" * 32, age=40)
+        other = self.build("b" * 32, age=40)
+        site = self.root / "flashnext"
+        site.mkdir()
+        (site / "manifest-native-123.json").write_text(json.dumps({
+            "apiVersion": "bigcherry/v3", "kind": "ServingManifest",
+            "spec": {"processes": {"engine": {"runtime": {
+                "radiance_home": str(pinned / "radiance_home")}}}},
+        }))
+        self.assertIn("stored serving manifest", " ".join(self.decisions()[pinned.name]["reasons"]))
+        self.assertEqual(self.decisions()[other.name]["action"], "candidate")
+
     def test_symlinked_record_store_blocks_gc(self):
         old = self.build("a" * 32, age=35)
         elsewhere = self.root / "external"
