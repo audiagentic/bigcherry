@@ -43,6 +43,7 @@ patches = [
   "rad0053_v4_kv_layouts",
   "rad0054_attn_prefill_fp8",
   "rad0055_step_phase_trace",
+  "rad0064_owned_weighted_head",
 ]
 
 # Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core.

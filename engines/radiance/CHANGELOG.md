@@ -1,5 +1,24 @@
 # Changelog
 
+## [2020.11.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.10.0...bc-radiance-2020.11.0) (2026-11-24)
+
+
+### New and changed
+
+* **radiance:** selectable IQR-V4 (6-bit) model configs for three cards and the long layout ([#1509](https://github.com/audiagentic/bigcherry/issues/1509)) ([771d897](https://github.com/audiagentic/bigcherry/commit/771d897484b94f15e4ccc1fd50c1ae44d7e4f2cc))
+
+## [2020.10.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.9.2...bc-radiance-2020.10.0) (2026-11-24)
+
+
+### New and changed
+
+* **patch:** promote rad0064_owned_weighted_head ([#1508](https://github.com/audiagentic/bigcherry/issues/1508)) ([abedaf2](https://github.com/audiagentic/bigcherry/commit/abedaf26550257ad04b7b01c38490d0421421850))
+
+
+### Performance
+
+* **libr3:** load the IQR 16-row tile's token and weight fragments natively (IQR -1.2..-4.0% ms/step) ([#1507](https://github.com/audiagentic/bigcherry/issues/1507)) ([7692621](https://github.com/audiagentic/bigcherry/commit/76926216cfc2a098324685a89b635bbf488ace8f))
+
 ## [2020.9.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.9.1...bc-radiance-2020.9.2) (2026-11-24)
 
 

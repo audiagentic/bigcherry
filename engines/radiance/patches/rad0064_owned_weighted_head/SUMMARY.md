@@ -1,6 +1,6 @@
 # rad0064 — uneven tensor-parallel ownership with a vocabulary-weighted head (VTP57)
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP57
 
 ## Summary

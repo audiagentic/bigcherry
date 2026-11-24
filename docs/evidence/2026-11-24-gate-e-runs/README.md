@@ -1,4 +1,4 @@
-# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.9.1)
+# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.9.2)
 
 Gate E takes a published release, downloads its archive, checksum and receipt, installs it into an isolated root with the ROCm SDK (7.2.4),
 verifies the root, then starts, canaries and stops two production layouts under a short GPU lease: `flashnext-4gpu` and `qwen27b-tp3`.
@@ -17,6 +17,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.8.7 | a80f9f8f | 196 s | 24 s | serving-test race fix (no kernel change) |
 | 2020.9.0 | a80f9f8f | 210 s | 24 s | head-builder package, not selected by any recipe (payload identical to 2020.8.7) |
 | 2020.9.1 | 5079a795 | 216 s | 29 s | vocabulary-head tile native sums (IQR 6 streams -34%) and the uneven-ownership weighted-head package (untested, not selected by any recipe) |
+| 2020.9.2 | 11146cb8 | 287 s | 28 s | IQR 16-row tile accumulate-once (native integer sums; drafter and 6/7-bit trellis forms); the flashnext start was 33% above the usual range while other builds and A/B runs shared the host |
 
 ## How to read this, and when Gate E need not be run again
 

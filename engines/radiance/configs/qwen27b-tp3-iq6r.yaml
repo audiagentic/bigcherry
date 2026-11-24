@@ -1,0 +1,49 @@
+cards: [0, 1, 2]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr4d,libref
+models:
+  qwen27b:
+    # IQR-V4 (6-bit computed trellis, head cut for three ranks): this file is qwen27b-tp3's layout with our IQR-V4 container; the original comment follows.
+    # Upstream's IQ8R container: int8 weights, 256-wide scale groups, the DFlash drafter inside. Against a bf16-weights
+    # reference (rad-kld-corpus-4, 8240 positions, fp8 KV) the 6,6,4 split below has KLD mean 0.00128, top-1 97.27%, perplexity
+    # x1.0005, better than the retired w8a8 bar (0.00139, 96.77%) (RUM06 slice 27b, 2026-11-21).
+    model: radiance/bigcherry/qwen3.8-27b-iq6r-v4-w3/qwen3.8-27b-iq6r-v4-df2-w3.rad
+    tp: 3
+    tp-wire: exact
+    max-model-len: 8192
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    # A dense model has no n-gram table to keep in RAM.
+    ngram-placement: disk
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    # The ranks exchange through host memory: this host has no peer-to-peer path.
+    p2p: "off"
+    # The pipelined prefill on an int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial. This is
+    # the setting the IQ8R split measurements below ran with.
+    pipelined-prefill: "on"
+    # The narrowest pipelined step (VTP31 experiment 12).
+    pipelined-prefill-min-rows: 256
+    # IQ8R needs every V shard width a multiple of 256, which refuses the 5,5,6 and 7,7,2 splits. Two valid splits compared on
+    # one build, two A-B-A-B rounds: 6,6,4 (this one) against 4,4,8: decode step 22.4 ms against 27.5 ms at one stream (-18%),
+    # 71.7 against 65.4 tok/s; 8 streams 91.2 against 88.1 tok/s; first token for a 4.2k prompt 1.93 s against 1.86 s; 2.8
+    # against 2.3 full-length 262k sessions resident in the capacity config. 4,4,8 has KLD mean 0.00123, top-1 97.51%.
+    tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+    # The all-reduce grid and two-shot form (rad0022, rad0032, rad0033): time to first token -13 / -24 / -22% at 512 / 2048 /
+    # 6144 tokens, 4/6/8 streams +7.6 / +10.9 / +13.9%, bit-identical output (VTP31, VTP36).
+    tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
+x-bigcherry:
+  schema: 1
+  variant-of: "qwen27b-tp3"
+  differs: ["models.qwen27b.model"]
+  description: "Qwen3.8-27B IQR-V4 (6-bit trellis, 22.8 GiB) over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
+  ranks:
+    - {arch: "gfx1100", count: 2}
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}

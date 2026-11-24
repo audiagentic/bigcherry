@@ -113,8 +113,86 @@ constexpr uint32_t kIqrTokenTile = 16u;
     g->rotated = dtype && std::strcmp(dtype, "i8a8h") == 0;
 @@ end
 
-# Keep the int32 sum in native layout across each scale group.
-# Row-f32 seeds all lanes with the same integer constant.
+# Native fragments and accumulate-once for the 16-row tile on gfx1100. Where the form/NT/chain record
+# qualifies (kNative) the token rows load as their 16 K bytes in natural order (the same address in lane
+# and lane + 16), the weight rows read back from the wave's LDS tile in the same order, and the int32
+# sum of a 128-K scale group stays in the gfx11 layout until the float fold: no operand exchange at all.
+# The other specialisations keep the compatibility form (eight bytes a step, as before).
+@@ find 1
+    static_assert(!GATED || NT == 1u, "the gated form serves one token tile");
+@@ replace
+    static_assert(!GATED || NT == 1u, "the gated form serves one token tile");
+    // A few trellis-MAD forms lose a wave or spill at larger live token tiles: select only the
+    // form/NT/chain specialisations with a qualified resource record.
+    constexpr bool kNative =
+        F::KIND != kTrellisMad ||
+        (NT <= 2u && !(F::SC == kRowF32 && F::B == 3u && NT == 1u && CH::on) &&
+         !(F::B == 6u && GATED && !CH::on));
+@@ end
+
+@@ find 1
+        xrow[j] = X + (size_t)tok[j] * x_ld + frag_k0(lane);
+@@ replace
+        xrow[j] = X + (size_t)tok[j] * x_ld;
+@@ end
+
+@@ find 1
+    auto bload = [&](uint32_t j, uint32_t kb, i2v (&b)[8], bool live) {
+#pragma unroll
+        for (uint32_t ks = 0; ks < 8; ++ks) {
+            const uint2 v = live ? *(const uint2*)(xrow[j] + kb * kBlock + ks * kK)
+                                 : make_uint2(0u, 0u);
+            b[ks][0] = (int)v.x;
+            b[ks][1] = (int)v.y;
+        }
+    };
+@@ replace
+    auto bload = [&](uint32_t j, uint32_t kb, r3_i4 (&b)[8], bool live) {
+#pragma unroll
+        for (uint32_t ks = 0; ks < 8; ++ks) {
+            if constexpr (kNative) {
+                const uint4 v = live ? *(const uint4*)(xrow[j] + kb * kBlock + ks * kK)
+                                     : make_uint4(0u, 0u, 0u, 0u);
+                b[ks] = r3_i4{(int)v.x, (int)v.y, (int)v.z, (int)v.w};
+            } else {
+                // the compatibility form: this half-wave's eight bytes, as before
+                const uint2 v = live ? *(const uint2*)(xrow[j] + kb * kBlock + ks * kK + frag_k0(lane))
+                                     : make_uint2(0u, 0u);
+                b[ks] = r3_i4{(int)v.x, (int)v.y, 0, 0};
+            }
+        }
+    };
+@@ end
+
+@@ find 1
+    i2v bc[8], bn[8], bq[2][8];
+@@ replace
+    r3_i4 bc[8], bn[8], bq[2][8];
+@@ end
+
+@@ find 1
+        Stage8 a8[2];
+        frag(w, tr, lane, a8);
+        float wsr[8];   /* the lane's eight rows' (row, block) scales, where the form has them */
+@@ replace
+        Stage8 a8[2];
+        frag(w, tr, lane, a8);
+        r3_i4 a11[8];
+        if constexpr (kNative) {
+            // the unit's tile rows in natural K order: this lane's row, 16 bytes a step
+            const uint8_t* arow = tr + (lane & 15u) * kTrPitch;
+#pragma unroll
+            for (uint32_t ks = 0; ks < 8; ++ks) {
+                const uint2 g0 = *(const uint2*)(arow + ks * 16u), g1 = *(const uint2*)(arow + ks * 16u + 8u);
+                a11[ks] = r3_i4{(int)g0.x, (int)g0.y, (int)g1.x, (int)g1.y};
+            }
+            __builtin_amdgcn_fence(__ATOMIC_RELEASE, "wavefront", "local");
+            __builtin_amdgcn_wave_barrier();
+            __builtin_amdgcn_fence(__ATOMIC_ACQUIRE, "wavefront", "local");
+        }
+        float wsr[8];   /* the lane's eight rows' (row, block) scales, where the form has them */
+@@ end
+
 @@ find 1
             f8v raw = rb_first<BIAS ? 32 : 0>();
 #pragma unroll
@@ -122,30 +200,67 @@ constexpr uint32_t kIqrTokenTile = 16u;
                 raw = mma8<true>(frag_of(a8[ks / 4u], ks % 4u), bq[j & 1u][ks], raw);
             const float as = XS[(size_t)tok[j] * xs_ld + kb];
 @@ replace
-            // A few trellis-MAD forms lose a wave or spill at larger live token tiles.
-            // Select only the form/NT/chain specializations with a qualified resource record.
-            constexpr bool kNativeAccOnce =
-                F::KIND != kTrellisMad ||
-                (NT <= 2u && !(F::SC == kRowF32 && F::B == 3u && NT == 1u && CH::on) &&
-                 !(F::B == 6u && GATED && !CH::on));
             f8v raw;
-            if constexpr (kNativeAccOnce) {
+            if constexpr (kNative) {
                 r3_i8 raw11 = __builtin_bit_cast(r3_i8, rb_first<BIAS ? 32 : 0>());
 #pragma unroll
                 for (uint32_t ks = 0; ks < kBlock / kK; ++ks)
-                    raw11 = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
-                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag_of(a8[ks / 4u], ks % 4u)), lane),
-                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, bq[j & 1u][ks]), lane), raw11, false);
+                    raw11 = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(true, a11[ks], true, bq[j & 1u][ks], raw11, false);
                 raw = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11, lane));
             } else {
                 raw = rb_first<BIAS ? 32 : 0>();
 #pragma unroll
-                for (uint32_t ks = 0; ks < kBlock / kK; ++ks)
-                    raw = mma8<true>(frag_of(a8[ks / 4u], ks % 4u), bq[j & 1u][ks], raw);
+                for (uint32_t ks = 0; ks < kBlock / kK; ++ks) {
+                    // the gfx12 half-fragment of the lane's half-wave from the natural 16 bytes
+                    const r3_i4 nb = bq[j & 1u][ks];
+                    i2v bh;
+                    bh[0] = nb.x;
+                    bh[1] = nb.y;
+                    raw = mma8<true>(frag_of(a8[ks / 4u], ks % 4u), bh, raw);
+                }
             }
             const float as = XS[(size_t)tok[j] * xs_ld + kb];
 @@ end
 
+# The native token fragments are 16 bytes a step, so the next unit's ring would double: the native form
+# loads a unit's fragments as it starts it (other warps hide the latency), the compatibility form keeps its ring.
+@@ find 1
+    bload(0u, wave, bc, wave < c.nkb);
+@@ replace
+    if constexpr (!kNative) bload(0u, wave, bc, wave < c.nkb);
+@@ end
+
+@@ find 1
+            nxt = D::fetch(c, rt, kb + KW, lane, true);
+            bload(0u, kb + KW, bn, true);
+@@ replace
+            nxt = D::fetch(c, rt, kb + KW, lane, true);
+            if constexpr (!kNative) bload(0u, kb + KW, bn, true);
+@@ end
+
+@@ find 1
+#pragma unroll
+        for (uint32_t ks = 0; ks < 8; ++ks) bq[0][ks] = bc[ks];
+@@ replace
+        if constexpr (kNative) {
+            bload(0u, kb, bq[0], true);
+        } else {
+#pragma unroll
+            for (uint32_t ks = 0; ks < 8; ++ks) bq[0][ks] = bc[ks];
+        }
+@@ end
+
+@@ find 1
+        cur = nxt;
+#pragma unroll
+        for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
+@@ replace
+        cur = nxt;
+        if constexpr (!kNative) {
+#pragma unroll
+            for (uint32_t ks = 0; ks < 8; ++ks) bc[ks] = bn[ks];
+        }
+@@ end
 
 # Wide IQR tile: keep the integer sums in gfx11's native WMMA accumulator layout
 # for all eight K fragments in one 128-K scale block. Convert once only when
