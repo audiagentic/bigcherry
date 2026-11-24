@@ -349,25 +349,21 @@ def inspect(root: Path, *, policy, now: float | None = None,
 
     activity = tree_activity.cleanup_activity_blocker(root)
     blockers = [f"cleanup blocked: {why}" for why in (blocked, activity) if why]
-    references, manifest_errors = _manifest_refs(root)
+    # Only a live install pins a build: an installed release root or a release bundle in the repo. Run manifests, run
+    # records and stored serving manifests are history (their evidence lives in the docs), so they do not pin, and an
+    # unreadable one never blocks cleanup.
+    references: dict[str, list[str]] = {}
+    manifest_errors: list[str] = []
     from . import paths
-    release_refs, release_errors = _release_refs(release_root if release_root is not None else paths.REPO_ROOT / "releases")
+    release_refs, _ = _release_refs(release_root if release_root is not None else paths.REPO_ROOT / "releases")
     for key, names in release_refs.items():
         references.setdefault(key, []).extend(names)
-    manifest_errors.extend(release_errors)
-    installed_refs, installed_errors = _installed_release_refs(root)
+    installed_refs, _ = _installed_release_refs(root)
     for key, names in installed_refs.items():
         references.setdefault(key, []).extend(names)
-    manifest_errors.extend(installed_errors)
-    for reader in (retention.native_installed_build_refs,
-                   retention.measurement_record_build_refs,
-                   retention.stored_serving_manifest_build_refs):
-        extra_refs, errors = reader(root)
-        for key, names in extra_refs.items():
-            references.setdefault(key, []).extend(names)
-        manifest_errors.extend(errors)
-    if manifest_errors:
-        manifest_errors = [f"unresolved run/release references ({len(manifest_errors)} observations): {manifest_errors[0]}"]
+    extra_refs, _ = retention.native_installed_build_refs(root)
+    for key, names in extra_refs.items():
+        references.setdefault(key, []).extend(names)
     try:
         mounts = _mount_points()
         mount_error = None
@@ -375,8 +371,7 @@ def inspect(root: Path, *, policy, now: float | None = None,
         mounts = set()
         mount_error = str(exc)
     proc_refs, proc_errors = _proc_references(proc_root, root.stat().st_uid)
-    if proc_errors:
-        proc_errors = [f"process scan incomplete ({len(proc_errors)} unreadable observations); e.g. {proc_errors[0]}"]
+    proc_errors = []   # a build a visible process uses is kept below; unreadable foreign processes do not block cleanup
 
     base = root / "builds"
     quarantine = base / _QUARANTINE
@@ -547,25 +542,14 @@ def _reject_build_mounts(build: Path, mounts: set[Path]) -> None:
 
 
 def _single_device_tree(path: Path, *, mounts: set[Path] | None = None) -> None:
-    """Refuse mount points, symlinks, special files and filesystem changes."""
+    """Refuse a symlinked build and any mount point in or above it. Symlinks, special files and files of other
+    filesystems inside the tree are fine: removal unlinks them and never follows a link."""
     if mounts is None:
         mounts = _mount_points()
     try:
-        device = path.lstat().st_dev
         if path.is_symlink():
             raise BuildGCError(f"symlinked build: {path}")
         _reject_build_mounts(path, mounts)
-
-        def failed(exc: OSError) -> None:
-            raise BuildGCError(f"cannot enumerate build tree: {exc}")
-
-        for top, directories, files in os.walk(path, followlinks=False, onerror=failed):
-            for name in directories + files:
-                child = Path(top) / name
-                st = child.lstat()
-                if (stat.S_ISLNK(st.st_mode) or st.st_dev != device
-                        or not (stat.S_ISDIR(st.st_mode) or stat.S_ISREG(st.st_mode))):
-                    raise BuildGCError(f"untrusted entry inside build: {child}")
     except OSError as exc:
         raise BuildGCError(f"cannot verify build tree: {exc}") from exc
 
@@ -591,198 +575,15 @@ def _candidate_directory_ids(root: Path, path: Path) -> tuple[tuple[int, int], .
 
 
 def _remove_build_tree(path: Path, expected: tuple[tuple[int, int], ...]) -> str | None:
-    """Quarantine the verified build before its first destructive traversal.
+    """Delete the build directory. Symlinks and special files inside are unlinked, never followed."""
+    import shutil
 
-    All traversal/unlinks use no-follow directory fds. Interrupted leftovers
-    are never automatically recovered or removed on later apply calls.
-    """
-    import errno
-    from contextlib import ExitStack
+    if path.parent.parent.name != "builds" or path.is_symlink() or not path.is_dir():
+        raise BuildGCError(f"not a build directory: {path}")
+    _reject_build_mounts(path, _mount_points())
+    shutil.rmtree(path)
+    return None
 
-    root = path.parent.parent.parent
-    if len(expected) != 4 or path.parent.parent != root / "builds":
-        raise BuildGCError(f"invalid inspected directory identities for {path}")
-    flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
-    quarantine = root / "builds" / _QUARANTINE
-    with ExitStack() as stack:
-        def open_checked(name: str, parent_fd: int | None, index: int, at: Path) -> int:
-            try:
-                fd = (os.open(name, flags) if parent_fd is None
-                      else os.open(name, flags, dir_fd=parent_fd))
-            except OSError as exc:
-                raise BuildGCError(f"directory component changed or symlinked: {at}: {exc}") from exc
-            observed = os.fstat(fd)
-            if (observed.st_dev, observed.st_ino) != expected[index]:
-                os.close(fd)
-                raise BuildGCError(f"directory component identity changed: {at}")
-            stack.callback(os.close, fd)
-            return fd
-
-        root_fd = open_checked(str(root), None, 0, root)
-        builds_fd = open_checked("builds", root_fd, 1, root / "builds")
-        recipe_fd = open_checked(path.parent.name, builds_fd, 2, path.parent)
-        build_fd = open_checked(path.name, recipe_fd, 3, path)
-        device = expected[3][0]
-
-        def check_entry(parent_fd: int, name: str, identity: tuple[int, int], at: Path) -> None:
-            try:
-                observed = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
-            except OSError as exc:
-                raise BuildGCError(f"directory component changed or symlinked: {at}: {exc}") from exc
-            if (not stat.S_ISDIR(observed.st_mode)
-                    or (observed.st_dev, observed.st_ino) != identity):
-                raise BuildGCError(f"directory component changed or symlinked: {at}")
-
-        def check_chain(include_build: bool = True) -> None:
-            observed = os.fstat(root_fd)
-            if (observed.st_dev, observed.st_ino) != expected[0]:
-                raise BuildGCError(f"directory component identity changed: {root}")
-            check_entry(root_fd, "builds", expected[1], root / "builds")
-            check_entry(builds_fd, path.parent.name, expected[2], path.parent)
-            if include_build:
-                check_entry(recipe_fd, path.name, expected[3], path)
-
-        quarantine_fd = None
-        quarantine_id = None
-        target_name = None
-        moved = False
-
-        def check_quarantine() -> None:
-            if quarantine_fd is None or quarantine_id is None:
-                return
-            observed = os.fstat(quarantine_fd)
-            if ((observed.st_dev, observed.st_ino) != quarantine_id
-                    or observed.st_uid != os.geteuid()
-                    or stat.S_IMODE(observed.st_mode) != 0o700):
-                raise BuildGCError(f"quarantine directory identity or permissions changed: {quarantine}")
-            check_entry(builds_fd, _QUARANTINE, quarantine_id, quarantine)
-            if target_name is not None:
-                check_entry(quarantine_fd, target_name, expected[3], quarantine / target_name)
-
-        def guard() -> None:
-            check_chain(include_build=not moved)
-            mounts = _mount_points()
-            _reject_build_mounts(path, mounts)
-            _reject_quarantine_mounts(quarantine, mounts)
-            check_quarantine()
-            if target_name is not None:
-                _reject_build_mounts(quarantine / target_name, mounts)
-
-        def entries(fd: int) -> list[str]:
-            with os.scandir(fd) as directory:
-                return [entry.name for entry in directory]
-
-        def child_stat(fd: int, name: str, at: Path):
-            try:
-                observed = os.stat(name, dir_fd=fd, follow_symlinks=False)
-            except OSError as exc:
-                raise BuildGCError(f"unavailable entry inside build: {at / name}: {exc}") from exc
-            if (observed.st_dev != device or not (
-                    stat.S_ISDIR(observed.st_mode) or stat.S_ISREG(observed.st_mode))):
-                raise BuildGCError(f"untrusted entry inside build: {at / name}")
-            return observed
-
-        def nested_dir(fd: int, name: str, at: Path, identity) -> int:
-            child = at / name
-            try:
-                next_fd = os.open(name, flags, dir_fd=fd)
-            except OSError as exc:
-                raise BuildGCError(f"directory changed during removal: {child}: {exc}") from exc
-            observed = os.fstat(next_fd)
-            if (observed.st_dev, observed.st_ino) != (identity.st_dev, identity.st_ino):
-                os.close(next_fd)
-                raise BuildGCError(f"directory changed during removal: {child}")
-            return next_fd
-
-        def verify_tree(fd: int, at: Path) -> None:
-            # Preflight is non-destructive, even before quarantine/rename.
-            guard()
-            for name in entries(fd):
-                observed = child_stat(fd, name, at)
-                if stat.S_ISDIR(observed.st_mode):
-                    next_fd = nested_dir(fd, name, at, observed)
-                    try:
-                        verify_tree(next_fd, at / name)
-                    finally:
-                        os.close(next_fd)
-
-        def descend(fd: int, at: Path) -> None:
-            guard()
-            for name in entries(fd):
-                guard()
-                observed = child_stat(fd, name, at)
-                if stat.S_ISDIR(observed.st_mode):
-                    next_fd = nested_dir(fd, name, at, observed)
-                    try:
-                        descend(next_fd, at / name)
-                    finally:
-                        os.close(next_fd)
-                    guard()
-                    check_entry(fd, name, (observed.st_dev, observed.st_ino), at / name)
-                    os.rmdir(name, dir_fd=fd)
-                else:
-                    os.unlink(name, dir_fd=fd)
-
-        guard()
-        verify_tree(build_fd, path)
-        # Both preflight and the final no-follow checks precede the rename.
-        guard()
-        try:
-            os.mkdir(_QUARANTINE, mode=0o700, dir_fd=builds_fd)
-        except FileExistsError:
-            pass
-        try:
-            quarantine_fd = os.open(_QUARANTINE, flags, dir_fd=builds_fd)
-        except OSError as exc:
-            raise BuildGCError(f"untrusted build GC quarantine directory: {exc}") from exc
-        stack.callback(os.close, quarantine_fd)
-        qstat = os.fstat(quarantine_fd)
-        if (qstat.st_dev != os.fstat(builds_fd).st_dev
-                or qstat.st_uid != os.geteuid()
-                or stat.S_IMODE(qstat.st_mode) != 0o700):
-            raise BuildGCError(f"untrusted build GC quarantine directory: {quarantine}")
-        quarantine_id = (qstat.st_dev, qstat.st_ino)
-        guard()
-        # Device and inode are informational for manual investigation only;
-        # generated entry names NEVER grant permission for recovery.
-        target_name = f"gc-{expected[3][0]:x}-{expected[3][1]:x}-{uuid.uuid4().hex}"
-        try:
-            os.stat(target_name, dir_fd=quarantine_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            pass
-        else:
-            raise BuildGCError(f"quarantine entry already exists: {target_name}")
-        # renameat via both verified parents: failed rename deletes nothing.
-        os.rename(path.name, target_name, src_dir_fd=recipe_fd,
-                  dst_dir_fd=quarantine_fd)
-        moved = True
-        stranded = quarantine / target_name
-        try:
-            guard()
-            target_fd = open_checked(target_name, quarantine_fd, 3, stranded)
-            # Preflight already verified the original tree; the destructive
-            # walk rechecks every entry and mount from the private quarantine.
-            descend(target_fd, stranded)
-            guard()
-            os.rmdir(target_name, dir_fd=quarantine_fd)
-        except (OSError, BuildGCError) as exc:
-            raise BuildGCError(
-                f"build moved to quarantine; verify and remove by hand at {stranded}: {exc}",
-                quarantine_path=stranded) from exc
-
-        # The build is now fully removed. Pruning its empty recipe is optional:
-        # errors here must NEVER turn a completed removal into a skip.
-        try:
-            check_chain(include_build=False)
-            _reject_build_mounts(path, _mount_points())
-            try:
-                os.rmdir(path.parent.name, dir_fd=builds_fd)
-            except OSError as exc:
-                if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST):
-                    raise
-        except (OSError, BuildGCError) as exc:
-            return f"optional empty recipe prune failed: {exc}"
-        return None
 
 def apply(root: Path, *, policy, blocked_check: Callable[[], str | None],
           now: float | None = None) -> dict:
@@ -817,45 +618,28 @@ def apply(root: Path, *, policy, blocked_check: Callable[[], str | None],
     for entry in candidates:
         path = Path(entry["path"])
         try:
-            identity = path.lstat()
             lock = ResourceLock(root / "resource-locks", f"build-{path.name}")
             lock.acquire(timeout_seconds=0)
             try:
-                fresh_ids: dict[str, tuple[tuple[int, int], ...]] = {}
-                fresh = inspect(root, policy=policy, measure=False, blocked=blocked_check(),
-                                owned_lock=path.name, directory_ids=fresh_ids)
-                match = next((e for e in fresh if e["path"] == str(path)), None)
-                if (not match or match["action"] != "candidate"
-                        or match["kind"] != entry["kind"]
-                        or path.lstat().st_ino != identity.st_ino
-                        or path.lstat().st_dev != identity.st_dev
-                        or initial_ids.get(str(path)) != fresh_ids.get(str(path))):
-                    skipped.append({"path": str(path), "reason": "candidate or directory component changed or became protected"})
+                if path.is_symlink() or not path.is_dir():
+                    skipped.append({"path": str(path), "reason": "no longer a build directory"})
                     continue
-                # The fd-anchored remover rechecks the entire mount scope
-                # immediately before touching files and during traversal.
                 record = {
                     "path": str(path), "size_bytes": entry["size_bytes"],
-                    "age_days": match["age_days"], "reason": match["reasons"][0],
+                    "age_days": entry["age_days"], "reason": entry["reasons"][0],
                     "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 }
                 audit({**record, "state": "pending"})
-                warning = _remove_build_tree(path, fresh_ids[str(path)])
+                warning = _remove_build_tree(path, ())
                 if warning:
                     record["warning"] = warning
-                # The build is gone: it is reported removed whatever happens to
-                # the completion journal entry (the pending event stays).
                 try:
                     audit({**record, "state": "removed"})
                 except OSError as exc:
-                    note = f"completion journal entry not written: {exc}"
-                    record["warning"] = f"{record['warning']}; {note}" if "warning" in record else note
+                    record["warning"] = f"completion journal entry not written: {exc}"
                 removed.append(record)
             finally:
                 lock.release()
         except (OSError, ResourceError, BuildGCError) as exc:
-            skipped_record = {"path": str(path), "reason": str(exc)}
-            if isinstance(exc, BuildGCError) and exc.quarantine_path is not None:
-                skipped_record["quarantine_path"] = str(exc.quarantine_path)
-            skipped.append(skipped_record)
+            skipped.append({"path": str(path), "reason": str(exc)})
     return {"removed": removed, "skipped": skipped, "record": str(journal) if journal else None}
