@@ -1,0 +1,167 @@
+# IQR spin-free prefill producer (rejected)
+# commits "Add guarded spin-free IQR prefill producer and consumer" (2d532d73d) and "Record IQR producer rewrite check and deferred resource gate" (4ab2cacc4); diff of their engine files, unchanged
+# the guard certificate in the commit is false for every form; the measurements set it true
+diff --git a/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw b/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw
+index f7ebf704e..63b80dccd 100644
+--- a/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw
++++ b/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw
+@@ -302,3 +302,158 @@ constexpr uint32_t kIqrTokenTile = 16u;
+             }
+             /* The unit's 128-K block is done: fold its sums. Units are 128-K aligned and a split's
+ @@ end
++
++# Spin-free IQR prefill candidate: independent producer and unchanged native consumer.
++@@ find 1
++template <class F>
++struct IqrPre {
++@@ replace
++// One disjoint 16-row partition, in the same fragment and scale order as the legacy hook.
++template <class F>
++__device__ __forceinline__ void iqr_decode_partition(Ctx cc, uint8_t* fragp, uint16_t* sc,
++                                                      uint32_t rt, uint8_t* tr) {
++    using D = Dec<F>;
++    const uint32_t tid = threadIdx.x, lane = tid & (kWave - 1), wave = tid / kWave;
++    const uint32_t ksuper = cc.nkb * 2u;
++    /* A unit's codes are fetched a unit ahead of its decode, so a wave's units do not
++     * each wait out a memory round trip. */
++    typename D::Raw cur = D::fetch(cc, rt, wave, lane, wave < cc.nkb), nxt;
++    for (uint32_t kb = wave; kb < cc.nkb; kb += kPWaves) {
++        if (kb + kPWaves < cc.nkb) nxt = D::fetch(cc, rt, kb + kPWaves, lane, true);
++        uint32_t w[16];
++        D::rows(cur, cc, rb_ratio<F>(cc, rt * 16u + (lane & 15u), kb), w);
++        cur = nxt;
++        D::unzero(cc, rt, kb, w);
++        Stage8 s8[2];
++        frag(w, tr, lane, s8);
++#pragma unroll
++        for (uint32_t h = 0; h < 2; ++h) {
++            uint8_t* d = fragp + ((size_t)rt * ksuper + 2u * kb + h) * kTileBytes +
++                         lane * kLaneBytes;
++            *(uint4*)d = s8[h].v;
++            *(uint4*)(d + 16) = s8[h].w;
++        }
++    }
++    if (sc)
++        for (uint32_t i = tid; i < 16u * cc.nkb; i += kPWaves * kWave) {
++            const uint32_t kb = i / 16u;
++            sc[((size_t)rt * cc.nkb + kb) * 16u + i % 16u] =
++                (uint16_t)fold_scale<F>(cc, rt * 16u + i % 16u, kb);
++        }
++}
++
++template <class F>
++__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++void iqr_plane_producer(Ctx c, uint8_t* fragp, uint16_t* sc) {
++    using D = Dec<F>;
++    __shared__ __attribute__((aligned(16))) int8_t s_tab[D::kTab];
++    __shared__ __attribute__((aligned(16))) uint8_t s_tr[kPWaves * kTrBytes];
++    const uint32_t tid = threadIdx.x;
++    c.tab = s_tab;
++    D::stage(s_tab, c, tid, kPWaves * kWave);
++    __syncthreads();
++    iqr_decode_partition<F>(c, fragp, sc, blockIdx.x, s_tr + (tid / kWave) * kTrBytes);
++}
++
++// A form's measured resource certificate is deliberately absent until the compile gate.
++// Specialise this trait only for measured producer/consumer records, indexed by the full
++// FormT (including scale and LRB). Missing records must keep the legacy path.
++template <class F>
++struct IqrPlaneCertificate {
++    static constexpr bool verified = false;
++};
++
++template <class F>
++constexpr bool iqr_plane_certified() {
++    return IqrPlaneCertificate<F>::verified;
++}
++
++template <class F>
++struct IqrPre {
++@@ end
++
++@@ find 1
++template <class F, int RB>
++__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++void iqr_prefill_kernel(IqrPre<F> pre, const uint8_t* __restrict__ A, const float* __restrict__ Sa,
++                        const uint8_t* __restrict__ W, const uint16_t* __restrict__ Sw,
++                        uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N, uint32_t a_ld,
++                        uint32_t sa_ld, uint32_t sw_ld) {
++    if constexpr (F::SC == kRowF32) {
++        constexpr Form f{ F::KIND, F::B, F::LV, F::L, F::LRB, F::SC, 0 };
++        const uint8_t* const sb = pre.c.S;
++        gemm_8a8_prefill_body<true, 32, IqrPre<F>, true>(
++            A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, pre, (const float*)sb,
++            (const float*)(sb + cf_off(f, N, K)));
++    } else {
++        gemm_8a8_prefill_body<true, RB>(A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, pre);
++    }
++}
++@@ replace
++template <class F, int RB>
++__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++void iqr_prefill_kernel(IqrPre<F> pre, const uint8_t* __restrict__ A, const float* __restrict__ Sa,
++                        const uint8_t* __restrict__ W, const uint16_t* __restrict__ Sw,
++                        uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N, uint32_t a_ld,
++                        uint32_t sa_ld, uint32_t sw_ld) {
++    if constexpr (F::SC == kRowF32) {
++        constexpr Form f{ F::KIND, F::B, F::LV, F::L, F::LRB, F::SC, 0 };
++        const uint8_t* const sb = pre.c.S;
++        gemm_8a8_prefill_body<true, 32, IqrPre<F>, true>(
++            A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, pre, (const float*)sb,
++            (const float*)(sb + cf_off(f, N, K)));
++    } else {
++        gemm_8a8_prefill_body<true, RB>(A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, pre);
++    }
++}
++
++template <class F, int RB>
++__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++void iqr_plane_consumer(Ctx c, const uint8_t* __restrict__ A, const float* __restrict__ Sa,
++                        const uint8_t* __restrict__ W, const uint16_t* __restrict__ Sw,
++                        uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N, uint32_t a_ld,
++                        uint32_t sa_ld, uint32_t sw_ld) {
++    if constexpr (F::SC == kRowF32) {
++        constexpr Form f{ F::KIND, F::B, F::LV, F::L, F::LRB, F::SC, 0 };
++        const uint8_t* const sb = c.S;
++        gemm_8a8_prefill_body<true, 32, PrefillPlain, true>(
++            A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, PrefillPlain{}, (const float*)sb,
++            (const float*)(sb + cf_off(f, N, K)));
++    } else {
++        gemm_8a8_prefill_body<true, RB>(A, Sa, W, Sw, C, M, K, N, a_ld, sa_ld, sw_ld, PrefillPlain{});
++    }
++}
++@@ end
++
++@@ find 1
++    unsigned int* const ctl = r4d_8a8_split_ctr(stream, g.y->data);
++    if (!ctl || 3u * (uint32_t)(g.N / kPBN) > 8192u) return R4D_NO(RAD_E_DEVICE);
++    IqrPre<F> pre;
++@@ replace
++    // The producer and consumer are ordered by the same stream, including captured launches.
++    // Retain the old route until the per-form resource certificate is populated.
++    if (iqr_plane_certified<F>()) {
++        const Ctx c = ctx_of(g);
++        uint8_t* const fragp = (uint8_t*)scratch;
++        uint16_t* const sc = own_scales_serve(f) ? nullptr : (uint16_t*)(fragp + align256(g.N * g.K));
++        const uint16_t* const ws = sc ? sc : (const uint16_t*)g.bs->data;
++        if (R4D_EMIT(stream, (iqr_plane_producer<F>), dim3((uint32_t)(g.N / 16u)),
++                     dim3(kPWaves * kWave), 0, c, fragp, sc) != RAD_OK ||
++            hipGetLastError() != hipSuccess) return R4D_NO(RAD_E_DEVICE);
++        const dim3 grid((uint32_t)((g.M + kPBM - 1) / kPBM), (uint32_t)(g.N / kPBN), 1);
++        int rc;
++#define R3_IQR_PLANE_CONSUME(rb_) \
++        rc = R4D_EMIT(stream, (iqr_plane_consumer<F, rb_>), grid, dim3(kPWaves * kWave), 0, c, \
++                      (const uint8_t*)g.a->data, (const float*)g.as->data, (const uint8_t*)fragp, \
++                      ws, (uint16_t*)g.y->data, (uint32_t)g.M, (uint32_t)g.K, (uint32_t)g.N, \
++                      (uint32_t)g.a_ld, (uint32_t)g.sa_ld, (uint32_t)g.nkb)
++        if constexpr (F::LRB >= 5) R3_IQR_PLANE_CONSUME(32);
++        else if constexpr (F::LRB >= 3) R3_IQR_PLANE_CONSUME(8);
++        else R3_IQR_PLANE_CONSUME(0);
++#undef R3_IQR_PLANE_CONSUME
++        return rc == RAD_OK && hipGetLastError() == hipSuccess ? RAD_OK : R4D_NO(RAD_E_DEVICE);
++    }
++    unsigned int* const ctl = r4d_8a8_split_ctr(stream, g.y->data);
++    if (!ctl || 3u * (uint32_t)(g.N / kPBN) > 8192u) return R4D_NO(RAD_E_DEVICE);
++    IqrPre<F> pre;
++@@ end
+\ No newline at end of file
