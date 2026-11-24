@@ -34,3 +34,7 @@ Both variants left all other kernel resource records unchanged. The resource-saf
 The separate 16-row tile has 316 computed-trellis specializations averaging 104.101 lane-exchange and 14.684 WMMA instructions, versus 48 table-trellis specializations at 64 exchanges and eight WMMA instructions each. The computed-trellis row varies from 64/8 at one token tile to 208/32 at four.
 
 Of the 49 computed-trellis MoE specializations, 13 spill up to 412 B/thread. The adjacent 16-row and MoE paths are unchanged by this patch. These are compiled code-object facts, not new timings.
+
+## Exhaustive 6-bit and 7-bit wide-tile specialization coverage
+
+All 80 B6 trellis wide-tile specializations were compiled and resource-audited: 16 table-trellis and 64 computed-trellis. Baseline spilling was 80/80; candidate spilling is 19/80, with maximum private memory falling from 3,408 to 120 B/thread. For B7, 80/80 forms were also compiled: spilling fell from 80 to 22, with maximum private memory falling from 3,640 to 136 B/thread. Both chain modes are covered where the form supports chaining; no per-shape constants or exclusions were introduced.
