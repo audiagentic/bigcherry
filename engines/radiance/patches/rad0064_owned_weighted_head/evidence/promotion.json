@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "rad0064_owned_weighted_head",
+  "pinned": "b6b8751cccb0e834a13ae9e5afca824ee9a487aa",
+  "subject-digest": "4a248a956eb2b28a4a6fc9015a2df9134e1840b6e05b5bac4e17584ff8e7057f",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-27B IQR-V4 container with the three-rank vocabulary-weighted head (.rad), tensor parallel over two RX 7900 XTX and an R9700 (TP3)"
+  ],
+  "checks": {
+    "ab": "IQR-V4 against IQ8R on qwen27b-tp3 on the rad0064 build, 12 launches ABBA, 3 warm-ups, seeds 1-3 x 3 repetitions: the patch adds no kernel and no per-step work (it declares two spans at start-up), so the A/B compares the containers: decode ms/step IQ8R 20.25 / 29.02 / 31.72 against IQR 30.18 / 57.31 / 58.14 at 1 / 6 / 8 streams before the IQR kernel changes (separate changes since reduced the gap to +4..8%). The long layout (262144 context) loads and serves the IQR container with 3.3 full-length sessions against 2.8 for IQ8R.",
+    "activation": "without the patch the IQR container on the TP3 ownership split stops at startup with 'radiance: qwen35: --tp-ownership reads a plain output.weight, not a vocabulary-weighted head'; with it the server starts, the canary prompts are answered, and the engine log shows the class rows 178944/38400/48384/66048 sharded over three ranks. The plain output.weight path is not entered.",
+    "identity": "plain-head path unchanged: IQ8R (plain int8 head) on qwen27b-tp3, exact wire, speculation 0, BF16 corpus-4 reference (8240 positions): stock 2020.8.7 and the rad0064 build give identical mean KLD 0.0015113740896302477, p99 0.012598370863124712 and top-1 0.9727 to every printed digit. The new path: IQR-V4 on three ranks mean KLD 0.001906, p99 0.0164, top-1 96.82%, ppl ratio 1.0013 (the same container on two ranks 0.001979 / 96.99%); temp-0 canary texts byte-identical between the two-rank and three-rank runs.",
+    "mechanics": "tools/tests/patch/test_radiance_rad0064.py passes (metadata and requires closure; applies once, idempotent, fails closed without rad0019; the weighted-head branch declares the token-table and output.vrow spans while the plain branch and everything outside the block are byte-identical before and after); patch-lint is clean; the lane build carrying it (experiment owned-weighted-head on radiance:stock:linux-radiance) builds."
+  }
+}
