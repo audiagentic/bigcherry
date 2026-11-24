@@ -66,7 +66,7 @@ GENERIC = (
         + "|BIGCHERRY_HOST" + "_[A-Z_]+"
         + r")(?![A-Za-z0-9_])")),
     ("email address", re.compile(
-        r"[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b|[A-Za-z0-9.-]*\.?(?:invalid|test)\b)"
+        r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@(?!example\.(?:com|org|net)\b|[A-Za-z0-9.-]*\.?(?:invalid|test)\b)"
         r"[A-Za-z0-9-]+\.[A-Za-z]{2,}")),
 )
 

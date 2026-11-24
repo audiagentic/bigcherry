@@ -94,6 +94,8 @@ def test_facts_all_sources_and_pcie_upstream(tmp_path):
     )
     assert data["kernel_release"] == {"value": "7.0.13-arch1-1", "readable": True}
     assert "clang 20" in data["kernel_build"]["value"]
+    assert host_facts._kernel_build("Linux version 7.0 (maker@buildbox) (gcc 13) #1 SMP") == "Linux version 7.0 (gcc 13) #1 SMP"
+    assert host_facts._kernel_build(None) is None
     assert data["rocm_version"]["value"] == "7.2.4"
     assert data["amdgpu_version"]["value"] == "6.15.1"
     assert (
