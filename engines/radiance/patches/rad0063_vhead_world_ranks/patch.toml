@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0063_vhead_world_ranks"
+order = 63
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP57"]
+requires = []
+conflicts = []
+tags = ["quantization"]
