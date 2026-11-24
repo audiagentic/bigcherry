@@ -84,3 +84,51 @@
                     raw[i][j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(__builtin_bit_cast(r3_i8, raw[i][j]), lane));
         }
 @@ end
+
+# Single-band IQR: replace weight loads only; keep native WMMA, fold and stores.
+@@ find 1
+template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock>
+@@ replace
+template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
+@@ end
+@@ find 1
+    const uint8_t* const wsrc = W + (size_t)wt0 * ksuper * kTileBytes + lane * kLaneBytes;
+@@ replace
+    const uint8_t* wsrc = nullptr;
+    if constexpr (!Fused) wsrc = W + (size_t)wt0 * ksuper * kTileBytes + lane * kLaneBytes;
+@@ end
+@@ find 1
+#pragma unroll
+    for (uint32_t i = 0; i < kPTW; ++i)
+        w0[i] = stage8_load(wsrc + (size_t)i * ksuper * kTileBytes, true);
+@@ replace
+    if constexpr (!Fused) {
+#pragma unroll
+    for (uint32_t i = 0; i < kPTW; ++i)
+        w0[i] = stage8_load(wsrc + (size_t)i * ksuper * kTileBytes, true);
+    }
+@@ end
+@@ find 1
+#pragma unroll
+        for (uint32_t i = 0; i < kPTW; ++i)
+            nxt[i] = stage8_load(wsrc + ((size_t)i * ksuper + c1 / kSuperK) * kTileBytes, true);
+@@ replace
+        if constexpr (Fused) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+                cur[i] = pre.load(ww * kPTW + i, half, lane);
+        } else {
+#pragma unroll
+        for (uint32_t i = 0; i < kPTW; ++i)
+            nxt[i] = stage8_load(wsrc + ((size_t)i * ksuper + c1 / kSuperK) * kTileBytes, true);
+        }
+@@ end
+@@ find 1
+    for (uint32_t kb = 0; kb < nkb; ++kb) {
+@@ replace
+    for (uint32_t kb = 0; kb < nkb; ++kb) {
+        if constexpr (Fused) {
+            static_assert(I8 && SB == kBlock && kTPB == 2);
+            pre.prepare(n0, kb);
+        }
+@@ end
