@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.11.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.2...bc-radiance-2020.11.3) (2026-11-24)
+
+
+### Performance
+
+* **libr3:** native rewrites for the rotated IQR embedding gather, the NT4 vocabulary head and chained long 16-row tiles ([#1527](https://github.com/audiagentic/bigcherry/issues/1527)) ([bced315](https://github.com/audiagentic/bigcherry/commit/bced315cb24b0d1c5286dea7bbe71be64215e4be))
+
 ## [2020.11.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.1...bc-radiance-2020.11.2) (2026-11-24)
 
 
