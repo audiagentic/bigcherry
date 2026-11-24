@@ -10,7 +10,7 @@ Instruction census of the B6 one-tile unchained kernel (per lane per 128-K unit,
 
 ## Byte identity (new and previous plugins in one process, same inputs, full BF16 output bytes, M 1-64, chained and unchained, 7 shapes including the ragged 5376)
 
-Seven forms: table4, zero6, grid8, trellis4 (12-bit state), computed trellis B4, B6, B7: 7 x 2 x 7 x 64 = 6272 comparisons, 0 differing. `r3_selftest` cases `gemm_iqr_tiled` (129 ok), `gemm_iqr_gated` (36 ok), `gemm_iqr_nt_m64` (1030 ok, 2 FAIL) and `gemm_iqr` (1195 ok, 2 FAIL); the same two cases fail identically on the previous plugin (one output of 8704 and one of 32768 differ from the int8 row by a bf16 step), i.e. they are not caused by this change.
+Seven forms: table4, zero6, grid8, trellis4 (12-bit state), computed trellis B4, B6, B7: 7 x 2 x 7 x 64 = 6272 comparisons, 0 differing. `r3_selftest` (built from main) cases `gemm_iqr_nt_m64` (1034 ok), `gemm_iqr_tiled` (129), `gemm_iqr_gated` (36) and `gemm_iqr` (1199): 0 FAIL on the 2020.8.7 plugin and on this plugin. (An older selftest binary, built before the two-slice route for the 4-bit table rows, still demanded byte identity to the int8 row for those FP64-gated rows and reported two one-bf16-step differences; that comparison is obsolete, not a defect of this change.)
 
 ## Cold replay on the real trellis encodings (one XTX, 256 MiB flush, median of 15; ratio native / previous, B6 and B7, six trunk shapes)
 
