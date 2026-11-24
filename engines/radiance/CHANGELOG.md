@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.11.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.10.0...bc-radiance-2020.11.0) (2026-11-24)
+
+
+### New and changed
+
+* **radiance:** selectable IQR-V4 (6-bit) model configs for three cards and the long layout ([#1509](https://github.com/audiagentic/bigcherry/issues/1509)) ([771d897](https://github.com/audiagentic/bigcherry/commit/771d897484b94f15e4ccc1fd50c1ae44d7e4f2cc))
+
 ## [2020.10.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.9.2...bc-radiance-2020.10.0) (2026-11-24)
 
 
