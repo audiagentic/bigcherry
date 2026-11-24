@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (42)
+## Engine patches (43)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -54,6 +54,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0055_step_phase_trace](../../../../engines/radiance/patches/rad0055_step_phase_trace/SUMMARY.md) | `validated` | Off by default. The serving owner hands the engine a run-directory path only for a start given `--step-phase-trace`; the engine writes per-pass HIP-event timing per rank. Timing is perturbed when on, so throughput comes from an untraced run. |
 | [rad0060_ltx2_tp3_linear_declare](../../../../engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/SUMMARY.md) | `diagnostic` | Optional `C01Slice` in the real 2.2 / ABI44 LTX `Lin::declare`. Fused QKV/KV row shards record per-bank code, two-level IQ8R scales and BF16 bias spans. Output columns use native aligned `RAD_SHARD_COL` views. Biasless columns declare no bias; biased columns require `C01Slice::columns_deferred`, record `Lin::deferred_bias`, and declare **no partial-rank bias weight or table-add**. C04 reuses Radiance 2.2 exact all_reduce, then adds BF16 bias once per reduced output replica. The C05 Q/K RMS subset now runs under native GPU AQL; complete C06 self-attention and architecture integration remain gates. |
 | [rad0061_iq8r_f32_scale](../../../../engines/radiance/patches/rad0061_iq8r_f32_scale/SUMMARY.md) | `diagnostic` | Preserve the exact FP32 product of the U8 per-group and BF16 per-row IQ8R scales in the existing native `libr4d` group-256 relayout and GEMM readers; use BigCherry's existing native rewrite of that source for the XTX `libr3` plugin. The CPU `libref` reference is unchanged. |
+| [rad0063_vhead_world_ranks](../../../../engines/radiance/patches/rad0063_vhead_world_ranks/SUMMARY.md) | `untested` | The vocabulary-weighted head tool builds its width classes for two ranks only (it splits the vocabulary in halves). The engine shards a class by rows over the rank count and needs every rank's slice of a class to be the same number of rows, a multiple of 256, holding exactly the ids of that rank's vocabulary share; a row whose id lies outside the rank's share is dropped by the head kernel (it is never written, never read back). |
 | [rad0064_owned_weighted_head](../../../../engines/radiance/patches/rad0064_owned_weighted_head/SUMMARY.md) | `untested` | The uneven ownership split of the 27B layout (two XTX and one R9700) refused any container whose output head is stored as width classes: it read only a plain `output.weight`. The three-rank vocabulary-weighted head gives every rank the same number of rows per class (a multiple of 256 x 3, padded with dropped rows), so the classes shard by rows exactly as in the even split; only the vocabulary-sized tensors need the explicit span of the rank's vocabulary share: the token table and the id-to-row map. This patch declares those two spans instead of refusing, and leaves the plain-head path unchanged. Requires rad0019. |
 
 ## Components (6)
