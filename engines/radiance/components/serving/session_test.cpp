@@ -9,6 +9,7 @@
 #include "session.h"
 #include "test_native_session_fixture.h"
 
+#include <regex>
 #include <rad_abi.h>
 
 #include <array>
@@ -227,6 +228,12 @@ void feature_state_start_status_and_warning() {
     assert(host_start.at("capture_phase") == "owner_start");
     assert(host_start.at("captured_at").is_string());
     assert(host_start.at("facts").at("kernel_release").at("readable").is_boolean());
+    {
+        const auto& build = host_start.at("facts").at("kernel_build");
+        if (build.at("readable").get<bool>())
+            assert(!std::regex_search(build.at("value").get<std::string>(),
+                                      std::regex("\\([^()\\s@]+@[^()\\s]+\\)")));
+    }
     assert(host_start.at("facts").at("mem_available_kib").at("readable").is_boolean());
     assert(host_start.at("facts").at("cards").is_object());
     const auto reply = ss::control(c.run, "status", 2s);

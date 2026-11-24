@@ -243,6 +243,15 @@ def _card_facts(dev: Path, sys_root: Path, bdf: str) -> dict:
     }
 
 
+_BUILDER = re.compile(r"\s*\([^()\s@]+@[^()\s]+\)")
+
+
+def _kernel_build(text: str | None) -> str | None:
+    """The kernel's version line without the account and machine that built it: the record keeps the release,
+    compiler and build date, not who compiled it."""
+    return None if text is None else _BUILDER.sub("", text, count=1)
+
+
 def _command(argv: list[str]) -> str | None:
     try:
         completed = subprocess.run(
@@ -303,6 +312,15 @@ def _environment_hash(environment_file: Path) -> dict:
         return fact(None, "environment_unreadable")
 
 
+_BUILDER = re.compile(r"\s*\([^()\s@]+@[^()\s]+\)")
+
+
+def _kernel_build(text: str | None) -> str | None:
+    """The kernel's version line without the account and machine that built it: the record keeps the release,
+    compiler and build date, not who compiled it."""
+    return None if text is None else _BUILDER.sub("", text, count=1)
+
+
 def collect_host_facts(
     *,
     sys_root: Path = _SYS,
@@ -339,7 +357,7 @@ def collect_host_facts(
         dimms = None
     return {
         "kernel_release": fact(_text(proc_root / "sys/kernel/osrelease")),
-        "kernel_build": fact(_text(proc_root / "version")),
+        "kernel_build": fact(_kernel_build(_text(proc_root / "version"))),
         "rocm_version": fact(_text(rocm_root / ".info/version") if rocm_root else None,
                              "unreadable" if rocm_root else "sdk_not_selected"),
         "amdgpu_version": fact(_text(sys_root / "module/amdgpu/version")),

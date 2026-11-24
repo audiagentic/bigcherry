@@ -311,6 +311,16 @@ Json host_text(const fs::path& path, const std::string& missing = "unreadable") 
     return start_fact(value ? std::optional<Json>(*value) : std::nullopt, missing);
 }
 
+// The kernel version line without the account and machine that built it ("(user@host)"): the record keeps the
+// release, compiler and build date, not who compiled it.
+Json host_kernel_build(const fs::path& path) {
+    auto value = host_line(path);
+    if (value)
+        *value = std::regex_replace(*value, std::regex("\\s*\\([^()\\s@]+@[^()\\s]+\\)"), "",
+                                    std::regex_constants::format_first_only);
+    return start_fact(value ? std::optional<Json>(*value) : std::nullopt, "unreadable");
+}
+
 Json host_positive_number(const fs::path& path, const std::string& zero = "invalid_zero") {
     const auto raw = host_line(path);
     if (!raw)
@@ -422,7 +432,7 @@ Json host_card(const fs::path& device, const std::string& bdf) {
 Json native_start_host_facts(const fs::path& sys_root = "/sys", const fs::path& proc_root = "/proc") {
     Json facts = {
         {"kernel_release", host_text(proc_root / "sys/kernel/osrelease")},
-        {"kernel_build", host_text(proc_root / "version")},
+        {"kernel_build", host_kernel_build(proc_root / "version")},
         {"amdgpu_version", host_text(sys_root / "module/amdgpu/version")},
         {"amdgpu_srcversion", host_text(sys_root / "module/amdgpu/srcversion")},
         {"mem_available_kib", host_available_kib(proc_root / "meminfo")},

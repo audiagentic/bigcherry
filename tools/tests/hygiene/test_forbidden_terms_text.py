@@ -35,6 +35,16 @@ class ForbiddenTermsTextTests(unittest.TestCase):
         _git(self.root, "add", "f.txt")
         _git(self.root, "commit", "-q", "-m", message)
 
+    def test_a_long_base64_line_scans_in_linear_time(self) -> None:
+        import time
+
+        line = "QUJD" * 600_000
+        started = time.monotonic()
+        self.assertEqual(ft.text_findings(self.root, "pr", line + "\n"), [])
+        self.assertLess(time.monotonic() - started, 5.0)
+        self.assertEqual(ft.text_findings(self.root, "pr", "mail " + "a.b+c" + "@corp.io\n"),
+                         [("pr", 1, "email address")])
+
     def test_pr_text_with_a_machine_name_is_found(self) -> None:
         hits = ft.text_findings(self.root, "pr", "title\n\nResults on Zeta-Box, 60 s holds\n")
         self.assertEqual(hits, [("pr", 3, "machine name")])
