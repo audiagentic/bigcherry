@@ -1,0 +1,57 @@
+# Keep the original branch on targets without a verified resource and replay record.
+@@ find 1
+    if constexpr (ROT != 0) {
+        s_v[t] = val;
+        __syncthreads();
+#pragma unroll
+        for (uint32_t h = 1; h < 128u; h <<= 1) {
+            const float a = s_v[t & ~h], b = s_v[t | h];
+            const float y = (t & h) ? __fsub_rn(a, b) : __fadd_rn(a, b);
+            __syncthreads();
+            s_v[t] = y;
+            __syncthreads();
+        }
+        val = s_v[t];
+    }
+@@ replace
+#if defined(__gfx1100__)
+    constexpr bool kWaveShuffles = ROT != 0;
+#else
+    constexpr bool kWaveShuffles = false;
+#endif
+    if constexpr (kWaveShuffles) {
+        // The wave is the complete exchange group at spans below warpSize.
+        // This keeps the original low-lane-minus-high-lane subtraction order.
+#pragma unroll
+        for (uint32_t h = 1; h < warpSize; h <<= 1) {
+            const float partner = __shfl_xor(val, (int)h);
+            const float a = (t & h) ? partner : val;
+            const float b = (t & h) ? val : partner;
+            val = (t & h) ? __fsub_rn(a, b) : __fadd_rn(a, b);
+        }
+        s_v[t] = val;
+        __syncthreads();
+#pragma unroll
+        for (uint32_t h = warpSize; h < 128u; h <<= 1) {
+            const float a = s_v[t & ~h], b = s_v[t | h];
+            const float y = (t & h) ? __fsub_rn(a, b) : __fadd_rn(a, b);
+            __syncthreads();
+            s_v[t] = y;
+            __syncthreads();
+        }
+        val = s_v[t];
+    }
+    else if constexpr (ROT != 0) {
+        s_v[t] = val;
+        __syncthreads();
+#pragma unroll
+        for (uint32_t h = 1; h < 128u; h <<= 1) {
+            const float a = s_v[t & ~h], b = s_v[t | h];
+            const float y = (t & h) ? __fsub_rn(a, b) : __fadd_rn(a, b);
+            __syncthreads();
+            s_v[t] = y;
+            __syncthreads();
+        }
+        val = s_v[t];
+    }
+@@ end

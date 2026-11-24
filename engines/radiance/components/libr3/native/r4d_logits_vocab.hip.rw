@@ -75,3 +75,47 @@
             /* the block's factor (shared by every row) times each token's activation scale */
             const float f = alive ? fold_f32<F>(c, wrow0, kb) : 0.0f;
 @@ end
+
+# Resource- and replay-qualified shorter-lookahead head.
+# Retain the original lookahead unless full activation staging groups are filled. Fetch next weight units after the
+# last store/barrier to avoid the live overlap of pf and pfn.
+@@ find 1
+    typename D::Raw pf[kU], pfn[kU];
+@@ replace
+#if defined(__gfx1100__)
+    constexpr bool kShortLookahead = (kBP >= kU) && (FN == kBP * kRPP);
+#else
+    constexpr bool kShortLookahead = false;
+#endif
+    typename D::Raw pf[kU], pfn[kShortLookahead ? 1u : kU];
+@@ end
+
+@@ find 1
+#pragma unroll
+            for (uint32_t p = 0; p < kU; ++p) pfn[p] = D::fetch(c.W, c.nkb, arow, k1 / kBlock + p, lane, alive);
+@@ replace
+            if constexpr (!kShortLookahead) {
+#pragma unroll
+                for (uint32_t p = 0; p < kU; ++p)
+                    pfn[p] = D::fetch(c.W, c.nkb, arow, k1 / kBlock + p, lane, alive);
+            }
+@@ end
+
+@@ find 1
+#pragma unroll
+        for (uint32_t p = 0; p < kU; ++p) pf[p] = pfn[p];
+        __syncthreads();
+@@ replace
+        if constexpr (!kShortLookahead) {
+#pragma unroll
+            for (uint32_t p = 0; p < kU; ++p) pf[p] = pfn[p];
+        }
+        __syncthreads();
+        if constexpr (kShortLookahead) {
+            if (k0 + FK < K) {
+#pragma unroll
+                for (uint32_t p = 0; p < kU; ++p)
+                    pf[p] = D::fetch(c.W, c.nkb, arow, (k0 + FK) / kBlock + p, lane, alive);
+            }
+        }
+@@ end
