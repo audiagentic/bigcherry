@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.9.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.9.1...bc-radiance-2020.9.2) (2026-11-24)
+
+
+### Performance
+
+* **libr3:** keep the IQR 16-row tile's integer sums native per scale group (IQR 1/6/8 streams -13/-19/-14%) ([#1505](https://github.com/audiagentic/bigcherry/issues/1505)) ([c681ba8](https://github.com/audiagentic/bigcherry/commit/c681ba8c41bf85a781778a3202c687ab87898e05))
+
 ## [2020.9.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.9.0...bc-radiance-2020.9.1) (2026-11-24)
 
 
