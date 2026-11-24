@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0065_iqr_fused_gfx1201"
+order = 65
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = []
+requires = []
+conflicts = []
+tags = ["quantization"]
