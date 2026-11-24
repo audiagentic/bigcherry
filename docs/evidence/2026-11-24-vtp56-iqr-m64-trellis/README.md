@@ -17,3 +17,14 @@ The four-unit controlled compile produced exactly 3,169 matched kernel records. 
 Across the M64 records there are no new spill or private allocations, no increased SGPR counts and no lost register-file waves per SIMD. Exactly **2,625/2,625** non-M64 resources match an unchanged same-source/same-toolchain control, including VGPR, spills, private memory, LDS and workgroup sizes. The source file containing these measurements is unchanged outside the managed rewrite.
 
 **Stage 1 resource gate passed.** Byte identity, full plugin build, IQR selftest, cold/warm replay and final no-regression qualification are still pending. No serving test, A/B, KLD, push or shipment has been performed.
+
+## Stage 2 — remaining spill and lifetime experiments
+
+Two additional loop-lifetime variants were built against the first 128-instance partition. Both were rejected before GPU testing:
+
+- Rolling the inner WMMA K loop reduced spilling instances from 23 to five, but grew private memory on 69 forms and lost VGPR register-file waves on two. A representative computed-trellis four-token tile grew from 100 to 208 B/thread of private memory.
+- Deferring activation and weight look-ahead grew spilling instances from 23 to 39, increased private allocation on 39 forms, and reduced register-file waves on 32.
+
+Both variants left all other kernel resource records unchanged. The resource-safe accumulate-once rewrite remains selected, with its residual 106 spilling instances documented individually in the report. No hand-picked per-model guard or new constant was introduced.
+
+**Stage 2 result:** further lifetime changes rejected by the no-regression gate; source unchanged. Numerical and timing validation of the selected rewrite remains required.
