@@ -47,3 +47,9 @@ The unchanged-control and candidate builds produced the same 197 occupancy-targe
 ## Continuation step 1 — GPU byte identity
 
 The merged 16-row native-fragment change and wide-tile native integer accumulation are both present. With the shipped plugin loaded as the control in the same process, 18 independent short GPU leases checked the complete BF16 output buffers for all M=17–64 across seven trunk shapes, including N=5376 on trellis forms. The nine forms (computed and table trellis B4/B6/B7, B4 table, B8 grid, B6 zero) each passed chained and unchained: **6,048 shape/M byte comparisons, zero differing elements**, with nonzero outputs. The unchanged 16-row BIAS and gated paths retain their separately required selftest checks. No serving experiment was run.
+
+## Continuation step 2 — build and control regression checks
+
+The complete plugin and IQR selftest executable built successfully. Queued GPU selftest runs of `gemm_iqr_nt_m64`, `gemm_iqr_tiled`, `gemm_iqr_gated` and `gemm_iqr` returned **2398 successful checks, zero failures**. The merged same-toolchain control retains the upstream 16-row optimization without the wide-tile rewrite. Against that control, all 544 wide-tile specializations show no increased spilling or private memory and no lost register-file waves; all 2,625 other matching records have identical resource metadata. There are 438 spill-free and 106 residual spilling wide-tile records.
+
+The SGPR-specific control also matched all 2,625 unrelated symbols exactly, with no increase across any of the 544 wide-tile instances.
