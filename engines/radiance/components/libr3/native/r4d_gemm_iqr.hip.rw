@@ -145,3 +145,45 @@ constexpr uint32_t kIqrTokenTile = 16u;
             }
             const float as = XS[(size_t)tok[j] * xs_ld + kb];
 @@ end
+
+
+# Wide IQR tile: keep the integer sums in gfx11's native WMMA accumulator layout
+# for all eight K fragments in one 128-K scale block. Convert once only when
+# folding the scale; preserve the prior f32 fold and chain protocol.
+@@ find 1
+    f8v raw[NT], out[NT];
+#pragma unroll
+    for (uint32_t j = 0; j < NT; ++j) { raw[j] = acc_zero(); out[j] = acc_zero(); }
+@@ replace
+    f8v raw[NT], out[NT];
+    r3_i8 raw11[NT];
+#pragma unroll
+    for (uint32_t j = 0; j < NT; ++j) {
+        raw11[j] = r3_i8{0, 0, 0, 0, 0, 0, 0, 0};
+        out[j] = acc_zero();
+    }
+@@ end
+
+@@ find 1
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j) raw[j] = mma8<true>(af, bf[j], raw[j]);
+@@ replace
+                const r3_i4 af11 = r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, af), lane);
+#pragma unroll
+                for (uint32_t j = 0; j < NT; ++j)
+                    raw11[j] = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
+                        true, af11,
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, bf[j]), lane),
+                        raw11[j], false);
+@@ end
+
+@@ find 1
+            /* The unit's 128-K block is done: fold its sums. Units are 128-K aligned and a split's
+@@ replace
+#pragma unroll
+            for (uint32_t j = 0; j < NT; ++j) {
+                raw[j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11[j], lane));
+                raw11[j] = r3_i8{0, 0, 0, 0, 0, 0, 0, 0};
+            }
+            /* The unit's 128-K block is done: fold its sums. Units are 128-K aligned and a split's
+@@ end
