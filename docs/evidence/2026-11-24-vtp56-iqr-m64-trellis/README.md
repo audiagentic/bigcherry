@@ -38,3 +38,9 @@ Of the 49 computed-trellis MoE specializations, 13 spill up to 412 B/thread. The
 ## Exhaustive 6-bit and 7-bit wide-tile specialization coverage
 
 All 80 B6 trellis wide-tile specializations were compiled and resource-audited: 16 table-trellis and 64 computed-trellis. Baseline spilling was 80/80; candidate spilling is 19/80, with maximum private memory falling from 3,408 to 120 B/thread. For B7, 80/80 forms were also compiled: spilling fell from 80 to 22, with maximum private memory falling from 3,640 to 136 B/thread. Both chain modes are covered where the form supports chaining; no per-shape constants or exclusions were introduced.
+
+## Source-level correctness review (GPU gate pending)
+
+The old WMMA wrapper translates each signed/signed 16-K integer product to compatibility lane order before elementwise i32 addition. The native accumulation form uses the same native operand permutation and signed WMMA flags, sums eight K16 products in native lanes, then translates once. As the translation is a lane permutation and each 128-K sum has magnitude at most 2,097,152, addition cannot overflow i32 and conversion commutes with accumulation exactly. The initial M64 sum is zero in either layout; 16-row bias initialization is untouched. Scale-fold order, split-K completion and chain wait/done are also unchanged.
+
+The unchanged-control and candidate builds produced the same 197 occupancy-target warnings, and no additional SGPR use. **GPU byte identity and replay must still pass before acceptance.**
