@@ -93,3 +93,11 @@ Example full-range timing, N=34816 K=5120 unchained:
 | grid8 | 32 | 1573.4 [1570.2–1590.3] → 235.1 [227.2–235.7] | 1569.7 [1567.3–1572.9] → 233.5 [229.0–233.8] |
 | grid8 | 48 | 3267.5 [3213.4–3306.9] → 322.6 [311.0–330.3] | 3376.2 [3334.0–3379.6] → 310.9 [308.8–321.0] |
 | grid8 | 64 | 4915.0 [4748.8–4964.9] → 382.3 [382.0–383.9] | 4717.8 [4691.1–4733.8] → 382.0 [374.1–397.7] |
+
+## Continuation step 4 — residual lifetime trial: rejected before GPU
+
+- The remaining 106 spilled M64 specializations retain these live values at overlapping K segments: native integer WMMA sums in raw11[NT], out[NT] float folds, the short raw[NT] compatibility conversion, activation pb[kBP] staging plus future inputs, current/future decoder units pf[kU]/pfn[kU], 16 decoded weight codes and per-wave Stage8 fragments. Longer liveness is a plausible pressure source, not a proof of sole causation.
+- The metadata-derived constexpr guard selected NT greater than one 16-token tile because all 106 residual spillers are NT2/NT3/NT4 (respectively 1/4/101); none are NT1. A scratch-only rewrite fused each staged B fragment directly into its native WMMA call under this guard, preserving the integer sum and float fold order.
+- Built partition zero of the 6-bit/7-bit IQR family dispatch in one low-priority job and compared 740 kernel records. All five form families were present: kind2 8, kind3 8, kind4 8, table-trellis kind5 24, computed-trellis kind6 80 M64 instances.
+- **Rejected:** 0/128 wide-tile specializations improved. One kind5 table-trellis B7 instance increased spilled VGPRs **83 to 100** and private bytes **128 to 132**. All other 127 wide-tile records and 612 non-wide records were unchanged. This violated the no-regression resource gate.
+- No GPU correctness or timing run was made for the rejected variant, and the repository rewrite was not altered. Previously rejected rolling and prefetch-lifetime trials remain rejected. The qualified accumulate-once rewrite is retained with 106 measured residual spillers.
