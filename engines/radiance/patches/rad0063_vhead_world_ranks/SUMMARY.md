@@ -1,4 +1,7 @@
-# rad0063: vocabulary-head builder for any tensor-parallel world
+# rad0063 — vocabulary-head builder for any tensor-parallel world (VTP57)
+
+**Status:** untested
+**Plan item:** VTP57
 
 The vocabulary-weighted head tool builds its width classes for two ranks only (it splits the vocabulary in halves). The engine
 shards a class by rows over the rank count and needs every rank's slice of a class to be the same number of rows, a multiple
