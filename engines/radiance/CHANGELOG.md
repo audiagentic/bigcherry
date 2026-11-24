@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.9.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.7...bc-radiance-2020.9.0) (2026-11-24)
+
+
+### New and changed
+
+* **radiance:** cut the vocabulary head for any rank count (rad0063, untested package) ([#1497](https://github.com/audiagentic/bigcherry/issues/1497)) ([37da96c](https://github.com/audiagentic/bigcherry/commit/37da96c46395c892a17d62a51383b396b8256e65))
+
 ## [2020.8.7](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.6...bc-radiance-2020.8.7) (2026-11-24)
 
 
