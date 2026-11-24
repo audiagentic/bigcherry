@@ -28,3 +28,9 @@ Two additional loop-lifetime variants were built against the first 128-instance 
 Both variants left all other kernel resource records unchanged. The resource-safe accumulate-once rewrite remains selected, with its residual 106 spilling instances documented individually in the report. No hand-picked per-model guard or new constant was introduced.
 
 **Stage 2 result:** further lifetime changes rejected by the no-regression gate; source unchanged. Numerical and timing validation of the selected rewrite remains required.
+
+## Adjacent compiled paths — report only
+
+The separate 16-row tile has 316 computed-trellis specializations averaging 104.101 lane-exchange and 14.684 WMMA instructions, versus 48 table-trellis specializations at 64 exchanges and eight WMMA instructions each. The computed-trellis row varies from 64/8 at one token tile to 208/32 at four.
+
+Of the 49 computed-trellis MoE specializations, 13 spill up to 412 B/thread. The adjacent 16-row and MoE paths are unchanged by this patch. These are compiled code-object facts, not new timings.
