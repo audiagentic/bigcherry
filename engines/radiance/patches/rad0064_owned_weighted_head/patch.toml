@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0064_owned_weighted_head"
+order = 64
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP57"]
+requires = ["rad0019_vtp14_n2_tp_ownership_fp8"]
+conflicts = []
+tags = ["tensor-parallel"]
