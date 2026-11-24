@@ -8,6 +8,16 @@ PYTHONPATH=tools python3 -m bigcherry build --lane radiance:stock:linux-radiance
 
 `lab-build.sh` provides `rad_build LOG` to sourced lab scripts. It reuses builds only for matching recorded engine/config trees and ROCm SDK, requiring both the engine and helper binaries. For development serving from this build, use native `bc-serve serve CONFIG --configs DIR --engine-binary BUILD/bin/radiance --site SITE --model-root ROOT --run-dir RUN`.
 
+## Gate E: a release's install, start, canary and stop
+
+```sh
+# Waits for the release's three assets, installs into a fresh root, verifies, starts flashnext-4gpu and
+# qwen27b-tp3 (one short GPU lease each), runs the canary, stops, prints one result line, deletes its temp files.
+bash tools/lab/radiance/gate-e.sh bc-radiance-2020.11.2 --wait --result gate-e-result.txt
+```
+
+The line has the Gate E evidence table's columns (release, archive id, flashnext start seconds, qwen27b-tp3 start seconds, PASS or FAIL with reasons). See `gate-e.sh` for the checks.
+
 ## CI-seeded ccache (BU01)
 
 A successful **main** Radiance CI build publishes a two-day `radiance-ccache-main` artifact. It includes a compiler fingerprint, compressed ccache entries and `SHA256SUMS`. To use it before a branch kernel edit/build:
