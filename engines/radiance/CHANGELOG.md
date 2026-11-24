@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.11.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.1...bc-radiance-2020.11.2) (2026-11-24)
+
+
+### Fixes
+
+* **radiance:** host-facts records drop the kernel builder's account and machine; forbidden-term email scan is linear on long lines ([#1517](https://github.com/audiagentic/bigcherry/issues/1517)) ([b987274](https://github.com/audiagentic/bigcherry/commit/b987274ea66ab7e249139a1d8acfdfea442cf5f6))
+
 ## [2020.11.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.0...bc-radiance-2020.11.1) (2026-11-24)
 
 
