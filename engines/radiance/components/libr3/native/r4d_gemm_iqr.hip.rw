@@ -112,3 +112,36 @@ constexpr uint32_t kIqrTokenTile = 16u;
     const char* const dtype = r4d_gets(a, "dtype");
     g->rotated = dtype && std::strcmp(dtype, "i8a8h") == 0;
 @@ end
+
+# Keep the int32 sum in native layout across each scale group.
+# Row-f32 seeds all lanes with the same integer constant.
+@@ find 1
+            f8v raw = rb_first<BIAS ? 32 : 0>();
+#pragma unroll
+            for (uint32_t ks = 0; ks < kBlock / kK; ++ks)
+                raw = mma8<true>(frag_of(a8[ks / 4u], ks % 4u), bq[j & 1u][ks], raw);
+            const float as = XS[(size_t)tok[j] * xs_ld + kb];
+@@ replace
+            // A few trellis-MAD forms lose a wave or spill at larger live token tiles.
+            // Select only the form/NT/chain specializations with a qualified resource record.
+            constexpr bool kNativeAccOnce =
+                F::KIND != kTrellisMad ||
+                (NT <= 2u && !(F::SC == kRowF32 && F::B == 3u && NT == 1u && CH::on) &&
+                 !(F::B == 6u && GATED && !CH::on));
+            f8v raw;
+            if constexpr (kNativeAccOnce) {
+                r3_i8 raw11 = __builtin_bit_cast(r3_i8, rb_first<BIAS ? 32 : 0>());
+#pragma unroll
+                for (uint32_t ks = 0; ks < kBlock / kK; ++ks)
+                    raw11 = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag_of(a8[ks / 4u], ks % 4u)), lane),
+                        true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, bq[j & 1u][ks]), lane), raw11, false);
+                raw = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11, lane));
+            } else {
+                raw = rb_first<BIAS ? 32 : 0>();
+#pragma unroll
+                for (uint32_t ks = 0; ks < kBlock / kK; ++ks)
+                    raw = mma8<true>(frag_of(a8[ks / 4u], ks % 4u), bq[j & 1u][ks], raw);
+            }
+            const float as = XS[(size_t)tok[j] * xs_ld + kb];
+@@ end
