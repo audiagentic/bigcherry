@@ -1,5 +1,13 @@
 # Changelog
 
+## [2020.9.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.9.0...bc-radiance-2020.9.1) (2026-11-24)
+
+
+### Performance
+
+* **libr3:** keep the vocabulary head's integer sums native per scale block (IQR 6 streams -34%) ([#1501](https://github.com/audiagentic/bigcherry/issues/1501)) ([abcbb1f](https://github.com/audiagentic/bigcherry/commit/abcbb1f5eaf35f8b91119bad618250c71579ec13))
+* **radiance:** uneven ownership accepts a vocabulary-weighted head (rad0064) ([#1498](https://github.com/audiagentic/bigcherry/issues/1498)) ([f8c4e99](https://github.com/audiagentic/bigcherry/commit/f8c4e99ce0d57638af171093243a4cbae8dd99e3))
+
 ## [2020.9.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.8.7...bc-radiance-2020.9.0) (2026-11-24)
 
 
