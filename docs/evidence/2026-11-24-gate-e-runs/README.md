@@ -1,4 +1,4 @@
-# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.11.3)
+# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.11.4)
 
 Gate E takes a published release, downloads its archive, checksum and receipt, installs it into an isolated root with the ROCm SDK (7.2.4),
 verifies the root, then starts, canaries and stops two production layouts under a short GPU lease: `flashnext-4gpu` and `qwen27b-tp3`.
@@ -22,6 +22,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.11.1 | e65c73a7 | 183 s | 25 s | IQR wide tile (17-64 rows) keeps its integer sums native per scale block |
 | 2020.11.2 | 6246f8ad | 193 s | 24 s | host-facts records no longer carry the kernel builder's account and machine (engine owner-start snapshot) |
 | 2020.11.3 | 7b0e8a96 | 292 s | 26 s | embedding gather butterflies, NT4 head prefetch, chained long 16-row tiles. The flashnext start overlapped heavy builds on the host (same pattern as 2020.9.2); serving against 2020.11.2 is level on every row |
+| 2020.11.4 | 6fe8e142 | 231 s | 25 s | fused single-band IQR prefill tile (65-128 rows). Recorded with the repository's gate-e.sh tool |
 
 ## How to read this, and when Gate E need not be run again
 
