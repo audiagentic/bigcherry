@@ -597,6 +597,16 @@ class RunRecordsTests(unittest.TestCase):
             self.assertLess(stdout.getvalue().index("provenance differences"), stdout.getvalue().index("cold_ttft_s"))
             self.assertEqual(len(run_records.RunRecordStore(self.root).query()), 4)
 
+    def test_shipped_parity_baseline_is_a_valid_run_record_baseline(self):
+        from bigcherry.core import results
+
+        shipped = ROOT / "docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json"
+        baseline = json.loads(shipped.read_text())
+        results.validate_baseline(baseline)
+        self.assertEqual(baseline["kind"], results.BASELINE_KIND)
+        self.assertGreaterEqual(len({r["record"]["run_id"] for r in baseline["records"]}), 2)
+        self.assertIn("decode.decode6_ms_per_step", baseline["metrics"])
+
     def test_results_refuse_a_path_only_baseline_and_a_single_launch(self):
         one = self.run_fixture("single-new", [1.0])
         with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
