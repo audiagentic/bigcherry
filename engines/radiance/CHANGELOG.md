@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.11.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.0...bc-radiance-2020.11.1) (2026-11-24)
+
+
+### Performance
+
+* **libr3:** keep the IQR wide tile's integer sums native per scale block (17-64 rows -80%) ([#1515](https://github.com/audiagentic/bigcherry/issues/1515)) ([bc04229](https://github.com/audiagentic/bigcherry/commit/bc042299e64fc7a9cbfdc5f8c48b7453617751d8))
+
 ## [2020.11.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.10.0...bc-radiance-2020.11.0) (2026-11-24)
 
 
