@@ -2,7 +2,7 @@
 id: RCS23
 order: 0
 plan: build-radiance-components
-state: in_progress
+state: completed
 created-at: '2026-11-25T00:54:41.130343+00:00'
 breadth: ''
 skill: advanced
@@ -73,6 +73,8 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 
 2026-11-25 S1 done (docs/evidence/2026-11-25-rcs23-iqr-inventory): upstream moved the IQR units 3 commits in 2.1.0..2.2.0 and 0 since; own r4d_gemm_iqr (+p1..p3), r4d_iqr_embed and r4d_logits_vocab whole-unit; r4d_moe_iqr, r4d_iqr_layout.cpp and r4d_iqr*.h stay upstream; r4d_gemm_8a8_prefill.h is extracted-family; rewrite blocks retirable: 25 (gemm_iqr), 1 (embed), 9 (vocab) after the overlay owns the unit, the 8 prefill-header blocks stay. S3 is per unit, smallest first, on the existing precedent (engines/radiance/components/bc-gfx12: a plugin listed ahead of the base library in --kernels, its rows reuse the base layout hooks so stored bytes are unchanged). S3a embedding gather: new component bc-iqr (plugin libbciqr, rows embed_lookup_iqr, owned source bc_iqr_embed.hip with the libr3 rewrite block absorbed and one source for gfx1100 and gfx1201 where the code allows); origins.toml per owned unit (upstream path, base commit, last integrated commit, strategy whole-unit, rows overridden, architectures, absorbed rewrite blocks); pin-triage reports origin drift (git log base..target on the path) with the classification clean, candidate or blocked; libr3 stops building the unit (exclude.txt) and the .rw block is archived unchanged; the release's native serving YAML lists libbciqr first. Proof per unit: unit harness overlay against the base on both architectures (hashes, resource records, replay), a row-catalogue test (the overlay row wins, the base alone still serves it, removing the overlay restores base behaviour, no unexpected shadow), the composition gates, then the installed release plus Gate E. S3b vocab head, S3c gemm_iqr family, each the same way.
 
+2026-11-25 completed. Stages merged: S1 inventory (#1590); S3a embedding gather (#1596); S3b vocabulary head (#1599); S3c IQR GEMM family with the fused single-band tile and the extracted 8a8 prefill header, rad0065 archived unchanged (#1603); origin-drift check in the pin-bump driver (#1606: OWNED_ORIGIN_BLOCKED, OWNED_ORIGIN_CHANGED, never writes last-integrated); RCS21 one-copy fused tile (#1592). Each unit proved by the unit harness on gfx1100 and gfx1201 (resource records, output hashes, replay, plain bf16 refused) and a row-catalogue test; every serving config that serves an IQR container lists libbciqr first (tested, no-orphan check). Gate E on 2020.17.0 (archive bea7cb21, 196 s and 26 s to running), the first release in which libr3 builds none of the three owned units, ran both layouts on the overlay rows alone. Exclusion finding: libr3's exclude.txt matched whole lines, so the S3a and S3b entries with a trailing comment excluded nothing until #1603 made them bare names. The five IQR prefill forms that differed in a cold libr3 build (BU03) come out 236 VGPR with no spills in the overlay build.
+
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
@@ -92,3 +94,5 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 - 2026-11-25T10:44:56.988012+00:00 (state-transition): State: deprecated → in_progress
 - 2026-11-25T10:45:06.870940+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T10:52:51.790343+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T17:41:15.818849+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T17:41:37.468323+00:00 (state-transition): State: in_progress → completed

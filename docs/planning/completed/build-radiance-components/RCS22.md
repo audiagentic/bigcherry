@@ -2,7 +2,7 @@
 id: RCS22
 order: 0
 plan: build-radiance-components
-state: pending
+state: completed
 created-at: '2026-11-25T00:40:56.481749+00:00'
 breadth: ''
 skill: advanced
@@ -67,6 +67,8 @@ Design review (2026-11-25): the engine's loader already composes several kernel 
 
 2026-11-25 closed as deferred: family plugins would change the engine loader for build-time and rollback gains the family compile targets and the unit harness already give (one family builds and gates in about 2.5 minutes against a 25 to 28 minute lane build; with the ccache fix a full cached build takes 5 minutes). Reopen if per-family rollback is wanted.
 
+2026-11-25 closed as not needed: the engine loader's existing kernel hierarchy (--kernels, local symbol scope, one overlay plugin ahead of the base) carried the IQR overlay without any loader change (RCS23). A family-plugin manifest would add a registry and per-family ABI hashes for no remaining gain. Reopen only if per-family rollback or more than one overlay family per architecture is wanted.
+
 ## Change Log
 
 - 2026-11-25T00:40:56.481749+00:00 (created-by): Created by lead
@@ -86,3 +88,5 @@ Design review (2026-11-25): the engine's loader already composes several kernel 
 - 2026-11-25T09:42:30.060875+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T09:43:05.806498+00:00 (state-transition): State: pending → deprecated
 - 2026-11-25T10:44:52.138475+00:00 (state-transition): State: deprecated → pending
+- 2026-11-25T17:41:20.622240+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T17:41:42.280826+00:00 (state-transition): State: pending → completed

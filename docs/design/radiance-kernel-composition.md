@@ -4,7 +4,7 @@
 
 > **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
 
-Status: layer 1 and the test harness are built (RCS19, RCS20, RCS25: composition gates, family targets, unit harness, pin-bump wiring). Layers 2 and 3 (traits seam, family plugins, overlay plugins: RCS21 to RCS23) are deferred, each with its reopen trigger in its plan item. The native provider was not adopted (RCS15 to RCS18). 2026-11-25.
+Status: built. Layer 1 and the test harness (RCS19, RCS20, RCS25), the one-copy fused tile (RCS21) and the IQR overlay plugin libbciqr owning the embedding gather, the vocabulary head and the GEMM family with an origin manifest and the pin-bump drift check (RCS23) are on main. The loader needed no change, so family plugins (RCS22) were not built. The native provider was not adopted (RCS15 to RCS18). 2026-11-25.
 
 ## 0. Terms (one meaning each)
 
