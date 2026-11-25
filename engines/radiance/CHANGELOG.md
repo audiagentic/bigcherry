@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.16.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.15.0...bc-radiance-2020.16.0) (2026-11-25)
+
+
+### New and changed
+
+* **radiance:** the vocabulary head as the second owned IQR unit in bc-iqr ([#1599](https://github.com/audiagentic/bigcherry/issues/1599)) ([10f6fea](https://github.com/audiagentic/bigcherry/commit/10f6fea6b1db0db0f9932bc62d33f08c687c104c))
+
 ## [2020.15.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.14.1...bc-radiance-2020.15.0) (2026-11-25)
 
 
