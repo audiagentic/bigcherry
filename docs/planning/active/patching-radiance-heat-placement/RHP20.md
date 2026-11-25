@@ -60,7 +60,7 @@ Card types: engines/radiance/archs.toml (gfx1201 libr4d, gfx1100 libr3, gfx1030 
 
 GATEWAY REVIEW 2026-11-10: (1) worker_heat.h:125-149 treats the LAST helper as the tail (worker_share::plan_tail) - right for flashnext-4gpu and -2xtx-rdna2-tail, wrong for flashnext-2xtx (no tail: the last XTX would become one), -2xtx-rdna2-head (head-share strategy overridden), -tp2xtx-r9700 (single head helper) and -tp2xtx. Until the planner is topology-aware the policy must refuse those layouts at start with a reason. (2) v1/manifest.cpp:384-397 rejects live policy on any TP engine (tp != 1) although live_policy_manifest.cpp:22-25 says the rank-0 histogram supports TP: validate rank-0 heat completeness and both ranks' generation/consumption, then lift deliberately. (3) Destination eligibility is checked optimistically at proposal time (worker_policy_driver.h:245-265); resolve format/arch/budget compatibility before proposing (fp8_e4m3_block cannot move to gfx1030, which holds w4nl64 only) and keep the receiver's authoritative checks. (4) Cross-architecture moves are not bit-identical (different kernels): require the KL/numerical gates, not bit-identity. (5) Engine-resident experts (the engine's 'heat engine' movable units) are NOT candidates of the helper-to-helper policy (worker_policy_input.h:165-175 fixes engine-local owners); engine<->helper movement needs its own ownership/residency design. (6) Existing hardware evidence: 131 paced swaps committed during scoring, 0 aborts, KL passing, on flashnext-4gpu only (RHP06.md); gfx1201-as-helper and TP2 transitions are untested. Matrix rows needed: flashnext-4gpu, -2xtx-rdna2-tail, -2xtx-rdna2-head, -2xtx, -tp2xtx-r9700 (helper-to-helper not applicable), -tp2xtx, engine-only (not applicable).
 
-
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Existing per-layout live-swap/unsupported-reason matrix remains, including other layouts outstanding after #1179. RSC06 changes transport only; policy state/reasons in runtime receipt, no launch manifest, do not duplicate or mark policy tests complete.
 
 ## Status 2026-11-19
 
@@ -194,3 +194,8 @@ the separate flashnext-4gpu stress arm remain hardware work.
 RHP20 stays in_progress; RHP11 stays in_progress; RHP06's old
 pending marker is progress-stale but must not be changed to done.
 - 2026-11-19T07:36:22.044355+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4602
+- 2026-11-25T01:42:42.232389+00:00 (updated-by): Updated: section:notes

@@ -1,5 +1,7 @@
 # Radiance serving configs: one native YAML per deployment with an `x-bigcherry` section
 
+> **Launch-transport decision superseded (2026-11-25):** [Native YAML launch and manifest retirement](radiance-native-yaml-launch.md) retains the one-file authoring and native-parser rules below, but replaces manifest-based execution with native --config, owner-only typed admission and evidence-only run capture. This is the target design, not a claim that the current binary already implements it.
+
 Status: design for RUM04 (Radiance 2.2 bump), 2026-11-20. Owner decision: the bump carries every serving config, and
 a config is one seamless file. Supersedes the "narrow x-bigcherry selector only" step in RUM04 and the interim layout
 (native YAML beside slimmed RSC12 TOML) committed as d99323272..c04c69128 on node/radiance-latest-bump. Governing
