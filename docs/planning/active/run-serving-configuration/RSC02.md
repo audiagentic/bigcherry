@@ -157,6 +157,8 @@ ends when `start` returns, so lab scripts use the wrapped `serve` form, never `s
 - The bash launcher and `tools/lab/radiance/lib/plan-check.sh` are deleted; no caller references them.
 - `bc-serve explain` (dry run) prints the manifest and the process plan without starting anything.
 
+Native power lifecycle independent acceptance (transferred from superseded PWR09/PWR04): selected-BDF whole-layout preflight and exact original readback before first write; verified owner/lease and explicit qualified intent; durable journal and receipt, bounded apply/readback, reverse rollback, children reaped before restoration, exact prior values restored before lease release; failure and restore failure visible, no success on partial apply. Prove unresolved-journal protection across different run directories and physical devices; reconcile archived observe-only stale-journal semantics with current SessionPower::begin, no new mutation until authorized recovery. Privilege boundary prevents unauthorized sysfs writes; no promise of SIGKILL or expiry restoration without independent verified exit/lease recovery (WSL08). Native fresh YAML -> measurement -> measured start -> stop and stored replay tested with nonstock mixed TP plan; verify same policy, room recheck, fake fault/permission/missing lease/partial apply/child failure and live selected-device readback/restore. Preserve stock and zero-write observe; label admission/no-op separately from actual writes. Foreground leased serve first; detached apply not enabled until WSL08 proof. No runtime phase switching until quiescence/dwell/rollback separately proven. Existing bc_power_transaction_test, bc_manifest_power_test, session/stored/cache tests and installed release gate; no duplicate implementation.
+
 ## Notes
 
 Depends on RSC01. Source: GPT configuration assessment 2026-11-02.
@@ -188,6 +190,8 @@ canary, stopped clean; engine SIGKILLed while serving -> session failed, lease r
 newer than its engine was refused by the engine (BC_CFG_PLAN_MISMATCH): the reason for the same-build check. GPT review
 req_rsc02-session-owner_f98e1286bafc (2 P0, 5 P1, 1 P2, all fixed). Next: step 2 (helpers); the remaining layouts become
 configs first (owner order 2026-11-14).
+
+2026-11-25 native power parity audit: #895 auto-applied configured cards under lease in retired launcher; #891 stock-only S10 input remains; #1131 removed launcher. Initial S15 serving parity did not prove nonstock native apply. PWR08 owns resolution, PWR07 probe/receipt; the remaining PWR09 gates transferred here because #1400 superseded the Python lifecycle plan after #1386 transferred PWR04 obligations into it. No second supervisor or new manifest. Keep native YAML authority and AGENT_INSTANCE guard (#1369).
 
 ## Status 2026-11-19 (after S15 and S16)
 
@@ -293,3 +297,5 @@ retirement. Those remain steps 3, 4, S15 and S16 respectively.
 - RV4516
 - RV4518
 - 2026-11-22T10:47:45.069205+00:00 (updated-by): Updated: section:steps
+- RV4578
+- 2026-11-25T01:03:10.136934+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
