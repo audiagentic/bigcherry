@@ -120,6 +120,14 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
       return fail(ConfigErrorCode::invalid_value, "power.profile.rules",
                   "invalid named rule, empty evidence or nonselected role");
   }
+  // Mixed-architecture tensor parallelism has several engine ranks of one role on different card types: such a role is
+  // resolved (and its digest key written) per architecture; a role on one architecture keeps its plain name, so every
+  // existing digest is unchanged.
+  std::map<std::string, std::set<std::string>> archs_of_role;
+  for (const auto &t : selected) archs_of_role[t.role].insert(t.arch);
+  const auto role_key = [&](const Target &t) {
+    return archs_of_role.at(t.role).size() > 1 ? t.role + "/" + t.arch : t.role;
+  };
   std::map<std::string, PowerSettings> resolved_roles;
   std::vector<PowerDevice> devices;
   for (const auto &target : selected) {
@@ -140,10 +148,10 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
                      rule.settings.power_cap_w};
         setting = patch(setting, p);
       }
-    const auto [it, inserted] = resolved_roles.emplace(target.role, setting);
+    const auto [it, inserted] = resolved_roles.emplace(role_key(target), setting);
     if (!inserted && !same_settings(it->second, setting))
       return fail(ConfigErrorCode::plan_mismatch, "spec.plan.power",
-                  "TP engine ranks disagree on architecture-specific role settings");
+                  "TP engine ranks of one architecture disagree on their role settings");
     devices.push_back({target.role, target.bdf, setting});
   }
 
