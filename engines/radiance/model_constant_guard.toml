@@ -390,3 +390,9 @@ path = "tools/lab/radiance/unit_families.toml"
 anchor = "rows_m = [65, 96, 128, 129, 160, 192, 256, 512, 2048]"
 category = "B"
 reason = "lab harness input: row counts the replay times, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_harness.py"
+anchor = "EMBED_CASES_ANCHOR = \"            iqr_embed_case(pl, f, 512, 640, 3.25f);\\n        }\\n\""
+category = "B"
+reason = "lab harness: the selftest text its edit anchors on, not an execution path of the product"

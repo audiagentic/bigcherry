@@ -1,0 +1,23 @@
+# bc-iqr: BigCherry's owned IQR kernel rows for gfx1100 and gfx1201, listed ahead of libr3 and libr4d in --kernels (RCS23).
+# A row here wins where its constraints hold and the base library serves everything else; rows reuse the base library's weight
+# layout hooks, so the stored bytes are the base's. Each owned unit is described in origins.toml.
+schema = 1
+name = "bc-iqr"
+engine = "radiance"
+targets = ["gfx1100", "gfx1201"]
+built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+outputs = ["kernels/libbciqr.so"]
+
+[build]
+configure = { RADIANCE_SRC = "{engine_source}" }
+
+# Names crossing the Radiance build/runtime boundary. The core coupling gate checks literals and source inventory.
+[coupling]
+upstream-headers = ["rad_abi.h", "rad_abi_layout.h", "r4d_iqr.h", "r4d_iqr_dec.h"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "libr4d/r4d_iqr.h", "libr4d/r4d_iqr_dec.h"]
+upstream-source-globs = []
+patch-provided-files = []
+protocol-flags = []
+owned-flags = []
+runtime-env = []
+abi-version = 43

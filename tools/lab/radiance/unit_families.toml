@@ -32,3 +32,15 @@ label = "iqr k{B} tiled"
 shapes = [[13312, 5120], [5120, 6656], [6144, 5120], [5120, 2304]]
 rows_m = [65, 96, 128, 129, 160, 192, 256, 512, 2048]
 bits = [6, 7]
+
+# Overlays: an owned plugin whose rows are listed ahead of the base library. The harness builds the plugin, runs the base's
+# selftest case through the overlay row (selftest rows are found by `row-prefix` + name), and compares with the base alone.
+[overlay.iqr_embed]
+component = "bc-iqr"
+plugin = "libbciqr"
+case = "embed_lookup_iqr"
+row-prefix = "bc_"
+# Kernels of the unit (mangled names) whose resource records are compared with the base library's.
+kernels = "iqr_embed_kernel"
+# Extra tables "rows:dim" the case also runs, and timed (cold, median of 31 launches)
+cases = "32768:5120"
