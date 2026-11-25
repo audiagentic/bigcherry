@@ -274,6 +274,10 @@
         "gated": {
           "type": "boolean"
         },
+        "covariate": {
+          "type": "string",
+          "minLength": 3
+        },
         "repeat_groups": {
           "type": "array",
           "items": {
