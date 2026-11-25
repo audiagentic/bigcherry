@@ -55,6 +55,8 @@ Sequence: after MEN11 leftovers, before the bumps (MEN10 step f uses it as the f
 
 2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. radiance.py cpu_smoke currently uses engine_args flags plus engine.toml smoke.cpu.args, base.build_cpu_smoke and campaign.cpu_smoke use shared ServerRunner. Actual argv may already translate elsewhere; audit rather than claim failure. Native cutover removes any Radiance legacy arg-to-YAML projection, preserves llama.cpp flags.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native --check is parser-only; actual native CPU --config launch with pinned tiny artifact and candidate library must serve deterministic output. Separate fake owner test, no GPU visible, no flag-to-YAML legacy adapter. Candidate new native config keys tested only when supported; no duplicate parser.
+
 ## Change Log
 
 - 2026-10-17T02:58:13.549094+00:00 (created-by): Created by agent
@@ -63,3 +65,5 @@ Sequence: after MEN11 leftovers, before the bumps (MEN10 step f uses it as the f
 
 - RV4616
 - 2026-11-25T02:09:58.080009+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
+- RV4650
+- 2026-11-25T02:49:39.074949+00:00 (updated-by): Updated: section:notes

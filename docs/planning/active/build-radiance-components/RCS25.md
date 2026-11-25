@@ -49,11 +49,15 @@ Medium; mostly assembling existing scratch tools. Risk: a test plugin whose modu
 
 A kernel change can be built, hashed against the shipped build, and replayed from one command in minutes; the full plugin build, Gate E and serving runs are needed only for a release.
 
+Native provider vs overlay fixture independently verifies real supported forms, logical output equality and refused forms with actual layouts, records selected row and compile resource record; target row missing or unwritten outputs fail. Bounded replay and no disguised reference fallback. RCS25 discrete tests before full release, do not require full plugin per kernel.
+
 ## Notes
 
 Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or digest machinery: git commit ids and plain comparisons only.
 
 2026-11-25 MEN24 bump integration: this is the sole discrete kernel harness owner. RCS19 supplies the actual composed input and affected-unit list; RCS20 supplies family targets; RCS23 uses this harness for overlay resource, byte-output and replay qualification before advancing integrated revision. Compare exact git revisions, plugin name/version/upstream release and actual rows; no additional hash/identity machinery apart from existing output hashes. Run one card under queued lease, unknown dependency scope widens checks; isolated harness tolerates missing unrelated rows only, never suppresses required target-row failures. Full integrated lane, installed Gate E and MEN17 serving/parity checks remain release gates. See docs/design/radiance-bump-integration.md.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Reuse one discrete harness for native libr3d, generated libr3 and owned overlay comparisons where supported, exact source/build/target. Native packed IQR private raw layout differs from local; build actual layout/relayout from same logical source or canonical inputs for each arm, never reuse incompatible packed bytes. Test omitted target row, wrong provider/layout, altered scale, untouched output sentinel, OOM/timeout/wrong card. Missing unrelated rows test-only; never production fallback. Timing adaptive windows bounded, inconclusive if not converged; preserve bit-identity for existing arithmetic changes. Full plugin and engine not prerequisite.
 
 ## Change Log
 
@@ -64,3 +68,5 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 
 - RV4625
 - 2026-11-25T02:18:13.454037+00:00 (updated-by): Updated: section:notes
+- RV4636
+- 2026-11-25T02:42:19.951361+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

@@ -49,6 +49,8 @@ Native selftest against matched libref, local rewrite check for the comparison a
 
 A reproducible matched-baseline row matrix separates native coverage, correctness gaps, performance gaps and untested shapes.
 
+Record exact candidate and source matched arms, CMake target and actual provider/row, model encodings including local u6/u7, L15/16, chained/bias, group128 vs 256, shape/scale/relayout/unrelayout, canonical/byte and measured speed. Mark unsupported separately; native scalar IQR not assumed optimized. RCS25 discrete first, existing mixed model gates later. Decision per covered path, no forced all-native switch.
+
 ## Notes
 
 Execution detail and source matrix: docs/reviews/radiance-native-libr3d/ASSESSMENT.md. Do not infer support from patch applicability or an upstream row name.
@@ -59,9 +61,19 @@ Execution brief with the stage breakdown for RCS15 to RCS18: the libr3d native m
 
 2026-11-25 part one done (GPU-free): docs/evidence/2026-11-25-rcs15-libr3d-inventory. Finding: at the pinned release (2.2.0, newest tag) upstream's native RDNA3 library has 51 units of its own, dot2 and wave-matrix arms per GEMM row, and NO row for the IQR (trellis 6/7-bit) form or the local int8 form with rotated activations (IQ8R); libr4d has IQR in 24 files. So a native-provider cutover cannot replace our gfx11 IQR and IQ8R path: those rows would have to be added, which is what the owned overlay plugins (RCS23) are, under either outcome of this item. The decision this item still owns is about the remaining rows (MXFP4, E4M3, GDN, MoE, DFlash, attention, helpers): matched arms A (our libr4d-units build), B (stock native library) and C (reference oracle) on one XTX, with IQR and IQ8R marked no native row.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. The pinned inventory no-IQR/no-native-int8 finding is valid for 2.2.0 only. Candidate aac92d7a/88b5a04a implements scalar packed IQR U3/U4/U5 L16 run128/256, group128, BF16 group or factored F32 scales, actual CMake only exact R3D_GPU_TARGETS=gfx1100, optional operands absent. Native int8 475e2fb3/5da0007e group128, not blanket IQ8R group256. u6/u7 and L15 not supported by that row. Native h128/KV work not proof h256/GQA6. Read exact model encoding and winning rows. Compare on one frozen source A generated/BC, B upstream libr3d, C reference; current shipped baseline separate. Candidate source test not yet built. Do not backport or select production based on row name.
+
+Concurrent #1563 updated the existing RCS15 inventory with the same 119-commit main and advisory pin triage (no drift/coupling failures, patches affected, 48 target files and six rewrite-anchor files changed). Reuse that evidence, not a second inventory task. Our exact layout/source restrictions in the second integration review narrow the comparable subset. Main remains evidence only under tagged-release policy unless lead explicitly authorizes an isolated comparison build; no production repin. Actual composed patch check remains open.
+
 ## Change Log
 
 - 2026-11-18T08:41:29.761201+00:00 (created-by): Created by agent
 - 2026-11-18T08:49:00.279834+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T00:41:57.599407+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T01:28:14.342119+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4627
+- 2026-11-25T02:37:49.407812+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T02:54:55.206737+00:00 (updated-by): Updated: section:notes
