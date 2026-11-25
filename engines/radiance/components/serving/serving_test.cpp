@@ -1721,12 +1721,11 @@ void session_engine_plan(Fixture& t) {
                 }
             }
         }
-        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 5 &&
+        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 3 &&
               inspector_roles[0] == "native config inspector" &&   // the device-free parse that resolves the config
               inspector_roles[1] == "native config inspector" &&   // the admission inspect with the selected cards
-              inspector_roles[2] == "native v3 measuring draft writer" &&
-              inspector_roles[3] == "native v3 measuring engine" &&
-              inspector_roles[4] == "native v3 measured writer" && reaped.size() == 5 && owner_receipt_verified &&
+              inspector_roles[2] == "native v3 measuring engine" &&   // the manifests are written in the owner, not by children
+              reaped.size() == 3 && owner_receipt_verified &&
               measured_artifact_verified && !fs::exists(native_yaml) && fs::exists(cache_tripwire)))
             throw std::runtime_error("native v3 session did not complete one owner-tracked measurement and measured "
                                      "writer with a sealed serving handoff: " +
@@ -1856,7 +1855,7 @@ void session_engine_plan(Fixture& t) {
         assert(carried.plan_reuse.at("outcome") == "live_admission_refused" && carried.phase_ms.contains("measure"));
         assert(std::find(carried_roles.begin(), carried_roles.end(), "native v3 measuring engine") ==
                    carried_roles.end() &&
-               std::count(carried_roles.begin(), carried_roles.end(), "native v3 measured writer") == 1);
+               carried_roles.size() == 2);   // the two inspectors only: the plan is sealed again in the owner
         assert(carried.summary.at("plan_carried_from").at("attempt") == original_index.native_measurement->attempt_id &&
                carried.summary.at("plan_carried_from").at("engine_identity") !=
                    bc::serving::engine_identity(rebuilt.engine_binary, home));
@@ -2129,11 +2128,10 @@ void session_engine_plan(Fixture& t) {
         if (fs::is_directory(drift_attempts))
             for (const auto& attempt : fs::directory_iterator(drift_attempts))
                 if (attempt.is_directory()) drift_attempt_dirs.push_back(attempt.path());
-        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 4 &&
+        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 3 &&
               drift_role_order[0] == "native config inspector" &&
               drift_role_order[1] == "native config inspector" &&
-              drift_role_order[2] == "native v3 measuring draft writer" &&
-              drift_role_order[3] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
+              drift_role_order[2] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
               !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
               !fs::exists(drift_run / ("manifest-native-" + drift_attempt_dirs.front().filename().string() + ".json"))))
             throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
@@ -2302,10 +2300,8 @@ void helper_vram_owner_graph(Fixture& t) {
     };
     // The first inspector is the device-free config parse; the second is the admission inspect.
     const auto fresh = serve_and_stop({"native config inspector", "native config inspector",
-        "native v3 measuring draft writer",
-        "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
-        "native v3 measuring draft writer", "helper0 measuring", "helper1 measuring",
-        "native v3 measuring engine", "native v3 measured writer", "helper0", "helper1", "engine"});
+        "helper0 measuring", "helper1 measuring", "native v3 measuring engine",
+        "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "helper0", "helper1", "engine"});
     assert(samples.size() == 2 && !fs::exists(authored));
     for (const auto& [bdf, count] : samples) {
         assert(count >= 4);
@@ -2503,9 +2499,8 @@ void helper_vram_owner_graph(Fixture& t) {
         short_record.at("errors").dump().find("forced placement incomplete: committed 3 of 4") == std::string::npos)
         throw std::runtime_error("an incomplete forced schedule did not fail the score: " + short_record.dump());
 
-    // Force a fresh measured plan and request an operator stop at the writer's
-    // registered pre-exec gate. This is an event, not a timing guess: the owner
-    // must stop/reap the writer and measuring helpers before acknowledging stop.
+    // Force a fresh measured plan and request an operator stop when the measuring engine starts. This is an event, not
+    // a timing guess: the owner must stop/reap the measuring engine and helpers before acknowledging stop.
     in.stored_manifest.clear();
     in.lab_experiment.reset();
     in.work_root = t.root / "writer-stop-cache";
@@ -2513,14 +2508,14 @@ void helper_vram_owner_graph(Fixture& t) {
     ss::Session stop_owner = owner;
     stop_owner.run_dir = t.root / "writer-stop";
     stop_owner.quality.reset();
-    bool saw_writer = false;
+    bool saw_measuring_engine = false;
     stop_owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
         ss::Hooks observing = hooks;
         observing.started = [&](ss::ChildKind kind, const std::string& role, pid_t pid, const fs::path& log) {
             hooks.started.require("session.hooks.started", kind, role, pid, log);
-            if (role == "native v3 measured writer") {
-                saw_writer = true;
-                ::raise(SIGTERM); // installed owner handler: legal operator stop during the writer
+            if (role == "native v3 measuring engine") {
+                saw_measuring_engine = true;
+                ::raise(SIGTERM); // installed owner handler: legal operator stop during the measurement
             }
         };
         return ss::plan_engine_only(in, dir, observing);
@@ -2528,13 +2523,13 @@ void helper_vram_owner_graph(Fixture& t) {
     const int interrupted = ss::serve(stop_owner);
     const auto interrupted_record = ss::read_record(stop_owner.run_dir).value_or(Json::object());
     const auto interrupted_events = interrupted_record.value("events", Json::array()).dump();
-    if (!saw_writer || interrupted != 0 || interrupted_record.value("state", "") != "stopped" ||
+    if (!saw_measuring_engine || interrupted != 0 || interrupted_record.value("state", "") != "stopped" ||
         !interrupted_record.value("errors", Json::array()).empty() ||
         !ss::alive_recorded(interrupted_record).empty() ||
         interrupted_events.find("stop_requested") == std::string::npos ||
         interrupted_events.find("power_restored") == std::string::npos ||
         interrupted_events.find("segment_retired") == std::string::npos)
-        throw std::runtime_error("native measured-writer stop failed to clean up: " + interrupted_record.dump());
+        throw std::runtime_error("native measuring-engine stop failed to clean up: " + interrupted_record.dump());
 }
 
 
