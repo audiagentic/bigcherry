@@ -175,10 +175,13 @@ NativeFleetConfig::NativeFleetConfig(NativeConfigSnapshot snapshot, const std::s
 std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
     constexpr const char* command = "--bc-inspect-native-config";
     if (argc < 2 || argv[1] == nullptr || std::strcmp(argv[1], command) != 0) return std::nullopt;
-    const bool with_profiles = argc == 5 && argv[3] != nullptr && std::strcmp(argv[3], "--bc-profile-fd") == 0;
-    if ((argc != 3 && !with_profiles) || argv[2] == nullptr || (with_profiles && argv[4] == nullptr)) {
+    const bool with_profiles = argc >= 5 && argv[3] != nullptr && std::strcmp(argv[3], "--bc-profile-fd") == 0;
+    const bool with_site = with_profiles && argc == 7 && argv[5] != nullptr && std::strcmp(argv[5], "--bc-site-fd") == 0;
+    if ((argc != 3 && !(with_profiles && (argc == 5 || with_site))) || argv[2] == nullptr ||
+        (with_profiles && argv[4] == nullptr) || (with_site && argv[6] == nullptr)) {
         std::cerr << "radiance: " << command
-                  << " requires one inherited sealed descriptor holding the raw YAML [--bc-profile-fd FD for the power profile file]\n";
+                  << " requires one inherited sealed descriptor holding the raw YAML [--bc-profile-fd FD for the power profile file"
+                     " [--bc-site-fd FD for this host's power site file]]\n";
         return 2;
     }
 
@@ -199,6 +202,15 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                 throw std::invalid_argument("profile descriptor must be an integer greater than 2");
             power_profiles = yaml_document_json(v2::read_sealed_document(profile_fd, "power profile descriptor"),
                                                 "power-profiles");
+        }
+        nlohmann::json power_site = nullptr;
+        if (with_site) {
+            int site_fd = -1;
+            const char* site_end = argv[6] + std::strlen(argv[6]);
+            const auto [site_ptr, site_error] = std::from_chars(argv[6], site_end, site_fd);
+            if (site_error != std::errc{} || site_ptr != site_end || site_fd < 3)
+                throw std::invalid_argument("site descriptor must be an integer greater than 2");
+            power_site = yaml_document_json(v2::read_sealed_document(site_fd, "power site descriptor"), "power-site");
         }
         NativeFleetConfig managed = NativeFleetConfig::replay(NativeConfigSnapshot::from_raw_fd(fd));
         const auto& fleet = managed.fleet();
@@ -224,6 +236,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"max_sequences", cfg.max_seqs},
                          {"x_bigcherry", x_bigcherry_subtree(managed.snapshot().yaml_utf8())},
                          {"power_profiles", power_profiles},
+                         {"power_site", power_site},
                          // The tuning options the authored YAML states, as values the strict reader parsed (null: absent).
                          {"tuning", {{"p2p", stated("--p2p", cfg.p2p == rad::RAD_P2P_ON    ? "on"
                                                              : cfg.p2p == rad::RAD_P2P_OFF ? "off" : "auto")},

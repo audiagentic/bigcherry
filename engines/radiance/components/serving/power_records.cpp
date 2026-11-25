@@ -199,11 +199,14 @@ Json observed_json(const ObservedCard& card) {
         const auto& value = card.values.at(static_cast<size_t>(control));
         return value ? Json(*value) : Json(nullptr);
     };
-    return {{"bdf", card.pci.value},
-            {"vddgfx_offset_mv", field(ControlId::voltage)},
-            {"sclk_max_mhz", field(ControlId::shader)},
-            {"mclk_max_mhz", field(ControlId::memory)},
-            {"power_cap_uw", field(ControlId::board_cap)}};
+    Json result = {{"bdf", card.pci.value},
+                   {"vddgfx_offset_mv", field(ControlId::voltage)},
+                   {"sclk_max_mhz", field(ControlId::shader)},
+                   {"mclk_max_mhz", field(ControlId::memory)},
+                   {"power_cap_uw", field(ControlId::board_cap)}};
+    if (!card.identity.empty())
+        result["identity"] = card.identity;
+    return result;
 }
 Json tuning_json(const Tuning& tuning, bool include_nulls) {
     Json result = Json::object();
@@ -359,12 +362,15 @@ Json receipt_json(const Receipt& receipt) {
                     {"devices", cards}};
     const std::string_view receipt_state =
         receipt.stage == Stage::fresh ? "not_requested" : stage_name(receipt.stage);
-    return {{"schema_version", 1},
-            {"run_id", receipt.run_id},
-            {"manifest", manifest},
-            {"request", request},
-            {"observations", observations},
-            {"transaction", {{"state", receipt_state}, {"events", events_json(receipt.events)}}}};
+    Json result = {{"schema_version", 1},
+                   {"run_id", receipt.run_id},
+                   {"manifest", manifest},
+                   {"request", request},
+                   {"observations", observations},
+                   {"transaction", {{"state", receipt_state}, {"events", events_json(receipt.events)}}}};
+    if (!receipt.workload.empty())
+        result["workload"] = receipt.workload;
+    return result;
 }
 
 v2::Result<Journal> parse_journal(const Json& raw, const fs::path& from) {

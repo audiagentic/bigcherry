@@ -173,6 +173,8 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
     auto it = m.spec.intent.power.role_overrides.find(dev.role);
     if (it != m.spec.intent.power.role_overrides.end())
       dev.settings = patch(dev.settings, it->second);
+    if (const auto site = in.power.site_overrides.find(dev.bdf); site != in.power.site_overrides.end())
+      dev.settings = patch(dev.settings, site->second);   // this host's per-BDF override wins
     if (auto error = valid_settings(dev.settings, "spec.plan.power.devices"))
       return *error;
     // A voltage-offset-only gfx1100 plan is unsafe even in observe mode.
@@ -187,27 +189,26 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
       if (dev.settings.sclk_offset_mhz)
         return fail(ConfigErrorCode::invalid_value, "spec.plan.power.devices",
                     "SCLK offset has no transaction/restore backend");
-      auto q = in.qualifications.find(dev.bdf);
-      auto p = in.probes.find(dev.bdf);
-      if (q == in.qualifications.end() || p == in.probes.end() ||
-          !q->second.qualified || q->second.bdf != dev.bdf ||
-          q->second.arch != target.arch || q->second.profile != name ||
-          q->second.evidence.empty() || q->second.build_id.empty() ||
-          q->second.driver_id.empty() ||
-          !same_settings(q->second.settings, dev.settings) ||
-          p->second.bdf != dev.bdf || p->second.driver != "amdgpu")
+      if (!in.power.probe)
+        return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices", "apply needs a device probe");
+      const S10DeviceProbe probe = in.power.probe(dev.bdf);
+      if (probe.bdf != dev.bdf || probe.driver != "amdgpu")
         return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices",
-                    "apply requires per-BDF evidence, build/driver identity and fresh probe");
+                    dev.bdf + ": no amdgpu power backend for this card");
+      if (!in.power.qualify && !(in.power.qualified_by && in.power.qualified_by(dev.bdf, dev.settings)))
+        return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices",
+                    dev.bdf + ": no verified apply, readback and restore receipt for these settings on this board "
+                              "and driver; qualify them with a lab apply (--allow-power-apply --qualify-power)");
       const auto values = settings_json(dev.settings);
       for (auto it = values.begin(); it != values.end(); ++it) {
-        const auto ctl = p->second.controls.find(it.key());
+        const auto ctl = probe.controls.find(it.key());
         const int64_t raw = it.value().get<int64_t>();
         if (it.key() == "power_cap_w" && raw > kSafe / 1000000LL)
           return fail(ConfigErrorCode::invalid_value, "spec.plan.power.devices",
                       "power cap overflows probe micro-watt units");
         const int64_t value = raw *
             (it.key() == "power_cap_w" ? 1000000LL : 1LL);
-        if (ctl == p->second.controls.end() || !ctl->second.supported ||
+        if (ctl == probe.controls.end() || !ctl->second.supported ||
             !ctl->second.original_readable ||
             value < ctl->second.minimum || value > ctl->second.maximum)
           return fail(ConfigErrorCode::invalid_value, "spec.plan.power.devices",

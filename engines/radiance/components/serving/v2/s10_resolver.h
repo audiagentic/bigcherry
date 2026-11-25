@@ -1,10 +1,12 @@
 #pragma once
 // RSC11 S10: inactive, card-free v2 resolver. No production v1 path links it.
-// PWR07 probe and independent qualification are injected; this code never
+// The device probe and the receipt qualification are injected; this code never
 // queries sysfs or writes a device. S13 will supply the trusted producers.
 #include "v2/s8_rules.h"
 
+#include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -31,15 +33,15 @@ struct S10DeviceProbe {
   std::string driver;
   std::map<std::string, S10ControlProbe> controls;
 };
-struct S10PowerQualification {
-  std::string bdf;
-  std::string arch;
-  std::string profile;
-  PowerSettings settings;
-  std::string evidence;
-  std::string build_id;
-  std::string driver_id;
-  bool qualified = false;
+// What apply needs beyond the profile. `probe` is the transaction's own capability read of a selected BDF
+// (power_qualification.h probe_of); `qualified_by` names the receipt that qualifies exactly these settings on that
+// board, if any. `qualify` is the lab-only qualifying apply: it waives the receipt match and nothing else (probe range,
+// the gfx1100 pairing rule and the lease still apply). `site_overrides` are this host's per-BDF settings.
+struct S10PowerEvidence {
+  std::map<std::string, PowerPatch> site_overrides;
+  std::function<S10DeviceProbe(const std::string &bdf)> probe;
+  std::function<std::optional<std::string>(const std::string &bdf, const PowerSettings &)> qualified_by;
+  bool qualify = false;
 };
 struct S10PolicyPreflight {
   LivePolicyRequested requested = LivePolicyRequested::kNotApplicable;
@@ -57,8 +59,7 @@ struct S10Inputs {
   std::vector<S8Calibration> calibrations;
   S10PowerProfile profile;
   PowerMode mode = PowerMode::kObserve;
-  std::map<std::string, S10DeviceProbe> probes;
-  std::map<std::string, S10PowerQualification> qualifications;
+  S10PowerEvidence power;
   S10PolicyPreflight preflight;
   int64_t now_unix_s = 0;
 };

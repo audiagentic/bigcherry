@@ -6,6 +6,7 @@
 #include "lab_experiment.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
+#include "power_qualification.h"
 #include "rank_demand.h"
 #include "sha256.h"
 #include "config_loader.h"
@@ -92,7 +93,7 @@ void usage() {
            "  serve CONFIG --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root "
            "DIR] "
            "[--set k=v]\n"
-           "         [--engine-binary PATH] [--allow-power-apply]\n"
+           "         [--engine-binary PATH] [--allow-power-apply [--qualify-power]]\n"
            "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
            "         [--step-phase-trace]  opt-in per-rank HIP event trace in run-dir; changes timing\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
@@ -136,7 +137,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (cmd == "quality") quality.emplace();
     bool record_requested = false;
     fs::path calibration_records;
-    bool allow_power_apply = false;
+    bool allow_power_apply = false, qualify_power = false;
     bool strict_production_features = false;
     bool step_phase_trace = false;
     bool json = false;
@@ -206,6 +207,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         } else if (arg == "--allow-power-apply") {
             allow_power_apply = true;
             passed.push_back(arg);
+        } else if (arg == "--qualify-power") {
+            qualify_power = true;   // lab only: the apply that produces the receipt later applies are matched against
+            passed.push_back(arg);
         } else if (arg == "--strict-production-features") {
             strict_production_features = true;
             passed.push_back(arg);
@@ -223,6 +227,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (run_dir.empty())
         throw std::runtime_error(cmd +
                                  ": --run-dir DIR is required (the session's lock, socket, record, logs)");
+    if (qualify_power && !allow_power_apply)
+        throw std::runtime_error("--qualify-power is a lab apply: it needs --allow-power-apply (and a held gpu lease)");
     if (!config_name.empty() && !stored_manifest.empty())
         throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
     // Read and checked whole before any plan, so a bad schedule never costs a measurement.
@@ -407,10 +413,36 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     // Hardware and durable records live through the entire foreground owner.
     // A real write needs BOTH an explicit opt-in and a live ancestor-bound lease.
     bc::serving::power::LinuxHardware hardware(opts.sys_root);
-    bc::serving::power::DiskRecords records(run_dir / "power-journals", run_dir / "power-receipts");
+    // Receipts outlive the run: a later start finds the earlier apply receipts that qualify a setting. Without a work
+    // root (tests, one-off runs) they stay in the run directory and qualify nothing across runs.
+    const fs::path power_dir = work_root.empty() ? run_dir : fs::absolute(work_root) / "power";
+    const fs::path receipts_dir = work_root.empty() ? run_dir / "power-receipts" : power_dir / "receipts";
+    bc::serving::power::DiskRecords records(work_root.empty() ? run_dir / "power-journals" : power_dir / "journals",
+                                            receipts_dir);
+    inputs.power.apply = allow_power_apply;
+    inputs.power.evidence.qualify = qualify_power;
+    inputs.power.evidence.probe = [&hardware](const std::string& bdf) {
+        const auto pci = bc::serving::power::PciAddress::parse(bdf);
+        if (!pci) return bc::serving::v2::S10DeviceProbe{};
+        const auto card = hardware.inspect(pci.value());
+        return card ? bc::serving::power::probe_of(card.value()) : bc::serving::v2::S10DeviceProbe{};
+    };
+    inputs.power.evidence.qualified_by = [&hardware, receipts_dir](const std::string& bdf,
+                                                                   const bc::serving::v2::PowerSettings& settings) {
+        const auto pci = bc::serving::power::PciAddress::parse(bdf);
+        if (!pci) return std::optional<std::string>{};
+        const auto card = hardware.inspect(pci.value());
+        if (!card) return std::optional<std::string>{};
+        return bc::serving::power::qualifying_receipt(receipts_dir, pci.value(), settings, card.value().identity);
+    };
+    std::string power_site_yaml;   // this host's per-BDF power settings; the engine's YAML parser reads them
+    if (!work_root.empty()) {
+        std::ifstream site(fs::absolute(work_root) / "power-site.yaml");
+        if (site) power_site_yaml.assign(std::istreambuf_iterator<char>(site), std::istreambuf_iterator<char>());
+    }
     bc::serving::power::LinuxSensor sensor(opts.sys_root / "sys");
     auto power = std::make_shared<ss::ManifestPower>(
-        hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply);
+        hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply, config_name);
     ss::Session session;
     session.power_hook.begin_manifest = [power](const fs::path& path, bc::serving::v2::PlanUse use) {
         return power->begin(path, use);
@@ -441,7 +473,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     session.publish_feature_states = true;
     session.strict_production_features = strict_production_features;
     session.step_phase_trace = step_phase_trace;
-    session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
+    session.plan = [inputs, power_site_yaml](const fs::path& rd, const ss::Hooks& given) {
+        ss::Hooks hooks = given;
+        hooks.power_site_yaml = power_site_yaml;
         return inputs.stored_manifest.empty() ? ss::plan_engine_only(inputs, rd, hooks)
                                               : ss::replay_stored_manifest(inputs, rd, hooks);
     };

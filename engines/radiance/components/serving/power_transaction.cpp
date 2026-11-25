@@ -423,6 +423,7 @@ v2::Result<Observation> SessionPower::snapshot(Moment at, ObservationState stage
             return live.error();
         ObservedCard card;
         card.pci = device.device.pci;
+        card.identity = live.value().identity;
         for (size_t index = 0; index < control_count; ++index)
             card.values[index] = live.value().controls[index].current;
         result.cards.push_back(std::move(card));
