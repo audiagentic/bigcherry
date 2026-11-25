@@ -350,7 +350,8 @@ int main(int argc, char** argv) {
 
     // Compare uses the actual manifest when provided; anonymous offline captures
     // retain a local shape identity because they have no serving manifest.
-    const uint64_t compare_manifest = v26::manifest_identity(settings.content_sha256);
+    const uint64_t compare_manifest = v26::segment_identity(settings.handoff.shm,
+                                                           use == bc::serving::v2::PlanUse::measuring);
     if (compare && !sweep_replays.empty()) {
         int rc = 0, run = 0;
         for (size_t c = 0; c < sweep_replays.size(); ++c) {
@@ -409,9 +410,10 @@ int main(int argc, char** argv) {
     report_sa.sa_handler=[](int) { g_force_report_requested=1; };
     sigemptyset(&report_sa.sa_mask);
     sigaction(SIGUSR1,&report_sa,nullptr);
-    const uint64_t manifest_digest = v26::manifest_identity(settings.content_sha256);
+    const uint64_t manifest_digest = v26::segment_identity(settings.handoff.shm,
+                                                           use == bc::serving::v2::PlanUse::measuring);
     if (!manifest_digest) {
-        std::fprintf(stderr, "r3_moe_worker: invalid strict manifest content digest for v26\n");
+        std::fprintf(stderr, "r3_moe_worker: invalid shared-memory segment name for v26\n");
         return 2;
     }
     Segment seg;

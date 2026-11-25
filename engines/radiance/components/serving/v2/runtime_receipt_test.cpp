@@ -269,7 +269,7 @@ int main() {
     assert(mem);
     std::unique_ptr<void, decltype(&std::free)> owned(mem, &std::free);
     assert(v26::init(mem, layout.bytes, shape, 1, v26::Topology{1, 1},
-                     v26::manifest_identity(digest)) == Refusal::None);
+                     v26::segment_identity("/r3-serve-test", false)) == Refusal::None);
     auto* hdr = static_cast<Header*>(mem);
     auto* control = placement_control(mem);
     auto* generation = generation_header(mem, 0);
@@ -286,13 +286,12 @@ int main() {
     assert(valid_self(hdr, layout.bytes));
     auto live = [&] {
       return publish_live_runtime_receipt("test-run", make_startup(),
-                                           digest, mem, layout.bytes);
+                                           digest, "/r3-serve-test", mem, layout.bytes);
     };
     auto good = live();
     assert(good);
-    assert(!publish_live_runtime_receipt("test-run", make_startup(),
-                                         "sha256:" + std::string(64, 'b'),
-                                         mem, layout.bytes));
+    // another start's segment, or the measuring start's, is not this segment
+    assert(!publish_live_runtime_receipt("test-run", make_startup(), digest, "/r3-serve-other", mem, layout.bytes));
     assert(good.value().at("run_id") == "test-run");
     assert(good.value().at("runtime_status") == "active");
 
