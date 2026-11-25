@@ -65,6 +65,8 @@ Execution brief with the stage breakdown for RCS15 to RCS18: the libr3d native m
 
 Concurrent #1563 updated the existing RCS15 inventory with the same 119-commit main and advisory pin triage (no drift/coupling failures, patches affected, 48 target files and six rewrite-anchor files changed). Reuse that evidence, not a second inventory task. Our exact layout/source restrictions in the second integration review narrow the comparable subset. Main remains evidence only under tagged-release policy unless lead explicitly authorizes an isolated comparison build; no production repin. Actual composed patch check remains open.
 
+2026-11-25 size of a bump to upstream main (tip 1c104de4, 119 commits past the 2.2.0 pin; no newer tag yet). The composition check applied the 35 production patches patch by patch on that tree: 24 apply unchanged, 11 do not (some are cascades of an earlier failure). Failing, in four clusters: (1) the tensor-parallel ownership family, rad0018, rad0020, rad0029, rad0048 (core, abi and arch/common: the declaration spans in the gated attention, delta-net and mlp blocks changed upstream; the others cascade from rad0018); (2) the b16 KV family, rad0051 to rad0054 (rad0051's anchor now matches twice; rad0052 fails on the qwen35 and qwen4exp architecture files, the gqa8 and h256 gqa6 kernels and the plugin header, which stops rad0053's new files and the two libr3 b16 rewrite files from existing): the heaviest cluster; (3) the prefill governor, rad0036 (scheduler); (4) the int8 pipelined prefill, rad0030 (the q8_fed branch). Also rad0065 (the gfx1201 fused tile) needs its template anchors re-pointed because upstream changed the prefill header. Gate 1 against the tree with the 24 applied patches: the only libr3 rewrite drift is the two b16 rewrite files, and only because rad0052 and rad0053 did not apply; every other rewrite block (8a8 prefill header, iqr, fp8a8, rows, selftest, all-reduce entry, fused quant) still matches. Gate 2a on gfx1201 for the units the 24 touch: 244 syntax passes clean. So a bump means re-porting 11 patches in four clusters, the b16 KV family first. Upstream has not tagged a release since 2.2.0, so nothing is started.
+
 ## Change Log
 
 - 2026-11-18T08:41:29.761201+00:00 (created-by): Created by agent
@@ -77,3 +79,4 @@ Concurrent #1563 updated the existing RCS15 inventory with the same 119-commit m
 - RV4627
 - 2026-11-25T02:37:49.407812+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T02:54:55.206737+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:15:32.123253+00:00 (updated-by): Updated: section:notes
