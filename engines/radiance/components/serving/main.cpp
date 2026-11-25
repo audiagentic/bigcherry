@@ -84,8 +84,6 @@ void usage() {
            "                     profile lab; a production manifest never carries one).\n"
            "  --plan-extra TEXT   (with --write-manifest) engine arguments passed through "
            "verbatim; part of the key\n"
-           "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the "
-           "cards\n"
            "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they "
            "match\n"
            "No process is started by these commands.\n"
@@ -94,7 +92,7 @@ void usage() {
            "  serve CONFIG --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root "
            "DIR] "
            "[--set k=v]\n"
-           "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
+           "         [--engine-binary PATH] [--allow-power-apply]\n"
            "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
            "         [--step-phase-trace]  opt-in per-rank HIP event trace in run-dir; changes timing\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
@@ -137,8 +135,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
     bool record_requested = false;
-    std::string power_profile = "stock";
-    bool explicit_power_profile = false;
     fs::path calibration_records;
     bool allow_power_apply = false;
     bool strict_production_features = false;
@@ -207,9 +203,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             engine_binary = need();
         } else if (arg == "--work-root") {
             work_root = need();   // the platform's work root: where the named-config store lives
-        } else if (arg == "--power-profile") {
-            power_profile = need();
-            explicit_power_profile = true;
         } else if (arg == "--allow-power-apply") {
             allow_power_apply = true;
             passed.push_back(arg);
@@ -405,14 +398,12 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
     inputs.lab_experiment = std::move(lab_experiment);
-    inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_records_file = std::move(calibration_records);
 
     inputs.self = self;
     inputs.engine_binary = engine_binary;
     if (!native_config.empty())
         inputs.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
-    inputs.power_profile = power_profile;
     // Hardware and durable records live through the entire foreground owner.
     // A real write needs BOTH an explicit opt-in and a live ancestor-bound lease.
     bc::serving::power::LinuxHardware hardware(opts.sys_root);
@@ -631,6 +622,8 @@ int main(int argc, char** argv) {
             const std::string cmd(argv[1]);
             if (cmd == "explain")
                 return explain_command(argc, argv);
+            if (cmd == "helper-exec")
+                return bc::serving::session::helper_exec_command(argc, argv);
             if (cmd == "serve" || cmd == "start" || cmd == "quality" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
         }
@@ -746,7 +739,6 @@ int main(int argc, char** argv) {
             s8_replay_evidence_file;
         bool auto_calibrate_live_policy = false;   // default off: no in-session calibration unless asked for
         std::string expected_owner_attempt;
-        std::string power_profile;
         // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
         // explicit live policy and NO experiment, so the plan it measures is the production plan.
         bool calibration_run = false;
@@ -815,8 +807,6 @@ int main(int argc, char** argv) {
                 calibration_records_file = need_arg("--calibration-records");
             else if (arg == "--s8-replay-evidence")
                 s8_replay_evidence_file = need_arg("--s8-replay-evidence");
-            else if (arg == "--power-profile")
-                power_profile = need_arg("--power-profile");
             else if (arg == "--plan-cache")
                 plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary")
@@ -855,8 +845,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--plan-extra goes with --write-manifest");
         if ((!s8_replay_evidence_file.empty() && (write_manifest.empty() || unmeasured)))
             throw std::runtime_error("--s8-replay-evidence requires a measured --write-manifest");
-        if (write_manifest.empty() && (!calibration_records_file.empty() || !power_profile.empty()))
-            throw std::runtime_error("--calibration-records and --power-profile go with --write-manifest");
+        if (write_manifest.empty() && !calibration_records_file.empty())
+            throw std::runtime_error("--calibration-records goes with --write-manifest");
         if (plan_mode && !unmeasured &&
             expected_owner_attempt.empty())
             throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
@@ -926,13 +916,9 @@ int main(int argc, char** argv) {
                     "session-owned --unmeasured requires --expected-plan-key, --engine-binary and --plan-extra");
             if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
-            if (power_profile.empty())
-                throw std::runtime_error(
-                    "--write-manifest needs --power-profile NAME (stock observes the cards)");
-            bc::serving::v2::WriterInputs s10;
-            s10.power_profile = power_profile;
-            s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
-            s10.calibration_records = Json::array();
+            // The same two steps the session owner runs in-process (write_native_manifest); this command is their CLI.
+            bc::serving::NativeWriterRequest request;
+            request.calibration_records = Json::array();
             if (!calibration_records_file.empty()) {
                 std::ifstream rin(calibration_records_file, std::ios::binary);
                 if (!rin)
@@ -940,183 +926,50 @@ int main(int argc, char** argv) {
                                              calibration_records_file.string());
                 std::ostringstream text;
                 text << rin.rdbuf();
-                s10.calibration_records = Json::parse(text.str(), nullptr, false);
-                if (!s10.calibration_records.is_array())
+                request.calibration_records = Json::parse(text.str(), nullptr, false);
+                if (!request.calibration_records.is_array())
                     throw std::runtime_error("--calibration-records: " + calibration_records_file.string() +
                                              " is not a JSON array");
             }
-            const auto facts = bc::serving::detect(opts.sys_root);
-            std::optional<bc::serving::session::NativeWriterInput> native;
-            if (native_config_fd >= 0)
-                native = bc::serving::session::read_native_writer_input(native_config_fd);
-            // The writer takes the config as the owner's inspector parsed it from the same sealed YAML bytes.
-            if (native && !opts.inspected) opts.inspected = native->inspected;
-            auto r = bc::serving::resolve(opts, facts, native ? &native->settings : nullptr);
-            const auto& v = r.values;
-            const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
-            // Prepare the selected configuration once. P1 consumes this same
-            // input as the final writer so a native snapshot can flow through
-            // both without reopening or reconstructing engine configuration.
-            bc::serving::ManifestInputs in;
-            in.resolved = r;
-            if (native) in.native_config = std::move(native->snapshot);
-            in.engine_binary = engine_binary;
-            in.plan_engine_args = plan_extra;
-            if (unmeasured) {
-                if (!expected_plan_key.empty()) {
-                    const Json effective_key = bc::serving::plan_key_inputs(
-                        v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                        bc::serving::engine_identity(engine_binary, home), plan_extra,
-                        in.native_config ? &*in.native_config : nullptr);
-                    if (bc::serving::plan_key(effective_key) != expected_plan_key)
-                        throw std::runtime_error(
-                            "the effective measuring-manifest inputs differ from the session's frozen plan key");
-                }
-                in.instance_id = bc::serving::new_instance_id();
-                in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
-                in.calibration_cache = opts.calibration_cache;
-                in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
-                in.s10 = s10;
-                load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
-                load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
-                const auto built = bc::serving::build_manifest(in);
-                std::cerr << "live policy: unmeasured; calibration not available \n";
-                bc::serving::write_manifest_file(write_manifest, built.text);
-                std::cout << "manifest: " << write_manifest << " (unmeasured: for the measuring start only)\n"
-                          << "digest: " << built.digest << '\n'
-                          << "no processes started\n";
-                return 0;
-            }
-            const auto key_inputs = bc::serving::plan_key_inputs(
-                v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                bc::serving::engine_identity(engine_binary, home), plan_extra,
-                in.native_config ? &*in.native_config : nullptr);
-            // A v3 owner pins the same native key at draft, measurement and
-            // measured-cache read. Check it before touching or publishing any
-            // cache entry so a changed resolver input cannot reuse the attempt.
-            if (!expected_plan_key.empty() && bc::serving::plan_key(key_inputs) != expected_plan_key)
-                throw std::runtime_error(
-                    "the effective measured-manifest inputs differ from the session's frozen plan key");
-            // Read the session-owned measured plan from the cache. A miss exits 10.
-            auto plan = bc::serving::plan_cache_lookup(plan_cache, key_inputs);
-            if (!plan) {
-                std::cerr << "bc-serve: no measured plan for this configuration (key "
-                          << bc::serving::plan_key(key_inputs).substr(0, 16)
+            auto native = bc::serving::session::read_native_writer_input(native_config_fd);
+            request.options = opts;
+            request.inspected = std::move(native.inspected);
+            request.snapshot = std::move(native.snapshot);
+            request.settings = std::move(native.settings);
+            request.unmeasured = unmeasured;
+            request.engine_binary = engine_binary;
+            request.plan_extra = plan_extra;
+            request.expected_plan_key = expected_plan_key;
+            request.expected_owner_attempt = expected_owner_attempt;
+            request.plan_cache = plan_cache;
+            request.power_profile = request.inspected.x.power_profile();
+            request.power_rules = bc::serving::session::selected_power_rules(native.power_profiles, request.power_profile);
+            request.manifest_name = write_manifest.filename().string();
+            request.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
+            request.lab_profile = !(experiment_file.empty() && !calibration_run);
+            request.auto_calibrate = auto_calibrate_live_policy;
+            request.want_s8_replay_evidence = !s8_replay_evidence_file.empty();
+            load_json_input(live_policy_file, "--live-policy", &request.live_policy, &request.live_policy_from);
+            load_json_input(experiment_file, "--experiment", &request.experiment, &request.experiment_from);
+            const auto outcome = bc::serving::write_native_manifest(request);
+            using Kind = bc::serving::NativeWriterOutcome::Kind;
+            if (outcome.kind == Kind::cache_miss) {
+                std::cerr << "bc-serve: no measured plan for this configuration (key " << outcome.plan_key.substr(0, 16)
                           << "); a start measures it with the helpers up\n";
                 return 10;
             }
-            if (native && native->settings.ngram_placement == "auto") {
-                const auto selected = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
-                const auto ranks = bc::serving::decode_engine_rank_demand(
-                    plan->rank_demand, selected, "native n-gram placement receipt");
-                const bool measured_ram = std::any_of(
-                    plan->plan.host.begin(), plan->plan.host.end(),
-                    [](const auto& consumer) { return consumer.name == "ngram_table"; });
-                const std::string chosen = bc::serving::admitted_ngram_placement(
-                    ranks, measured_ram, native->settings.ngram_placement);
-                r.values["engine"]["ngram_placement"] = chosen;
-                r.typed.engine.ngram_placement = chosen;
-                r.provenance["engine.ngram_placement"] =
-                    Json{{"origin", "derived"}, {"source", "rad0011 measured rank n-gram tier"},
-                         {"lifecycle", "startup-only"}};
-                r.manifest["values"] = r.values;
-                r.manifest["provenance"] = r.provenance;
-                r.hash = bc::serving::sha256_hex(r.manifest.dump());
-                // The manifest inputs were frozen before the measured cache
-                // was consulted. Propagate the new resolved value to that
-                // exact input rather than sealing the stale auto intent.
-                in.resolved = r;
+            if (outcome.kind == Kind::host_pool_change) {
+                std::cerr << outcome.notes;
+                std::cout << "derived_host_pool_mib=" << outcome.derived_pool_mib << '\n';
+                return 11;
             }
-            if (!expected_owner_attempt.empty() &&
-                (!plan->owner || plan->owner->attempt_id != expected_owner_attempt))
-                throw std::runtime_error("the measured plan cache entry is not owned by the expected measuring attempt");
-            in.instance_id = bc::serving::new_instance_id();
-            in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
-            in.calibration_cache = opts.calibration_cache;
-            in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
-            {
-                // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner
-                // map, and the host's live room. The retention target is the host KV tier the launcher runs
-                // with, over the measured KV density (one full session's KV over its context), at most every
-                // session at full context.
-                const int64_t ctx = v.at("service").at("max_context").get<int64_t>();
-                const int64_t sessions = v.at("service").at("max_sessions").get<int64_t>();
-                const int64_t per_token = plan->plan.kv_one_session.bytes / std::max<int64_t>(1, ctx);
-                if (per_token <= 0)
-                    throw std::runtime_error("the measured plan has no KV per token");
-                const int64_t retention = std::min<int64_t>(
-                    v.at("memory").at("host_kv_mib").get<int64_t>() * 1048576 / per_token, ctx * sessions);
-                const bool helpers = !r.manifest.at("process_helpers").empty();
-                const Json sources = {
-                    {"engine_plan", plan->plan_json},
-                    {"rank_demand", plan->rank_demand},
-                    {"engine_binary", engine_binary.string()},
-                    {"helper_binary", helpers ? (home / "helpers" / "r3_moe_worker").string() : std::string()},
-                    {"retention_target_tokens", retention},
-                    {"margin", bc::serving::host_ledger_margin(r, opts.calibration_cache)},
-                    {"run_id", "bc-serve --write-manifest " + write_manifest.filename().string()}};
-                s10.p1_record = bc::serving::v2::produce_p1(in, facts, opts.sys_root, sources);
-                // The plan echoes the host pool it was measured with; S8 derives the pool from what was
-                // measured. When they differ, the plan is for another pool: exit 11 with the derived one, and
-                // the launcher measures once more with it (that configuration has its own cache key, so this
-                // happens once per configuration).
-                bc::serving::v2::MeasuredResourceInputs measured_inputs;
-                if (const auto e = bc::serving::v2::decode(s10.p1_record.at("resource_inputs"),
-                                                           "p1.resource_inputs", &measured_inputs))
-                    throw std::runtime_error(e->message);
-                const auto derived = bc::serving::v2::derived_host_pool_mib(measured_inputs);
-                if (!derived)
-                    throw std::runtime_error("the derived host pool overflows");
-                if (*derived != plan->plan.host_pool_mib) {
-                    std::cerr << "bc-serve: the plan was measured with a " << plan->plan.host_pool_mib
-                              << " MiB host pool; the measured inputs need " << *derived << " MiB\n";
-                    std::cout << "derived_host_pool_mib=" << *derived << '\n';
-                    return 11;
-                }
-            }
-            in.measured = bc::serving::MeasuredPlan{*plan, key_inputs};
-            in.s10 = s10;
-            in.auto_calibrate = auto_calibrate_live_policy;
-            load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
-            load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
-            const auto built = bc::serving::build_manifest(in);
-            const auto& prov = built.document.at("provenance");
-            const auto& spec = built.document.at("spec");
-            const bool has_handoff =
-                spec.contains("handoff"); // an engine-only manifest has no hand-off section
-            const auto placement =
-                has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
-            if (has_handoff && !placement.contains("live_policy"))
-                std::cerr << "WARNING live policy OFF: policy-calibration key " << bc::serving::policy_calibration_key(
-                                 bc::serving::policy_calibration_inputs(spec))
-                          << "; " << placement.at("live_policy_state").at("reason_code").get<std::string>()
-                          << ": " << placement.at("live_policy_state").at("reason_detail").get<std::string>()
-                          << '\n';
-            else if (has_handoff)
-                for (auto it = prov.begin(); it != prov.end(); ++it) {
-                    const std::string pointer = "/spec/handoff/placement/live_policy/";
-                    if (it.key().rfind(pointer, 0) != 0)
-                        continue;
-                    const std::string field = it.key().substr(pointer.size());
-                    std::cerr << "live policy: " << field << "=" << placement.at("live_policy").at(field).dump()
-                              << " [" << it.value().at("origin") << "] "
-                              << it.value().at("source").get<std::string>() << '\n';
-                }
-            bc::serving::write_manifest_file(write_manifest, built.text);
-            if (!s8_replay_evidence_file.empty()) {
-                // The writer publishes the EXACT P1 producer record and P2
-                // evidence consumed by S8 for this measured manifest. This
-                // sibling is independently digest-bound; no manifest field or
-                // allocation is rewritten to permit replay.
-                const Json replay_source = {{"version", 1},
-                                            {"manifest_digest", built.digest},
-                                            {"produced_at_unix_s", s10.now_unix_s},
-                                            {"p1_record", s10.p1_record},
-                                            {"calibration_records", s10.calibration_records}};
-                bc::serving::write_manifest_file(s8_replay_evidence_file, replay_source.dump(2) + "\n");
-            }
-            std::cout << "manifest: " << write_manifest << '\n'
-                      << "digest: " << built.digest << '\n'
+            std::cerr << outcome.notes;
+            bc::serving::write_manifest_file(write_manifest, outcome.built.text);
+            if (!outcome.s8_replay_source.is_null())
+                bc::serving::write_manifest_file(s8_replay_evidence_file, outcome.s8_replay_source.dump(2) + "\n");
+            std::cout << "manifest: " << write_manifest << (unmeasured ? " (unmeasured: for the measuring start only)" : "")
+                      << '\n'
+                      << "digest: " << outcome.built.digest << '\n'
                       << "no processes started\n";
             return 0;
         }

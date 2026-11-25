@@ -47,7 +47,7 @@ def _out_of_tree_reads() -> list[tuple[str, str]]:
 
 class BuildIdentityInputsTests(unittest.TestCase):
     def test_radiance_declares_the_files_its_components_read_outside_their_directories(self) -> None:
-        self.assertEqual(set(RADIANCE.repo_inputs), {"engines/radiance/archs.toml"})
+        self.assertEqual(set(RADIANCE.repo_inputs), {"engines/radiance/archs.toml", "engines/radiance/power-profiles.yaml"})
 
     def test_every_out_of_tree_read_is_a_component_a_declared_input_or_test_only(self) -> None:
         components = {f"engines/radiance/components/{name}" for name in (p.name for p in (ROOT / "engines/radiance/components").iterdir() if p.is_dir())}
@@ -76,6 +76,7 @@ class BuildIdentityInputsTests(unittest.TestCase):
             root = Path(tmp)
             (root / "engines/radiance").mkdir(parents=True)
             (root / "engines/radiance/archs.toml").write_text("a = 1\n")
+            (root / "engines/radiance/power-profiles.yaml").write_text("schema: 1\n")
             before = RADIANCE.repo_input_hashes(root)
             self.assertEqual(before, RADIANCE.repo_input_hashes(root))
             (root / "engines/radiance/layouts").mkdir()

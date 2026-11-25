@@ -274,21 +274,20 @@ inline uint64_t placement_digest(uint64_t model_shape_hash, uint32_t layers,
 namespace r3::moe_shm::v26 {
 using ::r3::moe_shm::kVersion;
 
-// Compact nonzero wire identity over all 32 bytes of the verified manifest SHA-256.
-// Like any 64-bit projection, it cannot guarantee collision-free 256-bit identity.
-inline uint64_t manifest_identity(std::string_view sha256) {
-    if (sha256.size() != 71 || sha256.substr(0, 7) != "sha256:") return 0;
+// Compact nonzero wire identity of one owner-selected segment attempt: its unique name (/r3-serve-<instance uuid>,
+// journaled by the owner before any helper starts) and whether it serves the measuring start, so a segment left by
+// the measuring helpers is never taken for the serving one. Both the helper that creates the segment and the owner
+// that reads its telemetry know exactly these two values; no manifest is involved. Like any 64-bit projection it
+// cannot guarantee a collision-free identity.
+inline uint64_t segment_identity(std::string_view shm_name, bool measuring) {
+    if (shm_name.size() < 2 || shm_name.front() != '/') return 0;
     uint64_t hash = 14695981039346656037ull; // FNV-1a offset
-    for (size_t i = 7; i < sha256.size(); i += 2) {
-        auto nibble = [](char c) -> uint32_t {
-            return c >= '0' && c <= '9' ? uint32_t(c - '0') :
-                   c >= 'a' && c <= 'f' ? uint32_t(c - 'a' + 10) : 16u;
-        };
-        const uint32_t hi = nibble(sha256[i]), lo = nibble(sha256[i + 1]);
-        if (hi == 16u || lo == 16u) return 0;
-        hash ^= (hi << 4u) | lo;
+    auto mix = [&hash](unsigned char byte) {
+        hash ^= byte;
         hash *= 1099511628211ull; // FNV-1a prime
-    }
+    };
+    for (char c : shm_name) mix(static_cast<unsigned char>(c));
+    mix(measuring ? 'm' : 's');
     return hash ? hash : 1ull;
 }
 constexpr uint32_t kGenerationSlots = 2; // active and candidate generations

@@ -116,7 +116,7 @@ BC_SERVE="$BUILD/radiance_home/bin/bc-serve"
 # The native owner reads a config from its native YAML and takes no --set: an arm authors its own YAML (arm_yaml.py: a copy of
 # the bundled or given config with the changed values) and passes it with --native-config.
 NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance"
-             --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}" --allow-power-apply
+             --allow-power-apply
              --work-root "$BC_WORK_ROOT")   # the host-wide model-identity cache lives there
 # The default is stock (observe only): bc-serve refuses a named non-stock profile without its rule file, and the stored
 # baseline was taken with the cards' own settings. The power profile is explicit so a held GPU lease can apply only qualified,
@@ -233,7 +233,7 @@ for i in $(seq 1 "$LAUNCHES"); do
   python3 tools/lab/radiance/arm_yaml.py --base "$BASE_YAML" --out "$L/native-input.yaml" "${ARM_SETS[@]}" ||
     fail "cannot write this launch's arm YAML"
   OWNER_ARGS+=(--native-config "$L/native-input.yaml")
-  CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
+  CAPTURE_ARGS=(--heat "$L/heat-input.hot-first")
   if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
   python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${OWNER_ARGS[@]}" ||
     fail "cannot capture native owner invocation"

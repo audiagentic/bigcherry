@@ -62,6 +62,46 @@ struct BuiltManifest {
 /* Throws std::runtime_error with the failing step's message. */
 BuiltManifest build_manifest(const ManifestInputs& in);
 
+/* One manifest-writing step of a native start, as the owner and the --write-manifest CLI both run it: the inputs the writer
+ * child used to receive through argv and a sealed descriptor. */
+struct NativeWriterRequest {
+    Options options;                      // the resolver options (site, profile, --set list, calibration cache, run dir, ...)
+    InspectedConfig inspected;            // the config as the inspector parsed it from the same sealed YAML bytes
+    std::optional<NativeConfigSnapshot> snapshot;   // required
+    NativeEngineSettings settings{};        // the matched parser's engine settings
+    bool unmeasured = false;              // the measuring start's draft; otherwise the measured manifest from the plan cache
+    std::filesystem::path engine_binary;
+    std::string plan_extra;
+    std::string expected_plan_key;        // frozen by the owner; empty only for the CLI's cache-less unmeasured draft
+    std::string expected_owner_attempt;   // measured only: the plan cache entry must be owned by this attempt
+    std::filesystem::path plan_cache;     // measured only
+    std::string power_profile;            // x-bigcherry.power.profile of the config
+    v2::S10PowerProfile power_rules;      // that profile's rules from the profile file (empty for stock)
+    nlohmann::json calibration_records = nlohmann::json::array();   // P2 records for S10
+    std::string manifest_name;            // names the manifest in the P1 record's run id
+    std::string producer_sha256;          // SHA-256 of the executable that writes it
+    bool lab_profile = false;             // an experiment or a calibration run: spec.intent.service.profile "lab"
+    nlohmann::json live_policy;           // null = none; `live_policy_from` names its source
+    std::string live_policy_from;
+    nlohmann::json experiment;            // null = none
+    std::string experiment_from;
+    bool auto_calibrate = false;
+    bool want_s8_replay_evidence = false; // measured only: also return the exact P1/P2 record S8 consumed
+};
+
+struct NativeWriterOutcome {
+    enum class Kind { built, cache_miss, host_pool_change };
+    Kind kind = Kind::built;
+    BuiltManifest built;                  // Kind::built
+    int64_t derived_pool_mib = 0;         // Kind::host_pool_change: the pool S8 derives from what was measured
+    std::string plan_key;                 // Kind::cache_miss: the key that missed
+    nlohmann::json s8_replay_source;      // Kind::built with want_s8_replay_evidence, else null
+    std::string notes;                    // what the writer reports about the live policy (one line each)
+};
+
+/* Throws std::runtime_error with the failing step's message; a cache miss and a host-pool change are results, not errors. */
+NativeWriterOutcome write_native_manifest(const NativeWriterRequest& request);
+
 /* spec.processes.helper_common as the manifest emits it for these resolved values (helper_profile.toml, resolved rows taken
  * from the values): what the helpers run with unless an experiment patches a helper. */
 nlohmann::json helper_common_settings(const nlohmann::json& values);

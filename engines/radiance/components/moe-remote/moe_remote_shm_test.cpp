@@ -314,14 +314,11 @@ static void SharedMapping_ReleaseAcquire() {
 }
 
 static void DeferredPublication_ManifestIdentity() {
-    const std::string m1 = "sha256:0123456789abcdef" + std::string(48, '1');
-    const std::string m2 = "sha256:0123456789abcdef" + std::string(47, '1') + "2";
-    const uint64_t d1 = wire::manifest_identity(m1);
-    const uint64_t d2 = wire::manifest_identity(m2);
-    check(d1 && d2 && d1 != d2 && wire::manifest_identity("sha256:" + std::string(64, '0')) != 0 &&
-          wire::manifest_identity("sha256:bad") == 0 &&
-          wire::manifest_identity("sha256:" + std::string(64, 'G')) == 0,
-          "all SHA-256 bytes contribute to nonzero strict manifest identity");
+    const uint64_t d1 = wire::segment_identity("/r3-serve-0123", false);
+    const uint64_t d2 = wire::segment_identity("/r3-serve-0124", false);
+    check(d1 && d2 && d1 != d2 && wire::segment_identity("/r3-serve-0123", true) != d1 &&
+          wire::segment_identity("", false) == 0 && wire::segment_identity("r3-serve", false) == 0,
+          "the segment name and the measuring flag both contribute to a nonzero segment identity");
     constexpr Topology t{2,3};
     Layout l{};
     check(wire::layout_for(kShape, 2, t, &l) == Refusal::None, "deferred v26 layout");
@@ -340,7 +337,7 @@ static void DeferredPublication_ManifestIdentity() {
     wire::publish(h);
     check(wire::valid(base, size_t(l.bytes), kShape, 2, t, d1) == Refusal::None &&
           wire::valid(base, size_t(l.bytes), kShape, 2, t, d2) == Refusal::WrongIdentity,
-          "published segment refuses a foreign manifest even with same shape and topology");
+          "published segment refuses another segment identity even with same shape and topology");
     munmap(base, size_t(l.bytes));
 }
 

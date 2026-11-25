@@ -28,7 +28,7 @@ with a narrow ownership relocation in this PR.
   history which must remain addressable; **do not** move it until versioned
   engine-qualified record identity, migration and a recovery test exist.
 - `config/environment.example.toml`, `config/release.toml`,
-  `config/power-profiles.toml`, Slurm and job execution configs serve
+  `engines/radiance/power-profiles.yaml`, Slurm and job execution configs serve
   shared platform/host orchestration. They are not engine kernel code.
 - `tools/env/` owns ROCm environment implementations. Legacy
   `tools/rocm-env.sh` and `.ps1` are intentional source/dot-source

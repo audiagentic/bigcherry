@@ -481,22 +481,29 @@ def capture_host_facts(launch: Path, run_dir: Path) -> None:
     host_facts.read_owner_start(launch, session_name="native-session-start.json")
 
 
+def requested_power_profile(arm_yaml: Path) -> str:
+    """The profile this launch's arm YAML selects (x-bigcherry.power.profile; stock when absent)."""
+    import yaml   # tooling dependency
+    document = yaml.safe_load(arm_yaml.read_text(encoding="utf-8")) or {}
+    return ((document.get("x-bigcherry") or {}).get("power") or {}).get("profile", "stock")
+
+
 def capture_launch_provenance(
     launch: Path, argv: list[str], *, heat: Path,
-    calibration: Path | None, power_profile: str
+    calibration: Path | None
 ) -> None:
     """Capture precisely the owner invocation, not a reconstructed CLI."""
     if not argv or not heat.is_file():
         raise ParityError("missing native owner argv or the selected heat file")
     # Intentional allowlist: do not persist ambient credentials or whole env.
     keys = ("ROCM_PATH", "HIP_PATH", "BC_WORK_ROOT", "BC_MODEL_ROOT",
-            "FLASHNEXT_PARITY_POWER_PROFILE", "FLASHNEXT_PARITY_HEAT",
+            "FLASHNEXT_PARITY_HEAT",
             "FLASHNEXT_PARITY_SETS", "FLASHNEXT_PARITY_WARMUP_S")
     _write(launch / "launch-provenance.json", {
         "argv": list(argv), "environment": {k: os.environ[k] for k in keys if k in os.environ},
         "heat_path": str(heat.resolve()),
         "calibration_store": str(calibration.resolve()) if calibration else None,
-        "power_profile": power_profile,
+        "power_profile": requested_power_profile(launch / "native-input.yaml"),
         "recorded_at": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
@@ -666,7 +673,6 @@ def cmd_capture_provenance(args) -> int:
     capture_launch_provenance(
         Path(args.launch), args.argv, heat=Path(args.heat),
         calibration=Path(args.calibration) if args.calibration else None,
-        power_profile=args.power_profile,
     )
     return 0
 
@@ -727,7 +733,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("launch")
     p.add_argument("--heat", required=True)
     p.add_argument("--calibration")
-    p.add_argument("--power-profile", required=True)
     p.add_argument("argv", nargs=argparse.REMAINDER)
     p.set_defaults(fn=cmd_capture_provenance)
     p = sub.add_parser("record-launch", help="commit one completed launch into run-record v1")

@@ -32,6 +32,11 @@ foreach(bc_data archs)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../${bc_data}.toml")
 endforeach()
 
+# power-profiles.yaml is compiled in: the named power profiles bc-serve resolves with (read through the engine's YAML parser).
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../power-profiles.yaml" bc_power_profiles_seed)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/power_profiles_seed.inc" "R\"bcpp(${bc_power_profiles_seed})bcpp\"\n")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../power-profiles.yaml")
+
 # helper_profile.toml is compiled in: the helper_common values bc-serve writes into the serving manifest.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml" bc_helper_profile_seed)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
@@ -53,7 +58,7 @@ target_link_libraries(bc_feature_state PUBLIC bc_json_dependency)
 
 set(bc_manifest_writer_sources
   manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
-  live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp)
+  live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp v2/p1_producer.cpp)
 add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp calibration_watch.cpp sdk_check.cpp lab_experiment.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
@@ -76,15 +81,11 @@ target_link_libraries(bc_serving_v2_p1 PUBLIC bc_serving_v2)
 target_include_directories(bc_serving_v2_p1 PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
 target_compile_features(bc_serving_v2_p1 PUBLIC cxx_std_20)
-add_library(bc_serving_v2_p1_producer STATIC v2/p1_producer.cpp)
-target_link_libraries(bc_serving_v2_p1_producer PUBLIC
-  bc_serving bc_serving_v2_p1 bc_serving_v2_p1_live)
-target_include_directories(bc_serving_v2_p1_producer PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
-target_compile_features(bc_serving_v2_p1_producer PUBLIC cxx_std_20)
+# The P1 producer (v2/p1_producer.cpp) is part of bc_serving: the session owner writes its manifests in-process.
+target_link_libraries(bc_serving PUBLIC bc_serving_v2_p1)
 
 add_executable(bc-serve main.cpp release_runtime.cpp)
-target_link_libraries(bc-serve PRIVATE bc_serving_v2_p1_producer)
+target_link_libraries(bc-serve PRIVATE bc_serving)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
@@ -158,7 +159,7 @@ if(BUILD_TESTING)
   target_link_libraries(bc_engine_identity_test PRIVATE bc_serving)
   add_test(NAME bc_engine_identity_test COMMAND bc_engine_identity_test)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
-  target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+  target_link_libraries(bc_serving_test PRIVATE bc_serving)
   target_compile_definitions(bc_serving_test PRIVATE
     ${bc_calibration_fixture} BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
@@ -261,7 +262,7 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/v3/contract.fingerprint")
   add_executable(bc_serving_v3_writer_test EXCLUDE_FROM_ALL manifest_writer_v3_test.cpp)
-  target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+  target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving)
   target_include_directories(bc_serving_v3_writer_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
   add_test(NAME bc_serving_v3_writer_test COMMAND bc_serving_v3_writer_test)
 
@@ -276,7 +277,7 @@ if(BUILD_TESTING)
   target_link_libraries(bc_v2_p1_test PRIVATE bc_serving_v2_p1)
   add_test(NAME bc_v2_p1_test COMMAND bc_v2_p1_test)
   add_executable(bc_v2_p1_producer_test EXCLUDE_FROM_ALL v2/p1_producer_test.cpp)
-  target_link_libraries(bc_v2_p1_producer_test PRIVATE bc_serving_v2_p1_producer)
+  target_link_libraries(bc_v2_p1_producer_test PRIVATE bc_serving)
   add_test(NAME bc_v2_p1_producer_test COMMAND bc_v2_p1_producer_test)
   # S13a: inactive live host/cgroup/GTT publisher, no production linkage.
   add_executable(bc_v2_p1_live_test EXCLUDE_FROM_ALL v2/p1_live_room_test.cpp)

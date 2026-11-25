@@ -76,7 +76,7 @@ fail() { echo "fn-profile: $*" >&2; close_pipes; stop_session; exit 1; }
 python3 "$here/arm_yaml.py" --base "$CONFIG" --out "$OUT/native-input.yaml" --set "server.port=$PORT" ||
   fail "cannot write the arm YAML"
 "$BC_SERVE" serve "$NAME" --run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance" \
-  --work-root "$BC_WORK_ROOT" --power-profile stock --native-config "$OUT/native-input.yaml" \
+  --work-root "$BC_WORK_ROOT" --native-config "$OUT/native-input.yaml" \
   >"$OUT/owner.log" 2>&1 &
 OWNER_PID=$!
 STARTED=1

@@ -14,8 +14,8 @@ admission check are implemented. The serving component now includes an
 owner-map verifier that checks the planner's owned expert sets and exact
 device byte totals. Card-free tests cover the verifier. The engine and the
 helpers read their whole configuration from the serving manifest the owner
-writes from the config's native YAML (`r3_moe_worker --manifest FILE --role
-helperN`, through `v2/helper_settings.h`; RSC06). Planning is native-only: a fresh start
+writes from the config's native YAML (`r3_moe_worker --settings-fd FD --role
+helperN`: typed `v2/helper_settings.h` on a sealed descriptor; RSC06). Planning is native-only: a fresh start
 needs an admitted native config YAML, and there is no other planning path.
 
 
@@ -48,7 +48,8 @@ cannot launch a measuring child. The owner reaps all registered child
 process groups before calling `SessionPower::finish()`; every returned power
 or receipt error surfaces as a failed session, never a clean stop.
 
-The default `--power-profile stock` is observational. Hardware-changing
+The power profile is the config's `x-bigcherry.power.profile` (a profile of `engines/radiance/power-profiles.yaml`, compiled
+into bc-serve and read through the engine's YAML parser; `stock` when absent) and is observational. Hardware-changing
 power profiles that change hardware require **both** a qualified profile and the opt-in
 `--allow-power-apply`, plus an unexpired, ancestor-and-instance-bound
 GPU lease. With no opt-in the owner rejects apply before a hardware write.
@@ -302,12 +303,9 @@ restore. The session record is per start; it is **not** the manifest or the
 cache index. The original bytes are checked again immediately before
 launching a serving child.
 
-An explicit `--power-profile` conflicting with the recorded profile is
-refused. A stored lab manifest is refused: replay is production-only. RSC12's dedicated
-`[config.NAME.power]` and site-defined profile tables also remain a
-loader dependency: this step binds the existing explicit owner
-`--power-profile` mechanism but does not introduce an unofficial power
-table schema.
+A config that selects a different power profile than the recorded one is
+refused. A stored lab manifest is refused: replay is production-only. Site per-BDF
+overrides are the next step (PWR08 S3); there is no `--power-profile` flag.
 
 CPU-only acceptance: `bc_stored_manifest_test` (strict bytes and typed
 identity refusals), `bc_stored_manifest_cache_test` (static reuse and

@@ -24,7 +24,7 @@ for f in $(ls -S $W/captures/*.bin | head -4); do
     [ "$lr" = 0 ] || manifest=$manifest_on
     HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 timeout 900 \
       rocprofv3 --kernel-trace --stats --output-format csv -d $out -o run -- \
-      "$B/radiance_home/helpers/r3_moe_worker" --manifest "$manifest" --role helper0 \
+      "$B/radiance_home/bin/bc-serve" helper-exec "$manifest" helper0 -- "$B/radiance_home/helpers/r3_moe_worker" \
         --replay "$M" "$f" > $out.log 2>&1
     echo " long_rows=$lr: $(grep -h 'replay layer\|engine_join' $out.log | head -2 | tr '\n' ' ')"
     python3 - $out/run_kernel_stats.csv <<'PY'

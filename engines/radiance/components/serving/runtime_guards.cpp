@@ -397,7 +397,8 @@ v2::Status RuntimeGuards::inspect_policy() {
         return refuse("policy", "cannot map live worker telemetry read-only");
     const auto report = v2::publish_live_runtime_receipt(
         manifest_->metadata.instance_id, manifest_->spec.handoff->placement.live_policy_state,
-        manifest_->metadata.content_digest, mapping.data(), static_cast<size_t>(st.st_size));
+        manifest_->metadata.content_digest, manifest_->spec.handoff->transport.shm, mapping.data(),
+        static_cast<size_t>(st.st_size));
     if (!report)
         return report.error();
     segment_identity_ = now;

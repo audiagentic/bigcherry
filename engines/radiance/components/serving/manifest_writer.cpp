@@ -8,10 +8,13 @@
 #include "lab_trace_experiment.h"
 #include "owner_map.h"
 #include "plan_cache.h"
+#include "rank_demand.h"
 #include "serving_codec.h"
 #include "sha256.h"
 #include "third_party/toml.hpp"
 #include "v2/manifest.h"
+#include "v2/p1_producer.h"
+#include "v2/s8_rules.h"
 
 #include <fcntl.h>
 #include <linux/fs.h>
@@ -20,6 +23,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <ctime>
 #include <cstring>
 
 #include <fstream>
@@ -600,6 +604,154 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     if (!back.ok()) fail(v2::render_human("bc-serve", back.error()));
     if (const v2::Status e = verify_owner_map(back.value(), container)) fail(v2::render_human("bc-serve", *e));
     return out;
+}
+
+NativeWriterOutcome write_native_manifest(const NativeWriterRequest& request) {
+    NativeWriterOutcome outcome;
+    v2::WriterInputs s10;
+    s10.power_profile = request.power_profile;
+    s10.power_rules = request.power_rules;
+    s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
+    s10.calibration_records = request.calibration_records;
+    Options opts = request.options;
+    opts.inspected = request.inspected;
+    const auto facts = detect(opts.sys_root);
+    Resolved r = resolve(opts, facts, &request.settings);
+    const auto& v = r.values;
+    const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
+    ManifestInputs in;
+    in.resolved = r;
+    if (!request.snapshot) throw std::runtime_error("native manifest writer: no admitted YAML snapshot");
+    in.native_config = *request.snapshot;
+    in.engine_binary = request.engine_binary;
+    in.plan_engine_args = request.plan_extra;
+    const std::string model = v.at("engine").at("model").get<std::string>();
+    in.instance_id = new_instance_id();
+    in.producer_sha256 = request.producer_sha256;
+    in.calibration_cache = opts.calibration_cache;
+    in.profile = request.lab_profile ? "lab" : "production";
+    if (request.unmeasured) {
+        if (!request.expected_plan_key.empty()) {
+            const Json effective_key = plan_key_inputs(v, facts, container_identity(model),
+                                                       engine_identity(request.engine_binary, home), request.plan_extra,
+                                                       &*request.snapshot);
+            if (plan_key(effective_key) != request.expected_plan_key)
+                throw std::runtime_error("the effective measuring-manifest inputs differ from the session's frozen plan key");
+        }
+        in.s10 = s10;
+        in.live_policy = request.live_policy;
+        in.live_policy_from = request.live_policy_from;
+        in.experiment = request.experiment;
+        in.experiment_from = request.experiment_from;
+        outcome.built = build_manifest(in);
+        outcome.notes = "live policy: unmeasured; calibration not available \n";
+        return outcome;
+    }
+    const auto key_inputs = plan_key_inputs(v, facts, container_identity(model),
+                                            engine_identity(request.engine_binary, home), request.plan_extra,
+                                            &*request.snapshot);
+    // A v3 owner pins the same native key at draft, measurement and measured-cache read. Check it before touching or
+    // publishing any cache entry so a changed resolver input cannot reuse the attempt.
+    if (!request.expected_plan_key.empty() && plan_key(key_inputs) != request.expected_plan_key)
+        throw std::runtime_error("the effective measured-manifest inputs differ from the session's frozen plan key");
+    auto plan = plan_cache_lookup(request.plan_cache, key_inputs);
+    if (!plan) {
+        outcome.kind = NativeWriterOutcome::Kind::cache_miss;
+        outcome.plan_key = plan_key(key_inputs);
+        return outcome;
+    }
+    if (request.settings.ngram_placement == "auto") {
+        const auto selected = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
+        const auto ranks = decode_engine_rank_demand(plan->rank_demand, selected, "native n-gram placement receipt");
+        const bool measured_ram = std::any_of(plan->plan.host.begin(), plan->plan.host.end(),
+                                              [](const auto& consumer) { return consumer.name == "ngram_table"; });
+        const std::string chosen = admitted_ngram_placement(ranks, measured_ram, request.settings.ngram_placement);
+        r.values["engine"]["ngram_placement"] = chosen;
+        r.typed.engine.ngram_placement = chosen;
+        r.provenance["engine.ngram_placement"] =
+            Json{{"origin", "derived"}, {"source", "rad0011 measured rank n-gram tier"}, {"lifecycle", "startup-only"}};
+        r.manifest["values"] = r.values;
+        r.manifest["provenance"] = r.provenance;
+        r.hash = sha256_hex(r.manifest.dump());
+        // The manifest inputs were frozen before the measured cache was consulted. Propagate the new resolved value to
+        // that exact input rather than sealing the stale auto intent.
+        in.resolved = r;
+    }
+    if (!request.expected_owner_attempt.empty() &&
+        (!plan->owner || plan->owner->attempt_id != request.expected_owner_attempt))
+        throw std::runtime_error("the measured plan cache entry is not owned by the expected measuring attempt");
+    {
+        // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner map, and the
+        // host's live room. The retention target is the host KV tier the launcher runs with, over the measured KV
+        // density (one full session's KV over its context), at most every session at full context.
+        const int64_t ctx = v.at("service").at("max_context").get<int64_t>();
+        const int64_t sessions = v.at("service").at("max_sessions").get<int64_t>();
+        const int64_t per_token = plan->plan.kv_one_session.bytes / std::max<int64_t>(1, ctx);
+        if (per_token <= 0) throw std::runtime_error("the measured plan has no KV per token");
+        const int64_t retention =
+            std::min<int64_t>(v.at("memory").at("host_kv_mib").get<int64_t>() * 1048576 / per_token, ctx * sessions);
+        const bool helpers = !r.manifest.at("process_helpers").empty();
+        const Json sources = {
+            {"engine_plan", plan->plan_json},
+            {"rank_demand", plan->rank_demand},
+            {"engine_binary", request.engine_binary.string()},
+            {"helper_binary", helpers ? (home / "helpers" / "r3_moe_worker").string() : std::string()},
+            {"retention_target_tokens", retention},
+            {"margin", host_ledger_margin(r, opts.calibration_cache)},
+            {"run_id", "bc-serve --write-manifest " + request.manifest_name}};
+        s10.p1_record = v2::produce_p1(in, facts, opts.sys_root, sources);
+        // The plan echoes the host pool it was measured with; S8 derives the pool from what was measured. When they
+        // differ, the plan is for another pool and the launcher measures once more with the derived one (that
+        // configuration has its own cache key, so this happens once per configuration).
+        v2::MeasuredResourceInputs measured_inputs;
+        if (const auto e = v2::decode(s10.p1_record.at("resource_inputs"), "p1.resource_inputs", &measured_inputs))
+            throw std::runtime_error(e->message);
+        const auto derived = v2::derived_host_pool_mib(measured_inputs);
+        if (!derived) throw std::runtime_error("the derived host pool overflows");
+        if (*derived != plan->plan.host_pool_mib) {
+            outcome.kind = NativeWriterOutcome::Kind::host_pool_change;
+            outcome.derived_pool_mib = *derived;
+            outcome.notes = "bc-serve: the plan was measured with a " + std::to_string(plan->plan.host_pool_mib) +
+                            " MiB host pool; the measured inputs need " + std::to_string(*derived) + " MiB\n";
+            return outcome;
+        }
+    }
+    in.measured = MeasuredPlan{*plan, key_inputs};
+    in.s10 = s10;
+    in.auto_calibrate = request.auto_calibrate;
+    in.live_policy = request.live_policy;
+    in.live_policy_from = request.live_policy_from;
+    in.experiment = request.experiment;
+    in.experiment_from = request.experiment_from;
+    outcome.built = build_manifest(in);
+    const auto& prov = outcome.built.document.at("provenance");
+    const auto& spec = outcome.built.document.at("spec");
+    const bool has_handoff = spec.contains("handoff");   // an engine-only manifest has no hand-off section
+    const auto placement = has_handoff ? spec.at("handoff").at("placement") : Json::object();
+    if (has_handoff && !placement.contains("live_policy")) {
+        outcome.notes += "WARNING live policy OFF: policy-calibration key " +
+                         policy_calibration_key(policy_calibration_inputs(spec)) + "; " +
+                         placement.at("live_policy_state").at("reason_code").get<std::string>() + ": " +
+                         placement.at("live_policy_state").at("reason_detail").get<std::string>() + '\n';
+    } else if (has_handoff) {
+        for (auto it = prov.begin(); it != prov.end(); ++it) {
+            const std::string pointer = "/spec/handoff/placement/live_policy/";
+            if (it.key().rfind(pointer, 0) != 0) continue;
+            const std::string field = it.key().substr(pointer.size());
+            outcome.notes += "live policy: " + field + "=" + placement.at("live_policy").at(field).dump() + " [" +
+                             it.value().at("origin").get<std::string>() + "] " +
+                             it.value().at("source").get<std::string>() + '\n';
+        }
+    }
+    if (request.want_s8_replay_evidence)
+        // The EXACT P1 producer record and P2 evidence consumed by S8 for this measured manifest. This sibling is
+        // independently digest-bound; no manifest field or allocation is rewritten to permit replay.
+        outcome.s8_replay_source = Json{{"version", 1},
+                                        {"manifest_digest", outcome.built.digest},
+                                        {"produced_at_unix_s", s10.now_unix_s},
+                                        {"p1_record", s10.p1_record},
+                                        {"calibration_records", s10.calibration_records}};
+    return outcome;
 }
 
 void write_manifest_file(const fs::path& path, const std::string& text) {

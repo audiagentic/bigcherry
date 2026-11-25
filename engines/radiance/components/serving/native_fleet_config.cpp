@@ -2,6 +2,7 @@
 #include "native_fleet_config.h"
 
 #include "fleet/fleet.h"
+#include "v2/document_bytes.h"
 
 #include <ryml.hpp>
 
@@ -99,6 +100,25 @@ nlohmann::json x_bigcherry_subtree(const std::string& yaml_utf8) {
     return nullptr;
 }
 
+nlohmann::json yaml_document_json(const std::string& yaml_utf8, const char* name) {
+    try {
+        ryml::Callbacks callbacks;
+        callbacks.set_error_basic(&on_basic).set_error_parse(&on_parse).set_error_visit(&on_visit);
+        ryml::EventHandlerTree handler(callbacks);
+        ryml::Parser parser(&handler);
+        ryml::Tree tree(callbacks);
+        ryml::parse_in_arena(&parser, ryml::to_csubstr(name), ryml::to_csubstr(yaml_utf8), &tree);
+        tree.resolve();
+        if (tree.empty() || !tree.crootref().has_children()) throw std::invalid_argument(std::string(name) + ": empty document");
+        ryml::ConstNodeRef root = tree.crootref();
+        if (root.is_stream()) root = root.first_child();
+        if (!root.is_map()) throw std::invalid_argument(std::string(name) + ": the document must be a mapping");
+        return yaml_json(root, name);
+    } catch (const XBigcherryError& error) {
+        throw std::invalid_argument(std::string(name) + ": " + error.what());
+    }
+}
+
 NativeFleetConfig NativeFleetConfig::read(const std::filesystem::path& authored,
                                           const std::filesystem::path& resolution_root) {
     return NativeFleetConfig(NativeConfigSnapshot::read(authored, resolution_root), authored.string());
@@ -155,8 +175,10 @@ NativeFleetConfig::NativeFleetConfig(NativeConfigSnapshot snapshot, const std::s
 std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
     constexpr const char* command = "--bc-inspect-native-config";
     if (argc < 2 || argv[1] == nullptr || std::strcmp(argv[1], command) != 0) return std::nullopt;
-    if (argc != 3 || argv[2] == nullptr) {
-        std::cerr << "radiance: " << command << " requires one inherited sealed descriptor holding the raw YAML\n";
+    const bool with_profiles = argc == 5 && argv[3] != nullptr && std::strcmp(argv[3], "--bc-profile-fd") == 0;
+    if ((argc != 3 && !with_profiles) || argv[2] == nullptr || (with_profiles && argv[4] == nullptr)) {
+        std::cerr << "radiance: " << command
+                  << " requires one inherited sealed descriptor holding the raw YAML [--bc-profile-fd FD for the power profile file]\n";
         return 2;
     }
 
@@ -168,6 +190,16 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
         if (error != std::errc{} || ptr != end || fd < 3)
             throw std::invalid_argument("descriptor must be an integer greater than 2");
 
+        nlohmann::json power_profiles = nullptr;
+        if (with_profiles) {
+            int profile_fd = -1;
+            const char* profile_end = argv[4] + std::strlen(argv[4]);
+            const auto [profile_ptr, profile_error] = std::from_chars(argv[4], profile_end, profile_fd);
+            if (profile_error != std::errc{} || profile_ptr != profile_end || profile_fd < 3)
+                throw std::invalid_argument("profile descriptor must be an integer greater than 2");
+            power_profiles = yaml_document_json(v2::read_sealed_document(profile_fd, "power profile descriptor"),
+                                                "power-profiles");
+        }
         NativeFleetConfig managed = NativeFleetConfig::replay(NativeConfigSnapshot::from_raw_fd(fd));
         const auto& fleet = managed.fleet();
         const auto& cfg = fleet.models.front().cfg;
@@ -191,6 +223,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"max_context", cfg.max_ctx},
                          {"max_sequences", cfg.max_seqs},
                          {"x_bigcherry", x_bigcherry_subtree(managed.snapshot().yaml_utf8())},
+                         {"power_profiles", power_profiles},
                          // The tuning options the authored YAML states, as values the strict reader parsed (null: absent).
                          {"tuning", {{"p2p", stated("--p2p", cfg.p2p == rad::RAD_P2P_ON    ? "on"
                                                              : cfg.p2p == rad::RAD_P2P_OFF ? "off" : "auto")},

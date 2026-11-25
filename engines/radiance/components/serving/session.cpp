@@ -7,6 +7,7 @@
 #include "live_policy_ingest.h"
 #include "calibration_watch.h"
 #include "manifest_writer.h"
+#include "v2/helper_settings.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
 #include "resources.h"
@@ -1773,7 +1774,7 @@ class Owner {
             }
             const pid_t pid = spawn(
                 h.argv, child_environment(environ, h.runtime), log, [&](pid_t p) { track(h.role, p, log); },
-                plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
+                h.settings ? h.settings->descriptor() : -1);
             const auto deadline = Clock::now() + s_.timing.helper_timeout;
             bool ready = false;
             while (Clock::now() < deadline) {
@@ -2139,10 +2140,10 @@ namespace {
 ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks,
                                ChildKind kind, const std::string& role, int inherited_input_fd = -1,
                                int working_directory_fd = -1,
-                               size_t max_output_bytes = v2::kMaxDocumentBytes) {
+                               size_t max_output_bytes = v2::kMaxDocumentBytes, int extra_inherited_fd = -1) {
     if (argv.empty() || argv.front().empty())
         throw std::runtime_error("planning child: empty command");
-    if ((inherited_input_fd >= 0 && inherited_input_fd < 3) ||
+    if ((inherited_input_fd >= 0 && inherited_input_fd < 3) || (extra_inherited_fd >= 0 && extra_inherited_fd < 3) ||
         (working_directory_fd >= 0 && working_directory_fd < 3))
         throw std::runtime_error("planning child: inherited descriptors must be greater than 2");
     const Wait& wait = hooks.wait;
@@ -2186,9 +2187,10 @@ ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& 
                 ::_exit(126); // never recorded: run nothing
             if (working_directory_fd >= 0 && ::fchdir(working_directory_fd) != 0)
                 ::_exit(126);
-            if (inherited_input_fd >= 0) {
-                const int flags = ::fcntl(inherited_input_fd, F_GETFD);
-                if (flags < 0 || ::fcntl(inherited_input_fd, F_SETFD, flags & ~FD_CLOEXEC) != 0)
+            for (const int inherited : {inherited_input_fd, extra_inherited_fd}) {
+                if (inherited < 0) continue;
+                const int flags = ::fcntl(inherited, F_GETFD);
+                if (flags < 0 || ::fcntl(inherited, F_SETFD, flags & ~FD_CLOEXEC) != 0)
                     ::_exit(126);
             }
             ::execve(cargv[0], cargv.data(), cenv.data());
@@ -2280,6 +2282,15 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
     return run_planning_child(argv, env, hooks, ChildKind::manifest_writer, "manifest writer");
 }
 
+v2::S10PowerProfile selected_power_rules(const v2::PowerProfiles& loaded, const std::string& name) {
+    if (name == "stock") return {name, {}};
+    const auto found = loaded.find(name);
+    if (found == loaded.end())
+        throw PlanFailed("native config admission: x-bigcherry.power.profile " + name +
+                         " is not a profile of engines/radiance/power-profiles.yaml");
+    return found->second;
+}
+
 namespace {
 std::string tail_text(const std::string& s, size_t n = 2000);
 }
@@ -2303,11 +2314,15 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
     }
     NativeExecutionRoot::require_descriptor_matches(resolution_root_fd, snapshot.resolution_root());
 
+    // The profile file compiled into bc-serve goes to the same engine call on a second sealed descriptor: the engine's
+    // YAML parser is the only one, and its JSON comes back inside the report.
+    auto profiles = std::make_shared<PinnedManifest>(v2::embedded_power_profiles_yaml());
     const ManifestRun result = run_planning_child(
-        {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor())},
+        {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor()),
+         "--bc-profile-fd", std::to_string(profiles->descriptor())},
         complete_environment, hooks, ChildKind::native_config_inspector,
         "native config inspector",
-        input->descriptor(), resolution_root_fd);
+        input->descriptor(), resolution_root_fd, v2::kMaxDocumentBytes, profiles->descriptor());
     NativeExecutionRoot::require_descriptor_matches(resolution_root_fd, snapshot.resolution_root());
     if (result.exit != 0)
         throw PlanFailed("native config inspector: matched Radiance rejected the admitted YAML snapshot: " +
@@ -2348,7 +2363,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "kernels",
                                     "listener", "tp", "tp_wire", "cards", "rank_devices",
-                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "settings"}) ||
+                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "power_profiles", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
@@ -2406,6 +2421,14 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         out.x_bigcherry = decode_x_bigcherry(engine_report.at("x_bigcherry"));
     } catch (const std::invalid_argument& error) {
         throw PlanFailed(std::string("native config admission: ") + error.what());
+    }
+    {
+        auto loaded = v2::decode_power_profiles(engine_report.at("power_profiles"));
+        if (!loaded)
+            throw PlanFailed(v2::render_human("native config admission", loaded.error()));
+        out.power_profiles = std::move(loaded.value());
+        // the selection must name a profile of the file (stock is built in)
+        (void)selected_power_rules(out.power_profiles, out.x_bigcherry.power_profile());
     }
     if (out.x_bigcherry.rank_count() != tp)
         throw PlanFailed("native config admission: x-bigcherry.ranks name " +
@@ -2492,7 +2515,8 @@ NativeWriterInput read_native_writer_input(int fd) {
     inspected.model = inspection.model;
     inspected.tp_wire = inspection.tp_wire;
     inspected.x = inspection.x_bigcherry;
-    return {std::move(snapshot), std::move(inspection.settings), std::move(inspected)};
+    return {std::move(snapshot), std::move(inspection.power_profiles), std::move(inspection.settings),
+            std::move(inspected)};
 }
 
 static void reconcile_native_config(
@@ -2661,8 +2685,10 @@ struct HelperSelection {
     const Json& facts;
 };
 
+// The helpers' typed settings come from the manifest the owner holds in memory (helper_settings, HIP-free), one sealed
+// descriptor per helper; the helper never opens a manifest.
 std::vector<HelperStart> helper_starts(HelperSelection selected, const fs::path& home,
-                                       const fs::path& helper_binary, const fs::path& manifest,
+                                       const fs::path& helper_binary, const v2::Manifest& manifest,
                                        bool measuring) {
     const Json& processes = selected.processes;
     const Json& facts = selected.facts;
@@ -2680,9 +2706,12 @@ std::vector<HelperStart> helper_starts(HelperSelection selected, const fs::path&
                              ": BDF/ordinal/architecture changed since the resolver selected it");
         HelperStart h;
         h.role = "helper" + std::to_string(i);
-        h.argv = {helper_binary.string(), "--manifest", manifest.string(), "--role", h.role};
-        if (measuring)
-            h.argv.push_back("--measuring");
+        auto settings = helper_settings(manifest, h.role);
+        if (!settings)
+            throw PlanFailed(v2::render_human("helper settings", settings.error()));
+        settings.value().measuring = measuring;
+        h.settings = std::make_shared<PinnedManifest>(helper_settings_to_json(settings.value()).dump());
+        h.argv = {helper_binary.string(), "--settings-fd", std::to_string(h.settings->descriptor()), "--role", h.role};
         h.runtime = {{"RADIANCE_HOME", home.string()},
                      {"ROCR_VISIBLE_DEVICES", std::to_string(worker.at("hip_ordinal").get<int>())},
                      {"HIP_VISIBLE_DEVICES", "0"}};
@@ -2714,7 +2743,7 @@ void require_segment(const std::string& name) {
 }
 
 void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::path& run_dir,
-                            const Hooks& hooks, std::vector<pid_t>* pids, int inherited_manifest_fd) {
+                            const Hooks& hooks, std::vector<pid_t>* pids) {
     for (const HelperStart& h : helpers) {
         const fs::path log = run_dir / (h.role + "-measuring-" + stamp() + ".log");
         {
@@ -2727,7 +2756,7 @@ void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::p
                 require_callback(hooks.started.invoke("session.hooks.started", ChildKind::measuring_helper,
                                                       h.role + " measuring", p, log),
                                  "hooks.started");
-        }, inherited_manifest_fd);
+        }, h.settings ? h.settings->descriptor() : -1);
         pids->push_back(pid);
         const auto deadline = Clock::now() + std::chrono::minutes(15);
         bool ready = false;
@@ -2913,19 +2942,6 @@ void check_native_helper_roles(const v2::Manifest& manifest, const Json& workers
             throw PlanFailed("native v3 manifest changed helper BDF order or overlaps an engine/helper BDF");
 }
 
-int64_t requested_host_pool(const ManifestRun& writer) {
-    static const std::regex receipt(R"(^derived_host_pool_mib=([0-9]+)\r?$)", std::regex::multiline);
-    auto match = std::sregex_iterator(writer.out.begin(), writer.out.end(), receipt);
-    if (match == std::sregex_iterator())
-        throw PlanFailed("plan: bc-serve asked for another host pool without naming it: " + tail_text(writer.err));
-    const std::string value = (*match)[1];
-    int64_t result = 0;
-    const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), result);
-    if (++match != std::sregex_iterator() || error != std::errc{} || end != value.data() + value.size())
-        throw PlanFailed("plan: bc-serve reported an invalid or ambiguous derived host pool");
-    return result;
-}
-
 // A protocol-level count, not a resource budget. The writer's derived host pool depends on the host memory the
 // measured helpers and engine hold, which itself depends on the pool: measuring with the configured pool yields the
 // pool that measurement needs (change 1), measuring with that pool confirms it or moves it once more for the memory
@@ -2994,7 +3010,7 @@ static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
                                                       fs::absolute(sys_root));
 }
 
-static Env engine_visibility(const fs::path& home, const std::vector<std::string>& cards, const Json& facts) {
+Env engine_visibility(const fs::path& home, const std::vector<std::string>& cards, const Json& facts) {
     std::string rocr, hip;
     for (size_t i = 0; i < cards.size(); ++i) {
         const auto& inventory = facts.at("gpus");
@@ -3057,7 +3073,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     const fs::path index = in.work_root.empty() ? fs::path{} : named_store_index(in.work_root, name);
     const std::string model_path = values.at("engine").at("model").get<std::string>();
     static_inputs.model_digest = model_stat_identity(model_path);
-    static_inputs.power_profile = in.power_profile;
+    static_inputs.power_profile = in.options.inspected->x.power_profile();
 
     static_inputs.ordered_devices = Json::array();
     for (const char* group : {"engine_cards", "helper_cards"}) {
@@ -3228,22 +3244,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     }
 
     // Rank order is the resolver's card order; the process sees its cards as HIP devices 0..n-1.
-    std::string rocr, hip;
     const Json& cards = v.at("layout").at("engine_cards");
-    for (size_t i = 0; i < cards.size(); ++i) {
-        const Json* gpu = nullptr;
-        for (const Json& g : facts.at("gpus"))
-            if (g.at("bdf") == cards[i])
-                gpu = &g;
-        if (gpu == nullptr)
-            throw PlanFailed("serve: engine card " + cards[i].get<std::string>() + " is not in the inventory");
-        rocr += (i != 0 ? "," : "") + std::to_string(gpu->at("hip_ordinal").get<int64_t>());
-        hip += (i != 0 ? "," : "") + std::to_string(i);
-    }
+    const Env visibility = engine_visibility(home, cards.get<std::vector<std::string>>(), facts);
     EngineStart out;
     out.port = int(v.at("engine").at("port").get<int64_t>());
-    out.runtime = {
-        {"RADIANCE_HOME", home.string()}, {"ROCR_VISIBLE_DEVICES", rocr}, {"HIP_VISIBLE_DEVICES", hip}};
+    out.runtime = visibility;
     out.summary = {{"config", name},
                    {"source", layouts.at("source").value(name, "")},
                    {"model", v.at("engine").at("model")},
@@ -3356,9 +3361,22 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     const Json initial_key = plan_key_inputs(
         native_resolved.values, facts, container_identity(v.at("engine").at("model").get<std::string>()),
         matched_engine_identity, "budgets: default", &snapshot);
-    const PinnedManifest writer_input(
-        Json{{"snapshot", snapshot.manifest_field()}, {"inspection", native_inspection.receipt},
-             {"config", {{"name", in.named_config}, {"yaml_path", in.options.inspected->yaml_path.string()}}}}.dump());
+    // What every manifest write of this start shares: the config as the inspector parsed it from the sealed YAML bytes, the
+    // snapshot, the matched parser's settings and the frozen engine.
+    NativeWriterRequest writer_base;
+    writer_base.inspected.name = in.named_config;
+    writer_base.inspected.yaml_path = in.options.inspected->yaml_path;
+    writer_base.inspected.sha256 = native_inspection.snapshot_sha256;
+    writer_base.inspected.model = native_inspection.model;
+    writer_base.inspected.tp_wire = native_inspection.tp_wire;
+    writer_base.inspected.x = native_inspection.x_bigcherry;
+    writer_base.snapshot = snapshot;
+    writer_base.settings = settings;
+    writer_base.engine_binary = engine;
+    writer_base.plan_extra = "budgets: default";
+    writer_base.power_profile = native_inspection.x_bigcherry.power_profile();
+    writer_base.power_rules = selected_power_rules(native_inspection.power_profiles, writer_base.power_profile);
+    writer_base.producer_sha256 = file_sha256(in.self);
     const std::string handoff = processes.empty() ? std::string{} : "/r3-serve-" + new_instance_id();
     std::string helper_identity;
     if (!handoff.empty()) {
@@ -3411,34 +3429,33 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
 
         const std::string attempt_id = new_instance_id();
         const fs::path draft = run_dir / ("manifest-native-draft-" + attempt_id + ".json");
-        std::vector<std::string> argv = {
-            in.self.string(), "--write-manifest", draft.string(), "--power-profile", in.power_profile,
-            "--unmeasured", "--expected-plan-key", plan_key(frozen_key), "--engine-binary", engine.string(),
-            "--plan-extra", "budgets: default", "--bc-native-config-fd",
-            std::to_string(writer_input.descriptor())};
-        auto resolver = resolver_args(round_options);
-        if (!handoff.empty())
-            resolver.insert(resolver.end(), {"--set", "handoff.shm=" + handoff});
-        argv.insert(argv.end(), resolver.begin(), resolver.end());
-        if (!handoff.empty() && !round_values.at("handoff").value("histogram", std::string{}).empty()) {
-            const fs::path histogram = fs::absolute(run_dir) / ("histogram-measuring-" + attempt_id);
-            argv.insert(argv.end(), {"--set", "handoff.histogram=" + Json(histogram.string()).dump()});
+        NativeWriterRequest draft_request = writer_base;
+        draft_request.options = round_options;
+        draft_request.unmeasured = true;
+        draft_request.expected_plan_key = plan_key(frozen_key);
+        draft_request.manifest_name = draft.filename().string();
+        if (!handoff.empty()) {
+            draft_request.options.sets.insert(draft_request.options.sets.end(), {"handoff.shm=" + handoff});
+            if (!round_values.at("handoff").value("histogram", std::string{}).empty()) {
+                const fs::path histogram = fs::absolute(run_dir) / ("histogram-measuring-" + attempt_id);
+                draft_request.options.sets.push_back("handoff.histogram=" + Json(histogram.string()).dump());
+            }
         }
-        const ManifestRun writer = run_planning_child(
-            argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
-            "native v3 measuring draft writer", writer_input.descriptor());
-        if (writer.exit != 0)
-            throw PlanFailed("native v3 draft writer failed: " + tail_text(writer.err));
+        NativeWriterOutcome drafted;
+        try {
+            drafted = write_native_manifest(draft_request);
+        } catch (const std::exception& error) {
+            throw PlanFailed(std::string("native v3 draft writer failed: ") + error.what());
+        }
+        write_manifest_file(draft, drafted.built.text);
         const auto verified = pin_manifest_file(draft, v2::PlanUse::measuring);
-        const auto native_view = v2::native_config_view(verified.parsed);
         const auto emitted_devices = verified.parsed.spec.processes.engine.device.gpus;
         std::error_code remove_error;
         fs::remove(draft, remove_error);
-        if (remove_error || !native_view || native_view->yaml_utf8 != snapshot.yaml_utf8() ||
-            native_view->identity.sha256 != snapshot.sha256() ||
-            native_view->identity.resolution_root != snapshot.resolution_root() ||
-            emitted_devices != selected_bdfs || verified.parsed.spec.plan.engine_memory)
-            throw PlanFailed("native v3 draft did not preserve the admitted snapshot, root, rank order and measuring role");
+        // The manifest embeds the very snapshot the writer was given, so it is not compared with it again; the devices
+        // and the host pool come from a second detect() and resolve(), and are checked against this round's.
+        if (remove_error || emitted_devices != selected_bdfs || verified.parsed.spec.plan.engine_memory)
+            throw PlanFailed("native v3 draft did not preserve the rank order and the measuring role");
         if (verified.parsed.spec.resources.host.pool_mib !=
             round_values.at("engine").at("host_pool_mib").get<int64_t>())
             throw PlanFailed("native v3 draft host pool differs from the exact measurement attempt");
@@ -3470,10 +3487,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             write_atomic(attempt_dir / "carried-from.json", carried->provenance().dump(2) + "\n");
         } else {
         const auto measuring_helpers = helper_starts(
-            {processes, current_facts}, frozen_runtime_home, helper_binary, measuring_execution, true);
+            {processes, current_facts}, frozen_runtime_home, helper_binary, verified.parsed, true);
         const auto baseline = measure_helper_baseline(processes, in);
         MeasuringHelpers group(hooks);
-        launch_measure_helpers(measuring_helpers, run_dir, hooks, &group.pids, verified.pinned->descriptor());
+        launch_measure_helpers(measuring_helpers, run_dir, hooks, &group.pids);
         measured_helpers_mib = helper_resident_mib(group.pids);
         require_segment(handoff);
         launch.root.require_matches(snapshot.resolution_root());
@@ -3553,25 +3570,33 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const fs::path measured_manifest = fs::absolute(run_dir) / ("manifest-native-" + attempt_id + ".json");
         const fs::path experiment_file = fs::absolute(run_dir) / "lab-experiment.json";
         const fs::path s8_source = measured_manifest.string() + ".s8-evidence.json";
-        std::vector<std::string> measured_argv = {
-            in.self.string(), "--write-manifest", measured_manifest.string(), "--power-profile", in.power_profile,
-            "--plan-cache", owner_cache.string(), "--engine-binary", absolute_engine.string(), "--plan-extra",
-            "budgets: default", "--expected-plan-key", plan_key(frozen_key), "--expected-owner-attempt", attempt_id,
-            "--bc-native-config-fd", std::to_string(writer_input.descriptor())};
-        if (cache)
-            measured_argv.insert(measured_argv.end(), {"--s8-replay-evidence", s8_source.string()});
+        NativeWriterRequest final_request = writer_base;
+        final_request.options = round_options;
+        if (!handoff.empty()) final_request.options.sets.push_back("handoff.shm=" + handoff);
+        final_request.unmeasured = false;
+        final_request.engine_binary = absolute_engine;
+        final_request.plan_cache = owner_cache;
+        final_request.expected_plan_key = plan_key(frozen_key);
+        final_request.expected_owner_attempt = attempt_id;
+        final_request.manifest_name = measured_manifest.filename().string();
+        final_request.want_s8_replay_evidence = bool(cache);
         if (in.lab_experiment) {
             // The measured manifest, and only it, carries the schedule: the measuring start ran the production
             // plan. The file is kept in the run directory as the record of what was applied.
             write_atomic(experiment_file, in.lab_experiment->document.dump(2) + "\n");
-            measured_argv.insert(measured_argv.end(), {"--experiment", experiment_file.string()});
+            final_request.lab_profile = true;
+            final_request.experiment = in.lab_experiment->document;
+            final_request.experiment_from = "--experiment " + experiment_file.filename().string();
         }
-        measured_argv.insert(measured_argv.end(), resolver.begin(), resolver.end());
-        const ManifestRun final_writer = run_planning_child(
-            measured_argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
-            "native v3 measured writer", writer_input.descriptor());
-        if (final_writer.exit == 11) {
-            const int64_t pool = requested_host_pool(final_writer);
+        NativeWriterOutcome finished;
+        try {
+            finished = write_native_manifest(final_request);
+        } catch (const std::exception& error) {
+            throw PlanFailed(std::string("native v3 measured writer refused its owner receipt: ") + error.what());
+        }
+        if (finished.kind == NativeWriterOutcome::Kind::host_pool_change) {
+            const int64_t pool = finished.derived_pool_mib;
+            std::cerr << finished.notes;
             if (round == kMaxHostPoolChanges || !measured_pools.insert(pool).second)
                 throw PlanFailed("native v3 host pool did not converge (last " + std::to_string(pool) + " MiB)");
             if (!handoff.empty()) {
@@ -3589,11 +3614,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                       << " MiB host pool; measuring with it\n";
             continue;
         }
-        if (final_writer.exit != 0)
-            throw PlanFailed("native v3 measured writer refused its owner receipt (exit " +
-                             std::to_string(final_writer.exit) + "): " + tail_text(final_writer.err));
+        if (finished.kind == NativeWriterOutcome::Kind::cache_miss)
+            throw PlanFailed("native v3 measured writer found no owner-cache entry for the measuring attempt (key " +
+                             finished.plan_key.substr(0, 16) + ")");
+        std::cerr << finished.notes;
+        write_manifest_file(measured_manifest, finished.built.text);
+        if (!finished.s8_replay_source.is_null())
+            write_manifest_file(s8_source, finished.s8_replay_source.dump(2) + "\n");
         auto final_snapshot = pin_manifest_file(measured_manifest, v2::PlanUse::serving);
-        const auto final_native = v2::native_config_view(final_snapshot.parsed);
         const auto& final_spec = final_snapshot.parsed.spec;
         if (in.lab_experiment) {
             const auto& experiment = final_spec.experiment;
@@ -3602,10 +3630,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 uint64_t(forced->steps.size()) * uint64_t(forced->repeat) != in.lab_experiment->transactions)
                 throw PlanFailed("native v3 measured manifest does not carry the requested forced placement schedule");
         }
-        if (!final_native || final_native->yaml_utf8 != snapshot.yaml_utf8() ||
-            final_native->identity.sha256 != snapshot.sha256() ||
-            final_native->identity.resolution_root != snapshot.resolution_root())
-            throw PlanFailed("native v3 measured serving artifact changed the admitted YAML snapshot identity");
         if (final_spec.intent.model != v.at("engine").at("model").get<std::string>() ||
             final_spec.processes.engine.device.gpus != selected_bdfs)
             throw PlanFailed("native v3 measured serving artifact changed the frozen model or ordered engine devices");
@@ -3670,7 +3694,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.pinned_manifest = std::move(final_snapshot.pinned);
         out.argv = {absolute_engine.string(), "--manifest", out.execution_manifest().string(), "--role", "engine"};
         out.helpers = helper_starts({processes, after_facts}, frozen_runtime_home, helper_binary,
-                                    out.execution_manifest(), false);
+                                    final_snapshot.parsed, false);
         out.native_helper_resident_mib = measured_helpers_mib;
         out.handoff_shm = handoff;
         out.summary["plan_measurement_attempt"] = attempt_id;
@@ -3752,10 +3776,6 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (in.options.model_root.empty())
         in.options.model_root = native_snapshot->resolution_root();
     const std::string name = m.spec.intent.layout;
-    if (in.explicit_power_profile && in.power_profile != m.spec.intent.power.profile)
-        throw ReplayFailed(ReplayRefusal::execution_projection,
-                           "replay: explicitly requested power profile differs from the stored manifest");
-    in.power_profile = m.spec.intent.power.profile;
     in.named_config = name;
     if (!in.options.inspected)   // replay reads the admitted bytes, not a file on disk
         in.options.inspected = inspect_config_snapshot(
@@ -3826,7 +3846,11 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     draft.instance_id = new_instance_id();
     draft.producer_sha256 = file_sha256(given.self);
     draft.calibration_cache = in.options.calibration_cache;
+    if (report.x_bigcherry.power_profile() != m.spec.intent.power.profile)
+        throw ReplayFailed(ReplayRefusal::execution_projection,
+                           "replay: the config selects a different power profile than the stored manifest");
     draft.s10.power_profile = m.spec.intent.power.profile;
+    draft.s10.power_rules = selected_power_rules(report.power_profiles, m.spec.intent.power.profile);
     draft.s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
     draft.s10.calibration_records = Json::array();
     if (source.at("spec").contains("experiment"))
@@ -3978,7 +4002,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (!native_helper_build.empty() && file_sha256(helper_binary) != native_helper_build)
         throw PlanFailed("replay: native helper build changed during admission");
     out.helpers = helper_starts({current_config->manifest.at("process_helpers"), facts}, native_runtime_home,
-                                fs::absolute(helper_binary), out.execution_manifest(), false);
+                                fs::absolute(helper_binary), accepted, false);
     if (accepted.spec.handoff) {
         out.handoff_shm = accepted.spec.handoff->transport.shm;
         if (!hooks.selected_segment)
@@ -4007,5 +4031,55 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                                    const Hooks& hooks) {
     return replay_stored_manifest(given, run_dir, hooks, nullptr);
 }
+
+// `bc-serve helper-exec MANIFEST ROLE [--measuring] -- WORKER [ARGS...]`: for the lab scripts that run one helper alone
+// (replays, sweeps, profiling). It does what the owner does for a helper, no more: read the manifest, take the role's
+// typed settings, seal them in a memfd and exec the worker with --settings-fd. The worker never opens a manifest.
+int helper_exec_command(int argc, char** argv) {
+    // argv: bc-serve helper-exec MANIFEST ROLE [--measuring] -- WORKER ARGS...
+    int i = 2;
+    if (argc < i + 4) {
+        std::fprintf(stderr, "usage: bc-serve helper-exec MANIFEST helperN [--measuring] -- WORKER [ARGS...]\n");
+        return 2;
+    }
+    const fs::path manifest_path = argv[i++];
+    const std::string role = argv[i++];
+    bool measuring = false;
+    if (i < argc && std::strcmp(argv[i], "--measuring") == 0) {
+        measuring = true;
+        ++i;
+    }
+    if (i >= argc || std::strcmp(argv[i], "--") != 0 || i + 1 >= argc) {
+        std::fprintf(stderr, "bc-serve helper-exec: the worker command follows --\n");
+        return 2;
+    }
+    ++i;
+    auto manifest = v2::load_manifest(manifest_path, measuring ? v2::PlanUse::measuring : v2::PlanUse::serving);
+    if (!manifest) {
+        std::fputs(v2::render_human("bc-serve helper-exec", manifest.error()).c_str(), stderr);
+        return v2::exit_code_of(manifest.error());
+    }
+    auto settings = helper_settings(manifest.value(), role);
+    if (!settings) {
+        std::fputs(v2::render_human("bc-serve helper-exec", settings.error()).c_str(), stderr);
+        return v2::exit_code_of(settings.error());
+    }
+    settings.value().measuring = measuring;
+    PinnedManifest sealed(helper_settings_to_json(settings.value()).dump());
+    const int flags = ::fcntl(sealed.descriptor(), F_GETFD);
+    if (flags < 0 || ::fcntl(sealed.descriptor(), F_SETFD, flags & ~FD_CLOEXEC) != 0) {
+        std::fprintf(stderr, "bc-serve helper-exec: cannot hand the settings descriptor to the worker\n");
+        return 2;
+    }
+    const std::string fd_text = std::to_string(sealed.descriptor());
+    std::vector<char*> args{argv[i], const_cast<char*>("--settings-fd"), const_cast<char*>(fd_text.c_str()),
+                            const_cast<char*>("--role"), const_cast<char*>(role.c_str())};
+    for (int k = i + 1; k < argc; ++k) args.push_back(argv[k]);
+    args.push_back(nullptr);
+    ::execv(args[0], args.data());
+    std::fprintf(stderr, "bc-serve helper-exec: cannot start %s: %s\n", args[0], std::strerror(errno));
+    return 2;
+}
+
 
 } // namespace bc::serving::session

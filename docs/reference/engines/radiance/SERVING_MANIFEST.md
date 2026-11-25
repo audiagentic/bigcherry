@@ -19,7 +19,7 @@ catalogue of layouts and no `--set` on a managed start.
 |---|---|
 | `bc-serve serve/start/stop/status` | Native production owner: reads the config's YAML, seals it, measures and validates the plan, owns engine/helper children and lifecycle; also `explain` and `quality`. |
 | `radiance --manifest M --role engine` | The engine reads its whole configuration from `M`, which the owner hands it as a sealed memfd (`/proc/self/fd/N`). |
-| `r3_moe_worker --manifest M --role helperN` | A helper reads its role from the same `M`. |
+| `r3_moe_worker --settings-fd FD --role helperN` | A helper receives its typed settings (the role's projection of `M`, computed by the owner) on one sealed descriptor and reads no manifest. |
 
 ## How a manifest is made
 
@@ -77,7 +77,7 @@ helpers needs the experts, to plan which ones each helper owns.
 ```bash
 radiance --manifest /proc/self/fd/N --role engine               # serving: the owner's sealed manifest, which must be measured
 radiance --manifest M --plan-memory PLAN.json --plan-memory-ranks RANKS.json   # measuring start (unmeasured manifest file)
-r3_moe_worker --manifest M --role helper0
+bc-serve helper-exec M helper0 -- r3_moe_worker   # one helper alone (lab scripts): the same descriptor hand-off
 ```
 
 A serving start takes the owner's **sealed memfd** (all four seals) named `/proc/self/fd/N` together with `--role engine`; a path on disk, a

@@ -37,6 +37,7 @@
 #include "v2/manifest.h"
 #include "v2/native_config_snapshot.h"
 #include "xbigcherry.h"
+#include "v2/s10_inputs.h"
 
 namespace bc::serving::power {
 class SessionPower;
@@ -107,11 +108,12 @@ std::optional<std::string> canary(int port, const std::string& prompt, const std
  * ------------------------------------------------------------------------------------------------- */
 
 /* The role order is manifest order: helper0 makes the shared segment, helper1 attaches to it.
- * Each helper starts with --manifest M --role helperN; device visibility is environment-only. */
+ * Each helper starts with --settings-fd FD --role helperN (its typed settings, sealed); device visibility is environment-only. */
 struct HelperStart {
     std::string role;
     std::vector<std::string> argv;
     Env runtime;
+    std::shared_ptr<PinnedManifest> settings; // the helper's typed settings (sealed memfd), inherited as --settings-fd
 };
 
 /* What the plan step hands the owner: one manifest and all of its children. */
@@ -309,11 +311,13 @@ struct NativeConfigInspection {
     std::vector<std::string> rank_devices;
     NativeEngineSettings settings{};
     XBigcherry x_bigcherry;   // the file's BigCherry-owned section, decoded against the closed v1 schema
+    v2::PowerProfiles power_profiles;   // the named power profiles, converted by the same engine and decoded strictly
     Json receipt;
 };
 
 struct NativeWriterInput {
     NativeConfigSnapshot snapshot;
+    v2::PowerProfiles power_profiles;
     NativeEngineSettings settings;
     InspectedConfig inspected;   // the config as the owner's inspector parsed it from the same sealed bytes
 };
@@ -323,6 +327,14 @@ NativeWriterInput read_native_writer_input(int fd);
  * root. `native_environment` supplies the same explicit configuration environment selected for the later child;
  * it is never inferred from a mutable authored path. A supplied root fd is borrowed from the planner and checked
  * against the recorded path before and after the child. The inspector is owner-tracked and reaped before return. */
+// The one ordered BDF -> child visibility mapping of an engine: ROCR_VISIBLE_DEVICES lists each rank's HIP ordinal in
+// rank order, HIP_VISIBLE_DEVICES is 0..n-1. A BDF absent from the inventory is refused naming it.
+/* `bc-serve helper-exec MANIFEST helperN [--measuring] -- WORKER [ARGS...]` (lab scripts running one helper alone). */
+int helper_exec_command(int argc, char** argv);
+/* The rules of the named profile `name` from the loaded profile file; empty rules for stock; a PlanFailed naming the file when
+ * the name is not there. */
+v2::S10PowerProfile selected_power_rules(const v2::PowerProfiles& loaded, const std::string& name);
+Env engine_visibility(const std::filesystem::path& home, const std::vector<std::string>& cards, const Json& facts);
 NativeConfigInspection inspect_native_config(const std::filesystem::path& engine,
                                              const NativeConfigSnapshot& snapshot,
                                              const Env& complete_environment, const Hooks& hooks = {},
@@ -375,7 +387,6 @@ struct EnginePlanInputs {
     std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
     std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
     std::filesystem::path work_root;       // the platform's work root (--work-root): holds the named-config store; empty: every start measures
-    bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
     std::filesystem::path calibration_records_file; // real writer P2 source, part of static input key
 
     // OS/dependency seams: only the production default calls the real detector,
@@ -395,7 +406,6 @@ struct EnginePlanInputs {
     // lab-profile one carrying it, measured afresh and never stored under the named config.
     std::optional<LabPlacementExperiment> lab_experiment;
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
-    std::string power_profile = "stock";    // explicit v2 profile, observe by default
 };
 
 /* Resolve a native config then publish its measured manifest (`native_admission` is required). On a cache miss bring

@@ -1403,7 +1403,7 @@ void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     const std::vector<std::string> measured_args = {
         "--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
         std::string(64, '0'), "--expected-owner-attempt", "native-test-attempt", "--plan-cache", "missing-cache",
-        "--engine-binary", "/missing/radiance", "--power-profile", "stock", "--configs", configs_dir.string(),
+        "--engine-binary", "/missing/radiance", "--configs", configs_dir.string(),
         "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
         "--set", "layout.name=\"qwen27b-tp3\""};
     const auto measured_key = run_bc_serve(measured_args);
@@ -1721,12 +1721,11 @@ void session_engine_plan(Fixture& t) {
                 }
             }
         }
-        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 5 &&
+        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 3 &&
               inspector_roles[0] == "native config inspector" &&   // the device-free parse that resolves the config
               inspector_roles[1] == "native config inspector" &&   // the admission inspect with the selected cards
-              inspector_roles[2] == "native v3 measuring draft writer" &&
-              inspector_roles[3] == "native v3 measuring engine" &&
-              inspector_roles[4] == "native v3 measured writer" && reaped.size() == 5 && owner_receipt_verified &&
+              inspector_roles[2] == "native v3 measuring engine" &&   // the manifests are written in the owner, not by children
+              reaped.size() == 3 && owner_receipt_verified &&
               measured_artifact_verified && !fs::exists(native_yaml) && fs::exists(cache_tripwire)))
             throw std::runtime_error("native v3 session did not complete one owner-tracked measurement and measured "
                                      "writer with a sealed serving handoff: " +
@@ -1856,7 +1855,7 @@ void session_engine_plan(Fixture& t) {
         assert(carried.plan_reuse.at("outcome") == "live_admission_refused" && carried.phase_ms.contains("measure"));
         assert(std::find(carried_roles.begin(), carried_roles.end(), "native v3 measuring engine") ==
                    carried_roles.end() &&
-               std::count(carried_roles.begin(), carried_roles.end(), "native v3 measured writer") == 1);
+               carried_roles.size() == 2);   // the two inspectors only: the plan is sealed again in the owner
         assert(carried.summary.at("plan_carried_from").at("attempt") == original_index.native_measurement->attempt_id &&
                carried.summary.at("plan_carried_from").at("engine_identity") !=
                    bc::serving::engine_identity(rebuilt.engine_binary, home));
@@ -2129,11 +2128,10 @@ void session_engine_plan(Fixture& t) {
         if (fs::is_directory(drift_attempts))
             for (const auto& attempt : fs::directory_iterator(drift_attempts))
                 if (attempt.is_directory()) drift_attempt_dirs.push_back(attempt.path());
-        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 4 &&
+        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 3 &&
               drift_role_order[0] == "native config inspector" &&
               drift_role_order[1] == "native config inspector" &&
-              drift_role_order[2] == "native v3 measuring draft writer" &&
-              drift_role_order[3] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
+              drift_role_order[2] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
               !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
               !fs::exists(drift_run / ("manifest-native-" + drift_attempt_dirs.front().filename().string() + ".json"))))
             throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
@@ -2302,10 +2300,8 @@ void helper_vram_owner_graph(Fixture& t) {
     };
     // The first inspector is the device-free config parse; the second is the admission inspect.
     const auto fresh = serve_and_stop({"native config inspector", "native config inspector",
-        "native v3 measuring draft writer",
-        "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
-        "native v3 measuring draft writer", "helper0 measuring", "helper1 measuring",
-        "native v3 measuring engine", "native v3 measured writer", "helper0", "helper1", "engine"});
+        "helper0 measuring", "helper1 measuring", "native v3 measuring engine",
+        "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "helper0", "helper1", "engine"});
     assert(samples.size() == 2 && !fs::exists(authored));
     for (const auto& [bdf, count] : samples) {
         assert(count >= 4);
@@ -2503,9 +2499,8 @@ void helper_vram_owner_graph(Fixture& t) {
         short_record.at("errors").dump().find("forced placement incomplete: committed 3 of 4") == std::string::npos)
         throw std::runtime_error("an incomplete forced schedule did not fail the score: " + short_record.dump());
 
-    // Force a fresh measured plan and request an operator stop at the writer's
-    // registered pre-exec gate. This is an event, not a timing guess: the owner
-    // must stop/reap the writer and measuring helpers before acknowledging stop.
+    // Force a fresh measured plan and request an operator stop when the measuring engine starts. This is an event, not
+    // a timing guess: the owner must stop/reap the measuring engine and helpers before acknowledging stop.
     in.stored_manifest.clear();
     in.lab_experiment.reset();
     in.work_root = t.root / "writer-stop-cache";
@@ -2513,14 +2508,14 @@ void helper_vram_owner_graph(Fixture& t) {
     ss::Session stop_owner = owner;
     stop_owner.run_dir = t.root / "writer-stop";
     stop_owner.quality.reset();
-    bool saw_writer = false;
+    bool saw_measuring_engine = false;
     stop_owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
         ss::Hooks observing = hooks;
         observing.started = [&](ss::ChildKind kind, const std::string& role, pid_t pid, const fs::path& log) {
             hooks.started.require("session.hooks.started", kind, role, pid, log);
-            if (role == "native v3 measured writer") {
-                saw_writer = true;
-                ::raise(SIGTERM); // installed owner handler: legal operator stop during the writer
+            if (role == "native v3 measuring engine") {
+                saw_measuring_engine = true;
+                ::raise(SIGTERM); // installed owner handler: legal operator stop during the measurement
             }
         };
         return ss::plan_engine_only(in, dir, observing);
@@ -2528,13 +2523,120 @@ void helper_vram_owner_graph(Fixture& t) {
     const int interrupted = ss::serve(stop_owner);
     const auto interrupted_record = ss::read_record(stop_owner.run_dir).value_or(Json::object());
     const auto interrupted_events = interrupted_record.value("events", Json::array()).dump();
-    if (!saw_writer || interrupted != 0 || interrupted_record.value("state", "") != "stopped" ||
+    if (!saw_measuring_engine || interrupted != 0 || interrupted_record.value("state", "") != "stopped" ||
         !interrupted_record.value("errors", Json::array()).empty() ||
         !ss::alive_recorded(interrupted_record).empty() ||
         interrupted_events.find("stop_requested") == std::string::npos ||
         interrupted_events.find("power_restored") == std::string::npos ||
         interrupted_events.find("segment_retired") == std::string::npos)
-        throw std::runtime_error("native measured-writer stop failed to clean up: " + interrupted_record.dump());
+        throw std::runtime_error("native measuring-engine stop failed to clean up: " + interrupted_record.dump());
+}
+
+
+// RSC05: the resolver's card selection is by architecture in group order, engine and helpers never share a card, a
+// missing card is refused naming its architecture, and the child visibility follows the selected order.
+void card_selection(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const auto bdfs_of = [](const Json& cards) { return cards.get<std::vector<std::string>>(); };
+    const auto arch_of = [&](const std::string& bdf) {
+        for (const auto& g : t.facts.at("gpus"))
+            if (g.at("bdf") == bdf) return g.at("arch").get<std::string>();
+        return std::string();
+    };
+    auto opts = t.standard();
+    bc::serving::fixture::use(opts, "qwen27b-tp3");
+    const auto forward = tresolve(opts, t.facts);
+    const auto engine = bdfs_of(forward.values.at("layout").at("engine_cards"));
+    assert(engine.size() == 3 && arch_of(engine[0]) == "gfx1100" && arch_of(engine[1]) == "gfx1100" &&
+           arch_of(engine[2]) == "gfx1201" && engine[0] != engine[1]);
+    // The rank groups reversed: the card of the other architecture is rank 0, the two boards of one architecture keep
+    // their inventory order.
+    auto reversed = opts;
+    std::reverse(reversed.inspected->x.ranks.begin(), reversed.inspected->x.ranks.end());
+    const auto back = bdfs_of(tresolve(reversed, t.facts).values.at("layout").at("engine_cards"));
+    assert(back.size() == 3 && back[0] == engine[2] && back[1] == engine[0] && back[2] == engine[1]);
+    const auto visible = ss::engine_visibility("/runtime", back, t.facts);
+    std::string rocr;
+    for (size_t i = 0; i < back.size(); ++i)
+        for (const auto& g : t.facts.at("gpus"))
+            if (g.at("bdf") == back[i]) rocr += (i ? "," : "") + std::to_string(g.at("hip_ordinal").get<int64_t>());
+    assert(visible.at("ROCR_VISIBLE_DEVICES") == rocr && visible.at("HIP_VISIBLE_DEVICES") == "0,1,2");
+    assert(visible.at("ROCR_VISIBLE_DEVICES") != ss::engine_visibility("/runtime", engine, t.facts).at("ROCR_VISIBLE_DEVICES"));
+    // A card that is not in the inventory (it vanished after selection) is refused, naming it.
+    Json without = t.facts;
+    Json kept = Json::array();
+    for (const auto& g : t.facts.at("gpus"))
+        if (g.at("bdf") != engine[2]) kept.push_back(g);
+    without["gpus"] = kept;
+    try {
+        (void)ss::engine_visibility("/runtime", engine, without);
+        assert(false && "a vanished card was accepted");
+    } catch (const bc::serving::session::PlanFailed& e) {
+        assert(std::string(e.what()).find(engine[2]) != std::string::npos);
+    }
+    // An inventory without the gfx1201 card refuses the layout, naming the architecture and the counts.
+    try {
+        (void)tresolve(opts, without);
+        assert(false && "a layout with a missing card resolved");
+    } catch (const std::runtime_error& e) {
+        assert(std::string(e.what()).find("layout: missing gfx1201 card(s): need 1, found 0") != std::string::npos);
+    }
+    // Engine and helpers are disjoint.
+    auto helpers = t.standard();
+    const auto with_helpers = tresolve(helpers, t.facts);
+    const auto hel = with_helpers.values.at("layout");
+    for (const auto& h : hel.value("helper_cards", Json::array()))
+        for (const auto& e : hel.at("engine_cards")) assert(h != e);
+}
+
+
+// PWR08 S2: x-bigcherry.power.profile selects a profile of the one profile file; the file's JSON is decoded strictly.
+void power_profile_selection() {
+    namespace v2 = bc::serving::v2;
+    Json section = {{"schema", 1}, {"description", "d"}, {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 1}}})}};
+    assert(bc::serving::decode_x_bigcherry(section).power_profile() == "stock");
+    section["power"] = {{"profile", "efficient"}};
+    assert(bc::serving::decode_x_bigcherry(section).power_profile() == "efficient");
+    section["power"] = {{"profile", "efficient"}, {"mode", "apply"}};
+    try { (void)bc::serving::decode_x_bigcherry(section); assert(false && "an unknown power key was accepted"); }
+    catch (const std::invalid_argument& e) { assert(std::string(e.what()).find("x-bigcherry.power.mode") != std::string::npos); }
+
+    const Json good = {{"schema", 1},
+                       {"profiles", {{"stock", {{"default_mode", "observe"}}},
+                                     {"cap", {{"default_mode", "observe"},
+                                              {"rules", Json::array({{{"role", "engine"}, {"arch", "gfx1201"},
+                                                                      {"evidence", "docs/x.md"},
+                                                                      {"settings", {{"power_cap_w", 200}}}}})}}}}}};
+    const auto loaded = v2::decode_power_profiles(good);
+    assert(loaded && loaded.value().size() == 2 && loaded.value().at("cap").rules.size() == 1 &&
+           loaded.value().at("cap").rules[0].settings.power_cap_w == 200);
+    const auto refused = [&](Json doc, const char* field) {
+        const auto r = v2::decode_power_profiles(doc);
+        assert(!r && r.error().path.find(field) != std::string::npos);
+    };
+    Json unknown = good; unknown["profiles"]["cap"]["surprise"] = 1;
+    refused(unknown, "surprise");
+    Json applies = good; applies["profiles"]["cap"]["default_mode"] = "apply";
+    refused(applies, "default_mode");
+    Json stock_rules = good;
+    stock_rules["profiles"]["stock"]["rules"] = good.at("profiles").at("cap").at("rules");
+    refused(stock_rules, "stock");
+    Json bad_role = good; bad_role["profiles"]["cap"]["rules"][0]["role"] = "gpu0";
+    refused(bad_role, "role");
+    Json host_evidence = good; host_evidence["profiles"]["cap"]["rules"][0]["evidence"] = "/abs/run.txt";
+    refused(host_evidence, "evidence");
+    Json float_setting = good; float_setting["profiles"]["cap"]["rules"][0]["settings"]["power_cap_w"] = 200.5;
+    refused(float_setting, "power_cap_w");
+    Json no_stock = good; no_stock["profiles"].erase("stock");
+    refused(no_stock, "stock");
+    // the selection names a profile of the file, or stock; anything else is refused naming the file
+    namespace ss = bc::serving::session;
+    assert(ss::selected_power_rules(loaded.value(), "stock").rules.empty());
+    assert(ss::selected_power_rules(loaded.value(), "cap").rules.size() == 1);
+    try { (void)ss::selected_power_rules(loaded.value(), "nope"); assert(false && "an unknown profile was accepted"); }
+    catch (const ss::PlanFailed& e) { assert(std::string(e.what()).find("power-profiles.yaml") != std::string::npos); }
+    // the compiled-in file is the shipped one: its stock profile exists (the engine decodes the rest in CI's inspector)
+    assert(v2::embedded_power_profiles_yaml().find("stock:") != std::string::npos);
 }
 
 int main(int argc, char** argv) {
@@ -2552,6 +2654,8 @@ int main(int argc, char** argv) {
         detection(t);
         detection_limits(t);
         unknown_keys(t);
+        card_selection(t);
+        power_profile_selection();
         type_range_required(t);
         precedence_and_caps(t);
         provenance_hash_and_parity(t);

@@ -192,16 +192,17 @@ Result<Json> publish_runtime_receipt(
 Result<Json> publish_live_runtime_receipt(
     const std::string& run_id,
     const LivePolicyStartup& startup,
-    const std::string& manifest_content_digest,
+    const std::string& manifest_content_digest,   // evidence: the receipt records the manifest it ran under
+    const std::string& segment_name,              // identity: the owner-selected segment the serving helpers created
     const void* mapping,
     size_t mapped_bytes) {
   if (!mapping || mapped_bytes < sizeof(shm::Header) ||
       !shm::valid_self(static_cast<const shm::Header*>(mapping), mapped_bytes))
     return fail("transport", "invalid worker shared-memory layout");
-  const uint64_t expected_manifest = shm::v26::manifest_identity(manifest_content_digest);
+  const uint64_t expected_manifest = shm::v26::segment_identity(segment_name, false);
   if (!expected_manifest ||
       static_cast<const shm::Header*>(mapping)->manifest_digest != expected_manifest)
-    return fail("transport", "live worker segment belongs to a different manifest");
+    return fail("transport", "live worker segment is not this start's owner-selected segment");
   for (unsigned attempt = 0; attempt < 64; ++attempt) {
     PC before{}, after{};
     PJ journal{};

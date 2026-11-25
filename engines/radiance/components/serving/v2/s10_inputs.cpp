@@ -3,6 +3,7 @@
 #include "serving_codec.h"
 
 #include <algorithm>
+#include <regex>
 
 namespace bc::serving::v2 {
 namespace {
@@ -76,14 +77,95 @@ Result<S8Calibration> parse_calibration_record(const json &r) {
   return c;
 }
 
+const std::string &embedded_power_profiles_yaml() {
+  static const std::string text =
+#include "power_profiles_seed.inc"
+      ;
+  return text;
+}
+
+Result<PowerProfiles> decode_power_profiles(const json &doc) {
+  const auto bad = [](std::string path, std::string why) {
+    return make_error(ConfigErrorCode::invalid_value, std::move(path), std::move(why),
+                      "fix engines/radiance/power-profiles.yaml");
+  };
+  const auto closed = [&](const json &o, const std::string &path, std::initializer_list<const char *> keys) -> Status {
+    if (!o.is_object()) return bad(path, "expected a mapping");
+    for (auto it = o.begin(); it != o.end(); ++it)
+      if (std::find_if(keys.begin(), keys.end(), [&](const char *k) { return it.key() == k; }) == keys.end())
+        return bad(path + "." + it.key(), "unknown key");
+    return std::nullopt;
+  };
+  if (auto e = closed(doc, "power-profiles", {"schema", "profiles"})) return *e;
+  if (!doc.contains("schema") || doc.at("schema") != 1 || !doc.contains("profiles"))
+    return bad("power-profiles", "expected schema: 1 and a profiles mapping");
+  static const std::regex name_form("^[a-z][a-z0-9_-]{0,31}$"), arch_form("^gfx[0-9a-f]+$"),
+      role_form("^(engine|helper\\*|helper[0-9]+)$");
+  PowerProfiles out;
+  for (auto p = doc.at("profiles").begin(); p != doc.at("profiles").end(); ++p) {
+    const std::string at = "profiles." + p.key();
+    if (!std::regex_match(p.key(), name_form)) return bad(at, "invalid profile name");
+    if (auto e = closed(p.value(), at, {"default_mode", "rules"})) return *e;
+    if (p.value().contains("default_mode") && p.value().at("default_mode") != "observe")
+      return bad(at + ".default_mode", "a named profile observes; only an explicit operator apply writes");
+    S10PowerProfile profile;
+    profile.name = p.key();
+    if (p.value().contains("rules")) {
+      const json &rules = p.value().at("rules");
+      if (!rules.is_array()) return bad(at + ".rules", "expected a list");
+      for (std::size_t i = 0; i < rules.size(); ++i) {
+        const std::string rat = at + ".rules[" + std::to_string(i) + "]";
+        if (auto e = closed(rules[i], rat, {"role", "arch", "evidence", "settings"})) return *e;
+        for (const char *key : {"role", "arch", "evidence", "settings"})
+          if (!rules[i].contains(key)) return bad(rat, std::string("needs ") + key);
+        S10PowerRule rule;
+        if (!rules[i].at("role").is_string() || !std::regex_match(rules[i].at("role").get<std::string>(), role_form))
+          return bad(rat + ".role", "engine, helperN or helper*");
+        if (!rules[i].at("arch").is_string() || !std::regex_match(rules[i].at("arch").get<std::string>(), arch_form))
+          return bad(rat + ".arch", "a gfx architecture");
+        if (!rules[i].at("evidence").is_string() || rules[i].at("evidence").get<std::string>().empty() ||
+            rules[i].at("evidence").get<std::string>().rfind("/", 0) == 0)
+          return bad(rat + ".evidence", "missing or host-specific evidence");
+        rule.role = rules[i].at("role").get<std::string>();
+        rule.arch = rules[i].at("arch").get<std::string>();
+        rule.evidence = rules[i].at("evidence").get<std::string>();
+        const json &settings = rules[i].at("settings");
+        if (auto e = closed(settings, rat + ".settings",
+                            {"vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "sclk_offset_mhz", "power_cap_w"}))
+          return *e;
+        if (settings.empty()) return bad(rat + ".settings", "a rule needs at least one setting");
+        for (auto s = settings.begin(); s != settings.end(); ++s)
+          if (!s.value().is_number_integer()) return bad(rat + ".settings." + s.key(), "expected an integer");
+        const auto optional = [&](const char *key) -> std::optional<int64_t> {
+          return settings.contains(key) ? std::optional<int64_t>(settings.at(key).get<int64_t>()) : std::nullopt;
+        };
+        rule.settings.vddgfx_offset_mv = optional("vddgfx_offset_mv");
+        rule.settings.sclk_max_mhz = optional("sclk_max_mhz");
+        rule.settings.mclk_max_mhz = optional("mclk_max_mhz");
+        rule.settings.sclk_offset_mhz = optional("sclk_offset_mhz");
+        rule.settings.power_cap_w = optional("power_cap_w");
+        profile.rules.push_back(std::move(rule));
+      }
+    }
+    out.emplace(p.key(), std::move(profile));
+  }
+  if (!out.count("stock") || !out.at("stock").rules.empty())
+    return bad("profiles.stock", "stock must exist and have no settings rules");
+  return out;
+}
+
 Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, const WriterInputs &w) {
   S10Inputs in;
   in.now_unix_s = w.now_unix_s;
   in.profile.name = w.power_profile;
-  if (w.power_profile != "stock")
-    return fail("spec.intent.power.profile",
-                "bc-serve knows the rules of the stock profile only; a named non-stock profile needs its rule file");
-  in.mode = PowerMode::kObserve;
+  // stock is built in and writes nothing; any other name must come from the loaded profile file with its rules.
+  if (w.power_profile != "stock") {
+    if (w.power_rules.name != w.power_profile)
+      return fail("spec.intent.power.profile",
+                  "power profile " + w.power_profile + " is not in engines/radiance/power-profiles.yaml");
+    in.profile = w.power_rules;
+  }
+  in.mode = PowerMode::kObserve;   // every named profile observes; an apply is the operator's explicit request (S3)
 
   const bool has_helpers = !m.spec.processes.helpers.empty();
   const auto &placement = m.spec.handoff ? std::optional(m.spec.handoff->placement) : std::nullopt;

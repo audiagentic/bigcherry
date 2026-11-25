@@ -50,7 +50,8 @@ Result<nlohmann::json> publish_runtime_receipt(
 Result<nlohmann::json> publish_live_runtime_receipt(
     const std::string& run_id,
     const LivePolicyStartup& startup_decision,
-    const std::string& manifest_content_digest,
+    const std::string& manifest_content_digest,   // evidence: the receipt records the manifest it ran under
+    const std::string& segment_name,              // identity: the owner-selected segment the serving helpers created
     const void* mapping,
     size_t mapped_bytes);
 

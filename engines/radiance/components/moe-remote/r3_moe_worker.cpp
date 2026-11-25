@@ -13,6 +13,7 @@
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
+#include <climits>
 #include <cstring>
 #include <fcntl.h>
 #include <map>
@@ -52,31 +53,40 @@
 static volatile sig_atomic_t g_force_report_requested=0;
 
 int main(int argc, char** argv) {
-    if (argc < 5 || std::strcmp(argv[1], "--manifest") != 0 ||
-        std::strcmp(argv[3], "--role") != 0) {
-        std::fprintf(stderr, "usage: r3_moe_worker --manifest FILE --role helperN\n");
+    // The owner hands the helper its typed settings on one inherited sealed descriptor; the role stays on the command line
+    // so a descriptor meant for another helper is refused before any HIP call, plugin load or model access.
+    if (argc < 5 || std::strcmp(argv[1], "--settings-fd") != 0 || std::strcmp(argv[3], "--role") != 0) {
+        std::fprintf(stderr, "usage: r3_moe_worker --settings-fd FD --role helperN\n");
         return 2;
     }
-    /* --measuring: the one start that takes an unmeasured manifest (it produces the plan); every other start takes only a
-     * measured one. The flag is read here and nowhere else in the helper. */
-    bc::serving::v2::PlanUse use = bc::serving::v2::PlanUse::serving;
-    int first_arg = 5;
-    if (argc > 5 && std::strcmp(argv[5], "--measuring") == 0) {
-        use = bc::serving::v2::PlanUse::measuring;
-        first_arg = 6;
-    }
+    const int first_arg = 5;
     {
-        auto loaded = bc::serving::load_helper_settings(argv[2], argv[4], use);
+        char* end = nullptr;
+        const long fd = std::strtol(argv[2], &end, 10);
+        if (end == argv[2] || *end != '\0' || fd < 3 || fd > INT_MAX) {
+            std::fprintf(stderr, "r3_moe_worker: --settings-fd needs a descriptor greater than 2\n");
+            return 2;
+        }
+        auto loaded = bc::serving::read_helper_settings(static_cast<int>(fd));
         if (!loaded) {
             std::fputs(bc::serving::v2::render_human("r3_moe_worker", loaded.error()).c_str(), stderr);
             return bc::serving::v2::exit_code_of(loaded.error());   // No HIP call, plugin loading or model access has happened.
+        }
+        if (loaded.value().role != argv[4]) {
+            std::fputs(bc::serving::v2::render_human(
+                           "r3_moe_worker",
+                           bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::ownership_mismatch,
+                                                       "helper_settings.role",
+                                                       "the settings are for " + loaded.value().role +
+                                                           ", this process was started as " + argv[4])).c_str(),
+                       stderr);
+            return 2;
         }
         r3_serving::install(std::move(loaded.value()));
     }
     const auto& settings = r3_serving::settings();
     g_sweep_fast = settings.sweep_fast; // experiment-only reference comparison
-    std::fprintf(stderr, "r3_moe_worker: manifest sha256 %s, role %s\n",
-                 settings.content_sha256.c_str(), settings.role.c_str());
+    std::fprintf(stderr, "r3_moe_worker: role %s, segment %s\n", settings.role.c_str(), settings.handoff.shm.c_str());
     // Diagnostic subcommands follow the strict manifest/role prefix. The
     // ordinary serving invocation obtains its model exclusively from values.
     std::vector<char*> args{argv[0]};
@@ -350,7 +360,8 @@ int main(int argc, char** argv) {
 
     // Compare uses the actual manifest when provided; anonymous offline captures
     // retain a local shape identity because they have no serving manifest.
-    const uint64_t compare_manifest = v26::manifest_identity(settings.content_sha256);
+    const uint64_t compare_manifest = v26::segment_identity(settings.handoff.shm,
+                                                           settings.measuring);
     if (compare && !sweep_replays.empty()) {
         int rc = 0, run = 0;
         for (size_t c = 0; c < sweep_replays.size(); ++c) {
@@ -360,8 +371,8 @@ int main(int argc, char** argv) {
                     std::fprintf(stderr, "r3_moe_worker: replay sweep needs a known rows-kernel variant, got '%s'\n", v.c_str());
                     return 2;
                 }
-                std::printf("SWEEP run %d capture %zu layer %u variant [%s] manifest [%s]\n", run++, c, g_replay->hd.layer,
-                            v.c_str(), settings.content_sha256.c_str());
+                std::printf("SWEEP run %d capture %zu layer %u variant [%s] segment [%s]\n", run++, c, g_replay->hd.layer,
+                            v.c_str(), settings.handoff.shm.c_str());
                 std::fflush(stdout);
                 rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
                                    lane_large_rows, false, compare_manifest);
@@ -409,9 +420,10 @@ int main(int argc, char** argv) {
     report_sa.sa_handler=[](int) { g_force_report_requested=1; };
     sigemptyset(&report_sa.sa_mask);
     sigaction(SIGUSR1,&report_sa,nullptr);
-    const uint64_t manifest_digest = v26::manifest_identity(settings.content_sha256);
+    const uint64_t manifest_digest = v26::segment_identity(settings.handoff.shm,
+                                                           settings.measuring);
     if (!manifest_digest) {
-        std::fprintf(stderr, "r3_moe_worker: invalid strict manifest content digest for v26\n");
+        std::fprintf(stderr, "r3_moe_worker: invalid shared-memory segment name for v26\n");
         return 2;
     }
     Segment seg;

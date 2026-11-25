@@ -273,6 +273,40 @@ int main() {
               report.dump().find(inspected_yaml) == std::string::npos,
           "native inspect report changed identity, ordering, parsed values or exposed source YAML");
 
+    {   // the power profile file: the engine's parser converts it, on a second sealed descriptor, into the report
+        const std::string profiles = "schema: 1\nprofiles:\n  stock: {default_mode: observe}\n  cap:\n    default_mode: observe\n"
+                                     "    rules:\n      - {role: engine, arch: gfx1201, evidence: docs/x.md, settings: {power_cap_w: 200}}\n";
+        const nlohmann::json document = bc::serving::yaml_document_json(profiles, "power-profiles");
+        check(document.at("schema") == 1 && document.at("profiles").at("cap").at("rules")[0].at("settings").at("power_cap_w") == 200 &&
+                  document.at("profiles").at("stock").at("default_mode") == "observe",
+              "the profile file was not converted as written");
+        bool duplicate_refused = false;
+        try { (void)bc::serving::yaml_document_json("a: 1\nb:\n  c: 1\n  c: 2\n", "power-profiles"); }
+        catch (const std::invalid_argument& error) {
+            duplicate_refused = std::string(error.what()).find("b.c") != std::string::npos;
+        }
+        check(duplicate_refused, "a duplicate key in the profile file was accepted or not named");
+        bool not_a_mapping = false;
+        try { (void)bc::serving::yaml_document_json("- a\n- b\n", "power-profiles"); }
+        catch (const std::invalid_argument&) { not_a_mapping = true; }
+        check(not_a_mapping, "a profile file that is not a mapping was accepted");
+        const int yaml_fd = sealed_memfd(inspected_yaml);
+        const int profile_fd = sealed_memfd(profiles);
+        const std::string yaml_text = std::to_string(yaml_fd), profile_text = std::to_string(profile_fd);
+        char profile_flag[] = "--bc-profile-fd";
+        char* with_profiles[] = {command, inspect, const_cast<char*>(yaml_text.c_str()), profile_flag,
+                                 const_cast<char*>(profile_text.c_str()), nullptr};
+        std::ostringstream profiled;
+        std::streambuf* before = std::cout.rdbuf(profiled.rdbuf());
+        const auto profile_result = bc::serving::inspect_native_fleet_config_command(5, with_profiles);
+        std::cout.rdbuf(before);
+        ::close(yaml_fd);
+        ::close(profile_fd);
+        check(profile_result && *profile_result == 0 && Json::parse(profiled.str()).at("engine").at("power_profiles") == document,
+              "the inspect report did not carry the converted profile file");
+        check(report.at("engine").at("power_profiles").is_null(), "a call without a profile descriptor reported profiles");
+    }
+
     const int unsealed_fd = ::memfd_create("bc-native-config-unsealed-test", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     check(unsealed_fd >= 0, "cannot create unsealed-config fixture");
     const std::string unsealed_bytes = inspected_yaml;

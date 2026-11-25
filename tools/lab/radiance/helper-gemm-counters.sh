@@ -10,7 +10,7 @@ for set in "SQ_WAVES SQ_INSTS_VALU SQ_INSTS_SALU SQ_INSTS_LDS" "SQ_WAIT_INST_LDS
   tag=$(echo "$set" | awk '{print $1}')
   HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 timeout 900 \
     rocprofv3 --pmc $set --output-format csv -d "$OUT/$tag" -o run -- \
-    "$B/radiance_home/helpers/r3_moe_worker" --manifest "$manifest" --role helper0 \
+    "$B/radiance_home/bin/bc-serve" helper-exec "$manifest" helper0 -- "$B/radiance_home/helpers/r3_moe_worker" \
       --replay "$M" "$F" > "$OUT-$tag.log" 2>&1
   echo "== $set: rc=$?"
   python3 - "$OUT/$tag" <<'PY'
