@@ -40,6 +40,10 @@ ALLOWED_FUNCTIONS = {
         "const std::function<void()>& f",
     ],
 }
+# Test code may hold a table of its own test functions; the guard is for injected production callables.
+ALLOWED_RAW_POINTER_LINES = {
+    "session_test.cpp": ["static const std::vector<std::vector<void (*)()>> groups"],
+}
 FORBIDDEN = (
     (re.compile(r"std::(move_only_function|function_ref)\s*<|boost::function\s*<"), "unwrapped callable"),
     (re.compile(r"\(\s*\*\s*[A-Za-z_]*\w*\s*\)\s*\("), "raw function pointer"),
@@ -110,6 +114,9 @@ def findings(relative: str, content: str) -> list[str]:
             errors.append(f"{relative}:{n}: new virtual injection outside sealed power interface")
         if relative not in {"callback_boundary.h", "callback_boundary_abi.h"}:
             for expression, reason in FORBIDDEN:
+                if reason == "raw function pointer" and any(
+                        allowed in line for allowed in ALLOWED_RAW_POINTER_LINES.get(relative, [])):
+                    continue
                 # Raw virtual calls are legal only in the inline sealed
                 # adapters (each of which calls invoke_backend/Guarded.require).
                 if reason == "direct raw virtual invocation":

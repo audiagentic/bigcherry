@@ -1,8 +1,10 @@
-"""WSL09: conservative, opt-in garbage collection of content-addressed build trees.
+"""Build cache garbage collection: opt-in removal of old, unused, content-addressed build trees.
 
-Only builds/<source-slice>/<build-plan-id> directories are eligible. Inventory
-is read-only; apply takes the campaign's exact build-plan ResourceLock and
-rechecks the candidate and process/manifest references while holding it.
+Only builds/<source-slice>/<build-plan-id> directories are eligible. A build is kept while a visible process uses it, an
+installed release root or a release bundle points at it, a build-plan lock exists, or it is younger than the age limit
+(and, if asked, among the newest K of its recipe). Everything else is reclaimable: run manifests, run records and stored
+serving manifests are history and never pin a build. Inventory is read-only; apply takes the build-plan ResourceLock,
+deletes the tree (links and special files inside are unlinked, never followed) and journals each removal.
 Sources are never deleted by this module.
 """
 from __future__ import annotations
@@ -11,7 +13,6 @@ import json
 import math
 import os
 import re
-import stat
 import time
 import uuid
 from collections.abc import Callable
@@ -22,43 +23,12 @@ from .resources import ResourceError, ResourceLock
 
 
 class BuildGCError(RuntimeError):
-    def __init__(self, message: str, *, quarantine_path: Path | None = None):
-        super().__init__(message)
-        self.quarantine_path = quarantine_path
-
-
-_QUARANTINE = ".gc-quarantine"
+    pass
 
 
 def _cache_id(name: str) -> bool:
     # The build cache only owns content-addressed source slices and plans.
     return re.fullmatch(r"[0-9a-f]{32}", name) is not None
-
-
-def _reject_quarantine_mounts(directory: Path, mounts: set[Path]) -> None:
-    # Quarantine is immediately under builds/, unlike a four-component build.
-    builds = directory.parent
-    for mount in sorted(mounts):
-        if mount == builds or mount.is_relative_to(directory):
-            raise BuildGCError(f"mount point on build GC path: {mount}")
-
-
-def _quarantine_problem(directory: Path, mounts: set[Path]) -> str | None:
-    """The quarantine must be private, same-device, unsymlinked and unmounted."""
-    try:
-        _reject_quarantine_mounts(directory, mounts)
-        try:
-            observed = directory.lstat()
-        except FileNotFoundError:
-            return None
-        if (not stat.S_ISDIR(observed.st_mode)
-                or observed.st_uid != os.geteuid()
-                or stat.S_IMODE(observed.st_mode) != 0o700
-                or observed.st_dev != directory.parent.lstat().st_dev):
-            return f"untrusted build GC quarantine directory: {directory}"
-    except (BuildGCError, OSError) as exc:
-        return f"untrusted build GC quarantine: {exc}"
-    return None
 
 
 def _inside(path: str, directory: Path) -> bool:
@@ -150,54 +120,6 @@ def _proc_references(proc_root: Path, owner_uid: int) -> tuple[list[tuple[str, s
         except OSError as exc:
             if proc.exists():
                 errors.append(f"cannot inspect process {pid} maps: {exc}")
-    return refs, errors
-
-
-def _manifest_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
-    """Resolve typed build edges and absolute build paths from run manifests.
-
-    A corrupt/unreadable run record might hide a live reference, so none of
-    the builds may be removed until it is repaired.
-    """
-    from . import legacy_runs, retention
-
-    runs = root / "runs"
-    if runs.is_symlink() or not runs.is_dir():
-        return {}, [f"runs directory missing or untrusted: {runs}"]
-    try:
-        inv = retention.inspect_workspace(root, measure=False)
-    except (OSError, ValueError) as exc:
-        return {}, [f"cannot fully inspect runs directory: {exc}"]
-    refs: dict[str, list[str]] = {}
-    errors = [f"unreadable run manifest: {e.path}: {e.problem}" for e in inv.runs if e.manifest is None]
-    for unknown in inv.unknown:
-        if unknown.is_relative_to(runs):
-            if unknown.parent == runs and unknown.is_file() and not unknown.is_symlink():
-                # Loose historical documents have no run directory for a
-                # manifest. Fully scan them for pins instead of ignoring refs.
-                try:
-                    edges, _ = legacy_runs.scan_loose_file(root, unknown.name)
-                    for edge in edges:
-                        refs.setdefault(edge["id"], []).append(f"loose run file {unknown.name}")
-                except (OSError, legacy_runs.LegacyRunError) as exc:
-                    errors.append(f"unclassified run file: {unknown}: {exc}")
-            else:
-                errors.append(f"unclassified run path: {unknown}")
-    for e in inv.runs:
-        if not e.manifest:
-            continue
-        m = e.manifest
-        hold = m["retention"].get("hold", False)
-        label = f"held run {e.run_id}" if hold else f"run manifest {e.run_id}"
-        for ref in m["references"]:
-            if ref["type"] == "build":
-                refs.setdefault(str(ref["id"]), []).append(label)
-        for item in m["inputs"]:
-            if isinstance(item, dict) and isinstance(item.get("uri"), str):
-                uri = item["uri"]
-                uri = uri.removeprefix("file://")
-                if uri.startswith("/"):
-                    refs.setdefault(uri, []).append(label + " input")
     return refs, errors
 
 
@@ -322,8 +244,7 @@ def _validate_policy(policy) -> None:
 def inspect(root: Path, *, policy, now: float | None = None,
             measure: bool = True, blocked: str | None = None,
             proc_root: Path = Path("/proc"), owned_lock: str | None = None,
-            release_root: Path | None = None,
-            directory_ids: dict[str, tuple[tuple[int, int], ...]] | None = None) -> list[dict]:
+            release_root: Path | None = None) -> list[dict]:
     """Candidate/protected inventory. Non-build cache paths are read-only."""
     from . import retention
     from .retention import dir_size
@@ -339,9 +260,7 @@ def inspect(root: Path, *, policy, now: float | None = None,
                age_days: float | None = None) -> None:
         records.append({
             "kind": kind, "path": str(path), "metadata": metadata,
-            "size_bytes": (dir_size(path) if measure and path.is_dir()
-                           and not path.is_symlink()
-                           and (kind != "quarantine" or not quarantine_problem) else None),
+            "size_bytes": dir_size(path) if measure and path.is_dir() and not path.is_symlink() else None,
             "age_days": round(age_days, 3) if age_days is not None else None,
             "action": "protected" if reasons else "candidate",
             "reasons": reasons or ["aged, unreferenced build; eligible for build GC"],
@@ -353,7 +272,6 @@ def inspect(root: Path, *, policy, now: float | None = None,
     # records and stored serving manifests are history (their evidence lives in the docs), so they do not pin, and an
     # unreadable one never blocks cleanup.
     references: dict[str, list[str]] = {}
-    manifest_errors: list[str] = []
     from . import paths
     release_refs, _ = _release_refs(release_root if release_root is not None else paths.REPO_ROOT / "releases")
     for key, names in release_refs.items():
@@ -370,15 +288,9 @@ def inspect(root: Path, *, policy, now: float | None = None,
     except BuildGCError as exc:
         mounts = set()
         mount_error = str(exc)
-    proc_refs, proc_errors = _proc_references(proc_root, root.stat().st_uid)
-    proc_errors = []   # a build a visible process uses is kept below; unreadable foreign processes do not block cleanup
+    proc_refs, _ = _proc_references(proc_root, root.stat().st_uid)   # a visible process keeps its build; unreadable ones do not block
 
     base = root / "builds"
-    quarantine = base / _QUARANTINE
-    quarantine_problem = (mount_error if mount_error else
-                          _quarantine_problem(quarantine, mounts)) if base.is_dir() else None
-    if quarantine_problem:
-        blockers.append(quarantine_problem)
     proc_by_build: dict[Path, list[str]] = {}
     prefix = str(base) + os.sep
     for target, reason in proc_refs:
@@ -392,8 +304,6 @@ def inspect(root: Path, *, policy, now: float | None = None,
     elif base.is_dir():
         try:
             for recipe in sorted(base.iterdir()):
-                if recipe.name == _QUARANTINE:
-                    continue
                 if recipe.is_symlink() or not recipe.is_dir():
                     record(recipe, "unclassified", "untrusted", ["unclassified build recipe or symlink"])
                     continue
@@ -417,39 +327,11 @@ def inspect(root: Path, *, policy, now: float | None = None,
                     reasons.extend(_build_references(references, build))
                     reasons.extend(proc_by_build.get(build, ()))
                     reasons.extend(blockers)
-                    reasons.extend(manifest_errors)
-                    reasons.extend(proc_errors)
                     lock = ResourceLock(root / "resource-locks", f"build-{build.name}")
                     if build.name != owned_lock and (lock.path.exists() or lock.path.is_symlink()):
                         reasons.append(f"build-plan resource lock exists: {lock.path.name}")
                     reasons_by_path[build] = list(dict.fromkeys(reasons))
                     record(build, "build", metadata, [], age)
-            # Interrupted removals are never eligible for automated recovery:
-            # their original build ID, pins and lock cannot be inferred safely
-            # from the generated quarantine name.
-            def record_leftover(leftover: Path, other_reasons: list[str]) -> None:
-                reasons = ["interrupted removal; verify and remove by hand", *other_reasons]
-                try:
-                    age = (now - leftover.lstat().st_mtime) / 86400
-                except OSError as exc:
-                    age = None
-                    reasons.append(f"cannot stat quarantine entry: {exc}")
-                record(leftover, "quarantine", "interrupted",
-                       list(dict.fromkeys(reasons)), age)
-
-            if quarantine_problem:
-                if quarantine.is_symlink() or quarantine.exists():
-                    record(quarantine, "quarantine", "untrusted", [quarantine_problem])
-                # Report individual names only when the parent directory is
-                # safe to enumerate, even if inspection of its children is not.
-                if (quarantine not in mounts and quarantine.is_dir()
-                        and not quarantine.is_symlink()
-                        and _quarantine_problem(quarantine, set()) is None):
-                    for leftover in sorted(quarantine.iterdir()):
-                        record_leftover(leftover, [quarantine_problem])
-            elif quarantine.is_dir():
-                for leftover in sorted(quarantine.iterdir()):
-                    record_leftover(leftover, blockers + manifest_errors + proc_errors)
             # Newest K per recipe, including any partial builds. They cannot
             # become candidates simply because another build was deleted.
             newest = {
@@ -469,8 +351,6 @@ def inspect(root: Path, *, policy, now: float | None = None,
                     else:
                         try:
                             _single_device_tree(path, mounts=mounts)
-                            if directory_ids is not None:
-                                directory_ids[str(path)] = _candidate_directory_ids(root, path)
                         except BuildGCError as exc:
                             reasons.append(str(exc))
                 if reasons:
@@ -480,7 +360,7 @@ def inspect(root: Path, *, policy, now: float | None = None,
             # Inventory cannot be complete; all enumerated candidates must
             # be revoked, including those inspected before the error.
             for item in records:
-                if item["kind"] in ("build", "quarantine") and item["action"] == "candidate":
+                if item["kind"] == "build" and item["action"] == "candidate":
                     item["action"] = "protected"
                     item["reasons"] = [f"build listing incomplete: {exc}"]
             record(base, "build", "untrusted", [f"build listing incomplete: {exc}"])
@@ -554,27 +434,7 @@ def _single_device_tree(path: Path, *, mounts: set[Path] | None = None) -> None:
         raise BuildGCError(f"cannot verify build tree: {exc}") from exc
 
 
-def _candidate_directory_ids(root: Path, path: Path) -> tuple[tuple[int, int], ...]:
-    """Snapshot the inspected work-root/builds/recipe/build inode chain.
-
-    lstat rejects final-component symlinks; removal independently opens
-    every component relative to its verified parent and compares the IDs.
-    """
-    if path.parent.parent != root / "builds":
-        raise BuildGCError(f"unexpected build GC path: {path}")
-    identities = []
-    for component in (root, root / "builds", path.parent, path):
-        try:
-            observed = component.lstat()
-        except OSError as exc:
-            raise BuildGCError(f"directory component unavailable: {component}: {exc}") from exc
-        if not stat.S_ISDIR(observed.st_mode):
-            raise BuildGCError(f"directory component changed or symlinked: {component}")
-        identities.append((observed.st_dev, observed.st_ino))
-    return tuple(identities)
-
-
-def _remove_build_tree(path: Path, expected: tuple[tuple[int, int], ...]) -> str | None:
+def _remove_build_tree(path: Path) -> str | None:
     """Delete the build directory. Symlinks and special files inside are unlinked, never followed."""
     import shutil
 
@@ -592,9 +452,7 @@ def apply(root: Path, *, policy, blocked_check: Callable[[], str | None],
     root = Path(root).resolve()
     if not root.is_dir() or (root / "builds").is_symlink():
         raise BuildGCError("work root or build cache root is not a trusted directory")
-    initial_ids: dict[str, tuple[tuple[int, int], ...]] = {}
-    initial = inspect(root, policy=policy, now=now, blocked=blocked_check(),
-                      directory_ids=initial_ids)
+    initial = inspect(root, policy=policy, now=now, blocked=blocked_check())
     candidates = sorted((e for e in initial
                          if e["kind"] == "build" and e["action"] == "candidate"),
                         key=lambda entry: (-(entry["age_days"] or 0), entry["path"]))
@@ -630,7 +488,7 @@ def apply(root: Path, *, policy, blocked_check: Callable[[], str | None],
                     "recorded_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 }
                 audit({**record, "state": "pending"})
-                warning = _remove_build_tree(path, ())
+                warning = _remove_build_tree(path)
                 if warning:
                     record["warning"] = warning
                 try:
