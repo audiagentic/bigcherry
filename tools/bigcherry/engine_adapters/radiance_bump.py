@@ -215,13 +215,48 @@ class ComponentGate:
                                                   runner=self.runner, lister=self.lister)
 
 
+COMPOSITION_COMPILE_FAILED = "COMPOSITION_COMPILE_FAILED"
+COMPOSITION_ARCHES = ("gfx1100", "gfx1201")
+
+
+class CompositionGates:
+    """RCS19 gates 1 and 2a on the patched tree, before the lane build: the components' rewrite check against the patched
+    source, then a syntax-only host and device compile of the units the production patches touch, both architectures
+    (patch/compose_check.py: the same code `patch-compose-check` runs)."""
+
+    def __init__(self, context: ProjectContext, source_dir: Path) -> None:
+        self.context, self.source_dir = context, source_dir
+
+    def anchors(self) -> list[str]:
+        from ..patch import compose_check
+
+        return [f"{name}: {problem}" for name, problems in sorted(compose_check.gate1(self.context.engine, self.source_dir).items())
+                for problem in problems]
+
+    def syntax(self) -> list[str]:
+        from ..patch import compose_check
+
+        engine = self.context.engine
+        if compose_check.compiler() is None:
+            raise BumpCheckError("no ROCm clang++ (set ROCM_PATH): the composition compile gate cannot run")
+        source = engines.load(paths.REPO_ROOT, engine).promotion_source
+        ids = compose_check.production_ids(engine, source) if source else []
+        report = compose_check.Report()
+        compose_check.compile_gate(engine, self.source_dir, compose_check.touched_files(engine, list(ids)),
+                                   list(COMPOSITION_ARCHES), "syntax", report)
+        return list(report.compile_failures)
+
+
 def compile_checks(
     context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = run_checked,
     abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
 ) -> tuple[BumpCheck, ...]:
     gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)
+    composition = CompositionGates(context, source_dir)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"
     return (
+        BumpCheck("composition-anchors", NATIVE_REWRITE_DRIFT, (), "", composition.anchors),
+        BumpCheck("composition-syntax", COMPOSITION_COMPILE_FAILED, (), "", composition.syntax),
         BumpCheck("components-build", "COMPONENT_BUILD_FAILED", ("cmake", "ninja"), cmake_hint, gate.build),
         BumpCheck("component-plugin-abi", "PLUGIN_ABI_MISMATCH", (), "", gate.plugin_abi),
         BumpCheck("component-tests", "COMPONENT_TEST_FAILED", ("ctest",), cmake_hint, gate.component_tests),

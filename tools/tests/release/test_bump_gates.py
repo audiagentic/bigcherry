@@ -47,9 +47,11 @@ class AdapterDispatchTests(unittest.TestCase):
         context = ProjectContext.resolve(engine="radiance")
         with patch.dict(os.environ, FAKE_HOST):
             checks = adapter("radiance").compile_checks(context, Path("/src"), Path("/work"), platform_name=PLATFORM)
-        self.assertEqual([c.id for c in checks], ["components-build", "component-plugin-abi", "component-tests"])
+        self.assertEqual([c.id for c in checks], ["composition-anchors", "composition-syntax", "components-build",
+                                                  "component-plugin-abi", "component-tests"])
         self.assertEqual([c.failure_code for c in checks],
-                         ["COMPONENT_BUILD_FAILED", "PLUGIN_ABI_MISMATCH", "COMPONENT_TEST_FAILED"])
+                         ["NATIVE_REWRITE_DRIFT", "COMPOSITION_COMPILE_FAILED", "COMPONENT_BUILD_FAILED", "PLUGIN_ABI_MISMATCH",
+                          "COMPONENT_TEST_FAILED"])
         self.assertEqual([c.__name__ for c in adapter("radiance").audit_checks(context)],
                          ["check_overlay_sync", "check_patch_state", "check_components"])
 
@@ -159,7 +161,8 @@ class ComponentGateTests(unittest.TestCase):
         with patch.dict(os.environ, FAKE_HOST):
             return {c.id: c for c in radiance_bump.compile_checks(
                 self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner,
-                abi_reader=lambda so: (abi, layouts.get(so.name, LAYOUT)), lister=self.lister)}
+                abi_reader=lambda so: (abi, layouts.get(so.name, LAYOUT)), lister=self.lister)
+                    if not c.id.startswith("composition-")}   # those two have their own fixtures (patch/test_bump_composition_gates.py)
 
     def run_phase(self, checks):
         with (
