@@ -1,5 +1,13 @@
 # Changelog
 
+## [2020.19.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.18.0...bc-radiance-2020.19.0) (2026-11-25)
+
+
+### New and changed
+
+* **pwr08:** qualify power apply from verified receipts, site per-BDF overrides, probe adapter ([#1630](https://github.com/audiagentic/bigcherry/issues/1630)) ([6f72822](https://github.com/audiagentic/bigcherry/commit/6f7282244aa30fd40b594138e3641e37ace731b1))
+* **pwr08:** typed S10 plan to power admission, effective settings in calibration key ([#1632](https://github.com/audiagentic/bigcherry/issues/1632)) ([453bdae](https://github.com/audiagentic/bigcherry/commit/453bdae50c05bcd8e5e0d03827e338cb970fed83))
+
 ## [2020.18.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.17.1...bc-radiance-2020.18.0) (2026-11-25)
 
 
