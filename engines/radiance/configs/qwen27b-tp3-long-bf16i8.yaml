@@ -2,7 +2,7 @@ cards: [0, 1, 2]
 server:
   host: 127.0.0.1
   port: 36080
-  kernels: libr3,libr4d,libref
+  kernels: libbciqr,libr3,libr4d,libref
 models:
   qwen27b:
     model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad

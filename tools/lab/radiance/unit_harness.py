@@ -58,6 +58,10 @@ def families() -> dict:
     return tomllib.loads(FAMILIES_FILE.read_text(encoding="utf-8"))["family"]
 
 
+def overlays() -> dict:
+    return tomllib.loads(FAMILIES_FILE.read_text(encoding="utf-8")).get("overlay", {})
+
+
 def work_root() -> Path:
     root = os.environ.get("BC_WORK_ROOT")
     if not root:
@@ -178,6 +182,57 @@ SYM_ANCHOR = '    if (e || !p) { std::printf("  FAIL  dlsym(%s): %s\\n", n, e ? 
 SYM_TOLERANT = ('    if ((e || !p) && std::getenv("UH_TOLERATE_ABSENT")) { *out = nullptr; return true; }\n')
 
 
+# Overlay checks: a row of an overlay plugin is found by its prefixed name (UH_ROW_PREFIX), the embed case prints a hash of
+# its output and, with UH_TIME_ITERS, a cold median launch time; UH_EMBED_CASES adds "rows:dim" tables to the case.
+FIND_ANCHOR = "static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
+FIND_PREFIX = ('    if (const char* uh_pre = std::getenv("UH_ROW_PREFIX")) {\n'
+               '        const std::string uh_name = std::string(uh_pre) + name;\n'
+               '        for (int k = 0; k < pl.kernel_count(); ++k)\n'
+               '            if (uh_name == pl.kernel_at(k)->name) return pl.kernel_at(k);\n'
+               '    }\n')
+EMBED_ANCHOR = ("    std::vector<uint16_t> got((size_t)(M * dim)), want((size_t)dim);\n"
+                "    st_memcpy(got.data(), d_x, got.size() * 2, hipMemcpyDeviceToHost);\n")
+EMBED_PRINT = ('    {\n'
+               '        uint64_t uh = 1469598103934665603ull;\n'
+               '        for (uint16_t v : got) { uh ^= v; uh *= 1099511628211ull; }\n'
+               '        std::printf("UNITHASH %s rows=%lld dim=%lld %016llx\\n", nm, (long long)rows, (long long)dim, (unsigned long long)uh);\n'
+               '        {   /* a plain bf16 table is not an IQR weight: the row must refuse it as the base does */\n'
+               '            Planes pp; pp.enc = rad_enc_plain(RAD_BF16); pp.size(64, 128);\n'
+               '            std::vector<uint8_t> po; RadLayout pl2{};\n'
+               '            const int prc = stored(r, lp, 1, pp, { "codes" }, &po, &pl2);\n'
+               '            std::printf("UNITLAYOUT plain_bf16 rc=%d\\n", prc);\n'
+               '        }\n'
+               '        if (const char* it = std::getenv("UH_TIME_ITERS")) {\n'
+               '            const int n = std::atoi(it);\n'
+               '            const size_t fb = 256ull << 20;\n'
+               '            void* flush = dalloc(fb);\n'
+               '            hipEvent_t e0, e1;\n'
+               '            (void)hipEventCreate(&e0); (void)hipEventCreate(&e1);\n'
+               '            std::vector<float> us;\n'
+               '            for (int i = 0; i < n + 1 && flush; ++i) {\n'
+               '                (void)hipMemset(flush, i, fb); (void)hipDeviceSynchronize();\n'
+               '                (void)hipEventRecord(e0);\n'
+               '                const int rc2 = launch_row(r, { T(d_t, RAD_I32, { M }), T(d_w, lay.dtype, { rows, dim }),\n'
+               '                                                T(d_x, RAD_BF16, { M, dim }) }, ep);\n'
+               '                (void)hipEventRecord(e1); (void)hipEventSynchronize(e1);\n'
+               '                float ms = 0; (void)hipEventElapsedTime(&ms, e0, e1);\n'
+               '                if (rc2 == RAD_OK && i) us.push_back(ms * 1000.0f);\n'
+               '            }\n'
+               '            if (!us.empty()) { std::sort(us.begin(), us.end()); std::printf("UNITTIME %s rows=%lld dim=%lld %.2f\\n", nm, (long long)rows, (long long)dim, us[us.size() / 2]); }\n'
+               '        }\n'
+               '    }\n')
+EMBED_CASES_ANCHOR = "            iqr_embed_case(pl, f, 512, 640, 3.25f);\n        }\n"
+EMBED_CASES_BLOCK = ('        if (const char* uh_e = std::getenv("UH_EMBED_CASES"))\n'
+                     '            for (const IqrEmbedCase& f : es)\n'
+                     '                for (const char* q = uh_e; *q;) {\n'
+                     '                    long long ur = 0, ud = 0; int used = 0;\n'
+                     '                    if (std::sscanf(q, "%lld:%lld%n", &ur, &ud, &used) < 2) break;\n'
+                     '                    iqr_embed_case(pl, f, ur, ud, 1.0f);\n'
+                     '                    q += used;\n'
+                     '                    if (*q == \',\') ++q;\n'
+                     '                }\n')
+
+
 def inject_selftest(text: str) -> str:
     if text.count(SYM_ANCHOR) != 1:
         raise HarnessError("the selftest changed: the dlsym check is not found exactly once")
@@ -187,7 +242,13 @@ def inject_selftest(text: str) -> str:
             raise HarnessError("the selftest changed: the harness's edit anchor is not found exactly once "
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(HASH_ANCHOR, HASH_ANCHOR.splitlines(keepends=True)[0] + HASH_PRINT + HASH_ANCHOR.splitlines(keepends=True)[1], 1)
-    return text.replace(CASES_ANCHOR, CASES_ANCHOR + CASES_BLOCK, 1)
+    text = text.replace(CASES_ANCHOR, CASES_ANCHOR + CASES_BLOCK, 1)
+    for anchor in (FIND_ANCHOR, EMBED_ANCHOR, EMBED_CASES_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError(f"the selftest changed: the harness's edit anchor is not found exactly once ({anchor.splitlines()[0].strip()!r})")
+    text = text.replace(FIND_ANCHOR, FIND_ANCHOR + FIND_PREFIX, 1)
+    text = text.replace(EMBED_ANCHOR, EMBED_ANCHOR + EMBED_PRINT, 1)
+    return text.replace(EMBED_CASES_ANCHOR, EMBED_CASES_ANCHOR + EMBED_CASES_BLOCK, 1)
 
 
 def run(argv: list[str], log: Path, *, env: dict | None = None, cwd: Path | None = None) -> None:
@@ -570,6 +631,91 @@ def summary(out: Path) -> tuple[str, bool]:
     return "\n".join(lines), ok
 
 
+# ------------------------------------------------------------------------------------------------------------ overlays
+
+def build_overlay(tree: Path, component: Path, plugin: str, out: Path) -> Path:
+    """The overlay plugin (both architectures in one file), built from the composed source."""
+    prefix = out / "prefix"
+    write_prefix(tree, "gfx1100 gfx1201", prefix)
+    build = out / "overlay-build"
+    cmake_build(component, build, [f"-DCMAKE_PREFIX_PATH={prefix}", f"-DRADIANCE_SRC={tree}"], [plugin], out / "overlay.log")
+    found = sorted(build.rglob(plugin + ".so"))
+    if not found:
+        raise HarnessError(f"{plugin}.so was not built; see {out / 'overlay.log'}")
+    return found[0]
+
+
+def stage_overlay_build(args) -> Path:
+    ov = overlays().get(args.overlay)
+    if not ov:
+        raise HarnessError(f"unknown overlay {args.overlay!r} in unit_families.toml")
+    out = Path(args.out) if args.out else work_root() / "unit-harness" / f"overlay-{args.overlay}-{args.arch}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+    out.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
+    tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
+    ref_plugin = Path(args.reference) if args.reference else release_plugin(args.release, args.arch)
+    # The base the overlay runs over is a minimal build of the same source (one unit; every other row's entry point is a stub, the
+    # embed launch included), so a launch that reaches the base's kernel fails and a hash that matches the real base's proves
+    # that the overlay's own kernel ran.
+    minimal = build_plugin(args.arch, tree, ["r4d_prefetch"], out, ref_plugin, Path(args.libr3) if args.libr3 else None)
+    binary = selftest_binary(args.arch, tree, out, Path(args.libr3) if args.libr3 else None)
+    so = build_overlay(tree, ROOT / "engines" / ENGINE / "components" / ov["component"], ov["plugin"], out)
+    stage = out / "stage"
+    stage.mkdir(exist_ok=True)
+    shutil.copy2(minimal, stage / PLUGIN[args.arch])
+    staged = stage / so.name
+    shutil.copy2(so, staged)
+    pattern = re.compile(ov["kernels"])
+    ref = {k: v for k, v in kernel_records(ref_plugin, args.arch).items() if pattern.search(k)}
+    cand = {k: v for k, v in kernel_records(staged, args.arch).items() if pattern.search(k)}
+    diff = diff_records(ref, cand, pattern)
+    state = {"overlay": args.overlay, "arch": args.arch, "plugin": str(staged), "selftest": str(binary), "reference_plugin": str(ref_plugin),
+             "release": ref_plugin.parts[-4], "resources": diff, "kernels_compared": len(cand), "build_seconds": round(time.monotonic() - started, 1)}
+    (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    print(f"built overlay {ov['plugin']} for {args.arch}: {len(cand)} kernels matching {ov['kernels']!r}; against {state['release']}: "
+          f"{len(diff['added'])} added, {len(diff['changed'])} changed, {len(diff['removed'])} removed, {diff['unchanged']} identical records")
+    for kernel, delta in list(diff["changed"].items())[:10]:
+        print(f"  CHANGED {kernel[:90]}: " + ", ".join(f"{k} {a}->{b}" for k, (a, b) in delta.items() if isinstance(b, list)))
+    return out
+
+
+def stage_overlay_measure(out: Path, rounds: int = 4) -> dict:
+    state = json.loads((out / "build.json").read_text(encoding="utf-8"))
+    ov = overlays()[state["overlay"]]
+    arch = state["arch"]
+    device = device_index(arch)
+    binary, cand_plugin, ref_plugin = Path(state["selftest"]), Path(state["plugin"]), Path(state["reference_plugin"])
+    env_base = {"UH_EMBED_CASES": ov["cases"], "UH_TIME_ITERS": "31"}
+    arms = {"ref": (ref_plugin, {}), "cand": (cand_plugin, {"UH_ROW_PREFIX": ov["row-prefix"]})}
+    texts: dict[str, list[str]] = {"ref": [], "cand": []}
+    for r in range(rounds):
+        for arm in (("ref", "cand") if r % 2 == 0 else ("cand", "ref")):
+            plugin, extra = arms[arm]
+            texts[arm].append(run_selftest(binary, plugin, ["--case", ov["case"]], selftest_env(arch, device, {**env_base, **extra}), timeout=3600))
+    (out / "overlay-ref.log").write_text("\n".join(texts["ref"]), encoding="utf-8")
+    (out / "overlay-cand.log").write_text("\n".join(texts["cand"]), encoding="utf-8")
+    ref_hashes, ref_fail = parse_hashes(texts["ref"][0])
+    cand_hashes, cand_fail = parse_hashes(texts["cand"][0])
+    times: dict[str, dict[str, float]] = {"ref": {}, "cand": {}}
+    for arm in times:
+        for text in texts[arm]:
+            for m in re.finditer(r"^UNITTIME (.+) ([0-9.]+)$", text, re.M):
+                times[arm][m.group(1)] = min(times[arm].get(m.group(1), 1e18), float(m.group(2)))
+    timing = [{"case": name, "ref_us": times["ref"][name], "cand_us": times["cand"].get(name), "ratio": round(times["cand"][name] / times["ref"][name], 4)}
+              for name in sorted(times["ref"]) if name in times["cand"]]
+    layout = {arm: sorted(set(re.findall(r"^UNITLAYOUT plain_bf16 rc=(-?\d+)$", texts[arm][0], re.M))) for arm in ("ref", "cand")}
+    result = {"arch": arch, "plain_bf16_layout_rc": layout, "hash": compare_hashes(ref_hashes, cand_hashes),
+              "selftest_failures": {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}, "timing": timing}
+    (out / "measure.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+    h = result["hash"]
+    print(f"overlay hash: {h['compared']} compared, {len(h['differ'])} differ, {len(h['missing_in_candidate'])} missing; selftest failures: "
+          f"ref {len(ref_fail)}, overlay {len(cand_fail)}")
+    print(f"overlay plain bf16 table: layout rc base {layout['ref']}, overlay {layout['cand']} (must agree and refuse)")
+    for t in timing:
+        print(f"overlay timing {t['case']}: {t['ref_us']} -> {t['cand_us']} us ({t['ratio']})")
+    return result
+
+
 def add_build_arguments(sp) -> None:
     sp.add_argument("--family", help="a family of unit_families.toml")
     sp.add_argument("--unit", action="append", help="libr4d unit name(s), comma separated (resource records only)")
@@ -597,6 +743,12 @@ def main(argv: list[str] | None = None) -> int:
     measure_p.add_argument("--bits", type=int, nargs="+", help="code widths to replay (default: the family's)")
     measure_p.add_argument("--rows", type=int, nargs="+", help="row counts to replay (default: the family's)")
     measure_p.add_argument("--no-hash", action="store_true", help="skip the selftest hash stage")
+    ob = commands.add_parser("overlay-build", help="build an overlay plugin and compare its kernels' resource records with the base release's")
+    add_build_arguments(ob)
+    ob.add_argument("--overlay", required=True, help="an [overlay.*] of unit_families.toml")
+    om = commands.add_parser("overlay-measure", help="hash and cold timing of the overlay row against the base row (holds the card: run under the gpu lease)")
+    om.add_argument("out")
+    om.add_argument("--rounds", type=int, default=4)
     run_p = commands.add_parser("run", help="build, resource check, then hash and replay under the gpu lease")
     add_build_arguments(run_p)
     run_p.add_argument("--ttl", default="40m", help="gpu lease ttl, one unit (default 40m)")
@@ -607,6 +759,17 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "build":
             stage_build(args)
             return 0
+        if args.command == "overlay-build":
+            stage_overlay_build(args)
+            return 0
+        if args.command == "overlay-measure":
+            result = stage_overlay_measure(Path(args.out), args.rounds)
+            h = result["hash"]
+            lay = result["plain_bf16_layout_rc"]
+            ok = (not h["differ"] and not h["missing_in_candidate"] and not result["selftest_failures"]["cand"] and h["compared"] > 0
+                  and lay["ref"] == lay["cand"] and lay["cand"] and lay["cand"] != ["0"])
+            print("unit harness overlay: " + ("PASS" if ok else "FAIL"))
+            return 0 if ok else 1
         if args.command == "measure":
             stage_measure(Path(args.out), replay_iters=args.iters, tol=args.tolerance, max_windows=args.max_windows,
                           skip_replay=args.no_replay, skip_hash=args.no_hash, bits=args.bits, rows=args.rows)

@@ -14,7 +14,7 @@ PATCH_ROOT = ROOT / "engines/radiance/patches"
 class ComponentCouplingTests(unittest.TestCase):
     def test_every_radiance_component_coupling_is_declared(self):
         declared = components.load_all(ROOT, engines.RADIANCE)
-        self.assertEqual(len(declared), 6)
+        self.assertEqual(len(declared), 7)
         for name, component in declared.items():
             with self.subTest(component=name):
                 self.assertEqual(

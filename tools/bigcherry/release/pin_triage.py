@@ -292,6 +292,77 @@ def _drift(
         return failures, findings, patch_owned
 
 
+def _commit_exists(mirror: Path, sha: str) -> bool:
+    try:
+        _git(mirror, "rev-parse", "--verify", f"{sha}^{{commit}}")
+        return True
+    except PinTriageError:
+        return False
+
+
+def _path_exists(mirror: Path, sha: str, path: str) -> bool:
+    try:
+        _git(mirror, "cat-file", "-e", f"{sha}:{path}")
+        return True
+    except PinTriageError:
+        return False
+
+
+def _is_ancestor(mirror: Path, ancestor: str, descendant: str) -> bool:
+    return subprocess.run(["git", "-C", str(mirror), "merge-base", "--is-ancestor", ancestor, descendant], capture_output=True).returncode == 0
+
+
+def origin_drift(engine: str, mirror: Path, to_sha: str, *, root: Path | None = None) -> list[dict[str, Any]]:
+    """What upstream did, since the last integrated commit, to each unit a component owns whole (``origins.toml``).
+
+    ``clean``: the origin path is unchanged between the last integrated commit and the target. ``candidate``: it changed, with
+    the commits and a diff stat; the owned copy needs a three-way merge or a decision. ``blocked``: the declaration cannot be
+    checked (a commit missing from the mirror, the path absent at the last integrated commit) or upstream renamed or removed the
+    path (the new name is reported when git sees a rename)."""
+    root = root or paths.REPO_ROOT
+    out: list[dict[str, Any]] = []
+    for name, component in sorted(components.load_all(root, engine).items()):
+        origins = component.root / "origins.toml"
+        if not origins.is_file():
+            continue
+        try:
+            units = tomllib.loads(origins.read_text(encoding="utf-8")).get("unit", [])
+        except tomllib.TOMLDecodeError as exc:
+            out.append({"component": name, "unit": "-", "state": "blocked", "reason": f"origins.toml is not valid TOML: {exc}"})
+            continue
+        for unit in units:
+            item: dict[str, Any] = {"component": name, "unit": unit.get("name", "?"), "path": unit.get("upstream-path", ""),
+                                    "last_integrated": unit.get("last-integrated", ""), "commits": [], "state": "clean", "reason": ""}
+            missing = [k for k in ("name", "upstream-path", "owned-source", "base-commit", "last-integrated", "strategy") if not unit.get(k)]
+            if missing:
+                item.update(state="blocked", reason=f"origins.toml unit lacks {', '.join(missing)}")
+            elif not (component.root / unit["owned-source"]).is_file():
+                item.update(state="blocked", reason=f"owned source {unit['owned-source']} does not exist")
+            elif not _commit_exists(mirror, unit["base-commit"]) or not _commit_exists(mirror, unit["last-integrated"]):
+                item.update(state="blocked", reason="the base or last integrated commit is not in the upstream mirror")
+            elif _git(mirror, "rev-parse", "--is-shallow-repository").strip() == "true":
+                item.update(state="blocked", reason="the upstream mirror is shallow: the history between the commits cannot be trusted")
+            elif not _is_ancestor(mirror, unit["last-integrated"], to_sha):
+                item.update(state="blocked", reason="the last integrated commit is not an ancestor of the target")
+            elif not _path_exists(mirror, unit["last-integrated"], unit["upstream-path"]):
+                item.update(state="blocked", reason=f"{unit['upstream-path']} does not exist at the last integrated commit (wrong path)")
+            elif not _path_exists(mirror, to_sha, unit["upstream-path"]):
+                renamed = [line.split("\t") for line in _git(mirror, "diff", "--name-status", "-M", unit["last-integrated"], to_sha).splitlines()
+                           if line.startswith("R")]
+                moved = next((r[2] for r in renamed if len(r) == 3 and r[1] == unit["upstream-path"]), None)
+                item.update(state="blocked", reason=(f"upstream renamed {unit['upstream-path']} to {moved}" if moved else
+                                                     f"upstream removed {unit['upstream-path']} (or renamed it beyond git's similarity)"))
+            else:
+                # The verdict is the file: a change that was reverted leaves nothing to merge. The commits are for the reader.
+                differs = subprocess.run(["git", "-C", str(mirror), "diff", "--quiet", unit["last-integrated"], to_sha, "--", unit["upstream-path"]],
+                                         capture_output=True).returncode != 0
+                if differs:
+                    log = _git(mirror, "log", "--format=%h %s", f"{unit['last-integrated']}..{to_sha}", "--", unit["upstream-path"]).splitlines()
+                    item.update(state="candidate", commits=log, reason=f"the origin path differs ({len(log)} upstream commit(s) touch it)")
+            out.append(item)
+    return out
+
+
 def run(*, engine: str, target_ref: str, context: ProjectContext | None = None) -> dict[str, Any]:
     context = context or ProjectContext.resolve(engine=engine)
     mirror = context.upstream_repo
@@ -332,9 +403,12 @@ def run(*, engine: str, target_ref: str, context: ProjectContext | None = None) 
             patch_root=context.patches_root))
     }
     drift_count = sum(map(len, failures.values()))
+    origins = origin_drift(engine, mirror, to_sha)
+    origin_open = [o for o in origins if o["state"] != "clean"]
     verdict = ("patches-affected" if patches else
                "drift-only" if drift_count else
-               "coupling-affected" if couplings else "clean")
+               "coupling-affected" if couplings else
+               "origin-affected" if origin_open else "clean")
     return {
         "engine": engine, "current_pin": current, "target": target_ref,
         "current_sha": from_sha, "target_sha": to_sha,
@@ -342,11 +416,12 @@ def run(*, engine: str, target_ref: str, context: ProjectContext | None = None) 
         "rewrite_anchors": rewrites, "patch_anchors": patches,
         "core_commit_subjects": subjects, "drift_failures": failures, "patch_owned_rewrites": patch_owned,
         "drift_details": findings,
-        "coupling_failures": couplings, "upstream_abi": abi,
+        "coupling_failures": couplings, "upstream_abi": abi, "origin_drift": origins,
         "verdict": verdict,
         "counts": {
             "changed_files": len(changed), "rewrite_anchor_files": len(rewrites),
             "patch_target_files": len(patches), "drift_failures": drift_count, "coupling_failures": sum(map(len, couplings.values())),
+            "origin_candidates": sum(o["state"] == "candidate" for o in origins), "origin_blocked": sum(o["state"] == "blocked" for o in origins),
         },
     }
 
@@ -391,6 +466,11 @@ def format_report(report: dict[str, Any]) -> str:
             lines.extend(f"    {name}: {issue}" for issue in issues)
         if not report["coupling_failures"]:
             lines.append("    all declared upstream component dependencies present")
+    if report.get("origin_drift"):
+        lines.append("  owned units (origins.toml):")
+        for item in report["origin_drift"]:
+            lines.append(f"    {item['component']}/{item['unit']}: {item['state']}" + (f" ({item['reason']})" if item["reason"] else ""))
+            lines.extend(f"      {c}" for c in item["commits"][:10])
     counts = report["counts"]
     lines.append(
         f"  verdict: {report['verdict']} (rewrite anchors {counts['rewrite_anchor_files']}, "

@@ -372,7 +372,3 @@ layer = "rewrite:libr3"
 name = "kVgprFilePerSimd"
 reason = "predates the naming rule"
 
-[[exception]]
-layer = "rewrite:libr3"
-name = "kWaveShuffles"
-reason = "predates the naming rule"

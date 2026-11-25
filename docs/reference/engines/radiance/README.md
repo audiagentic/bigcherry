@@ -39,6 +39,7 @@ Components are BigCherry-owned additions built alongside Radiance.
 | Component | Simple purpose |
 | --- | --- |
 | [bc-gfx12](../../../../engines/radiance/components/bc-gfx12/README.md) | Selected RDNA4-optimised kernels |
+| [bc-iqr](../../../../engines/radiance/components/bc-iqr/README.md) | Owned IQR kernels for RDNA3 and RDNA4, listed ahead of the base libraries |
 | [libr2](../../../../engines/radiance/components/libr2/README.md) | RDNA2 expert computation and quantisation |
 | [libr3](../../../../engines/radiance/components/libr3/README.md) | RDNA3 matrix, attention and reduction kernels |
 | [moe-remote](../../../../engines/radiance/components/moe-remote/README.md) | Runs selected experts on helper GPUs |
