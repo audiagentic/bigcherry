@@ -9,12 +9,12 @@ Status: design, 2026-11-25. Plan items: RCS19 to RCS22 (build-radiance-component
 | upstream | Radiance as released by its maintainers; we pin one release (recipes.toml) and never edit it in place |
 | libr4d | upstream's gfx12 kernel library source (units named `r4d_*`); built for the R9700 as the `libr4d.so` plugin |
 | libr3d | upstream's own native RDNA3 kernel library, a different upstream library from libr4d; status in our builds is what RCS15 measures; not used in production today |
-| libr3 | OUR gfx11 provider: libr4d's units compiled for gfx11 through the compatibility header plus our native rewrites; built as `libr3.so`; becomes `libbcr3.so` (section 12) |
+| libr3 | our gfx11 build of upstream's units: libr4d's units compiled for gfx11 through the compatibility header plus our native rewrites; built as `libr3.so`; upstream-derived, so it keeps its name |
 | libr2 | our gfx1030 helper library (no matrix instructions) |
 | shim | `r3_compat.h`: emulates gfx12-only instructions on gfx11 |
 | native rewrite | a `native/*.rw` block that replaces text in a libr4d unit for the gfx11 build |
 | managed patch | a package under `engines/radiance/patches` that edits the pinned source for every architecture, with a lifecycle state (untested, validated) |
-| owned unit | a source unit we keep in our repository instead of patching upstream's (RCS23); named `bc_*` |
+| overlay plugin | a library of kernels we own (`libbc-<family>-<arch>.so`, sources `bc_*`), placed first in the engine's kernel hierarchy so its rows override the base libraries' rows (RCS23); the existing precedent is `libbcgfx12` |
 | family | a group of units by purpose (`core`, `gemm_quant`, `gemm_dense`, `attention`, `moe`, `speculation`, `multimodal`, `collectives`) |
 | `bc` | prefix and suffix meaning "ours"; no `bc` means upstream |
 
@@ -133,7 +133,7 @@ Refresh the unmerged family branch against main, run the full build, and merge i
 | RCS20 | merge the family compile targets | none |
 | RCS21 | traits seam, unified fused tile, upstream path | RCS19 |
 | RCS22 | loadable family plugins | RCS15 gate, RCS19 |
-| RCS23 | owned units, manifest, drift check, `bc` naming | RCS19, RCS21 |
+| RCS23 | owned kernel families as overlay plugins, manifest, drift check, `bc` naming | RCS19, RCS21 |
 
 RCS15 to RCS18 decide the gfx11 provider; RCS19 to RCS23 make whichever provider we keep composable and manageable. Documents they supersede or qualify are listed in section 8b.
 
@@ -141,7 +141,7 @@ RCS15 to RCS18 decide the gfx11 provider; RCS19 to RCS23 make whichever provider
 
 - `docs/reviews/radiance-native-libr3d/ASSESSMENT.md`, `INTEGRATION.md`, `native-rows.tsv`: written against pin 1.17 and an earlier upstream snapshot; input to RCS15, not a statement of current facts.
 - `engines/radiance/components/libr3/README.md`: component description; its terms follow section 0.
-- `docs/reference/build/PIN_BUMP.md` and the bump-radiance skill: the pin-bump flow; the planned drift check for owned units (RCS23) is noted there and is not implemented yet.
+- `docs/reference/build/PIN_BUMP.md` and the bump-radiance skill: the pin-bump flow; the planned drift check for owned kernel overlays (RCS23) is noted there and is not implemented yet.
 - `engines/radiance/components/libr3/exclude.txt`: units our gfx11 build leaves out; currently none.
 - `engines/radiance/components/libr3/native-shelved/`: rewrite files kept as source but not built (each reason is in `component.toml`).
 

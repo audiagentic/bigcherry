@@ -10,7 +10,7 @@ not a patch to the engine itself.
 
 ## Terms
 
-libr4d is upstream's gfx12 kernel library source; libr3d is upstream's own native RDNA3 library (a different library); libr3 is this component: BigCherry's gfx11 provider, libr4d's units compiled for gfx11 through `r3_compat.h` plus our native rewrites. It is generated, not upstream's, and is to be built as `libbcr3.so` (`bc` marks what we own). Full definitions, the plan items and the ownership rules: `docs/design/radiance-kernel-composition.md`.
+libr4d is upstream's gfx12 kernel library source; libr3d is upstream's own native RDNA3 library (a different library); libr3 is this component: BigCherry's gfx11 provider, libr4d's units compiled for gfx11 through `r3_compat.h` plus our native rewrites. It is upstream's units built for gfx11, so it keeps its upstream-derived name. Kernels we own live in separate overlay plugins named `libbc-<family>-<arch>.so` (`bc` marks what we own), placed first in the kernel hierarchy. Full definitions, the plan items and the ownership rules: `docs/design/radiance-kernel-composition.md`.
 
 ## Outcome
 
