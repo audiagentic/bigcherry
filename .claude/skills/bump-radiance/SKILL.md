@@ -40,6 +40,11 @@ passing patch application never proves runtime compatibility.
    the production patches touch, gfx1100 and gfx1201). The same checks run by hand
    as `python3 -m bigcherry --engine radiance patch-compose-check`. Fix the named
    patch or rewrite block; do not loosen a gate.
+   The drift phase also checks the units the `bc-iqr` overlay owns (`origins.toml`): `OWNED_ORIGIN_BLOCKED` (the
+   origin cannot be checked or has moved) and `OWNED_ORIGIN_CHANGED` (upstream changed the origin path since
+   `last-integrated`) both stop the bump. For a change, merge or review it into the owned source, prove it with
+   `unit_harness.py overlay-build` / `overlay-measure`, then set `last-integrated` by hand; never advance it
+   without the proof.
 4. Capture the current composed patch footprint before modifying packages:
    `python3 -m bigcherry --engine radiance patch-footprint --check`.
    Review `docs/evidence/radiance-patch-footprint/footprint.md` for the
