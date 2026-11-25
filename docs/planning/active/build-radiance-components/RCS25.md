@@ -61,6 +61,8 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 
 2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. BU03 #1571 cold-build records now baseline for five plane-prefill IQR forms (shipped resources differed, measured replay and output neutral). Use existing cold exact-source reference and recorded output baseline; no full cold plugin build per discrete test, compile only affected unit with matched flags and actual layouts. Distinguish real performance/resource regression from baseline difference or compiler drift. No duplicate GPU run if same row/shape/source proof already recorded. Existing full plugin/engine gate at release stays.
 
+2026-11-25 implementation: production libr3 component explicitly resets R3_ONLY empty; partial test builds remain isolated. No changes to unit harness under #1565, no duplicate harness. Full production row/link and target-row proof remain with actual builds.
+
 ## Change Log
 
 - 2026-11-25T02:12:11.908255+00:00 (created-by): Created by lead
@@ -73,3 +75,4 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 - RV4636
 - 2026-11-25T02:42:19.951361+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T05:21:34.496954+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:32:38.631650+00:00 (updated-by): Updated: section:notes

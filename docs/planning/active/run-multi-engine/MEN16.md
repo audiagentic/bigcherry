@@ -59,6 +59,8 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN22. MEN22 is a failure mode in MEN1
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Preserve current compile-tree/build records and plain Git/source/selection/version checks, no new hash or proof-key system. Candidate exact tag vs dev main explicit; current upstream ABI43 unchanged integer while ABI structs changed. Existing component-plugin-abi version AND layout check, canonical lane and exact candidate proof, no stale build. Discrete unit tests do not depend on full lane; full release gate remains.
 
+2026-11-25 follow-up from code review: ComponentGate.build in radiance_bump.py and run_phase_lane_build in pin_bump.py each build integrated artifacts with differing flags/targets. Keep actual early composition/affected compile then canonical lane; move component ABI/layout/tests onto that lane where coverage agrees, retain only distinct diagnostic target where needed. No reuse of incompatible build dirs. This remains open; small build fixes do not change bump phase order.
+
 ## Change Log
 
 - 2026-10-17T09:09:28.078742+00:00 (created-by): Created by agent
@@ -71,3 +73,4 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN22. MEN22 is a failure mode in MEN1
 - 2026-11-25T02:03:42.673255+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria
 - RV4651
 - 2026-11-25T02:50:16.295764+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:33:08.838898+00:00 (updated-by): Updated: section:notes

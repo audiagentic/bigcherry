@@ -38,6 +38,7 @@ on:
       - '!engines/radiance/tests/**'
       - '!engines/radiance/model_constant_guard.toml'
       - 'tools/bigcherry/campaign/**'
+      - 'tools/bigcherry/bin/bc-ccache'
       - 'tools/bigcherry/core/**'
       - 'tools/bigcherry/build/**'
       - 'config/environment.example.toml'
@@ -131,7 +132,9 @@ jobs:
       # Without this the actual compile (not the clone above) runs from scratch every time regardless of how
       # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
       # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
+      # BU03: do not reuse compiler objects for a newly built release until the cold/shipped discrepancy is explained.
       - name: Restore ccache
+        if: inputs.bundle_tag == ''
         uses: actions/cache/restore@v4
         with:
           path: work/.ccache
@@ -143,7 +146,7 @@ jobs:
         env:
           BUILD_LANE: ${{ inputs.build_lane || 'radiance:stock:linux-radiance' }}
           CI_COMPILE_JOBS: ${{ inputs.compile_jobs || 'default' }}
-          CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
+          CI_FORCE_COLD: ${{ inputs.bundle_tag != '' && 'true' || inputs.cold || 'false' }}
         run: |
           docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BUILD_LANE -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
@@ -210,9 +213,11 @@ jobs:
             # The cache holds the working set of this build and the previous one (a pin or toolchain bump replaces nearly all of
             # it once), not a fixed 5 GiB of entries nothing uses: twice the bytes this build touched (hit or wrote).
             # Only a successful build gets here, so a failed one never shrinks the limit. Main saves the trimmed cache.
-            touched=$(ccache_touched)
-            ccache --max-size "$(( (2 * touched + 1048575) / 1048576 ))M"
-            ccache --cleanup
+            if [ "$CI_FORCE_COLD" != "true" ]; then
+              touched=$(ccache_touched)
+              ccache --max-size "$(( (2 * touched + 1048575) / 1048576 ))M"
+              ccache --cleanup
+            fi
           '
 
       # Only main writes the shared caches (one entry per main build, found by the restore-keys prefix above); a PR

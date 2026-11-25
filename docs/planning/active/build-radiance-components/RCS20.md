@@ -57,6 +57,8 @@ Design: docs/design/radiance-kernel-composition.md section 7.
 
 2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. #1545 (0a03d2851) is on main. CMake family targets depend on canonical libr3 objects; no partial link or separate flags. Keep the coverage check; check actual requested unit coverage in partial builds, and use full target if shared inputs affect multiple families. Existing KERNEL_GROUPS.md and r3_groups_test.py suffice. Do not repeat delivered merge/build work; close only after remaining timing evidence.
 
+2026-11-25 implementation: canonical libr3 component sets R3_ONLY empty explicitly, including on reused CMake cache. Existing fake runtime build test asserts -DR3_ONLY=. Real full config enumerated 115 units in eight groups, no exclusions on the copied patched source. Keep discrete build directories separate; use existing RCS25 harness (PR #1565 in flight), no new build graph. Full compile/link and timing remain separate.
+
 ## Change Log
 
 - 2026-11-25T00:40:47.022098+00:00 (created-by): Created by lead
@@ -68,3 +70,4 @@ Design: docs/design/radiance-kernel-composition.md section 7.
 - RV4606
 - 2026-11-25T02:04:43.391147+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:21:03.549626+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-25T05:32:31.015006+00:00 (updated-by): Updated: section:notes

@@ -166,6 +166,7 @@ jobs:
           !engines/radiance/tests/**
           !engines/radiance/model_constant_guard.toml
           tools/bigcherry/campaign/**
+          tools/bigcherry/bin/bc-ccache
           tools/bigcherry/core/**
           tools/bigcherry/build/**
           config/environment.example.toml

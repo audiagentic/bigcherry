@@ -34,7 +34,7 @@ set(r4d ${CMAKE_CURRENT_BINARY_DIR}/r4d-src)
 set(native_arg)
 if(R3_NATIVE)
   set(native_arg --native ${CMAKE_CURRENT_SOURCE_DIR}/native)
-  file(GLOB native_rules ${CMAKE_CURRENT_SOURCE_DIR}/native/*.rw)
+  file(GLOB native_rules CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/native/*.rw)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${native_rules})
 endif()
 execute_process(
@@ -45,10 +45,12 @@ message(STATUS "libr3: ${rewrite_out}")
 if(NOT rewrite_rc EQUAL 0)
   message(FATAL_ERROR "libr3: r3_rewrite.py failed: ${rewrite_err}")
 endif()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${CMAKE_CURRENT_SOURCE_DIR}/r3_rewrite.py ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
+  ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt)
 # The copy above is made from the (patched) upstream sources, so a change to any of them must regenerate it: without
 # these dependencies an existing build directory would keep the copy made from the old text.
-file(GLOB r4d_inputs ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_SRC}/libr4d/*.h ${RADIANCE_SRC}/libr4d/*.cpp
+file(GLOB r4d_inputs CONFIGURE_DEPENDS ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_SRC}/libr4d/*.h ${RADIANCE_SRC}/libr4d/*.cpp
      ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${r4d_inputs})
 
@@ -170,6 +172,7 @@ add_custom_command(TARGET libr3 PRE_LINK
   COMMAND ${CMAKE_CXX_COMPILER} -c ${stub_src} -o ${stub_obj}
   COMMAND_EXPAND_LISTS VERBATIM)
 target_link_options(libr3 PRIVATE ${stub_obj})
+set_property(TARGET libr3 APPEND PROPERTY LINK_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/r3_gen_stubs.py)
 
 # radiance's kernel selftest, from the rewritten copy so that it runs on gfx11 cards (rewrites.txt). It dlopens the
 # plugin it is given and carries a host reference for each row, including the MXFP4 GEMMs rad-kbench cannot reach.

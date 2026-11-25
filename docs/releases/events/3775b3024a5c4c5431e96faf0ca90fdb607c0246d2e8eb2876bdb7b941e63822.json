@@ -1,0 +1,29 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261125_053327_fix-generated-kernel-freshness_1486",
+  "files": [
+    ".github/workflows/pr-ci.yml",
+    ".github/workflows/radiance-build.yml",
+    "engines/radiance/components/libr2/CMakeLists.txt",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr3/component.toml",
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/bigcherry/release/ci_bundle.py",
+    "tools/tests/campaign/test_runtime_bundle_source_path.py",
+    "tools/tests/release/test_ci_bundle.py",
+    "tools/tests/test_bu01_path_gate_integration.py"
+  ],
+  "plan-item-ids": [
+    "RCS19",
+    "RCS20",
+    "RCS25",
+    "BU01",
+    "BU03",
+    "RSP01",
+    "MEN16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Track generated source and stub link inputs in existing libr2/libr3 builds, reset production partial-unit selection, refuse ambiguous or duplicate runtime component outputs, cover compiler launcher/path inputs in existing CI and build key, bypass compiler cache for newly compiled release bundles until BU03 discrepancy is resolved. 41 targeted offline tests and incremental real CMake regeneration checks passed; no full local build or GPU.",
+  "timestamp-utc": "2026-11-25T05:33:27.692251Z",
+  "user-summary-candidate": "Fix generated kernel freshness and runtime build artifact selection"
+}

@@ -294,6 +294,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. BU03 #1571 cold versus shipped five IQR resource records: new release compilation must use current tagged source and matched SDK/recipe with cache disabled until actual discrepancy explained/fixed, not a second verification build. Keep existing identical-runtime verified archive reuse, normal runtime asset inventory, ABI/layout and Gate E. ci_bundle.py BUILD_INPUTS includes bc-ccache but not campaign/ccache_paths.py (stable path/ccache options used by workers); review whether output-affecting changes are captured by existing build key and update existing list/oracle only where necessary, no new key scheme. Match actual tag/build and package same tested artifacts, no repack/rebuild of a different tree. No mandatory full release GPU test for docs-only or unchanged verified runtime.
 
+2026-11-25 implementation: runtime_bundle rejects duplicate declared component destinations and ambiguous basename matches instead of picking first sorted match. Uses existing declared outputs and build dirs; still single-match discovery, no new output registry. Existing mock-runtime test proves duplicate and ambiguous refusal. Production R3_ONLY reset and temporary release-only ccache bypass as BU03. 41 selected tests passed; full hosted CI and actual release remain unverified.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -329,3 +331,4 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-25T03:32:26.110400+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:30:56.056571+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:21:19.232802+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:33:01.183505+00:00 (updated-by): Updated: section:notes

@@ -91,6 +91,12 @@ def build_runtime(
     if not layout.runtime_home:
         raise RuntimeBundleError(f"engine {engine!r} declares components but no build.runtime-home")
     home = build_dir / layout.runtime_home
+    destinations: dict[str, str] = {}
+    for name, component in sorted(declared.items()):
+        for output in component.outputs:
+            if output in destinations:
+                raise RuntimeBundleError(f"component {name} and {destinations[output]} both declare {output}")
+            destinations[output] = name
     # Components run the same ROCm lookups as the engine, in their own configure: pin them to the same SDK.
     rocm_options = rocm_configure_options(platform, layout.rocm_paths)
     prefix = build_dir / "runtime-prefix"
@@ -116,9 +122,12 @@ def build_runtime(
                 *(f"-D{key}={value}" for key, value in sorted(options.items()))], source_root)
         runner(["cmake", "--build", str(component_build), "-j"], source_root)
         for output in component.outputs:
-            produced = sorted(component_build.rglob(Path(output).name))
+            produced = sorted(path for path in component_build.rglob(Path(output).name) if path.is_file())
             if not produced:
                 raise RuntimeBundleError(f"component {name} did not produce {output}")
+            if len(produced) != 1:
+                raise RuntimeBundleError(f"component {name} produced ambiguous outputs for {output}: "
+                                         + ", ".join(str(path) for path in produced))
             target = home / output
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(produced[0], target)

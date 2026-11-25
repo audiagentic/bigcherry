@@ -32,8 +32,13 @@ message(STATUS "libr2: ${rewrite_out}")
 if(NOT rewrite_rc EQUAL 0)
   message(FATAL_ERROR "libr2: r3_rewrite.py failed: ${rewrite_err}")
 endif()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${CMAKE_CURRENT_SOURCE_DIR}/units.txt
-  ${CMAKE_CURRENT_SOURCE_DIR}/native/r4d_moe.hip.rw)
+# Regenerate the copied sources when any rewriter input changes, including added or removed files.
+file(GLOB native_rules CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/native/*.rw)
+file(GLOB r4d_inputs CONFIGURE_DEPENDS ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_SRC}/libr4d/*.h ${RADIANCE_SRC}/libr4d/*.cpp
+     ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  ${LIBR3}/r3_rewrite.py ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${CMAKE_CURRENT_SOURCE_DIR}/units.txt
+  ${native_rules} ${r4d_inputs})
 
 # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`. libr2 builds the units in units.txt.
 file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[a-z0-9_]+\\|")
@@ -93,5 +98,6 @@ add_custom_command(TARGET libr2 PRE_LINK
   COMMAND ${CMAKE_CXX_COMPILER} -c ${stub_src} -o ${stub_obj}
   COMMAND_EXPAND_LISTS VERBATIM)
 target_link_options(libr2 PRIVATE ${stub_obj})
+set_property(TARGET libr2 APPEND PROPERTY LINK_DEPENDS ${LIBR3}/r3_gen_stubs.py)
 
 target_include_directories(libr2 PRIVATE ${RADIANCE_SRC}/abi)
