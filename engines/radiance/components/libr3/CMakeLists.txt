@@ -196,7 +196,8 @@ if(BUILD_TESTING)
   if(NOT R3_ONLY)
     add_test(NAME r3_groups_test
       COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups_test.py
-        --upstream ${RADIANCE_SRC}/libr4d --manifest ${group_manifest})
+        --upstream ${RADIANCE_SRC}/libr4d --manifest ${group_manifest}
+        --exclude ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt)
     add_custom_target(r3_groups_test)
   endif()
   add_test(NAME r3_rewrite_check
