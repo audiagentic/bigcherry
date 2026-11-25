@@ -1,5 +1,5 @@
 # Suffix patterns for the names a layer introduces (tools/bigcherry/patch/unit_ownership.py). {arch} is gfx<digits>, {id} is
-# the patch's id (rad0065). A patch's code that builds for every architecture uses the second pattern.
+# the patch's id (rad0042). A patch's code that builds for every architecture uses the second pattern.
 [patch]
 suffixes = ["_{arch}_{id}", "_{id}"]
 

@@ -16,6 +16,8 @@ endif()
 rad_add_plugin(libbciqr kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_plugin.cpp
   HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_embed.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_vocab.hip
+                ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_gemm.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_gemm_p1.hip
+                ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_gemm_p2.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_gemm_p3.hip
   GPU_TARGETS gfx1100 gfx1201
   INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR} ${RADIANCE_SRC}/libr4d ${CMAKE_CURRENT_SOURCE_DIR}/../libr3)   # libr3: r3_compat.h for the gfx1100 pass
 target_include_directories(libbciqr PRIVATE ${RADIANCE_SRC}/abi)

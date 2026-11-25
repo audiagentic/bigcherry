@@ -2,9 +2,14 @@
 # r3_compat.h covers what it needs and it passes rad-kbench on gfx1100.
 # First list: tools/lab/radiance/rdna3-survey.sh, radiance 1.3.0 (89cee7c), 2026-10-09.
 
-# (none at present besides the entries below)
-r4d_logits_vocab  # owned by the bc-iqr overlay (RCS23 S3b): libbciqr supplies logits_gemm_vocab_iqr on gfx1100; its rewrite is archived in native-shelved/
-r4d_iqr_embed  # owned by the bc-iqr overlay (RCS23 S3a): libbciqr supplies embed_lookup_iqr on gfx1100; its rewrite is archived in native-shelved/
+# Units the bc-iqr overlay owns (RCS23): libbciqr supplies their rows on gfx1100 and the rewrite of each is archived in native-shelved/.
+# An entry is the bare unit name (a trailing comment would keep it from matching); the reason is in the comment above it.
+r4d_gemm_iqr
+r4d_gemm_iqr_p1
+r4d_gemm_iqr_p2
+r4d_gemm_iqr_p3
+r4d_logits_vocab
+r4d_iqr_embed
 #
 # The unit list is read from the pinned upstream build file; every unit it names builds for gfx1100 at the pinned
 # revision. A unit goes on this list only when it fails to build for gfx1100 through r3_compat.h, with the reason.

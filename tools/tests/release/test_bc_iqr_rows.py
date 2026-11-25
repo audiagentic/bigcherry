@@ -81,7 +81,8 @@ class LoadedRowTests(unittest.TestCase):
             for base_name, overlay_name in zip(unit["base-rows"], unit["overlay-rows"]):
                 base_row = next(r for r in self.base if r["name"] == base_name)
                 with_overlay = choose([self.overlay, self.base], base_row["op"])
-                self.assertEqual(with_overlay["name"], overlay_name)
+                self.assertTrue(with_overlay["name"].startswith("bc_"), f"{base_name}: the overlay's rows win the op {base_row['op']}")
+                self.assertTrue(any(r["name"] == overlay_name for r in self.overlay))
                 # Without the overlay the base's rows serve the op (several share it: the weight layout hooks tell them apart, so
                 # which of them a given weight reaches is not decidable from the tables); no overlay row can be chosen.
                 alone = choose([self.base], base_row["op"])

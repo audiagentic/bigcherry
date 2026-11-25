@@ -2,7 +2,7 @@ cards: [0]
 server:
   host: 127.0.0.1
   port: 36080
-  kernels: libr4d,libr3moe,libref
+  kernels: libbciqr,libr4d,libr3moe,libref
 models:
   flashnext:
     model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad

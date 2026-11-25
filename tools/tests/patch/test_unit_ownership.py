@@ -20,9 +20,10 @@ class OwnershipTests(unittest.TestCase):
         self.assertEqual(u.compare({}, {}, shared, {"r4d_a": {"reason": "disjoint"}}, [], set(), RULES), [])
         self.assertIn("no longer shared", u.compare({}, {}, {}, {"r4d_a": {}}, [], set(), RULES)[0])
 
-    def test_layers_of_the_real_tree_list_the_fused_tile_unit_twice(self):
-        self.assertEqual(sorted(u.layers("radiance")["r4d_gemm_iqr"]),
-                         ["patch:rad0065_iqr_fused_gfx1201", "rewrite:libr3"])
+    def test_layers_of_the_real_tree_list_a_unit_a_patch_and_the_rewrite_share(self):
+        layers = u.layers("radiance")
+        self.assertEqual(layers["r4d_gemm_fp8a8"], ["patch:rad0061_iq8r_f32_scale", "rewrite:libr3"])
+        self.assertNotIn("r4d_gemm_iqr", layers, "the IQR GEMM family is owned by the bc-iqr overlay: no patch or rewrite edits it")
 
 
 class NamingTests(unittest.TestCase):
