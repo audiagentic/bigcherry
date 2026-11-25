@@ -157,6 +157,8 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 
 2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 gate order. Candidate admission uses existing typed planner and native pre-weight check. Reuse measured data across pins only under explicit semantic compatibility of actual native defaults, ordered devices, resource geometry, selected providers, host/VRAM/queue reservations and fresh live room; record carried-from evidence. Changed power settings invalidate performance calibration, not unrelated memory arithmetic. Wrong candidate or resource identity refuses or triggers bounded remeasurement; RSC14 host-race gate remains separate. No executable manifest, no second cache/planner.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate 5e0cd1e2 per-card TP budget maps cfg.devices[rank], least(free - max(per-card headroom, host reserve)) common split, expert_tiered spare room; explicit claims separate. 4865bd6b queue-reserve 1–24 default8, 80e094b3 pinned NUMA, a8c8066d mlock. Reconcile at actual native Fleet reservation and Engine::plan; native authority, avoid double subtract reserve/queue bytes or copied old scalar planner. Test actual queue opening, memlock/cgroup and host budgets, unequal ranks/reversed order/explicit claim/exact fit, helper reservation and bounded remeasurement. Cache carry only native semantic compatibility+fresh room. Keep RSC14 race gate.
+
 ## Status 2026-11-19
 
 The derived start-up resource plan is in production use (C++ RAD/BDF ledger: `resources: derived host pool N MiB, host KV N MiB`, then the measuring start re-measures the pool, for example 1033 -> 2247 MiB on flashnext-4gpu). Observed today: the engine's own host admission is the last word (n-gram table 47.68 GiB needs about 74.8 GiB available including the 4.59 GiB headroom; a start with 74.1 GiB available was refused), so a start right after another heavy process can fail for memory the ledger cannot see; consider reporting MemAvailable at the ledger step. The policy-calibration key no longer includes the host pool or helper budgets (#1169), so a re-measured pool does not orphan a calibration record.
@@ -208,3 +210,5 @@ The shipped `engines/radiance/layouts.toml` now omits all literal helper `budget
 - 2026-11-25T01:37:00.647185+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - RV4622
 - 2026-11-25T02:13:25.537739+00:00 (updated-by): Updated: section:notes
+- RV4639
+- 2026-11-25T02:43:57.354274+00:00 (updated-by): Updated: section:notes

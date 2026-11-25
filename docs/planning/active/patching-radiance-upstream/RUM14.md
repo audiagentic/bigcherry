@@ -62,7 +62,14 @@ There is a single, engine-owned native production weight-materialization path ca
 
 2026-11-22 after PR #1315 (c72ed6be3): the C06 native test now genuinely ISSUES one checkpoint-weight, single-row block-0 video/audio self-attention in four legal cases, all three ranks, with both mixed AQL card orders passing (108 native instances/order; bitwise equal output across orders). The diagnostic uses bounded test-only c06_gather and direct host/GPU weight pointer/upload staging, not production Engine::load_weights, RelayoutPool or sweep_container. This is a useful LTX02 execution proof, NOT completion of RUM14. RUM14's current generic deliverable is to delete and replace that temporary test-specific weight materialization by reusing one extracted production engine loader; preserve the working issue tests and require net reduction. Avoid implementing an alternate LTX loader or reopening RUM06/RUM13. PR #1316 repairs an actual allocation unwind bug in that diagnostic. No TP1 parity or production TP3 admission is accepted by these results.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate 7244cef0/1c3584a8/5aa5fa0f changes core/engine_bringup.cpp staging completion, host-only bounded reconstruction/refill and failure lifetime. Before extraction re-read approved target native loader and existing APIs, avoid backport/clone stale 2.2.0 sweep code; preserve copy completion and host/refill accounting. Existing native LTX C06 consumer and safety gates unchanged; no dependency on optional provider adoption.
+
 ## Change Log
 
 - 2026-11-22T08:21:43.996915+00:00 (created-by): Created by gpt-6
 - 2026-11-22T08:36:23.727103+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4648
+- 2026-11-25T02:48:37.694195+00:00 (updated-by): Updated: section:notes

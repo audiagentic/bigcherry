@@ -59,6 +59,8 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Replace moe-remote/component.toml manifest-path coupling and old protocol flags with actual shared YAML extension/typed role transport boundary, explicit wire generation/identity and callback signatures, update tests and selected patch dependencies atomically. Exact candidate helper row/format/owner-map/transport/readiness/drain checks, wrong generation/BDF/format fails before HIP. Keep existing RHP20 per-layout qualification and RCS23 provider identity, no new helper protocol just for bump.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native quiescent callback serialization 896ab80f and Fleet failed-handoff/staging ownership changes affect helper drain, not new transport. Reuse upstream semantics where target has them, actual provider-specific packed layout/row and independent owner map per rank, exact copy completion and group stop before power restore. No new helper config/ABI shim; test old and new target seams, RHP20 remains owner of live policy qualification.
+
 ## Change Log
 
 - 2026-11-02T03:52:00.963006+00:00 (created-by): Created by agent
@@ -78,3 +80,5 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 - 2026-11-25T01:38:00.583347+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 - RV4612
 - 2026-11-25T02:07:52.888903+00:00 (updated-by): Updated: section:notes
+- RV4641
+- 2026-11-25T02:44:58.836045+00:00 (updated-by): Updated: section:notes
