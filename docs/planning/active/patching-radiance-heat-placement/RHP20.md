@@ -64,6 +64,8 @@ GATEWAY REVIEW 2026-11-10: (1) worker_heat.h:125-149 treats the LAST helper as t
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Live policy remains off by default; use RHP16 corrected eligibility for resolved power and actual timing-sensitive provider; exact model/helper/engine rows, ordered BDF and readback from owner receipts. Native run_quiet serialization not proof of move safety. Preserve existing forced-move/KLD/quality and per-card/layout qualification. No new launch manifest or dynamic power policy.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 2: retain historical 131 moves/0 aborts and KL evidence on four-card layout; no duplicate broad qualification of unchanged paths. Verify actual eligible role/format/layout and safe reject otherwise using existing forced-move and generation evidence; only enable qualified scope, off by default until proof. No engine-local movement or gfx1030 fp8 support implied; RHP13 future only actual need.
+
 ## Status 2026-11-19
 
 Verified live swapping on hardware, native path: flashnext-4gpu (gfx1201 engine, gfx1100 heads, gfx1030 tail), policy on, 14 committed placement transactions in one run (14.6 GB moved, no aborts) and a 2-launch parity run (PR #1179). Not yet verified: the other layouts and card types in the matrix (flashnext-2xtx-rdna2-tail, flashnext-tp2xtx-r9700, TP engine-resident placement); dense TP3 has no live policy. The start path blockers that hid the policy on a production start are fixed (#1174, #1176, #1177), so a per-layout forced-move run is now the remaining work; use the native `--calibration-run` and a calibration record per layout (key v2, #1169).
@@ -203,3 +205,4 @@ pending marker is progress-stale but must not be changed to done.
 - 2026-11-25T01:42:42.232389+00:00 (updated-by): Updated: section:notes
 - RV4665
 - 2026-11-25T03:30:15.825721+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:51:40.761035+00:00 (updated-by): Updated: section:notes

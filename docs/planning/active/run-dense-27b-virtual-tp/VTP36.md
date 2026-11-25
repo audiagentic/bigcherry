@@ -157,6 +157,8 @@ The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, inclu
 
 **2026-11-24 ranked, not started (no-minimum-gain standard).** (1) Derive the decode-size piece count instead of the literal four: pieces from the per-hop fixed cost against the bytes per piece at the link rate, computed from the link table at plan time; the one-piece A/B was within noise (-0.27 +-0.21 ms at 6 streams, +0.08 +-0.18 at 8), so the derived rule ships if it shows no regression. (2) The three-rank fused all-reduce, residual add, norm and int8 quantiser (a row-sharded two-shot family; removes one bf16 rounding of the reduced sum, so it needs the reordering KLD gate; larger and riskier than (1)). (3) Row-sharded lossless gather of the quantised rows (graph redesign). Order: lowest risk first.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 4: after current critical path, derive pieces from fixed hop cost and bytes/link rate first; use existing native exact path, then evaluate 3-rank AR+residual+norm+int8 only if exposed, VTP37 order/quality gate. Shipped K-parallel near streaming ceiling; VTP52 launch and VTP32 capacity-aware per-kind split ahead of exhaustive GEMM work. Do not repeat rejected 64x256 VTP58 tile or already-shipped IQR overlay. Performance gates match actual installed config, step ms and tokens/step, TTFT and KV capacity.
+
 ## Results (2026-11-13): the all-reduce
 
 Worktree `perf/vtp36-tp3-performance`. Builds (all `radiance:stock:linux-radiance`, rad0016-rad0030 plus the patches
@@ -484,3 +486,4 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 - 2026-11-23T22:51:30.022120+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:11:30.985833+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:22:02.105504+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:52:10.416087+00:00 (updated-by): Updated: section:notes

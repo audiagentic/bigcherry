@@ -61,6 +61,8 @@ Stage 2 of the radiance protocol programme (RCS12 staging). RHP02 slice B also b
 
 CONSOLIDATION 2026-11-22 NATIVE-OWNERS: RCS13 C02 GEMV bound and dispatch correctness now lives under active RCS12 after documented transfer. RCS14 v26 helper-topology implementation still waits for the original C02 prelaunch dispatch and cross-architecture acceptance before touching overlapping moe_remote_gpu.h/moe_mailbox_ops.hip files. Superseded RCS13 does not mean C02 complete. No second GEMV or protocol path.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Original v26 migration delivered (#1014, docs/evidence/2026-11-20-branch-retirement/README.md). Current moe_remote_shm.h kVersion=26, Topology{helpers,ranks}, checked counts; moe_remote_topology_v26_test.cpp:349–354 already covers 1x3 and 2x3; component CMake registers topology, GPU contract, worker topology and exactly-once tests. Do not reimplement protocol or invent v27. Reconcile remaining acceptance and actual card/role coverage after RCS12 source audit, reuse existing proof, close only when verified; keep unsupported combinations typed/refused. This supersedes stale dependency on implementing original v25->26 change.
+
 ## Change Log
 
 - 2026-11-13T03:53:18.506339+00:00 (created-by): Created by bigcherry-1
@@ -70,3 +72,5 @@ CONSOLIDATION 2026-11-22 NATIVE-OWNERS: RCS13 C02 GEMV bound and dispatch correc
 
 - RV4513
 - 2026-11-22T10:37:38.100788+00:00 (updated-by): Updated: section:notes
+- RV4678
+- 2026-11-25T18:50:52.705328+00:00 (updated-by): Updated: section:notes
