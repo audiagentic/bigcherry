@@ -2529,6 +2529,12 @@ static void reconcile_native_config(
         throw PlanFailed("native config admission: YAML card ordinals differ from the local rank visibility order");
     if (report.listener_host != "127.0.0.1")
         throw PlanFailed("native config admission: only the loopback listener is supported by the managed owner");
+    // The inspector accepts native "auto" depth and model-defined RoPE; the executed manifest writes a number and a
+    // scaling name, so a start through it cannot carry them. This refusal ends with the manifest (RSC02).
+    if (!report.settings.speculative_tokens)
+        throw PlanFailed("native config admission: automatic speculative depth is not representable in the executed manifest; set num-speculative-tokens");
+    if (report.settings.rope_scaling.empty())
+        throw PlanFailed("native config admission: model-defined RoPE is not representable in the executed manifest; set rope-scaling");
 }
 
 static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(

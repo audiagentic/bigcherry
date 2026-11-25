@@ -234,7 +234,7 @@ int main() {
     // The inspector's form: the authored YAML bytes themselves, the root being the process's own working directory.
     const int sealed_fd = sealed_memfd(inspected_yaml);
     const auto raw = NativeConfigSnapshot::from_raw_fd(sealed_fd);
-    check(raw.yaml_utf8() == inspected_yaml && raw.sha256() == inspected_field.at("sha256") &&
+    check(raw.yaml_utf8() == inspected_yaml && raw.sha256() == inspected_field.at("sha256").get<std::string>() &&
               raw.resolution_root() == execution_root.string(),
           "raw-YAML receiver changed the bytes, their digest or the execution root");
     {   // The sealed descriptor is also readable by path (what a child's `--config /proc/self/fd/N` opens): same bytes.

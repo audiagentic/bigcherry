@@ -1280,12 +1280,7 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
                       : "sealed Radiance YAML (matched native parser)");
     };
     if (native) {
-        // The executed manifest writes a depth and a RoPE scaling; the native settings the inspector now accepts as
-        // "engine decides" cannot be written into it. This refusal leaves with the manifest (RSC02).
-        if (!native->speculative_tokens)
-            throw std::runtime_error("native config admission: automatic speculative depth is not representable in the executed manifest; set num-speculative-tokens");
-        if (native->rope_scaling.empty())
-            throw std::runtime_error("native config admission: model-defined RoPE is not representable in the executed manifest; set rope-scaling");
+        // reconcile_native_config (session.cpp) refuses an unset depth or RoPE scaling before the resolver is reached.
         native_value("engine.port", native->port);
         native_value("service.max_context", native->max_context);
         native_value("service.max_sessions", native->max_sequences);
@@ -1294,7 +1289,7 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
         native_value("engine.placement", native->placement);
         native_value("engine.ngram_placement", native->ngram_placement);
         native_value("engine.kv_cache_dtype", native->kv_dtype);
-        native_value("engine.num_speculative_tokens", *native->speculative_tokens);
+        native_value("engine.num_speculative_tokens", native->speculative_tokens.value());
         native_value("engine.rope_scaling", native->rope_scaling);
         native_value("engine.prefix_resume", native->prefix_resume);
         if (native->prefix_cache) {
