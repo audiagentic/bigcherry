@@ -55,9 +55,12 @@ Stage 0 of the native RDNA3 migration brief (additive gfx12 body, distinct ident
 
 2026-11-25 first customer: the gfx1201 fused-tile package. Resolved on a branch by keeping the patch's shared-header edits, making the five libr3 header blocks find-1-or-0 with a paired identity block (the rewriter's paired-run rule keeps upstream drift failing), renaming the patch's own tile to the gfx12-suffixed names and wrapping the tile and its dispatch so the gfx11 build ignores them. Lane build on both architectures: gfx1100 records unchanged against the shipped release (0 added, 0 removed, 0 changed), gfx1201 adds 11 fused kernels with 0 spills and the 44 plane variants unchanged. The anchor gate (step 1) would have caught this before the lane build.
 
+Review (2026-11-25): the existing rewrite checker accepts an optional group when at least one block matches; exactly-one-of-pair and region-overlap checks are new tooling, not the existing check run earlier. Whole-file ownership is exclusive (a file owned by an overlay is edited by no patch or rewrite); region ownership applies only to unowned files. Assignment: bigcherry-2 builds gate 2a (syntax-only host and device passes for the affected units on both architectures, fixtures: duplicate type, repeated template default argument, device-only definition clash, and the undisguised gfx1201 collision) and gate 2b (real compile); the lead builds gate 1, the ownership records and the freshness dependency.
+
 ## Change Log
 
 - 2026-11-25T00:40:42.311181+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:22.694997+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:42:02.400302+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T00:52:35.276328+00:00 (updated-by): Updated: section:title, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-25T01:08:36.372161+00:00 (updated-by): Updated: section:notes

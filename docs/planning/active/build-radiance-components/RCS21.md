@@ -55,8 +55,11 @@ Depends on RCS19 (anchor gate, naming). Evidence for each neutral change: the fu
 
 Review (2026-11-25): the traits layer must resolve at compile time and inline (no runtime trait object, no conversion through a common accumulator layout); the fused tile is neutral algorithm and policy with architecture-specific data motion; keep the qualified certificate (computed trellis forms, L=16 and the one L=15, scale classes, single band) rather than a broader traits-derived rule; launch bounds, wave count and shared memory placement stay part of the qualified design.
 
+Review (2026-11-25): upstream-shaped patches that come out of an owned overlay are export artifacts for submission, not a second production transformation layer: the overlay stays the production source until upstream adopts the change (change-level adoption, RCS23).
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:32.230236+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:52:44.694931+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-25T01:08:41.319466+00:00 (updated-by): Updated: section:notes

@@ -55,8 +55,11 @@ Gated on RCS15. Not started until the baseline decides which tree survives.
 
 The row contract, not the translation unit, is the unit of runtime composition (design review 2026-11-25). The current libr3 link is built around a complete upstream row table with generated stubs and a registry that drops stubbed rows: that suits one incomplete monolith, not independent families. Per-family rollback is deferred until compatibility and cache invalidation are proven.
 
+Design review (2026-11-25): the engine's loader already composes several kernel libraries by hierarchy and supports override plugins (libbcgfx12 is one), so family plugins use that mechanism: RCS23's overlays are the first family plugins. What this item adds is the sealed manifest, complete callback ownership per family, stable row identities across libraries, the composition identity and the lifecycle policy; the base libraries keep their names. The row contract, not the translation unit, is the unit of runtime composition. Per-family rollback is deferred until compatibility and cache invalidation are proven.
+
 ## Change Log
 
 - 2026-11-25T00:40:56.481749+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:36.975982+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:52:49.430011+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-25T01:08:31.536022+00:00 (updated-by): Updated: section:notes
