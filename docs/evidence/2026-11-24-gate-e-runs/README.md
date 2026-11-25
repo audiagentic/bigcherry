@@ -1,4 +1,4 @@
-# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.14.1)
+# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.15.0)
 
 Gate E takes a published release, downloads its archive, checksum and receipt, installs it into an isolated root with the ROCm SDK (7.2.4),
 verifies the root, then starts, canaries and stops two production layouts under a short GPU lease: `flashnext-4gpu` and `qwen27b-tp3`.
@@ -28,6 +28,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.13.0 | d8caa2c1 | 195 s | 25 s | no kernel or engine change (the unit harness tool only) |
 | 2020.14.0 | d8caa2c1 | 194 s | 25 s | patch ownership metadata and naming lint only; same archive as 2020.13.0 |
 | 2020.14.1 | 86d08b45 | 248 s | 27 s | the fused single-band IQR tile as one arch-neutral copy (gfx1201 fused kernels renamed, records and output hashes identical); release build input tracking |
+| 2020.15.0 | cacec67c | 186 s | 26 s | the embedding gather as the first owned kernel of the bc-iqr overlay plugin (libbciqr listed first for libr3 layouts); output hashes and resource records equal to the base row |
 
 ## How to read this, and when Gate E need not be run again
 
