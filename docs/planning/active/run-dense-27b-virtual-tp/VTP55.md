@@ -69,6 +69,8 @@ Ceiling basis (2026-11-24): the 6.8 ms gap is a per-request model fitted from wh
 
 **2026-11-24 split verdict.** REJECT the waves-per-SIMD rule for the RDNA2 helper (bit-identical but slower in 26 of 54 cold cases; production never reaches the kernel). ACCEPT-WORK, ranked and not started: a fused front end for the helper request (the four route kernels and the activation preparation as one or two launches; about 0.5-0.7 ms a pass; risk: it changes the helper request path and needs byte identity on routes), after the larger items.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 3: do not repeat rejected waves-per-SIMD sweep; production GEMV/few-row kernels already spill-free. Only remaining measured exposed request front/launch-chain work; actual worker harness and lane/route/quant kernels; derive launch dependency ordering and preserve sequence/completion, route compaction and exact output. Historical 0.5–0.7 ms/pass estimate not guarantee. No extra persistent queue or busy wait; archive no-go. RAD25/28/29/30/54 conditional on current trace.
+
 ## Change Log
 
 - 2026-11-23T21:26:04.398434+00:00 (created-by): Created by agent
@@ -76,3 +78,4 @@ Ceiling basis (2026-11-24): the 6.8 ms gap is a per-request model fitted from wh
 - 2026-11-23T22:51:54.858796+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:11:26.103416+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:21:57.000342+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:52:03.109656+00:00 (updated-by): Updated: section:notes

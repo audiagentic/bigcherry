@@ -73,6 +73,8 @@ Hand-sweep data: VTP14.md (N2 rebalance, split sweep, N6). Profile tooling: ${BC
 
 2026-11-22 final BCOP authority reconciliation (BCOP32): The dense-model-specific hetero split recommendation is already owned by VTP32 and native tuning.tp_ownership, constrained by exact per-kind measured compute/collective wait, KV capacity and physical topology; do not adopt the superseded RPL01 generic scheduler or cross-engine autotuning module. Matched A/B evidence remains required before changing the physical split. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 4 after current collective/launch changes: solve per-kind ownership against exposed measured rank costs, actual short/long prefill and decode, KV capacity and group divisibility. Use native tuning.tp_ownership; no new scheduler. Rank order must match completed RSC05. Do not pick one ratio by nominal bandwidth.
+
 ## Results so far
 
 - MXFP4, `--profile-ops`, one stream depth 7: XTX compute 3468 ms against R9700 2263 ms at 6/6/12. Bandwidth weighting (more on the XTX) made the XTX +10% slower.
@@ -87,3 +89,4 @@ Hand-sweep data: VTP14.md (N2 rebalance, split sweep, N6). Profile tooling: ${BC
 - 2026-11-12T07:40:13.909697+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-14T06:59:34.819823+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T06:46:16.990165+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:52:17.718295+00:00 (updated-by): Updated: section:notes

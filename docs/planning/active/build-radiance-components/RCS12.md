@@ -67,6 +67,8 @@ Source: model-constants audit 2026-11-04 (55 findings; report and findings.json 
 
 CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RCS09,RCS13 These are uncompleted acceptance requirements, not new release/quality passes. Historical source plans remain available as superseded records. Keep legacy and blocked/no-route behavior fail closed; do not add parallel native control planes or tools.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 1 priority. Re-audit remaining C-class allowances by actual call path. v26 topology already exists; moe_lane_common.h kExpertWidth/kGateUpWidth have no other component references and old moe_remote_shm.h zero-arg byte-size helpers have no other component references; distinguish dead definitions/test fixtures from live consumers before rewriting. Use existing container/worker_bootstrap/v26 shape/worker_footprint/gemv_geometry and GPU-contract tests; prove two non-Flash-Next synthetic geometries and checked invalid counts/format paths only where coverage missing. No v27 or duplicate schema; remove/reclassify actual guard entries with source proof. Preserve actual native production helper cases; RAD19/RAD23 only remaining real capabilities.
+
 ## Execution staging (2026-11-13)
 
 Split out as separate items: GEMV K bound (step 3) -> [RCS13](../../completed/build-radiance-components/RCS13.md); remote-MoE topology bounds (audit C05) -> [RCS14](RCS14.md). RHP01/RHP02 carry the heat-feed work; the shm protocol is shared, so order matters:
@@ -97,3 +99,5 @@ Each stage ends with the standard decode and prefill A/B and KLD; nothing in a l
 - RV4514
 - 2026-11-22T10:47:24.514458+00:00 (updated-by): Updated: section:execution_staging_2026_11_13
 - RV4519
+- RV4677
+- 2026-11-25T18:50:05.922467+00:00 (updated-by): Updated: section:notes

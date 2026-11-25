@@ -103,6 +103,8 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 2026-11-22 new multirow C06 issue slice: the existing model-backed RadCtx/Attn graph now executes 16 and 64 rows for video and audio self-attention with real checkpoint weights, both 8/8/16 and 12/12/8 splits, host 13/13 CTests and opt-in mixed AQL in both gfx1100/gfx1100/gfx1201 device orders (all pass). Identical-order reruns and all three rank output replicas are bitwise stable. Cross-device-order 16-row BF16 outputs are identical; 64-row BF16 differences are repeatable: audio 351–360 / 131072 and video 796 / 262144; relative L2 0.01466%–0.01946%, first appearing after attention. No TP1 captured activation/reference, no approved quality tolerance or full production graph. Evidence: docs/evidence/2026-11-22-ltx02-multirow-issued/README.md. Continue pinned TP1 comparison and generic attention precision triage, fault/cancel and RUM14 resident loader integration. Do not remove TP3 serving refusal.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 6 separate capability programme after RUM14/RUM15; current checkpoint-backed 1/16/64 mixed-order self-attention issued, but TP1 oracle and fault/cancel, native resident loader and scale decision still open. Do not repeat declarations or reopen generic AQL. LTX03–05 then LTX08 release only after actual complete video/audio and quality, LTX06/07 optional. TP3 remains refused until LTX04.
+
 ## Change Log
 
 - 2026-11-22T03:06:26.779657+00:00 (created-by): Created by planning-audit
@@ -115,3 +117,4 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 - RV4467
 - 2026-11-22T09:18:12.361715+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T12:50:39.750825+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:52:55.652660+00:00 (updated-by): Updated: section:notes

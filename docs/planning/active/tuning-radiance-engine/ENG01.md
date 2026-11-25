@@ -57,6 +57,8 @@ A current production R9700-engine/two-XTX-helper per-op attribution and matched 
 
 Source: gateway prior-work audit 2026-11-10; my first attempts: runs/engine-profile-policy-on.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. First performance decision gate: overlay 2020.17.0 parity within 1.7% of old baseline; no current measured causal speedup. Profile existing installed release with matched unprofiled control, actual policy state (frozen if not qualified), rank/helper timing and exposed overlap. ENG03/VTP54 reuse same measurement, no independent repeated run. Quality/cancel under RAD10. Prioritize actual bottlenecks, not blanket kernel sweep.
+
 ## Change Log
 
 - 2026-11-10T13:11:33.523674+00:00 (created-by): Created by agent
@@ -65,3 +67,4 @@ Source: gateway prior-work audit 2026-11-10; my first attempts: runs/engine-prof
 
 - RV4235
 - 2026-11-20T02:19:41.977225+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-25T18:51:48.552284+00:00 (updated-by): Updated: section:notes
