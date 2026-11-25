@@ -361,7 +361,7 @@ A patch that edits a kernel translation unit (libr4d/<unit>.hip) lists it in pat
 
 A unit that another patch or the libr3 rewrite (components/libr3/native/<unit>.hip.rw) also edits must be recorded, with the reason, in engines/radiance/patches/unit-sharing.toml. Whether the regions overlap is gate 1's check: run bigcherry --engine radiance patch-compose-check --patch <id> before shipping.
 
-A type, constant, macro or function your edit introduces in libr4d/ carries the suffix pattern of naming-rules.toml (_<arch>_<patch-id>, or _<patch-id> for code that builds for every architecture, for example IqrFusedPre_rad0065); a libr3 rewrite's names end in _gfx11_r3. Names the engine needs from upstream keep their spelling. Do not add to naming-exceptions.toml: it lists names that predate the rule.
+A type, constant, macro or function your edit introduces in libr4d/ carries the suffix pattern of naming-rules.toml (_<arch>_<patch-id>, or _<patch-id> for code that builds for every architecture, for example FusedPre_rad0042); a libr3 rewrite's names end in _gfx11_r3. Names the engine needs from upstream keep their spelling. Do not add to naming-exceptions.toml: it lists names that predate the rule.
 
 Handoff rules
 

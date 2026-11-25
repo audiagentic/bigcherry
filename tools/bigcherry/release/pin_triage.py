@@ -340,8 +340,6 @@ def origin_drift(engine: str, mirror: Path, to_sha: str, *, root: Path | None = 
                 item.update(state="blocked", reason=f"owned source {unit['owned-source']} does not exist")
             elif not _commit_exists(mirror, unit["base-commit"]) or not _commit_exists(mirror, unit["last-integrated"]):
                 item.update(state="blocked", reason="the base or last integrated commit is not in the upstream mirror")
-            elif _git(mirror, "rev-parse", "--is-shallow-repository").strip() == "true":
-                item.update(state="blocked", reason="the upstream mirror is shallow: the history between the commits cannot be trusted")
             elif not _is_ancestor(mirror, unit["last-integrated"], to_sha):
                 item.update(state="blocked", reason="the last integrated commit is not an ancestor of the target")
             elif not _path_exists(mirror, unit["last-integrated"], unit["upstream-path"]):

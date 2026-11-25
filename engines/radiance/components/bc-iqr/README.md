@@ -25,4 +25,11 @@ architectures.
 - Second unit (S3b): the vocabulary-weighted head, `bc_iqr_vocab.hip` (row `bc_logits_gemm_vocab_iqr`): libr3's nine rewrite blocks
   are inlined under `#if defined(__gfx1100__)` with the origin's text in the `#else`, and libr3's `r3_compat.h` is included for the gfx1100
   device pass. The scratch hook is the unit's own (it lived in the unit libr3 no longer builds).
-- Not in this component yet: the `r4d_gemm_iqr` family (S3c).
+- Third unit (S3c): the IQR GEMM family, `bc_iqr_gemm.hip` (+ parts 1 to 3) with rows `bc_gemm_iqr_nt_m64`, `bc_gemm_iqr_gated`,
+  `bc_gemm_iqr_tiled`, including the single-band fused prefill tile (the text of the retired patch rad0065). It includes an owned
+  extract of the shared 8a8 prefill header, `bc_gemm_8a8_prefill.h` (upstream's text with rad0061's and rad0065's header edits, plus
+  libr3's gfx11 blocks; strategy extracted-family in `origins.toml`). Kernel bodies differ per target under `__gfx1100__`; the host
+  half is compiled once, so the two routes only gfx1100 had (the rotated 4-bit table slice route and its scratch rule) are chosen at
+  run time from the card. The three host helpers the source asks of upstream's fp8a8 unit (split-K counter, narrow tile geometry)
+  are forwarded to the base of the card; a launch without them declines before any GPU work. No hand-back to the base for these rows:
+  the source is the base's own code, so a form it declines the base declines too.

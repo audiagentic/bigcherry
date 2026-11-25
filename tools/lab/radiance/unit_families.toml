@@ -54,3 +54,21 @@ kernels = "vocab"
 cases-env = "UH_VOCAB_CASES"
 # "M:K:rows" (one class of 4-bit codes) besides the case's own tables: a prefill-sized and a decode-sized head
 cases = "8:5120:4096,64:5120:2048"
+
+# The IQR GEMM family: the three rows of the unit r4d_gemm_iqr and its fused single-band tile. The base the overlay runs over carries
+# the int8 reference rows (and the counters and geometry helpers the unit asks of its base) but not the IQR units; the case's
+# hashes are the family's (trunk shapes at row counts around the tile edges, tails, ragged N), and the replay is the family's
+# for the rows below (single-band 65 to 128, multi-band, the 16 and 64-token tiles).
+[overlay.iqr_gemm]
+component = "bc-iqr"
+plugin = "libbciqr"
+case = "gemm_iqr_tiled"
+row-prefix = "bc_"
+kernels = "."
+base-units = ["r4d_gemm_fp8a8", "r4d_gemm_w8a8_tiled", "r4d_keyed"]
+hash-family = "iqr"
+rounds = 1
+replay-family = "iqr"
+replay-bits = [4, 7]
+replay-rows = [1, 16, 64, 65, 96, 128, 129, 256, 512, 2048]
+replay-shapes = [[13312, 5120], [6144, 5120], [5120, 2304]]

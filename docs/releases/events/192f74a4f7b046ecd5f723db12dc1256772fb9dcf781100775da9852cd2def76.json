@@ -1,0 +1,17 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261125_141112_the-iqr-gemm-family-including_5609",
+  "files": [
+    "engines/radiance/patches/archive/rad0065_iqr_fused_gfx1201",
+    "engines/radiance/patches/archive/ARCHIVE.md",
+    "engines/radiance/recipes.toml",
+    "engines/radiance/components/bc-iqr"
+  ],
+  "plan-item-ids": [
+    "RCS23"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0065_iqr_fused_gfx1201 archived unchanged (superseded, was validated): the single-band fused IQR prefill tile lives once, in the owned bc-iqr overlay (bc_iqr_gemm.hip with bc_gemm_8a8_prefill.h); libr3 stops building r4d_gemm_iqr and its parts; every layout that serves an IQR container or runs a libr3 rank lists libbciqr first.",
+  "timestamp-utc": "2026-11-25T14:11:12.867299Z",
+  "user-summary-candidate": "The IQR GEMM family, including the fused single-band prefill tile, now ships in the bc-iqr overlay plugin; the separate rad0065 patch is retired."
+}

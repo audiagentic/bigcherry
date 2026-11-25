@@ -339,17 +339,7 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "kIqrTokenTile"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
 name = "kLiveRegs"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "kNative"
 reason = "predates the naming rule"
 
 [[exception]]

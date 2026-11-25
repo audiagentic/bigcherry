@@ -25,3 +25,31 @@ base-rows = ["logits_gemm_vocab_iqr"]
 overlay-rows = ["bc_logits_gemm_vocab_iqr"]
 architectures = ["gfx1100", "gfx1201"]
 absorbed-rewrites = ["engines/radiance/components/libr3/native-shelved/r4d_logits_vocab.hip.rw"]
+
+[[unit]]
+name = "r4d_gemm_iqr"
+upstream-path = "libr4d/r4d_gemm_iqr.hip"
+owned-source = "bc_iqr_gemm.hip"
+base-commit = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+last-integrated = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+strategy = "whole-unit"
+# the three part files (bc_iqr_gemm_p1.hip .. p3) are the origin's r4d_gemm_iqr_p1 .. p3 (five-line wrappers); the single-band fused tile
+# is the text of the retired patch rad0065 (archived), so the origin's text here is upstream's plus that tile
+base-rows = ["gemm_iqr_nt_m64", "gemm_iqr_gated", "gemm_iqr_tiled"]
+overlay-rows = ["bc_gemm_iqr_nt_m64", "bc_gemm_iqr_gated", "bc_gemm_iqr_tiled"]
+architectures = ["gfx1100", "gfx1201"]
+absorbed-rewrites = ["engines/radiance/components/libr3/native-shelved/r4d_gemm_iqr.hip.rw"]
+
+# The header the unit includes is shared with the int8 rows, so it is not owned whole: a copy extracted for this family (upstream's text
+# with rad0061's f32-scale edits and the retired rad0065's Fused edits, plus libr3's gfx11 blocks), reviewed structurally at a bump.
+[[unit]]
+name = "r4d_gemm_8a8_prefill.h"
+upstream-path = "libr4d/r4d_gemm_8a8_prefill.h"
+owned-source = "bc_gemm_8a8_prefill.h"
+base-commit = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+last-integrated = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+strategy = "extracted-family"
+base-rows = []
+overlay-rows = []
+architectures = ["gfx1100", "gfx1201"]
+absorbed-rewrites = []

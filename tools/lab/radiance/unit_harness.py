@@ -164,6 +164,11 @@ HASH_PRINT = ('    {\n'
               '        uint64_t uh = 1469598103934665603ull;\n'
               '        for (uint16_t v : y) { uh ^= v; uh *= 1099511628211ull; }\n'
               '        std::printf("UNITHASH %s %016llx\\n", nm, (unsigned long long)uh);\n'
+              '        {   /* a plain bf16 table is not an IQR weight: the row must refuse it as the base does */\n'
+              '            Planes pp; pp.enc = rad_enc_plain(RAD_BF16); pp.size(256, 256);\n'
+              '            std::vector<uint8_t> po; RadLayout pl2{};\n'
+              '            std::printf("UNITLAYOUT plain_bf16 rc=%d\\n", stored(r, lp, 2, pp, { "codes" }, &po, &pl2));\n'
+              '        }\n'
               '    }\n')
 CASES_ANCHOR = "                iqr_gemm_case(pl, f, 300, 512, 1024);\n"
 CASES_BLOCK = ('                if (const char* uh_cases = std::getenv("UH_HASH_CASES"); uh_cases && f.kind == 6 && (f.B == 6 || f.B == 7))\n'
@@ -184,12 +189,29 @@ SYM_TOLERANT = ('    if ((e || !p) && std::getenv("UH_TOLERATE_ABSENT")) { *out 
 
 # Overlay checks: a row of an overlay plugin is found by its prefixed name (UH_ROW_PREFIX), the embed case prints a hash of
 # its output and, with UH_TIME_ITERS, a cold median launch time; UH_EMBED_CASES adds "rows:dim" tables to the case.
-FIND_ANCHOR = "static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
-FIND_PREFIX = ('    if (const char* uh_pre = std::getenv("UH_ROW_PREFIX")) {\n'
-               '        const std::string uh_name = std::string(uh_pre) + name;\n'
-               '        for (int k = 0; k < pl.kernel_count(); ++k)\n'
-               '            if (uh_name == pl.kernel_at(k)->name) return pl.kernel_at(k);\n'
-               '    }\n')
+FIND_ANCHOR = ("static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
+               "    for (int k = 0; k < pl.kernel_count(); ++k)\n"
+               "        if (!std::strcmp(pl.kernel_at(k)->name, name)) return pl.kernel_at(k);\n"
+               "    return nullptr;\n"
+               "}\n")
+FIND_NEW = ("static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
+            "    if (const char* uh_pre = std::getenv(\"UH_ROW_PREFIX\")) {\n"
+            "        const std::string uh_name = std::string(uh_pre) + name;\n"
+            "        for (int k = 0; k < pl.kernel_count(); ++k)\n"
+            "            if (uh_name == pl.kernel_at(k)->name) return pl.kernel_at(k);\n"
+            "    }\n"
+            "    for (int k = 0; k < pl.kernel_count(); ++k)\n"
+            "        if (!std::strcmp(pl.kernel_at(k)->name, name)) return pl.kernel_at(k);\n"
+            "    /* an overlay run: the rows the overlay does not carry (the int8 reference rows) come from the base plugin */\n"
+            "    if (const char* uh_base = std::getenv(\"UH_BASE_PLUGIN\")) {\n"
+            "        static Plugin uh_pl; static bool uh_tried = false, uh_ok = false;\n"
+            "        if (!uh_tried) { uh_tried = true; uh_ok = load(&uh_pl, uh_base); }\n"
+            "        if (uh_ok)\n"
+            "            for (int k = 0; k < uh_pl.kernel_count(); ++k)\n"
+            "                if (!std::strcmp(uh_pl.kernel_at(k)->name, name)) return uh_pl.kernel_at(k);\n"
+            "    }\n"
+            "    return nullptr;\n"
+            "}\n")
 EMBED_ANCHOR = ("    std::vector<uint16_t> got((size_t)(M * dim)), want((size_t)dim);\n"
                 "    st_memcpy(got.data(), d_x, got.size() * 2, hipMemcpyDeviceToHost);\n")
 EMBED_PRINT = ('    {\n'
@@ -287,7 +309,7 @@ def inject_selftest(text: str) -> str:
     for anchor in (FIND_ANCHOR, EMBED_ANCHOR, EMBED_CASES_ANCHOR, VOCAB_ANCHOR, VOCAB_CASES_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError(f"the selftest changed: the harness's edit anchor is not found exactly once ({anchor.splitlines()[0].strip()!r})")
-    text = text.replace(FIND_ANCHOR, FIND_ANCHOR + FIND_PREFIX, 1)
+    text = text.replace(FIND_ANCHOR, FIND_NEW, 1)
     text = text.replace(EMBED_ANCHOR, EMBED_ANCHOR + EMBED_PRINT, 1)
     text = text.replace(EMBED_CASES_ANCHOR, EMBED_CASES_ANCHOR + EMBED_CASES_BLOCK, 1)
     text = text.replace(VOCAB_ANCHOR, VOCAB_ANCHOR + VOCAB_PRINT, 1)
@@ -531,10 +553,11 @@ def estimate(windows: list[float], drop_first: bool = False) -> float:
     return min(windows)
 
 
-def point_time(binary: Path, plugin: Path, arch: str, device: str, spec: dict, point: dict, row: str, iters: int) -> float:
+def point_time(binary: Path, plugin: Path, arch: str, device: str, spec: dict, point: dict, row: str, iters: int,
+               extra_env: dict | None = None) -> float:
     args = [a.format(**point, iters=iters) for a in spec["command"]]
     label = spec["label"].format(**point)
-    text = run_selftest(binary, plugin, args, selftest_env(arch, device, {"R4D_PERF_ONLY": row}), timeout=900)
+    text = run_selftest(binary, plugin, args, selftest_env(arch, device, {"R4D_PERF_ONLY": row, **(extra_env or {})}), timeout=900)
     values = [float(m.group(1)) for line in text.splitlines() if label in line for m in re.finditer(r"(\d+(?:\.\d+)?)\s+us", line)]
     if not values:
         raise HarnessError(f"no time for {label} {point}: {text[-300:]}")
@@ -542,7 +565,7 @@ def point_time(binary: Path, plugin: Path, arch: str, device: str, spec: dict, p
 
 
 def replay_point(binary: Path, ref: Path, cand: Path, arch: str, device: str, spec: dict, point: dict, row: str,
-                 *, iters: int, tol: float, max_windows: int) -> dict:
+                 *, iters: int, tol: float, max_windows: int, arm_env: dict | None = None) -> dict:
     """ABBA windows, each plugin in its own process, until each arm's last two windows agree (R9700: the first window
     is the power ramp and is dropped)."""
     windows = {"ref": [], "cand": []}
@@ -553,7 +576,7 @@ def replay_point(binary: Path, ref: Path, cand: Path, arch: str, device: str, sp
     rounds = 0
     while not done and rounds < max_windows:
         for arm in order[:2] if rounds % 2 == 0 else order[2:]:
-            windows[arm].append(point_time(binary, plugins[arm], arch, device, spec, point, row, iters))
+            windows[arm].append(point_time(binary, plugins[arm], arch, device, spec, point, row, iters, (arm_env or {}).get(arm)))
         rounds += 1
         done = all(converged(w, tol) for w in windows.values())
     ref_us, cand_us = estimate(windows["ref"], drop_first), estimate(windows["cand"], drop_first)
@@ -700,7 +723,8 @@ def stage_overlay_build(args) -> Path:
     # The base the overlay runs over is a minimal build of the same source (one unit; every other row's entry point is a stub, the
     # embed launch included), so a launch that reaches the base's kernel fails and a hash that matches the real base's proves
     # that the overlay's own kernel ran.
-    minimal = build_plugin(args.arch, tree, ["r4d_prefetch"], out, ref_plugin, Path(args.libr3) if args.libr3 else None)
+    minimal = build_plugin(args.arch, tree, list(ov.get("base-units", ["r4d_prefetch"])), out, ref_plugin,
+                           Path(args.libr3) if args.libr3 else None)
     binary = selftest_binary(args.arch, tree, out, Path(args.libr3) if args.libr3 else None)
     so = build_overlay(tree, ROOT / "engines" / ENGINE / "components" / ov["component"], ov["plugin"], out)
     stage = out / "stage"
@@ -711,8 +735,8 @@ def stage_overlay_build(args) -> Path:
     pattern = re.compile(ov["kernels"])
     ref = {k: v for k, v in kernel_records(ref_plugin, args.arch).items() if pattern.search(k)}
     cand = {k: v for k, v in kernel_records(staged, args.arch).items() if pattern.search(k)}
-    diff = diff_records(ref, cand, pattern)
-    state = {"overlay": args.overlay, "arch": args.arch, "plugin": str(staged), "selftest": str(binary), "reference_plugin": str(ref_plugin),
+    diff = diff_records(ref, cand, None)   # what the base has beyond the overlay is not "removed": the overlay owns a part
+    state = {"overlay": args.overlay, "arch": args.arch, "plugin": str(staged), "base_stage": str(stage / PLUGIN[args.arch]), "selftest": str(binary), "reference_plugin": str(ref_plugin),
              "release": ref_plugin.parts[-4], "resources": diff, "kernels_compared": len(cand), "build_seconds": round(time.monotonic() - started, 1)}
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built overlay {ov['plugin']} for {args.arch}: {len(cand)} kernels matching {ov['kernels']!r}; against {state['release']}: "
@@ -722,23 +746,30 @@ def stage_overlay_build(args) -> Path:
     return out
 
 
-def stage_overlay_measure(out: Path, rounds: int = 4) -> dict:
+def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: bool = False, rows: list[int] | None = None,
+                          bits: list[int] | None = None, shape: int | None = None) -> dict:
     state = json.loads((out / "build.json").read_text(encoding="utf-8"))
     ov = overlays()[state["overlay"]]
+    rounds = rounds or ov.get("rounds", 4)
     arch = state["arch"]
     device = device_index(arch)
     binary, cand_plugin, ref_plugin = Path(state["selftest"]), Path(state["plugin"]), Path(state["reference_plugin"])
-    env_base = {ov.get("cases-env", "UH_EMBED_CASES"): ov["cases"], "UH_TIME_ITERS": "31"}
-    arms = {"ref": (ref_plugin, {}), "cand": (cand_plugin, {"UH_ROW_PREFIX": ov["row-prefix"]})}
+    env_base: dict = {"UH_TIME_ITERS": "31"} if "cases" in ov else {}
+    if "cases" in ov:
+        env_base[ov.get("cases-env", "UH_EMBED_CASES")] = ov["cases"]
+    if "hash-family" in ov:
+        env_base["UH_HASH_CASES"] = hash_cases(families()[ov["hash-family"]]["hash"])
+    cand_env = {"UH_ROW_PREFIX": ov["row-prefix"], "UH_BASE_PLUGIN": state["base_stage"]}
+    arms = {"ref": (ref_plugin, {}), "cand": (cand_plugin, cand_env)}
     texts: dict[str, list[str]] = {"ref": [], "cand": []}
-    for r in range(rounds):
+    for r in range(0 if replay_only else rounds):
         for arm in (("ref", "cand") if r % 2 == 0 else ("cand", "ref")):
             plugin, extra = arms[arm]
-            texts[arm].append(run_selftest(binary, plugin, ["--case", ov["case"]], selftest_env(arch, device, {**env_base, **extra}), timeout=3600))
+            texts[arm].append(run_selftest(binary, plugin, ["--case", ov["case"]], selftest_env(arch, device, {**env_base, **extra}), timeout=3 * 3600))
     (out / "overlay-ref.log").write_text("\n".join(texts["ref"]), encoding="utf-8")
     (out / "overlay-cand.log").write_text("\n".join(texts["cand"]), encoding="utf-8")
-    ref_hashes, ref_fail = parse_hashes(texts["ref"][0])
-    cand_hashes, cand_fail = parse_hashes(texts["cand"][0])
+    ref_hashes, ref_fail = parse_hashes(texts["ref"][0] if texts["ref"] else "")
+    cand_hashes, cand_fail = parse_hashes(texts["cand"][0] if texts["cand"] else "")
     times: dict[str, dict[str, float]] = {"ref": {}, "cand": {}}
     for arm in times:
         for text in texts[arm]:
@@ -746,16 +777,32 @@ def stage_overlay_measure(out: Path, rounds: int = 4) -> dict:
                 times[arm][m.group(1)] = min(times[arm].get(m.group(1), 1e18), float(m.group(2)))
     timing = [{"case": name, "ref_us": times["ref"][name], "cand_us": times["cand"].get(name), "ratio": round(times["cand"][name] / times["ref"][name], 4)}
               for name in sorted(times["ref"]) if name in times["cand"]]
-    layout = {arm: sorted(set(re.findall(r"^UNITLAYOUT plain_bf16 rc=(-?\d+)$", texts[arm][0], re.M))) for arm in ("ref", "cand")}
+    layout = {arm: sorted(set(re.findall(r"^UNITLAYOUT plain_bf16 rc=(-?\d+)$", texts[arm][0] if texts[arm] else "", re.M))) for arm in ("ref", "cand")}
     result = {"arch": arch, "plain_bf16_layout_rc": layout, "hash": compare_hashes(ref_hashes, cand_hashes),
-              "selftest_failures": {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}, "timing": timing}
-    (out / "measure.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+              "selftest_failures": {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}, "timing": timing, "replay": []}
     h = result["hash"]
     print(f"overlay hash: {h['compared']} compared, {len(h['differ'])} differ, {len(h['missing_in_candidate'])} missing; selftest failures: "
           f"ref {len(ref_fail)}, overlay {len(cand_fail)}")
     print(f"overlay plain bf16 table: layout rc base {layout['ref']}, overlay {layout['cand']} (must agree and refuse)")
     for t in timing:
         print(f"overlay timing {t['case']}: {t['ref_us']} -> {t['cand_us']} us ({t['ratio']})")
+    if "replay-family" in ov:
+        spec = dict(families()[ov["replay-family"]]["replay"])
+        spec["shapes"] = ov.get("replay-shapes", spec["shapes"])
+        if shape is not None:
+            spec["shapes"] = [spec["shapes"][shape]]
+        for row in spec["rows"]:
+            for point in replay_points(spec, bits or ov.get("replay-bits"), rows or ov.get("replay-rows")):
+                # --perfiqr times the 16/64-token row up to 64 rows and the prefill row above (its label differs)
+                small = point["M"] <= 64
+                got = replay_point(binary, ref_plugin, cand_plugin, arch, device, {**spec, "label": "iqr k{B} m64" if small else spec["label"]},
+                                   point, "gemm_iqr_nt_m64" if small else row, iters=15, tol=0.015, max_windows=10,
+                                   arm_env={"cand": cand_env})
+                got["row"], got["verdict"] = ("gemm_iqr_nt_m64" if small else row), classify(got["ratio"], 0.04)
+                result["replay"].append(got)
+                print(f"overlay replay {got['row']} N={point['N']} K={point['K']} M={point['M']} B={point['B']}: {got['ref_us']} -> {got['cand_us']} us "
+                      f"({got['ratio']}) {got['verdict']}{'' if got['converged'] else ' UNCONVERGED'}", flush=True)
+    (out / ("measure-replay.json" if replay_only else "measure.json")).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
 
@@ -791,7 +838,11 @@ def main(argv: list[str] | None = None) -> int:
     ob.add_argument("--overlay", required=True, help="an [overlay.*] of unit_families.toml")
     om = commands.add_parser("overlay-measure", help="hash and cold timing of the overlay row against the base row (holds the card: run under the gpu lease)")
     om.add_argument("out")
-    om.add_argument("--rounds", type=int, default=4)
+    om.add_argument("--replay-only", action="store_true", help="skip the selftest rounds (rerun replay points)")
+    om.add_argument("--rows", type=int, nargs="+", help="row counts to replay (default: the overlay's)")
+    om.add_argument("--bits", type=int, nargs="+", help="code widths to replay (default: the overlay's)")
+    om.add_argument("--shape", type=int, help="index of the one replay shape to use")
+    om.add_argument("--rounds", type=int, default=None, help="selftest rounds per arm (default: the overlay's, else 4)")
     run_p = commands.add_parser("run", help="build, resource check, then hash and replay under the gpu lease")
     add_build_arguments(run_p)
     run_p.add_argument("--ttl", default="40m", help="gpu lease ttl, one unit (default 40m)")
@@ -806,11 +857,18 @@ def main(argv: list[str] | None = None) -> int:
             stage_overlay_build(args)
             return 0
         if args.command == "overlay-measure":
-            result = stage_overlay_measure(Path(args.out), args.rounds)
+            result = stage_overlay_measure(Path(args.out), args.rounds, args.replay_only, args.rows, args.bits, args.shape)
             h = result["hash"]
+            if args.replay_only:
+                bad = [r for r in result["replay"] if r["verdict"] == "regress"]
+                print("unit harness overlay replay: " + ("PASS" if not bad else "FAIL"))
+                return 0 if not bad else 1
             lay = result["plain_bf16_layout_rc"]
+            regress = [r for r in result["replay"] if r["verdict"] == "regress"]
+            for r in regress:
+                print(f"  REGRESS {r['row']} N={r['N']} K={r['K']} M={r['M']} B={r['B']}: {r['ref_us']} -> {r['cand_us']} us ({r['ratio']})")
             ok = (not h["differ"] and not h["missing_in_candidate"] and not result["selftest_failures"]["cand"] and h["compared"] > 0
-                  and lay["ref"] == lay["cand"] and lay["cand"] and lay["cand"] != ["0"])
+                  and lay["ref"] == lay["cand"] and lay["cand"] and lay["cand"] != ["0"] and not regress)
             print("unit harness overlay: " + ("PASS" if ok else "FAIL"))
             return 0 if ok else 1
         if args.command == "measure":

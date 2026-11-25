@@ -3,6 +3,10 @@
 # First list: tools/lab/radiance/rdna3-survey.sh, radiance 1.3.0 (89cee7c), 2026-10-09.
 
 # (none at present besides the entries below)
+r4d_gemm_iqr  # owned by the bc-iqr overlay (RCS23 S3c, with _p1, _p2, _p3): libbciqr supplies gemm_iqr_nt_m64, gemm_iqr_gated and gemm_iqr_tiled on gfx1100; its rewrite is archived in native-shelved/
+r4d_gemm_iqr_p1
+r4d_gemm_iqr_p2
+r4d_gemm_iqr_p3
 r4d_logits_vocab  # owned by the bc-iqr overlay (RCS23 S3b): libbciqr supplies logits_gemm_vocab_iqr on gfx1100; its rewrite is archived in native-shelved/
 r4d_iqr_embed  # owned by the bc-iqr overlay (RCS23 S3a): libbciqr supplies embed_lookup_iqr on gfx1100; its rewrite is archived in native-shelved/
 #
