@@ -375,6 +375,29 @@ Then use `patch-rebase-check` and the workflow in
 or a successful import as a substitute for the real apply/build/contract
 checks.
 
+## Composition check: does the patch still build with everything else?
+
+Matching its anchors once is not enough: two edits to one shared source can both apply and still define a type twice,
+repeat a template default or clash in device code only, and a component that rewrites the same text (libr3 rewrites
+libr4d for gfx11) loses its own anchors. `bigcherry --engine radiance patch-compose-check` materialises one composition
+(the production source plus `--patch ID` extras, `--experiment NAME` or `--source NAME` to pick the base) at the pinned
+revision, once, and runs on that tree:
+
+- **gate 1**: the components' rewrite check (`r3_rewrite.py --check`); a failing block is reported as
+  `NATIVE_REWRITE_DRIFT` with the component, file and block, in about two seconds;
+- **gate 2a** (default `--compile syntax`): a syntax-only compile of every libr4d unit the patches edit (directly or
+  through a local include), host pass and device pass, for gfx1201 from libr4d itself and for gfx1100 from libr3's
+  rewritten copy; a failure is reported as `COMPOSITION_COMPILE_FAILED` with the compiler's first errors; about a second
+  a pass;
+- **gate 2b** (`--compile full`): the real compile of the same units with code generation, no link; minutes.
+
+Pass `--only-patch ID` to compile only the units the patch under review touches while the whole composition stays
+applied. The command needs the pinned vendor checkout and the ROCm compiler (`ROCM_PATH`); without the compiler the
+compile gates report `SKIPPED`, never a pass. Edits to arch plugins (`arch/...`) and other non-libr4d files have no unit
+here and are covered by the lane build. `tools/tests/patch/test_compose_check.py` holds the failing fixtures (duplicate
+type, repeated template default, a device-only clash, a type the patch and libr3's rewrite both define, a removed
+rewrite anchor).
+
 ## Legacy flat-to-package migration
 
 Do this only when migrating an existing compatibility fixture; new patches
