@@ -59,6 +59,8 @@ Measured context: VTP56 notes. Kernel work follows the composition rules (RCS19 
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 4 conditional only: 64x256 tall tile rejected (4–6% slower largest shapes); do not rerun. Current IQR GEMM owner bc-iqr since #1603, no new libr3 rewrite. Only lower per-weight decode cost or feasible sharing with bounded traffic/resource proof; test actual unit/row and retain archived candidate. No requirement for every historical item before serving promotion.
 
+2026-11-26 roadmap reconciliation at 165d6f724: Absorb VTP56 residual: single-band fused tile qualified both arch and integrated via bc-iqr; original byte/resource/replay/TTFT gates retained for actually changed cases, no need to repeat shipped forms. Multi-band 64x256 candidate already rejected/archived; only lower per-weight decode cost or feasible sharing if measured exposed, justify remaining spills with resource records. Preserve ragged N, chained/plain, both trellis kinds and unaffected controls for changes. VTP57 owns remaining decode/vocabulary issues.
+
 ## Change Log
 
 - 2026-11-25T00:42:24.671410+00:00 (created-by): Created by lead
@@ -66,3 +68,4 @@ Measured context: VTP56 notes. Kernel work follows the composition rules (RCS19 
 - 2026-11-25T02:12:40.230589+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:07:56.842281+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T18:52:25.163112+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T19:02:06.096040+00:00 (updated-by): Updated: section:notes

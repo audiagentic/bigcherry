@@ -97,6 +97,8 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 2: do not reimplement native resource admission, v26 or policy calibration already delivered. Use ENG01/ENG03 and RHP09/16 actual current cost/eligibility; prioritize capacity versus actual_rows/lane and crossover/MTP/prefill budget based on exposed path. First start bounded, same existing cache/typed YAML/receipt, incompatible evidence observe/remeasure; record defaults and override reason. No new autotuner, full sweep or blanket delay to unrelated performance work.
 
+2026-11-26 roadmap reconciliation at 165d6f724: VTP34 C09 rad0008 RT=128 is previously promoted with actual evidence and existing typed setting; do not revert to 256 blindly. Derive/change only if measured value/shape warrants; preserve typed native YAML, no getenv knob. C14 existing calibration data and actual eligibility under RHP16; only authored helper policy migrates with RSC06. No extra default sweep.
+
 ## Ledger-events
 
 - chg_20261102_002943_planning-every-resource-budge_5643
@@ -106,3 +108,4 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 - 2026-11-02T00:29:49.283929+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:11:48.561589+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T18:51:25.764875+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:03:27.421283+00:00 (updated-by): Updated: section:notes

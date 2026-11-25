@@ -63,6 +63,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 2026-11-25 add dense TP3 2020.11.4 and current-build stock/controlled phases to baseline. Old four-GPU MoE results are separate cohorts. Owner trial power windows mix decode/prefill; do not divide by one phase throughput to infer energy. Measure per BDF, CPU RAPL and wall meter if available; phase markers, cache/warmup/thermal conditions, actual settings and sensor identity. Record unloaded, HIP-resident, loaded idle and post-request idle without intrusive polling, all cards including unused 6900 (observation only). PWR10 references this protocol.
 
+2026-11-26 roadmap reconciliation at 165d6f724: External reference: Sweet-Spot Tuner v3.5.15, commit a2a31ce63cc1d40af72997de621115eaa2dcd54d (https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15); see docs/reference/power-tuning-evidence-2026-11.md, hot AI qualification section. For clock/voltage comparisons record stock before and after, same workload, warmed thermal envelope/normal fan policy, hotspot and memory temperature if readable, actual clocks and throttle; integrate synchronized GPU+CPU energy by phase and token count. Include cold-to-boost and warm idle-to-burst transitions, not just sustained GPU saturation. Do not force RX9070-specific 70–90 C range or assume 94 C limit for all boards; use supported device limits, observed safe operating envelope, and explicit bounded soak objective; thermal stop or missing required telemetry is inconclusive, never instability/pass. No extra matrix for already qualified stock and cap-only.
+
 ## Change Log
 
 - 2026-10-27T02:15:39.545328+00:00 (created-by): Created by agent
@@ -74,3 +76,4 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 - 2026-11-22T11:48:53.486970+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - RV4582
 - 2026-11-25T01:05:11.696313+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T19:01:36.788268+00:00 (updated-by): Updated: section:notes

@@ -2,7 +2,7 @@
 id: VTP56
 order: 0
 plan: run-dense-27b-virtual-tp
-state: pending
+state: superseded
 created-at: '2026-11-24T02:28:07.143766+00:00'
 breadth: ''
 skill: advanced
@@ -64,8 +64,12 @@ Medium. The risk is occupancy: shrinking registers can cost a wave; the constexp
 
 2026-11-25 status. Shipped (radiance 2020.11.1 to 2020.11.4): the 17 to 64 row wide tile native accumulate-once (560 of 560 replay points faster, 79 to 85 percent less time); the fused single-band IQR prefill tile for gfx1100 (65 to 128 rows, byte identical, ratio 0.89 mean, first token at 96 and 120 tokens about 8 percent faster in serving); the chained NT3/NT4 16-row tiles (ratio 0.74 to 0.82); the NT4 head prefetch; the rotated embedding wave-local butterflies. The gfx1201 fused tile is gated (all 24 single-band points faster, 0.48 to 0.86 of shipped, resource and bytes clean) and in integration (RCS19). Rejected with evidence and archived: the spin-free separate plane producer (15 win, 20 regress, 29 neutral), the half-height ragged tail band (24 of 30 tail points regress, one shape wins 5 percent), the fused gate/up band at 17 to 32 rows, the transposed-product tile, the deeper M=1 GEMV pipeline, head NT3 shorter prefetch. Findings: the first-token gap to the int8 container is about 20 percent at one band after the fused tile (decode cost itself), 1.2 to 1.26 times above one band; each extra 128-row band costs a near-constant pass whatever its valid rows (a 20 ms step between 128 and 129 prompt tokens on both containers, kernel-level, not a regression); the R9700 low-power clock ramp inflates cold timings under 30 launches (use 50 or more launches and the window-agreement rule). Remaining: the same fused tile for two bands (129 to 256 rows) and the cost of decoding per weight; first-token comparisons must state the exact prompt token count.
 
+2026-11-26 roadmap reconciliation at 165d6f724: Superseded: shipped 17–64 native accumulation, gfx1100/gfx1201 fused single-band now in bc-iqr (#1603, #1611); negative candidates archived and notes retained. Remaining per-weight decode/multi-band and affected prefill acceptance transferred to VTP58; remaining head/decode to VTP57. Do not falsely mark all spills eliminated or repeat past gates. No unmerged code removed.
+
 ## Change Log
 
 - 2026-11-24T02:28:07.143766+00:00 (created-by): Created by agent
 - 2026-11-24T02:28:29.229864+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:42:19.882513+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:04:01.808043+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:04:06.571250+00:00 (state-transition): State: pending → superseded

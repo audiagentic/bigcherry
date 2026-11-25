@@ -2,7 +2,7 @@
 id: RCS14
 order: 0
 plan: build-radiance-components
-state: pending
+state: superseded
 created-at: '2026-11-13T03:53:18.506339+00:00'
 breadth: ''
 skill: advanced
@@ -63,6 +63,8 @@ CONSOLIDATION 2026-11-22 NATIVE-OWNERS: RCS13 C02 GEMV bound and dispatch correc
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Original v26 migration delivered (#1014, docs/evidence/2026-11-20-branch-retirement/README.md). Current moe_remote_shm.h kVersion=26, Topology{helpers,ranks}, checked counts; moe_remote_topology_v26_test.cpp:349–354 already covers 1x3 and 2x3; component CMake registers topology, GPU contract, worker topology and exactly-once tests. Do not reimplement protocol or invent v27. Reconcile remaining acceptance and actual card/role coverage after RCS12 source audit, reuse existing proof, close only when verified; keep unsupported combinations typed/refused. This supersedes stale dependency on implementing original v25->26 change.
 
+2026-11-26 roadmap reconciliation at 165d6f724: Superseded by RCS12 and RAD23 (all residual typed topology, card-free, invalid/old-segment and actual role/layout output/KLD/speed acceptance retained under receivers). Native v26 migration #1014 is already delivered; current source/tests explicitly cover (1,3)/(2,3); no false claim all hardware acceptance complete. Do not reopen v25/26 implementation.
+
 ## Change Log
 
 - 2026-11-13T03:53:18.506339+00:00 (created-by): Created by bigcherry-1
@@ -74,3 +76,5 @@ CONSOLIDATION 2026-11-22 NATIVE-OWNERS: RCS13 C02 GEMV bound and dispatch correc
 - 2026-11-22T10:37:38.100788+00:00 (updated-by): Updated: section:notes
 - RV4678
 - 2026-11-25T18:50:52.705328+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:03:49.547377+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:03:54.246214+00:00 (state-transition): State: pending → superseded

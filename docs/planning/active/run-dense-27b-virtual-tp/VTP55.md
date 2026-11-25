@@ -11,7 +11,7 @@ work: M
 priority: P1
 ---
 
-# flashnext-4gpu RDNA2 tail helper: expert GEMM spills and occupancy, and the per-request fixed cost (about 190 us a layer)
+# RDNA2 tail helper: remaining request-front and launch-chain latency
 
 ## Description
 
@@ -71,6 +71,8 @@ Ceiling basis (2026-11-24): the 6.8 ms gap is a per-request model fitted from wh
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 3: do not repeat rejected waves-per-SIMD sweep; production GEMV/few-row kernels already spill-free. Only remaining measured exposed request front/launch-chain work; actual worker harness and lane/route/quant kernels; derive launch dependency ordering and preserve sequence/completion, route compaction and exact output. Historical 0.5–0.7 ms/pass estimate not guarantee. No extra persistent queue or busy wait; archive no-go. RAD25/28/29/30/54 conditional on current trace.
 
+2026-11-26 roadmap reconciliation at 165d6f724: Narrow to request-front and launch-chain latency after VTP54. Rejected waves-per-SIMD and placement attempts stay no-go; no repeated grouped-GEMM spill sweep. Safe cleaner non-regressing implementation accepted; any performance claim requires actual measured gain above noise. Preserve all historical evidence.
+
 ## Change Log
 
 - 2026-11-23T21:26:04.398434+00:00 (created-by): Created by agent
@@ -79,3 +81,4 @@ Ceiling basis (2026-11-24): the 6.8 ms gap is a per-request model fitted from wh
 - 2026-11-23T23:11:26.103416+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:21:57.000342+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T18:52:03.109656+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:03:42.008057+00:00 (updated-by): Updated: section:notes, section:title

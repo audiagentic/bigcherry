@@ -70,6 +70,8 @@ CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement 
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate Fleet telemetry adds BDF lookup, clocks/temp/memory busy/fan only on watched dashboard. Reuse presentation where useful; DPM selected level is not actual frequency. Does not replace exact amdgpu hwmon cap/current/min/max, invalid zero handling, typed restore or phase energy. No intrusive dashboard polling for idle; owner probes selected BDF only.
 
+2026-11-26 roadmap reconciliation at 165d6f724: External reference: Sweet-Spot Tuner v3.5.15, commit a2a31ce63cc1d40af72997de621115eaa2dcd54d (https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15); see docs/reference/power-tuning-evidence-2026-11.md, hot AI qualification section. Use existing LinuxHardware/power_linux.cpp and power_records.cpp, no external tuner/sysfs bridge or new writer. Verify physical BDF -> one visible HIP ordinal and hipGetDeviceProperties/PCI identity, actual temperature/hotspot and memory temperature where supported, clocks/throttle and current control readback. Probe must distinguish unavailable sensor/unsupported algorithm, failed numerical check, runtime/device error/reset, timeout, thermal stop and insufficient coverage. Unavailable is not a pass; invalid cap or unknown restoration refuses. Do not enable all ppfeaturemask bits, force fan curves, install boot service or download another ROCm. Preserve exact owner journal/reap/restore and record actual thermal envelope; existing native backend must first prove supported R9700 offset.
+
 ## Change Log
 
 - 2026-11-10T13:12:56.453273+00:00 (created-by): Created by agent
@@ -114,3 +116,4 @@ For a **validating** `xtx-cap2700-uv125` profile, bind per-BDF selected OD max, 
 - 2026-11-25T02:08:53.144048+00:00 (updated-by): Updated: section:notes
 - RV4645
 - 2026-11-25T02:47:05.699591+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T19:01:31.996114+00:00 (updated-by): Updated: section:notes

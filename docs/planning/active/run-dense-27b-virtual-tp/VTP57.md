@@ -11,7 +11,7 @@ work: M
 priority: P1
 ---
 
-# IQ6R decode: remove the register spills and shim exchanges from the vocabulary-head tile and the 17-64 row trellis GEMMs on gfx1100
+# IQR decode: residual head costs and per-weight decode efficiency
 
 ## Description
 
@@ -62,7 +62,10 @@ Medium. Risk is occupancy and re-read traffic when slicing; the form-and-arch ru
 
 **2026-11-25 status.** Shipped: vocabulary head tile (#1501), IQR accumulate-once (#1505), native fragments (#1507), head cut for three ranks (rad0063/rad0064). IQR container on three ranks, ms/step at 1/6/8 streams: 21.5 / 29.9 / 33.0 against 20.2 / 28.5 / 31.2 for the int8 container (+4..8% time for 21% fewer bytes; before this series 30 / 56-61 / 58-60). Sweep of 2020.9.2 against 2020.8.7 and 2020.11.1 against 2020.11.0 found no regression. Rejected: letting the fused gated fold take 17-32 rows (rad0065, local only): it regressed the serving A/B, so the gated band stays at 16. Residue: the vocabulary-head tile at three and four token tiles still spills a little (52 and 204 bytes private); the three-rank head pads 33.6% extra rows (class re-cut needs a token-probability table). Why six bit is not faster than eight: the computed-trellis tile spends about 10 vector ops per weight after native fragments (about 7.6 in decode proper, the rest in the tile's transpose, packing and fold) against about 11.5 available per weight at the card's bandwidth; removing the hash and byte-sum entirely saves only 10-15%, so the floor is the tile structure, not the code. A transpose-free tile is the open design (deep-speed session).
 
+2026-11-26 roadmap reconciliation at 165d6f724: Narrow to remaining head NT3/NT4 private bytes, padding/row-class cost and actual per-weight decode bottleneck; shipped head, native fragments and chained wide forms in bc-iqr. Use docs/evidence/2026-11-25-iqr-deep-ship and overlay verification. No reimplementation of already gated 44 symbols or archive candidates; byte identity/resource/replay and actual serving only where changed. Keep acceptance explanation of residual IQ8R gap.
+
 ## Change Log
 
 - 2026-11-24T04:47:19.958194+00:00 (created-by): Created by agent
 - 2026-11-24T04:47:38.589362+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-25T19:02:10.841773+00:00 (updated-by): Updated: section:notes, section:title
