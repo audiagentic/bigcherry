@@ -35,6 +35,17 @@ bc-serve start CONFIG --native-config fleet.yaml --model-root MODEL_DIR --run-di
 For an exact replay, use `bc-serve start --manifest MANIFEST --run-dir RUN_DIR`.
 It reads the YAML bytes and resolution root from the admitted manifest.
 
+## RSC02 managed native entry (rad0070, next to the manifest entry until the owner switches)
+
+The owner starts the stock `radiance --config FILE` and adds `--bc-admission-fd FD`: one sealed, strict JSON document
+(`v2/engine_admission.h`) with only what the owner derived (ordered rank BDFs, host pool/KV/reserve/checkpoint sizes, the
+rad0011 expected plan and KV floor, the typed engine/remote settings, the not-yet-typed engine switches). It is not a copy
+of any native setting. After the YAML is parsed, `bc_serving_managed_bind` applies each derived value to an absent or auto
+option, accepts an agreeing authored one and refuses a disagreement naming both; one model, loopback, no per-card headroom
+map. Fleet's chosen cards must be the admitted ranks before the Engine exists. A managed process refuses SIGHUP and
+`/admin/reload` and model admin (403) and ends, failing, when its engine stops. Without the flag nothing changes. Card-free
+tests: `bc_native_managed_test` (engine build), the admission wire in `bc_serving_v3_wire_test`.
+
 ## RSC02 step 3: manifest-bound power and native runtime guards
 
 The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate

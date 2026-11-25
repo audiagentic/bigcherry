@@ -1,3 +1,4 @@
+#include "engine_admission.h"
 #include "manifest.h"
 #include "native_config_snapshot.h"
 #include "s10_resolver.h"
@@ -209,6 +210,44 @@ int main(int argc, char** argv) {
         const auto first = std::find_if(device_settings.begin(), device_settings.end(), [&](const auto& d) { return d.bdf == first_bdf; });
         check(first != device_settings.end() && first->settings.sclk_max_mhz == 2600 && first->settings.vddgfx_offset_mv == -125,
               "the site override did not replace only the named setting of that BDF");
+    }
+    {   // RSC02: the engine admission document is derived, strict, and loses nothing on the wire
+        using bc::serving::EngineAdmission;
+        // A member added to EngineAdmission changes this size: extend the wire (engine_admission_to_json/from_json) and
+        // this test's expectations before updating it.
+        static_assert(sizeof(EngineAdmission) == 296, "EngineAdmission changed: extend the wire and this test");
+        const auto serving = bc::serving::engine_admission_from_manifest(measured, false);
+        check(serving.ok() && serving.value().expected && !serving.value().measuring && !serving.value().bdfs.empty(),
+              "no serving admission from a measured manifest");
+        const Json wire = bc::serving::engine_admission_to_json(serving.value());
+        const auto back = bc::serving::engine_admission_from_json(wire);
+        if (back.ok() && bc::serving::engine_admission_to_json(back.value()) != wire) std::cerr << wire.dump(1) << "\n" << bc::serving::engine_admission_to_json(back.value()).dump(1) << "\n";
+        if (!back.ok()) std::cerr << v3::render_human("admission", back.error());
+        check(back.ok() && bc::serving::engine_admission_to_json(back.value()) == wire, "the admission wire lost or invented a member");
+        const auto measuring = bc::serving::engine_admission_from_manifest(unmeasured, true);
+        check(measuring.ok() && measuring.value().measuring && !measuring.value().expected, "a measuring admission carries a plan");
+        const auto refused_with = [&](Json doc, Code code, const char* field) {
+            const auto r = bc::serving::engine_admission_from_json(doc);
+            check(!r.ok() && r.error().code == code && r.error().path.find(field) != std::string::npos, field);
+        };
+        Json extra = wire; extra["surprise"] = 1;
+        refused_with(extra, Code::unknown_field, "surprise");
+        Json inner = wire; inner["host"]["extra"] = 1;
+        refused_with(inner, Code::unknown_field, "host.extra");
+        Json missing = wire; missing["settings"].erase("shm");
+        refused_with(missing, Code::missing_field, "settings.shm");
+        Json negative = wire; negative["host"]["kv_mib"] = -1;
+        refused_with(negative, Code::invalid_type, "host.kv_mib");
+        Json no_devices = wire; no_devices["bdfs"] = Json::array();
+        refused_with(no_devices, Code::invalid_value, "bdfs");
+        Json stray_env = wire; stray_env["env"]["LD_PRELOAD"] = "/x";
+        refused_with(stray_env, Code::unknown_field, "env.LD_PRELOAD");
+        Json plan_for_measuring = wire; plan_for_measuring["measuring"] = true;
+        refused_with(plan_for_measuring, Code::invalid_state, "expected");
+        Json no_plan = wire; no_plan["expected"] = nullptr;
+        refused_with(no_plan, Code::invalid_state, "expected");
+        Json bad_plan = wire; bad_plan["expected"] = Json::object();
+        check(!bc::serving::engine_admission_from_json(bad_plan).ok(), "an empty expected plan was accepted");
     }
     v3::Manifest wrong_edition = unmeasured;
     wrong_edition.api_version = "bigcherry/v2";

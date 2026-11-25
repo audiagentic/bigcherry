@@ -11,7 +11,7 @@ function(bc_add_manifest_library target abi generated)
   # Errors, strict JSON, the generated codec, semantics and role views.
   add_library(${target} STATIC
     "${src}/v2/error.cpp" "${src}/v2/strict_json.cpp" "${src}/v2/manifest.cpp"
-    "${src}/v2/native_config_snapshot.cpp" "${src}/v2/admission.cpp" "${src}/v2/helper_settings.cpp"
+    "${src}/v2/native_config_snapshot.cpp" "${src}/v2/admission.cpp" "${src}/v2/helper_settings.cpp" "${src}/v2/engine_admission.cpp" "${src}/bc_serving_managed.cpp"
     "${src}/v2/s8_rules.cpp" "${src}/v2/s10_resolver.cpp" "${generated}/serving_codec.cpp")
   target_link_libraries(${target} PUBLIC bc_jcs ${abi})
   target_include_directories(${target} PUBLIC "${src}/v2" "${generated}" "${src}")

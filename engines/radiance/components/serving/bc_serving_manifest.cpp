@@ -2,6 +2,9 @@
  * to radiance's own flags through the generated registry, and the report source label. */
 #include "bc_serving_manifest.h"
 #include "bc_engine_settings.h"
+#include "bc_serving_managed.h"
+#include "engine_admission.h"
+#include "serving_codec.h"
 
 #include "document_bytes.h"
 #include "manifest.h"
@@ -627,6 +630,50 @@ extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip_owned,
     return 1;
 }
 
+void bc_serving_install_engine_state(const bc::serving::EngineAdmission& a, const std::string& heat_nonce,
+                                     const std::string& step_phase_dir) {
+    g_have_expected = false;
+    g_floor_ppm = a.kv_backing_floor_ppm;
+    g_engine_bdfs = a.bdfs;
+    g_step_phase_dir = step_phase_dir;
+    g_heat_launch_nonce = heat_nonce;
+    if (a.expected) {
+        v2::EnginePlan plan;   // already decoded once by the admission reader
+        if (!v2::decode(*a.expected, "", &plan)) {
+            g_expected = std::move(plan);
+            g_have_expected = true;
+        }
+    }
+    BcEngineSettings settings{};
+    settings.manifest = 1;   // "typed settings present": the DSO getter's marker, not a manifest
+    if (a.handoff) {
+        settings.handoff = 1;
+        settings.max_rows = a.max_rows;
+        settings.skip_owned = a.skip_owned ? 1u : 0u;
+        g_shm = a.shm;
+        settings.shm = g_shm.c_str();
+        if (a.histogram_file) {
+            g_histogram = *a.histogram_file;
+            settings.histogram_file = g_histogram.c_str();
+        }
+        settings.histogram_period_s = a.histogram_period_s;
+        settings.combine = a.combine ? 1u : 0u;
+    }
+    settings.moe_native = a.moe_native ? 1u : 0u;
+    settings.moe_fp16 = a.moe_fp16 ? 1u : 0u;
+    settings.moe_ahalf = a.moe_ahalf ? 1u : 0u;
+    settings.gemv = a.gemv ? 1u : 0u;
+    settings.dec11 = a.dec11 ? 1u : 0u;
+    settings.fuse_stage = a.fuse_stage ? 1u : 0u;
+    settings.attn_native = a.attn_native ? 1u : 0u;
+    settings.all_reduce_wire4 = a.all_reduce_wire4 ? 1u : 0u;
+    settings.shadow = a.shadow ? 1u : 0u;
+    settings.mask_only = a.mask_only;
+    settings.mailbox_trace_every = a.mailbox_trace_every;
+    if (!g_heat_launch_nonce.empty()) settings.heat_launch_nonce = g_heat_launch_nonce.c_str();
+    g_engine_settings = settings;
+}
+
 bool bc_serving_expected_plan(v2::EnginePlan* expected, int64_t* floor_ppm) {
     if (!g_have_expected) return false;
     *expected = g_expected;
@@ -657,6 +704,8 @@ int bc_serving_engine_entry(int argc, char** argv, const bc::serving::callback::
         return *rc;
     char** const original_argv = argv;
     if (!bc_serving_engine_argv(&argc, &argv)) return 2;
+    // The managed native start (RSC02): installs what rad0011's flag step below reads, so it comes first.
+    if (int rc = bc_serving_managed_take_flag(&argc, &argv)) return rc;
     if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;
 
     rad::Config cfg;

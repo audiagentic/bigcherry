@@ -1,0 +1,12 @@
+schema = 1
+id = "rad0070_managed_native_entry"
+order = 70
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-item = "RSC02"
+plan-ids = ["RSC02"]
+requires = ["rad0009_serving_manifest"]
+conflicts = []
+tags = []
