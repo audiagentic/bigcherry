@@ -506,6 +506,24 @@ def build_parser() -> argparse.ArgumentParser:
     patch_lint_cmd.add_argument("--json", action="store_true")
     patch_lint_cmd.set_defaults(func=cmd_patch_lint)
 
+    compose_cmd = sub.add_parser(
+        "patch-compose-check",
+        help="materialise a patch composition and check the native rewrites (gate 1) and the compile of the units it touches (gate 2)",
+    )
+    compose_cmd.add_argument("--source", default=None, help="the source whose patches form the base (default: the engine's promotion source; '' for none)")
+    compose_cmd.add_argument("--experiment", help="an experiment of recipes.toml to add to the source")
+    compose_cmd.add_argument("--patch", action="append", help="an extra patch id (repeat; dependencies must be listed)")
+    compose_cmd.add_argument("--only-patch", action="append",
+                             help="compile only the units these patches touch (the whole composition is still applied)")
+    compose_cmd.add_argument("--arch", default="gfx1100,gfx1201", help="comma list of architectures to compile for")
+    compose_cmd.add_argument("--compile", choices=("none", "syntax", "full"), default="syntax",
+                             help="gate 2: none, 2a (syntax only, host and device passes) or 2b (real compile)")
+    compose_cmd.add_argument("--tree", help="check an already materialised source tree instead of building one")
+    compose_cmd.add_argument("--touched", action="append", help="with --tree: a file the patches edit (relative to the source root)")
+    compose_cmd.add_argument("--keep", action="store_true", help="keep the materialised tree")
+    compose_cmd.add_argument("--json", action="store_true")
+    compose_cmd.set_defaults(func=lambda args: __import__("bigcherry.patch.compose_check", fromlist=["main"]).main(args))
+
     patch_promote_cmd = sub.add_parser(
         "patch-promote",
         help="PA45: promote qualified patches and open the slice pull request",

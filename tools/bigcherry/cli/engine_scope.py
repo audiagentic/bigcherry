@@ -37,6 +37,7 @@ _ENGINE_COMMANDS: frozenset[str] = frozenset(
         "patch-promote",
         "patch-doc",
         "patch-rebase-check",
+        "patch-compose-check",
         "pull",
         "audit",
         "repin",
