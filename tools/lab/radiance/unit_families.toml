@@ -44,3 +44,13 @@ row-prefix = "bc_"
 kernels = "iqr_embed_kernel"
 # Extra tables "rows:dim" the case also runs, and timed (cold, median of 31 launches)
 cases = "32768:5120"
+
+[overlay.iqr_vocab]
+component = "bc-iqr"
+plugin = "libbciqr"
+case = "logits_gemm_vocab_iqr"
+row-prefix = "bc_"
+kernels = "vocab"
+cases-env = "UH_VOCAB_CASES"
+# "M:K:rows" (one class of 4-bit codes) besides the case's own tables: a prefill-sized and a decode-sized head
+cases = "8:5120:4096,64:5120:2048"

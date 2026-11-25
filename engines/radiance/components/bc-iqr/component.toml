@@ -13,8 +13,8 @@ configure = { RADIANCE_SRC = "{engine_source}" }
 
 # Names crossing the Radiance build/runtime boundary. The core coupling gate checks literals and source inventory.
 [coupling]
-upstream-headers = ["rad_abi.h", "rad_abi_layout.h", "r4d_args.h", "r4d_emit.h", "r4d_fp8_wmma.h", "r4d_iqr.h", "r4d_iqr_dec.h"]
-upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "libr4d/r4d_args.h", "libr4d/r4d_emit.h", "libr4d/r4d_fp8_wmma.h", "libr4d/r4d_iqr.h", "libr4d/r4d_iqr_dec.h"]
+upstream-headers = ["rad_abi.h", "rad_abi_layout.h", "r4d_args.h", "r4d_emit.h", "r4d_fp8_wmma.h", "r4d_fwht.h", "r4d_iqr.h", "r4d_iqr_dec.h"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "libr4d/r4d_args.h", "libr4d/r4d_emit.h", "libr4d/r4d_fp8_wmma.h", "libr4d/r4d_fwht.h", "libr4d/r4d_iqr.h", "libr4d/r4d_iqr_dec.h"]
 upstream-source-globs = []
 patch-provided-files = []
 protocol-flags = []

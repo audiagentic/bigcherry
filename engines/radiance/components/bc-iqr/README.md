@@ -22,4 +22,7 @@ architectures.
 - Rows reuse the base's layout, relayout and shape hooks through the loaded base library (libr4d.so, else libr3.so), so the stored
   bytes are unchanged and a layout the base refuses is refused here (the row cannot shadow another weight form).
 - A launch the owned kernel declines is handed back to the base's own launch function.
-- Not in this component yet: the vocabulary head and the `r4d_gemm_iqr` family (RCS23 S3b, S3c).
+- Second unit (S3b): the vocabulary-weighted head, `bc_iqr_vocab.hip` (row `bc_logits_gemm_vocab_iqr`): libr3's nine rewrite blocks
+  are inlined under `#if defined(__gfx1100__)` with the origin's text in the `#else`, and libr3's `r3_compat.h` is included for the gfx1100
+  device pass. The scratch hook is the unit's own (it lived in the unit libr3 no longer builds).
+- Not in this component yet: the `r4d_gemm_iqr` family (S3c).

@@ -10,6 +10,7 @@
 // to the launch of the base that matches the card (libr4d for RDNA4, libr3 for RDNA3).
 //
 // embed_lookup_iqr (bc_iqr_embed.hip): the embedding gather over an IQR table.
+// logits_gemm_vocab_iqr (bc_iqr_vocab.hip): the vocabulary-weighted IQR head.
 #include "rad_abi.h"
 #include "rad_abi_layout.h"
 
@@ -24,6 +25,8 @@
 #include <string>
 
 extern "C" int bc_rad_embed_lookup_iqr(const RadArgs* a, RadStream s);   // bc_iqr_embed.hip
+extern "C" int bc_rad_logits_gemm_vocab(const RadArgs* a, RadStream s);   // bc_iqr_vocab.hip
+extern "C" int64_t bc_rad_logits_gemm_vocab_scratch(const RadArgs* a);    // bc_iqr_vocab.hip
 
 /* The dispatch log r4d_emit.h's launch helper reads (libr4d's r4d_record_dispatches fills its own copy; the engine never calls
  * it, only libr4d's selftest does, to see which form ran). This plugin keeps the log off. */
@@ -39,7 +42,12 @@ struct Lib {
     RadLayoutFn layout_iqr_embed = nullptr;
     RadRelayoutFn relayout_iqr_embed = nullptr;
     RadShapeFn shape_embed_lookup = nullptr;
+    RadLaunchFn logits_gemm_vocab = nullptr;
+    RadLayoutFn layout_iqr_vocab = nullptr;
+    RadRelayoutFn relayout_iqr_vocab = nullptr;
+    RadUnrelayoutFn unrelayout_iqr_vocab = nullptr;
     bool hooks() const { return layout_iqr_embed && relayout_iqr_embed && shape_embed_lookup; }
+    bool vocab_hooks() const { return layout_iqr_vocab && relayout_iqr_vocab && unrelayout_iqr_vocab; }
 };
 
 struct Found {
@@ -78,6 +86,10 @@ Lib open_lib(const std::string& loaded, const char* file) {
     x.layout_iqr_embed = (RadLayoutFn)dlsym(h, "r4d_rad_layout_iqr_embed");
     x.relayout_iqr_embed = (RadRelayoutFn)dlsym(h, "r4d_rad_relayout_iqr_embed");
     x.shape_embed_lookup = (RadShapeFn)dlsym(h, "r4d_shape_embed_lookup");
+    x.logits_gemm_vocab = (RadLaunchFn)dlsym(h, "r4d_rad_logits_gemm_vocab");
+    x.layout_iqr_vocab = (RadLayoutFn)dlsym(h, "r4d_rad_layout_iqr_vocab");
+    x.relayout_iqr_vocab = (RadRelayoutFn)dlsym(h, "r4d_rad_relayout_iqr_vocab");
+    x.unrelayout_iqr_vocab = (RadUnrelayoutFn)dlsym(h, "r4d_rad_unrelayout_iqr_vocab");
     return x;
 }
 
@@ -120,8 +132,8 @@ const Lib& hook_lib() {
 }
 
 /* The base's launch for the card this call runs on: libr4d's for an RDNA4 card, libr3's for an RDNA3 one (the other library's
- * device code would not run there). */
-RadLaunchFn base_launch() {
+ * device code would not run there). `vocab` picks the head's launch instead of the embedding gather's. */
+RadLaunchFn base_launch(bool vocab = false) {
     int dev = 0;
     if (hipGetDevice(&dev) != hipSuccess) return nullptr;
     static std::mutex m;
@@ -138,7 +150,8 @@ RadLaunchFn base_launch() {
         is4 = it->second;
     }
     const Bases& b = bases();
-    return is4 ? b.r4d.embed_lookup_iqr : b.r3.embed_lookup_iqr;
+    const Lib& l = is4 ? b.r4d : b.r3;
+    return vocab ? l.logits_gemm_vocab : l.embed_lookup_iqr;
 }
 
 int embed_launch(const RadArgs* a, RadStream s) {
@@ -147,6 +160,28 @@ int embed_launch(const RadArgs* a, RadStream s) {
     const RadLaunchFn fallback = base_launch();   // a form the owned kernel declines
     return fallback ? fallback(a, s) : RAD_E_UNSUPPORTED;
 }
+int vocab_launch(const RadArgs* a, RadStream s) {
+    const int rc = bc_rad_logits_gemm_vocab(a, s);
+    if (rc != RAD_E_UNSUPPORTED) return rc;
+    const RadLaunchFn fallback = base_launch(true);
+    return fallback ? fallback(a, s) : RAD_E_UNSUPPORTED;
+}
+int layout_vocab(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const RadTensor* pl, int n_pl,
+                 RadLayout* out) {
+    const Lib& l = hook_lib();
+    return l.vocab_hooks() ? l.layout_iqr_vocab(p, n_p, op, e, sel, pl, n_pl, out) : RAD_E_DTYPE;   // refuse, never accept, without the base's hook
+}
+int relayout_vocab(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const RadTensor* pl, int n_pl,
+                   void* dst, int64_t dst_bytes) {
+    const Lib& l = hook_lib();
+    return l.vocab_hooks() ? l.relayout_iqr_vocab(p, n_p, op, e, sel, pl, n_pl, dst, dst_bytes) : RAD_E_UNSUPPORTED;
+}
+int unrelayout_vocab(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const void* src, int64_t src_bytes,
+                     const RadTensor* pl, int n_pl) {
+    const Lib& l = hook_lib();
+    return l.vocab_hooks() ? l.unrelayout_iqr_vocab(p, n_p, op, e, sel, src, src_bytes, pl, n_pl) : RAD_E_UNSUPPORTED;
+}
+
 int layout_embed(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const RadTensor* pl, int n_pl,
                  RadLayout* out) {
     /* Without the base's hook the row cannot say what it reads: refuse (RAD_E_DTYPE is the loader's "not my encoding"), never
@@ -166,6 +201,8 @@ int shape_embed(const RadParam* p, int n_p, int op, RadOpdDesc* out) {
 
 /* The base's embed_lookup_iqr constraints. */
 const RadConstraint kEmbedBf16[] = { RAD_CIN("dtype", "bf16") };
+/* The base's logits_gemm_vocab_iqr constraints. */
+const RadConstraint kVocab[] = { RAD_CDIV("n_embd", 256), RAD_CIN("dtype", "bf16") };
 
 const RadKernelInfo kRows[] = {
     { "bc_embed_lookup_iqr", "embed_lookup", "vocab",
@@ -178,6 +215,18 @@ const RadKernelInfo kRows[] = {
       kEmbedBf16, (int)(sizeof(kEmbedBf16) / sizeof(kEmbedBf16[0])),
       nullptr, 0, nullptr,
       nullptr, nullptr, embed_launch, nullptr, layout_embed, relayout_embed, shape_embed, nullptr,
+      nullptr },
+    { "bc_logits_gemm_vocab_iqr", "logits_gemm_vocab", "vocab",
+      "the vocabulary-weighted IQR head in one launch over every class (RCS23 S3b): libr4d's computation and stored form, the "
+      "gfx11 accumulator-layout and lookahead forms of libr3 under __gfx1100__",
+      "any M (64 tokens a pass); n_embd a multiple of 256; each class a multiple of 256 rows; otherwise as libr4d's "
+      "logits_gemm_vocab_iqr",
+      "bf16 x, rotated by fwht128 and quantised to 16 bits a (token, 128) in the call's scratch; classes of tcq_code=mad codes "
+      "under one f32 scale a row; F32 LOGITS OUT, int32 block sums folded in fp32, bit for bit libr4d's",
+      RAD_DOMAIN_DEVICE, 70,
+      kVocab, (int)(sizeof(kVocab) / sizeof(kVocab[0])),
+      nullptr, 0, nullptr,
+      nullptr, nullptr, vocab_launch, bc_rad_logits_gemm_vocab_scratch, layout_vocab, relayout_vocab, nullptr, unrelayout_vocab,
       nullptr },
 };
 

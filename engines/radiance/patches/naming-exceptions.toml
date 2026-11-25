@@ -364,11 +364,6 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "kShortLookahead"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
 name = "kVgprFilePerSimd"
 reason = "predates the naming rule"
 

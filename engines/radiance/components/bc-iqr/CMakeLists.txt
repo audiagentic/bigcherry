@@ -15,9 +15,9 @@ endif()
 
 rad_add_plugin(libbciqr kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_plugin.cpp
-  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_embed.hip
+  HIP_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_embed.hip ${CMAKE_CURRENT_SOURCE_DIR}/bc_iqr_vocab.hip
   GPU_TARGETS gfx1100 gfx1201
-  INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR} ${RADIANCE_SRC}/libr4d)
+  INCLUDES    ${CMAKE_CURRENT_SOURCE_DIR} ${RADIANCE_SRC}/libr4d ${CMAKE_CURRENT_SOURCE_DIR}/../libr3)   # libr3: r3_compat.h for the gfx1100 pass
 target_include_directories(libbciqr PRIVATE ${RADIANCE_SRC}/abi)
 # libr4d builds its device code at C++17: the owned copies of its units do the same (contraction is off for every plugin: rad_add_plugin).
 set_target_properties(libbciqr PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
