@@ -65,6 +65,8 @@ Historical note (superseded by the clarification below): the then-active voltage
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Preserve current discovery trial as separate cohort. First qualified native cap profile test on exact approved target and actual YAML/BDF, native reserve/queue changes can alter workload and power. Stock no-write every bump; nonstock only for intended required profile with compatible evidence or explicit refusal. No default activation, no replay all historical sweeps, exact child exit+restore under lease.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Migrate PWR01 --power-profile CLI to one intended YAML change via arm_yaml, retain actual stock/readback/profile/build/model and explicit allow-power-apply/lease. Workload power phase receipts identify actual owner/session and endpoint, no cmdline manifest discovery. No qualification from unknown/stale owner or profile label alone; preserve existing cap and clock/UV gates and verified restore.
+
 ## Change Log
 
 - 2026-11-25T00:42:29.487523+00:00 (created-by): Created by lead
@@ -81,3 +83,5 @@ Historical note (superseded by the clarification below): the then-active voltage
 - 2026-11-25T02:14:26.375451+00:00 (updated-by): Updated: section:notes
 - RV4647
 - 2026-11-25T02:48:07.107725+00:00 (updated-by): Updated: section:notes
+- RV4663
+- 2026-11-25T03:29:11.902957+00:00 (updated-by): Updated: section:notes

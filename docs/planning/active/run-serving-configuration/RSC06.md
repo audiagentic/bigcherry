@@ -61,6 +61,8 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native quiescent callback serialization 896ab80f and Fleet failed-handoff/staging ownership changes affect helper drain, not new transport. Reuse upstream semantics where target has them, actual provider-specific packed layout/row and independent owner map per rank, exact copy completion and group stop before power restore. No new helper config/ABI shim; test old and new target seams, RHP20 remains owner of live policy qualification.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. helper_profile.toml embedded via manifest_writer.cpp and archs.toml capability/reserve data must be classified before removing writer. Move authored defaults into one typed BC YAML policy, retain facts/calibration in existing owner. Helpers same admitted YAML plus only assigned derived role/transport facts. No per-helper generated config or manifest inheritance; actual format/row/owner map/readiness and copy drain before stop/restore. Preserve existing measured handoff literals S17 proof and RHP16/20 independent policy acceptance.
+
 ## Change Log
 
 - 2026-11-02T03:52:00.963006+00:00 (created-by): Created by agent
@@ -82,3 +84,5 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 - 2026-11-25T02:07:52.888903+00:00 (updated-by): Updated: section:notes
 - RV4641
 - 2026-11-25T02:44:58.836045+00:00 (updated-by): Updated: section:notes
+- RV4658
+- 2026-11-25T03:26:05.495951+00:00 (updated-by): Updated: section:notes

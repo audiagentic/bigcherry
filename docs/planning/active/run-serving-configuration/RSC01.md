@@ -59,6 +59,8 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native --check parses config/unsupported keys and logs model/TP only; it does not inspect model file, allocate or choose actual row. Separate parser/extension tests from matched model/header/row/format inspection. Native memory.queue-reserve, pinned-numa-node and per-card headroom belong to native YAML where supported, not x-bigcherry copies or new parser. Current 18 YAMLs including two IQ6R variants; enumerate actual installed supported roster, do not hardcode 16 or 18. Historical RUM04 16 retained.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Native server.port stays authored and is never silently overridden; lab arms author distinct port in YAML. Inventory config_as_layout generic native projection and serving.cpp resolver consumers; site/profile cannot override native fields even when equal. Split embedded helper_profile.toml authored settings from archs.toml capabilities and measured calibration; YAML only for authored serving intent. Keep device visibility/runtime home/FD/lease context distinct from tuning getenv. Explicit private site power migration, no compatibility reader.
+
 ## Change Log
 
 - 2026-11-02T00:52:58.694609+00:00 (created-by): Created by agent
@@ -82,6 +84,7 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 - RV4589
 - RV4610
 - RV4637
+- RV4654
 
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
@@ -89,3 +92,4 @@ Reconciliation: the C++ resolver, generated contract, strict reader, writer and 
 - 2026-11-25T01:36:01.665422+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-25T02:06:52.897578+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T02:42:51.235475+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T03:25:34.302753+00:00 (updated-by): Updated: section:notes

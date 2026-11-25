@@ -62,6 +62,8 @@ GATEWAY REVIEW 2026-11-10: (1) worker_heat.h:125-149 treats the LAST helper as t
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Existing per-layout live-swap/unsupported-reason matrix remains, including other layouts outstanding after #1179. RSC06 changes transport only; policy state/reasons in runtime receipt, no launch manifest, do not duplicate or mark policy tests complete.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Live policy remains off by default; use RHP16 corrected eligibility for resolved power and actual timing-sensitive provider; exact model/helper/engine rows, ordered BDF and readback from owner receipts. Native run_quiet serialization not proof of move safety. Preserve existing forced-move/KLD/quality and per-card/layout qualification. No new launch manifest or dynamic power policy.
+
 ## Status 2026-11-19
 
 Verified live swapping on hardware, native path: flashnext-4gpu (gfx1201 engine, gfx1100 heads, gfx1030 tail), policy on, 14 committed placement transactions in one run (14.6 GB moved, no aborts) and a 2-launch parity run (PR #1179). Not yet verified: the other layouts and card types in the matrix (flashnext-2xtx-rdna2-tail, flashnext-tp2xtx-r9700, TP engine-resident placement); dense TP3 has no live policy. The start path blockers that hid the policy on a production start are fixed (#1174, #1176, #1177), so a per-layout forced-move run is now the remaining work; use the native `--calibration-run` and a calibration record per layout (key v2, #1169).
@@ -199,3 +201,5 @@ pending marker is progress-stale but must not be changed to done.
 
 - RV4602
 - 2026-11-25T01:42:42.232389+00:00 (updated-by): Updated: section:notes
+- RV4665
+- 2026-11-25T03:30:15.825721+00:00 (updated-by): Updated: section:notes

@@ -80,6 +80,8 @@ CONSOLIDATION 2026-11-22 LAB-AND-SOURCES: WSL05 has one canonical owner: WSL01. 
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Run record/provenance manifest may remain output-only under existing WSL01/MRC06; native YAML bytes, measured results, actual receipts and identities recorded. Never consume capture as serving launch input or generate a new generic launch manifest. Existing run-template semantics unaffected.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. run.manifest.json stays output-only. Existing session.json/control socket and run-directory receipt expose actual owner/build/model/endpoint/role and power readback; no new registry or launch input. MEN20/21 migrate benchmark attribution; WSL01 template only records exact run/arm inputs and output, not permission to start from capture.
+
 ## Design review (GPT, 2026-10-19) - adopted
 
 - Layout additions: `work/trash/<deletion-id>/` (quarantine, same filesystem as runs/) and `work/objects/sha256/<xx>/<digest>/` (valuable immutable blobs: captures, KL references; not cache).
@@ -94,8 +96,10 @@ CONSOLIDATION 2026-11-22 LAB-AND-SOURCES: WSL05 has one canonical owner: WSL01. 
 
 - RV4543
 - RV4600
+- RV4670
 
 ## Change Log
 
 - 2026-11-22T11:26:43.859594+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T01:41:32.210127+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T03:32:57.723609+00:00 (updated-by): Updated: section:notes

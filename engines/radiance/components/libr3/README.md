@@ -26,6 +26,12 @@ unguarded form when only the token count is ragged (17-31 rows: 5-7 decode strea
 always (VTP37 step 3a). Evidence: `docs/evidence/2026-11-15-rad52-native-split-store/`,
 `docs/evidence/2026-11-15-rad53-fp8-prefill-attention/` and `docs/evidence/2026-11-15-vtp37-narrow-gemm-ragged-m/`.
 
+## Kernel-family compilation
+
+For incremental work, Ninja targets compile shared upstream units by family without
+linking partial plugins. See [KERNEL_GROUPS.md](KERNEL_GROUPS.md) for the targets,
+ownership manifest, model-profile guidance and full-build qualification rules.
+
 ## Lab tools
 
 `r3_selftest <libr3.so>` (target `r3_selftest`) checks and times kernels on one card; it needs no engine or model.
