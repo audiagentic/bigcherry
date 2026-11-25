@@ -2294,8 +2294,8 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
     if (::access(absolute_engine.c_str(), X_OK) != 0)
         throw PlanFailed("native config inspector: matched engine is not executable: " + absolute_engine.string());
 
-    const std::string payload = snapshot.manifest_field().dump();
-    auto input = std::make_shared<PinnedManifest>(payload);
+    // The child gets the authored YAML bytes themselves; the root travels as its working directory.
+    auto input = std::make_shared<PinnedManifest>(snapshot.yaml_utf8());
     std::optional<NativeExecutionRoot> owned_root;
     if (resolution_root_fd < 0) {
         owned_root.emplace(snapshot.resolution_root());
@@ -2346,14 +2346,13 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         throw PlanFailed("native config inspector: report failed strict protocol or snapshot identity validation");
     const Json& engine_report = doc.at("engine");
     const Json& listener = engine_report.value("listener", Json::object());
-    if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "radiance_home_source", "kernels",
-                                    "kernels_source", "listener", "tp", "tp_wire", "cards", "rank_devices",
+    if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "kernels",
+                                    "listener", "tp", "tp_wire", "cards", "rank_devices",
                                     "max_context", "max_sequences", "tuning", "x_bigcherry", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
-        !nullable_string_field(engine_report, "radiance_home_source") ||
         !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
-        !nullable_string_field(engine_report, "kernels_source") || !integer_field(engine_report, "tp") ||
+        !integer_field(engine_report, "tp") ||
         !engine_report.contains("cards") || !engine_report.at("cards").is_array() ||
         !engine_report.contains("rank_devices") || !engine_report.at("rank_devices").is_array() ||
         !integer_field(engine_report, "max_context") || !integer_field(engine_report, "max_sequences") ||
@@ -2381,15 +2380,11 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     out.abi_version = static_cast<std::uint32_t>(abi);
     out.model = engine_report.at("model").get<std::string>();
     out.radiance_home = engine_report.at("radiance_home").get<std::string>();
-    if (engine_report.at("radiance_home_source").is_string())
-        out.radiance_home_source = engine_report.at("radiance_home_source").get<std::string>();
     for (const Json& kernel : engine_report.at("kernels"))
         if (!kernel.is_string() || kernel.get_ref<const std::string&>().empty() ||
             kernel.get_ref<const std::string&>().find(',') != std::string::npos)
             throw PlanFailed("native config inspector: kernels must be individual nonempty names");
     out.settings.kernels = engine_report.at("kernels").get<std::vector<std::string>>();
-    if (engine_report.at("kernels_source").is_string())
-        out.kernels_source = engine_report.at("kernels_source").get<std::string>();
     for (const Json& card : engine_report.at("cards")) {
         if (!card.is_number_integer())
             throw PlanFailed("native config inspector: cards must contain nonnegative integer ordinals");
@@ -2461,12 +2456,11 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     // resolves its real host/cgroup/pin budgets and publishes the chosen tier.
     // A final manifest must seal that measured tier, not this undecided intent.
     settings.kv_dtype = text("kv_dtype");
-    if (runtime.at("speculative_tokens") == -1)
-        throw PlanFailed("native config admission: automatic speculative depth is not representable; set num-speculative-tokens");
-    settings.speculative_tokens = bounded("speculative_tokens", 0, 64);
-    if (runtime.at("rope_scaling") == "")
-        throw PlanFailed("native config admission: model-defined RoPE is not representable; set rope-scaling");
-    settings.rope_scaling = text("rope_scaling");
+    // Native "auto" depth (-1) and model-defined RoPE ("") are valid native settings: the inspection reports them as
+    // unset (no depth, empty scaling) and the native engine decides. Only the executed-manifest path, which has to
+    // write a number and a scaling name, cannot carry them (serving.cpp); that refusal ends with the manifest.
+    if (runtime.at("speculative_tokens") != -1) settings.speculative_tokens = bounded("speculative_tokens", 0, 64);
+    if (runtime.at("rope_scaling") != "") settings.rope_scaling = text("rope_scaling");
     settings.prefix_resume = text("prefix_resume");
     if (!runtime.at("prefix_cache").is_boolean())
         throw PlanFailed("native config inspector: invalid prefix cache setting");
@@ -2535,6 +2529,12 @@ static void reconcile_native_config(
         throw PlanFailed("native config admission: YAML card ordinals differ from the local rank visibility order");
     if (report.listener_host != "127.0.0.1")
         throw PlanFailed("native config admission: only the loopback listener is supported by the managed owner");
+    // The inspector accepts native "auto" depth and model-defined RoPE; the executed manifest writes a number and a
+    // scaling name, so a start through it cannot carry them. This refusal ends with the manifest (RSC02).
+    if (!report.settings.speculative_tokens)
+        throw PlanFailed("native config admission: automatic speculative depth is not representable in the executed manifest; set num-speculative-tokens");
+    if (report.settings.rope_scaling.empty())
+        throw PlanFailed("native config admission: model-defined RoPE is not representable in the executed manifest; set rope-scaling");
 }
 
 static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
@@ -3023,7 +3023,7 @@ static bool native_settings_match(const NativeEngineSettings& native, const v2::
            (native.ngram_placement == "auto" ||
             native.ngram_placement == v2::kNgramPlacementNames[static_cast<size_t>(execution.ngram_placement)]) &&
            native.kv_dtype == v2::kKvCacheDtypeNames[static_cast<size_t>(execution.kv_cache_dtype)] &&
-           native.speculative_tokens == execution.num_speculative_tokens &&
+           native.speculative_tokens == std::optional<uint32_t>(execution.num_speculative_tokens) &&
            native.rope_scaling == execution.rope_scaling &&
            native.prefix_resume == v2::kPrefixResumeNames[static_cast<size_t>(execution.prefix_resume)] &&
            native.prefix_cache == !execution.no_prefix_cache.has_value() &&

@@ -1280,6 +1280,7 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
                       : "sealed Radiance YAML (matched native parser)");
     };
     if (native) {
+        // reconcile_native_config (session.cpp) refuses an unset depth or RoPE scaling before the resolver is reached.
         native_value("engine.port", native->port);
         native_value("service.max_context", native->max_context);
         native_value("service.max_sessions", native->max_sequences);
@@ -1288,7 +1289,7 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
         native_value("engine.placement", native->placement);
         native_value("engine.ngram_placement", native->ngram_placement);
         native_value("engine.kv_cache_dtype", native->kv_dtype);
-        native_value("engine.num_speculative_tokens", native->speculative_tokens);
+        native_value("engine.num_speculative_tokens", native->speculative_tokens.value());
         native_value("engine.rope_scaling", native->rope_scaling);
         native_value("engine.prefix_resume", native->prefix_resume);
         if (native->prefix_cache) {

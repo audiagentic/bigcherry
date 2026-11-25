@@ -39,6 +39,8 @@
 #include <utility>
 
 #include <nlohmann/json.hpp>
+
+#include "sha256.h"
 #include <rad_abi.h>
 
 extern char** environ;
@@ -102,23 +104,23 @@ int main(int argc, char** argv) {
         }
         std::string bytes(static_cast<size_t>(info.st_size), '\0');
         if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) return 11;
-        const json input = json::parse(bytes, nullptr, false);
         const char* configured_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
         const std::string expected_yaml = configured_yaml
                                               ? configured_yaml
                                               : "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
-        if (!input.is_object() || input.value("yaml_utf8", std::string()) != expected_yaml ||
-            input.value("sha256", std::string()).empty() || !input.contains("resolution_root") ||
-            !input.at("resolution_root").is_string()) {
+        if (bytes != expected_yaml) {
             std::fprintf(stderr, "fake inspector: snapshot bytes did not match the sealed fixture\n");
             return 12;
         }
         std::error_code ec;
         const std::string cwd = std::filesystem::canonical(std::filesystem::current_path(), ec).string();
-        if (ec || cwd != input.at("resolution_root").get<std::string>()) {
-            std::fprintf(stderr, "fake inspector: execution root did not match snapshot\n");
+        if (ec) {
+            std::fprintf(stderr, "fake inspector: no execution root\n");
             return 13;
         }
+        bc::serving::Sha256 yaml_digest;
+        yaml_digest.update(bytes);
+        const std::string yaml_sha256 = yaml_digest.hex_digest();
         if (const char* sentinel = std::getenv("TEST_SENTINEL_FD")) {
             errno = 0;
             if (::fcntl(std::atoi(sentinel), F_GETFD) >= 0 || errno != EBADF) {
@@ -143,7 +145,7 @@ int main(int argc, char** argv) {
         const char* mode = std::getenv("TEST_INSPECTOR_MISMATCH");
         const std::string reported_digest = mode && std::strcmp(mode, "digest") == 0
                                                 ? std::string(64, '0')
-                                                : input.at("sha256").get<std::string>();
+                                                : yaml_sha256;
         int tp = 1;
         if (const char* configured_tp = std::getenv("TEST_NATIVE_INSPECT_TP"))
             tp = std::atoi(configured_tp);
@@ -199,13 +201,11 @@ int main(int argc, char** argv) {
             native_settings.update(json::parse(configured_settings));
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v2"},
                        {"snapshot", {{"sha256", reported_digest},
-                                     {"resolution_root", input.at("resolution_root")}}},
+                                     {"resolution_root", cwd}}},
                        {"engine", {{"abi_version", RAD_ABI_VERSION},
                                     {"model", reported_model},
                                     {"radiance_home", reported_home},
-                                    {"radiance_home_source", nullptr},
                                     {"kernels", kernels},
-                                    {"kernels_source", nullptr},
                                     {"listener", {{"host", std::getenv("TEST_NATIVE_INSPECT_HOST") ? std::getenv("TEST_NATIVE_INSPECT_HOST") : "127.0.0.1"},
                                                    {"port", configured_integer("TEST_NATIVE_INSPECT_PORT", 8123)}}},
                                     {"tp_wire", std::getenv("TEST_NATIVE_INSPECT_TP_WIRE")
