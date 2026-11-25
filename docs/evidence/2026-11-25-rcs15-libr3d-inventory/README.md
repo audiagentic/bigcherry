@@ -12,7 +12,7 @@ Counting source files that mention each form at the pinned release:
 
 | Form or family | libr3d files | libr4d files |
 |---|---:|---:|
-| IQR (trellis-coded 6/7-bit weights) | 0 rows (one comment mentions IQR dtypes) | 22 files, including the GEMM units (`r4d_gemm_iqr*`), the decoder header, the embedding gather, the vocabulary head, the MoE variant |
+| IQR (trellis-coded 6/7-bit weights) | 0 rows (one comment mentions IQR dtypes) | 24 files, including the GEMM units (`r4d_gemm_iqr*`), the decoder header, the embedding gather, the vocabulary head, the MoE variant |
 | local int8 form with rotated activations (the IQ8R container) | 0 | in the int8 GEMM units |
 | MXFP4 | 13 | present |
 | E4M3 | 33 | present |
