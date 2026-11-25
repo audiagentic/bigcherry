@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.15.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.14.1...bc-radiance-2020.15.0) (2026-11-25)
+
+
+### New and changed
+
+* **radiance:** bc-iqr overlay plugin with the embedding gather; pin-triage origin drift ([#1596](https://github.com/audiagentic/bigcherry/issues/1596)) ([ddfe31e](https://github.com/audiagentic/bigcherry/commit/ddfe31e6a106ac2deb8bf618921e9eb832927cb1))
+
 ## [2020.14.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.14.0...bc-radiance-2020.14.1) (2026-11-25)
 
 
