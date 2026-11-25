@@ -67,6 +67,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Supersedes #1544-specific v3 contract-preservation and writer/replay implementation instructions. The stock-only and mixed TP findings, historical negative uncapped UV, exact qualification, PWR07 telemetry and RSC02 recovery remain. No new power plan owner.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Effective per-device power and qualification identity binds candidate runtime acceptance, performance/calibration keys and named measurement compatibility; do not invalidate unrelated compile cache. Prior profile evidence not silently accepted on changed context; stock no-write every bump, required nonstock profile fresh compatible qualification or explicit refusal, no fallback. Owner-only typed plan from YAML; PWR10/RSC11 exact candidate real restore evidence. Do not repeat every historical sweep or introduce manifest producer.
+
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
@@ -106,3 +108,5 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - 2026-11-25T01:10:09.371431+00:00 (updated-by): Updated: section:description, section:steps, section:standards
 - RV4595
 - 2026-11-25T01:39:04.091027+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- RV4615
+- 2026-11-25T02:09:24.099602+00:00 (updated-by): Updated: section:notes

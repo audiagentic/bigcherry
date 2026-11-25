@@ -59,6 +59,8 @@ S17 close-out must explicitly map former launcher power feature (#895) and PWR04
 
 S18 independent gate: actual owner/engine/helper online, measurement, quality, experiments and named cache reuse start from native YAML only, no --manifest input, no writer serialization dependency, no generic renamed envelope; old input rejected. Existing native Fleet and front used with narrow managed hooks, unsupported managed modes refuse. Complete semantic caller inventory and deletion evidence, native power and resource/transport gates, installed release and prior S17 outstanding gates. No close until real receipts and owner review.
 
+Native launch migration acceptance must run through existing engine-adapter pin-bump/accept workflow against one exact candidate pin/build/bundle (including declared helper lane); matched offline parser all YAML/model roster, native --config CPU smoke, card-free owner and compiled native seams, installed stock dense/helper/quality/cache/refit/lifecycle, qualified mixed TP power apply/restore. Retire manifest protocol flags/option registry/launch tests and all active callers only when replacement gates exist; output-only capture allowed. Require actual candidate proofs, no skipped required gates or inherited old build, retain all S17/S18 and RHP12 requirements.
+
 ## Notes
 
 **Unpublished P1 prototype disposition (2026-11-13):** The original local `rad0014_plan_memory_v2_inputs` sidecar commit `006b7ce14` is preserved at GitHub `archive/rsc11-s13-p1-engine-native-20261113` and is **superseded, not merged**. Current `rad0011` already emits the authoritative post-rank-split rank-demand JSON consumed by native P1; the old three-field sidecar lacks `claimable_bytes` and `evidence` and has a different schema. No production or GPU testing is claimed for `rad0014`. See [unpublished branch reconciliation](../../../evidence/2026-11-13-unpublished-branch-reconciliation/README.md). Retain the active RSC11 S11/S13 admission and hardware gates.
@@ -73,6 +75,8 @@ CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RSC04,RSC09,RSC10 These are un
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. No new RUM16: RSC11 owns the cross-cutover and RSC01/02/03/05/06/12 and PWR07/08/10 own implementation. S17 older manifest-specific acceptance terms are mapped to typed runtime plan/receipt equivalents, never a demand to retain manifest launch. Do not reopen completed RUM04 or RUM09 wholesale.
 
 S15 prior proof source: docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md. Card-free fake owner is not hardware parity; actual maintained ABBA lifecycle adapter must exercise both launch paths, not a direct engine proxy. Historical plan at b0bf406bf preserves the earlier wording.
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. S18 and S17 acceptance consume MEN24 A–H order and MEN15/16/17 exact candidate gates; no second serving or upstream migration programme. RSC01/02/05/06 own native parser/Fleet/resource/helper seam tests and coupling declarations, PWR07/08/10 owner policy, RSP01 installed bundle. Coordinate RCS24 update of bump docs/skills on actual cutover.
 
 ## Status 2026-11-19
 
@@ -160,3 +164,5 @@ runs remain lead-owned.
 - RV4588
 - 2026-11-25T01:35:31.897852+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:standards, section:acceptance_criteria, section:notes
 - 2026-11-25T01:44:23.913317+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- RV4613
+- 2026-11-25T02:08:23.102972+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

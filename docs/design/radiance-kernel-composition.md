@@ -1,5 +1,7 @@
 # Composable Radiance kernel builds
 
+> **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
+
 Status: design, 2026-11-25. Plan items: RCS19 to RCS24 (build-radiance-components), supplementing RCS15 to RCS18 (native RDNA3 provider migration). Nothing here is implemented yet except where marked.
 
 ## 0. Terms (one meaning each)
@@ -204,10 +206,10 @@ Review outcome (2026-11-25), recorded because it changed the design: the first v
 
 **Measured scale.** Over 12 upstream releases (20 October to 19 November 2026): 309 commits, 52 in libr4d, 14 on the files we would shadow first (the IQR GEMM unit 6, its decoder header 3, the prefill header 2, the vocabulary head 2, the embedding gather 1); the row-table source changed 29 times. libr4d has about 170 files and 115 build units; the first overlays shadow about five units. File-level churn is low; the exposure that matters is shared headers and the row table, because they can change what an unchanged kernel means.
 
-**Origin mapping.** Each overlay family records, in a manifest, its upstream origins and what it replaces: `origins = [{ path, base_commit, base_blob, last_integrated_commit }]`, the build slots and the rows it overrides, the architectures it covers, the patches and rewrites its source absorbed, and an integration strategy per origin: `whole-unit` (our file is upstream's file plus our changes: three-way merge applies) or `extracted-family` (our file is a carved-out part of upstream's unit: an upstream change to the origin needs structural review, never a text merge). One origin may feed several owned files; one owned file may rest on several origins.
+**Origin mapping.** Each overlay family records, in a manifest, its upstream origins and what it replaces: `origins = [{ path, base_commit, last_integrated_commit }]`, the build slots and the rows it overrides, the architectures it covers, the patches and rewrites its source absorbed, and an integration strategy per origin: `whole-unit` (our file is upstream's file plus our changes: three-way merge applies) or `extracted-family` (our file is a carved-out part of upstream's unit: an upstream change to the origin needs structural review, never a text merge). One origin may feed several owned files; one owned file may rest on several origins.
 
 **Pin triage and bump: an acceptance transaction, not a merge.**
-1. Verify provenance: the base commit exists, its blob equals the manifest, the target descends from it; otherwise the unit is `unverified`, never clean.
+1. Verify provenance: the base commit exists and is an ancestor of the target; compare the origin path and source changes using git; otherwise the unit is `unverified`, never clean.
 2. Classify each origin: unchanged; changed and cleanly mergeable (candidate diff only); conflicting, renamed, split, deleted or ambiguous (blocks automatic integration, opens a reconciliation item).
 3. Include closure: report changed headers reachable from any owned source for each architecture and pass, preferring the compiler's dependency output over text search; an incomplete closure is reported as incomplete and widens the compile set.
 4. Row contract snapshot: compare row presence, schemas, constraints, priority, callback ownership and chaining semantics of the shadowed rows between the old and new pin; an unchanged owned kernel under a changed row or layout contract is the failure this catches.

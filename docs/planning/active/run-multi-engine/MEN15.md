@@ -19,11 +19,7 @@ Owner, 2026-10-17: quick, RAM-only smoke tests for both engines so bumps and oth
 
 ## Steps
 
-1. llama.cpp: a CPU build lane (GGML_HIP off) or the HIP build with HIP_VISIBLE_DEVICES/ROCR_VISIBLE_DEVICES empty and -ngl 0; a tiny GGUF (e.g. a ~15-150M-parameter model, pinned by sha256 in config) fetched once to the lab model store.
-2. radiance: check its CPU path (radiance_home has libavx / libref kernel plugins) - run with --kernels libavx,libref (or what radiance requires for CPU) and a tiny .rad container: find a published tiny container, else convert a tiny model with radiance's quantizers once and pin it.
-3. Engine adapter method `cpu_smoke(context, build) -> SmokeSpec` (binary, args, env with no GPU visible, model, expected checks); generic runner in bigcherry: start server, health, 2-3 short greedy completions, check non-empty, deterministic across two runs, no GPU device opened (assert HIP device count 0 / env empty), graceful shutdown, time + peak RSS recorded.
-4. Wire it: `bigcherry --engine <name> smoke --cpu`; pin-bump runs it as a phase before any GPU smoke (MEN10 step f); patch/component changes can run it locally and in CI where the build is cheap enough.
-5. Docs in RELEASES.md / PIN_BUMP.md / engine READMEs.
+Reuse existing generic runner, tiny-model SHA and health/completion/RSS/stop checks. For Radiance use actual native CPU-only YAML fixture (libavx/libref, one rank, small context and one sequence), existing harness fills only ephemeral model path/port in test fixture; no production flags-to-YAML shim. Actual argv --config and candidate binary/home, no GPU visible or inherited config env, verify logs/device and deterministic nonempty output/clean shutdown. Separate existing card-free managed owner tests exercise same sealed YAML, observe-only power and admission. Preserve llama.cpp CPU smoke unchanged; wire to MEN16 existing lane and docs.
 
 ## Detailed Solution & Technical Design
 
@@ -51,12 +47,19 @@ Both engines pass the CPU smoke on dev with all GPUs busy (or devices hidden) in
 
 ## Acceptance Criteria
 
-
+Both engines retain pinned tiny-model integrity and actual no-GPU smoke, Radiance candidate exec uses native --config (no manifest/legacy flags), fails wrong build/hash/missing or invalid YAML/GPU opened/load failure, passes real deterministic outputs and clean stop. Fake runner and actual installed candidate receipt required, not fake owner only. No duplicate smoke harness.
 
 ## Notes
 
 Sequence: after MEN11 leftovers, before the bumps (MEN10 step f uses it as the first bump smoke).
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. radiance.py cpu_smoke currently uses engine_args flags plus engine.toml smoke.cpu.args, base.build_cpu_smoke and campaign.cpu_smoke use shared ServerRunner. Actual argv may already translate elsewhere; audit rather than claim failure. Native cutover removes any Radiance legacy arg-to-YAML projection, preserves llama.cpp flags.
+
 ## Change Log
 
 - 2026-10-17T02:58:13.549094+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4616
+- 2026-11-25T02:09:58.080009+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria

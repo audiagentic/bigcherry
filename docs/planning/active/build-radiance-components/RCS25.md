@@ -53,7 +53,14 @@ A kernel change can be built, hashed against the shipped build, and replayed fro
 
 Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or digest machinery: git commit ids and plain comparisons only.
 
+2026-11-25 MEN24 bump integration: this is the sole discrete kernel harness owner. RCS19 supplies the actual composed input and affected-unit list; RCS20 supplies family targets; RCS23 uses this harness for overlay resource, byte-output and replay qualification before advancing integrated revision. Compare exact git revisions, plugin name/version/upstream release and actual rows; no additional hash/identity machinery apart from existing output hashes. Run one card under queued lease, unknown dependency scope widens checks; isolated harness tolerates missing unrelated rows only, never suppresses required target-row failures. Full integrated lane, installed Gate E and MEN17 serving/parity checks remain release gates. See docs/design/radiance-bump-integration.md.
+
 ## Change Log
 
 - 2026-11-25T02:12:11.908255+00:00 (created-by): Created by lead
 - 2026-11-25T02:12:35.487166+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+
+## Reviews
+
+- RV4625
+- 2026-11-25T02:18:13.454037+00:00 (updated-by): Updated: section:notes

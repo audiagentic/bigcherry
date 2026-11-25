@@ -59,6 +59,8 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. RUM05 delivered ordered/disjoint-card mapping and initial room admission; reuse and regression test, do not redo its allocator. RSC05 remains owner of discovery/selection and stale authored inventory cleanup.
 
+2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 gate order. Exact candidate native Fleet and offline parser/engine/helper must preserve ordered physical BDF to local ordinal mapping and disjoint roles, including mixed TP and reversed order; compare actual selected devices, not merely YAML arch or card ordinal. PWR08 uses same selected BDFs; RSC11 integrates candidate seam and installed tests before promotion. Reuse discovery and existing identity, no new inventory or allocation path.
+
 ## Change Log
 
 - 2026-11-02T03:40:33.029040+00:00 (created-by): Created by agent
@@ -73,3 +75,5 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 
 - RV4592
 - 2026-11-25T01:37:30.794580+00:00 (updated-by): Updated: section:steps, section:notes, section:acceptance_criteria
+- RV4623
+- 2026-11-25T02:13:56.078554+00:00 (updated-by): Updated: section:notes

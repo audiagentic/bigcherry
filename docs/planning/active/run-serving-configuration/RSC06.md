@@ -57,6 +57,8 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Historical v1/v3 helper startup, 22 fields and 2026-11-05 delivery are retained as evidence, not a reason to rerun the environment migration. Existing helper hardware identity/time gate remains outstanding.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Replace moe-remote/component.toml manifest-path coupling and old protocol flags with actual shared YAML extension/typed role transport boundary, explicit wire generation/identity and callback signatures, update tests and selected patch dependencies atomically. Exact candidate helper row/format/owner-map/transport/readiness/drain checks, wrong generation/BDF/format fails before HIP. Keep existing RHP20 per-layout qualification and RCS23 provider identity, no new helper protocol just for bump.
+
 ## Change Log
 
 - 2026-11-02T03:52:00.963006+00:00 (created-by): Created by agent
@@ -74,3 +76,5 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 - RV4593
 - 2026-11-25T01:38:00.583347+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
+- RV4612
+- 2026-11-25T02:07:52.888903+00:00 (updated-by): Updated: section:notes
