@@ -55,9 +55,12 @@ Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); sequenced i
 
 Revised after a design review (2026-11-25): the first version proposed whole-file substitution inside upstream's units; the loader's existing multi-library hierarchy makes overlays simpler and reversible. Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); the large gfx11 migration is gated on RCS15. GPT is review only on this work.
 
+2026-11-25 simplification (owner: no adversaries, test discretely): provenance means git commit ids and plain comparisons; no digest binding of the manifest or owned sources, no composite identity hashes, no resume-binding to digests. The base commit check is `the commit exists and is an ancestor of the target`. Overlay identity is a name, a version string and the upstream release it was built against. The row-contract comparison stays as a test between the base and overlay rows. Per-overlay checks use the discrete harness (RCS25), not the full plugin.
+
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
 - 2026-11-25T00:54:59.083112+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:58:03.939770+00:00 (updated-by): Updated: section:steps
 - 2026-11-25T01:08:26.587516+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-25T02:12:45.058840+00:00 (updated-by): Updated: section:notes

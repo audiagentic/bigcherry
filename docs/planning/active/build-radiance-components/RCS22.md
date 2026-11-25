@@ -57,9 +57,12 @@ The row contract, not the translation unit, is the unit of runtime composition (
 
 Design review (2026-11-25): the engine's loader already composes several kernel libraries by hierarchy and supports override plugins (libbcgfx12 is one), so family plugins use that mechanism: RCS23's overlays are the first family plugins. What this item adds is the sealed manifest, complete callback ownership per family, stable row identities across libraries, the composition identity and the lifecycle policy; the base libraries keep their names. The row contract, not the translation unit, is the unit of runtime composition. Per-family rollback is deferred until compatibility and cache invalidation are proven.
 
+2026-11-25 simplification (owner: no adversaries): replace the five identities with a plugin name, a version string, the upstream release it was built against and the existing row ABI revision check; no ABI or composition hashes, no code-object digests in a sealed manifest. The release manifest is a plain list of family plugins and versions installed as a set; whole-release rollback keeps the previous release root. The row-contract comparison is a test, not a hash.
+
 ## Change Log
 
 - 2026-11-25T00:40:56.481749+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:36.975982+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:52:49.430011+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-25T01:08:31.536022+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T02:12:49.847394+00:00 (updated-by): Updated: section:notes
