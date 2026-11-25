@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.17.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.16.0...bc-radiance-2020.17.0) (2026-11-25)
+
+
+### New and changed
+
+* **radiance:** the IQR GEMM family as the third owned unit in bc-iqr; rad0065 retired ([#1603](https://github.com/audiagentic/bigcherry/issues/1603)) ([358336f](https://github.com/audiagentic/bigcherry/commit/358336fae467bec0e15ef271b7c9c473a47f5bd0))
+
 ## [2020.16.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.15.0...bc-radiance-2020.16.0) (2026-11-25)
 
 
