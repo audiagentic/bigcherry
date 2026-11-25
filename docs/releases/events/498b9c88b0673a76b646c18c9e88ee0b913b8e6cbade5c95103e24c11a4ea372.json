@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261125_234657_improve-independent-gpu-stabil_4621",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR12.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py"
+  ],
+  "plan-item-ids": [
+    "PWR12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Independent PWR12 observed-reference temporary research screening, batched exact native matrix validation, sampled in-load thermal coverage, and actual four-card physical research evidence. No engine or default profile changes.",
+  "timestamp-utc": "2026-11-25T23:46:57.410883Z",
+  "user-summary-candidate": "Improve independent GPU stability research screening and retain measured results."
+}

@@ -27,7 +27,7 @@ def args(tmp_path, **kwargs):
                      stock_confirmed=True, reference=None, probe=binary,
                      dtype=["fp16"], n=768, seconds=1, pause_ms=[0, 2],
                      setup_timeout=2, max_hotspot_c=85, output=tmp_path / "result.json",
-                     provider="hipblaslt", memory_mib=None, headroom_mib=None,
+                     provider="hipblaslt", memory_mib=None, headroom_mib=None, batch=1,
                      warmup_seconds=0, min_hotspot_c=None, max_memory_c=None,
                      observe_current=False, apply_profile=False, confirm_idle=False)
     ns = Namespace(**(vars(base) | kwargs))
@@ -38,10 +38,10 @@ def args(tmp_path, **kwargs):
 
 
 def case(pause, algorithm="00"*16, status="pass"):
-    return {"dtype": "fp16", "n": 768, "pause_ms": pause, "requested_seconds": 1, "warmup_seconds": 0,
+    return {"dtype": "fp16", "n": 768, "pause_ms": pause, "requested_seconds": 1, "warmup_seconds": 0, "batch": 1,
             "status": status, "native": {"status": status, "bdf": BDF, "arch": "gfx1100", "dtype": "fp16", "n": 768,
               "hip": 70200, "driver": 70200, "provider": "hipblaslt", "library_version": "100202", "workspace": 0,
-              "algorithm": algorithm, "iterations": 2, "elapsed_s": 1.0,
+              "algorithm": algorithm, "iterations": 2, "host_checks": 2, "batch": 1, "elapsed_s": 1.0,
               "start_ns": 1_000_000_000, "end_ns": 2_000_000_000}}
 
 
@@ -228,13 +228,18 @@ def test_canonical_cli_is_separate_from_power_control():
     assert ns.stock_confirmed
 
 
-def test_hot_window_requires_continuous_bracket():
+def test_hot_window_requires_continuous_in_load_coverage():
     samples = [(i*250_000_000, 75000) for i in range(9)]
-    assert a.hot_window(samples, 1_900_000_000, 1, 74000)
-    assert not a.hot_window(samples[:-1], 1_900_000_000, 1, 74000)
-    assert not a.hot_window(samples[:2]+samples[-1:], 1_900_000_000, 1, 74000)
+    # The final post-exit sample may cool rapidly. It is not in-load evidence.
+    samples[-1] = (samples[-1][0], 50000)
+    window = a.hot_window(samples, 0, 1_900_000_000, 1, 74000)
+    assert window is not None and window["minimum_mc"] == 75000
+    assert window["end_ns"] <= 1_900_000_000
+    assert a.hot_window(samples[:3], 0, 1_900_000_000, 1, 74000) is None
+    assert a.hot_window(samples[:2]+samples[-2:], 0, 1_900_000_000, 1, 74000) is None
+    assert a.hot_window(samples, 1_000_000_000, 1_900_000_000, 1, 74000) is None
     samples[5] = (samples[5][0], 73000)
-    assert not a.hot_window(samples, 1_900_000_000, 1, 74000)
+    assert a.hot_window(samples, 0, 1_900_000_000, 1, 74000) is None
 
 
 def test_optional_memory_sensor_has_own_limit(tmp_path):
@@ -265,10 +270,15 @@ def test_observed_current_is_not_factory_reference(tmp_path):
 
 
 @pytest.mark.parametrize("outcome", ["pass", "mismatch", "unreaped", "restore_failed"])
-def test_apply_uses_existing_transaction_and_fences_restore(tmp_path, outcome):
+@pytest.mark.parametrize("observed", [False, True])
+def test_apply_uses_existing_transaction_and_fences_restore(tmp_path, outcome, observed):
     ref = stock_reference(tmp_path)
+    if observed:
+        doc = json.loads(ref.read_text())
+        doc["request"].update(stock_confirmed=False, observe_current=True)
+        ref.write_text(json.dumps(doc))
     ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False, reference=ref,
-              apply_profile=True, confirm_idle=True)
+              apply_profile=True, confirm_idle=True, observe_current=observed)
     (tmp_path/"temp2_input").write_text("50000")
     state = [STOCK]
     events = []
@@ -310,6 +320,7 @@ def test_apply_uses_existing_transaction_and_fences_restore(tmp_path, outcome):
             patch.object(a,"thermal_sensor",return_value=(tmp_path/"temp2_input",85000)), \
             patch.object(a,"PowerTransaction",Tx), patch.object(a,"run_case",side_effect=run):
         result = a.screen(ns, journal_dir=tmp_path)
+    assert result["reference_basis"] == ("observed" if observed else "factory_confirmed")
     assert events[:3] == ["prepare","apply","probe"]
     if outcome == "unreaped":
         assert "restore" not in events
@@ -451,3 +462,10 @@ def test_cli_managed_capture_receipt_and_reference(tmp_path):
     assert m["state"] == "failed"
     assert candidate.run_id != ns.run_id
     assert json.loads(candidate.output.read_text())["observations"]["ai_screen"]["status"] == "mismatch"
+
+
+def test_batched_coverage_refuses_missing_host_checks():
+    payload = case(0)["native"] | {"batch": 32, "iterations": 64, "host_checks": 2}
+    a.validate_native(payload, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512, batch=32)
+    with pytest.raises(a.ScreenError, match="verification coverage"):
+        a.validate_native(payload | {"host_checks": 1}, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512, batch=32)

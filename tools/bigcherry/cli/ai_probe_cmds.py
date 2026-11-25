@@ -20,12 +20,12 @@ def register(sub) -> None:
     p.add_argument("--arch", required=True, help="expected architecture; verified by HIP probe")
     p.add_argument("--role", required=True, help="engine or concrete helperN")
     p.add_argument("--stock-confirmed", action="store_true", help="operator has verified factory settings; never writes")
-    p.add_argument("--observe-current", action="store_true", help="test observed settings without claiming factory reference")
+    p.add_argument("--observe-current", action="store_true", help="observe current settings, or explicitly apply a diagnostic candidate against that exact observed reference (not factory qualification)")
     p.add_argument("--apply-profile", action="store_true",
                    help="explicitly authorize temporary candidate via existing platform power transaction")
     p.add_argument("--confirm-idle", action="store_true",
                    help="confirm no other GPU users or unresolved power journals from any owner")
-    p.add_argument("--reference", help="managed stock screen run ID for candidate")
+    p.add_argument("--reference", help="managed stock screen run ID (observed reference only in explicit research mode)")
     p.add_argument("--dtype", nargs="+", choices=ai_probe.DTYPES, default=["fp16"])
     p.add_argument("--provider", choices=ai_probe.PROVIDERS, default="hipblaslt",
                    help="explicit installed matrix library; no silent fallback")
@@ -34,6 +34,7 @@ def register(sub) -> None:
     p.add_argument("--warmup-seconds", type=int, default=0, help="additional bounded heating time per case")
     p.add_argument("--min-hotspot-c", type=int, help="required sampled temperature for entire final interval")
     p.add_argument("--max-memory-c", type=int, help="optional explicit memory temperature ceiling")
+    p.add_argument("--batch", type=int, default=1, help="matrix launches per host check; every output checked on-device for batch > 1")
     p.add_argument("--n", type=int, default=768)
     p.add_argument("--seconds", type=int, required=True, help="per dtype and load pattern")
     p.add_argument("--pause-ms", nargs="+", type=int, default=[0, 2], help="0 sustained, positive burst gap")
@@ -45,7 +46,7 @@ def register(sub) -> None:
 
 def cmd_screen(args: argparse.Namespace) -> int:
     if (not ai_probe.BDF.fullmatch(args.bdf) or not ai_probe.ARCH.fullmatch(args.arch) or
-            not 16 <= args.n <= 2048 or not 1 <= args.seconds <= 3600 or
+            not 16 <= args.n <= 2048 or not 1 <= args.seconds <= 3600 or not 1 <= args.batch <= 256 or
             not 1 <= args.setup_timeout <= 300 or not 1 <= args.max_hotspot_c <= 110 or
             not 0 <= args.warmup_seconds <= 3600 - args.seconds or
             (args.min_hotspot_c is not None and not 1 <= args.min_hotspot_c < args.max_hotspot_c) or
@@ -80,8 +81,9 @@ def cmd_screen(args: argparse.Namespace) -> int:
             if ref_dir.is_symlink() or args.reference.is_symlink():
                 raise ai_probe.ScreenError("symlink stock receipt refused")
             args.reference_digest = ai_probe.digest(args.reference)
-            refs.append({"type": "run", "id": reference_id, "role": "stock"})
-            inputs.append({"role": "stock", "uri": str(args.reference), "sha256": args.reference_digest.removeprefix("sha256:")})
+            ref_role = "observed" if args.observe_current else "stock"
+            refs.append({"type": "run", "id": reference_id, "role": ref_role})
+            inputs.append({"role": ref_role, "uri": str(args.reference), "sha256": args.reference_digest.removeprefix("sha256:")})
         for role, path in (("probe", args.probe), ("profiles", args.profiles)):
             inputs.append({"role": role, "uri": str(path.resolve()), "sha256": ai_probe.digest(path).removeprefix("sha256:")})
         args.input_digests = {i["role"]: "sha256:" + i["sha256"] for i in inputs}
