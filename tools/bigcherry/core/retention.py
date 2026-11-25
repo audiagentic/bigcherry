@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import calendar
 import os
-import stat
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -109,21 +108,7 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
         def add_run(d: Path, kind: str) -> None:
             e = Entry(d, kind, d.name)
             try:
-                if kind == "legacy":
-                    # Never read a flat symlink or special file as an adoption.
-                    from . import legacy_runs
-                    try:
-                        mode = os.lstat(d / rm.MANIFEST_NAME).st_mode
-                    except FileNotFoundError as exc:
-                        raise rm.ManifestError("flat run has no adopted manifest") from exc
-                    if not stat.S_ISREG(mode):
-                        raise rm.ManifestError("flat run manifest is a symlink or special file")
                 m = rm.read_manifest(d)
-                if kind == "legacy":
-                    try:
-                        legacy_runs.verify_adoption(root, d.name, m)
-                    except (legacy_runs.LegacyRunError, OSError) as exc:
-                        raise rm.ManifestError(f"untrusted flat run adoption: {exc}") from exc
                 if m["kind"] != kind or m["run_id"] != d.name:
                     e.problem = "manifest names a different kind or run id than its directory"
                 else:
@@ -139,8 +124,7 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
                 inv.unknown.append(kind_dir)
                 continue
             if kind_dir.name not in rm.NESTED_RUN_KINDS:
-                # A flat pre-manifest run; unadopted/corrupt ones remain GC blockers.
-                add_run(kind_dir, "legacy")
+                inv.unknown.append(kind_dir)   # a flat pre-manifest directory: listed, never touched
                 continue
             for d in sorted(kind_dir.iterdir()):
                 if not d.is_dir() or d.is_symlink():
@@ -350,74 +334,3 @@ def native_installed_build_refs(root: Path) -> tuple[dict[str, list[str]], list[
         errors.append(f"cannot enumerate native installed releases: {exc}")
     return refs, errors
 
-
-def measurement_record_build_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
-    """Pin immutable MRC01 build IDs; fail closed on unverified record/blob."""
-    from .run_records import RecordError, RunRecordStore
-
-    location = Path(root) / "run-records"
-    if not location.exists() and not location.is_symlink():
-        return {}, []
-    v1 = location / "v1"
-    if (location.is_symlink() or not location.is_dir()
-            or v1.is_symlink() or (v1.exists() and not v1.is_dir())):
-        return {}, [f"untrusted run-record store directory: {location}"]
-    try:
-        store = RunRecordStore(root)
-        records = store.query()
-        refs: dict[str, list[str]] = {}
-        for item in records:
-            identity = item["record"]["identity"]
-            refs.setdefault(identity["build_id"], []).append(
-                "run record " + item["sha256"][:12])
-        return refs, []
-    except (RecordError, OSError, ValueError) as exc:
-        return {}, [f"unreadable run-record store: {exc}"]
-
-
-def stored_serving_manifest_build_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
-    """Pin typed runtime paths in saved v1, v2 and v3 serving manifests.
-
-    bc-serve writes manifest-*.json directly under its chosen run directory,
-    normally a named site directory one level beneath the work root. Replay
-    indexes and evidence sidecars are not serving manifests.
-    """
-    import json
-
-    root = Path(root)
-    refs: dict[str, list[str]] = {}
-    errors: list[str] = []
-    excluded = {"builds", "sources", "runs", "releases", "installed-radiance",
-                "run-records", "objects", "trash", "cache", "artifacts-store",
-                "test-tmp", "resource-locks", "cleanup-records", "build-logs"}
-    try:
-        sites = [root] + [site for site in sorted(root.iterdir())
-                          if site.is_dir() and not site.is_symlink()
-                          and site.name not in excluded]
-        for site in sites:
-            for saved in sorted(site.glob("manifest-*.json")):
-                if ".json." in saved.name:
-                    continue
-                try:
-                    if saved.is_symlink() or not saved.is_file():
-                        raise ValueError("untrusted manifest file")
-                    doc = json.loads(saved.read_text(encoding="utf-8"))
-                    if (not isinstance(doc, dict)
-                            or doc.get("kind") != "ServingManifest"
-                            or doc.get("apiVersion") not in ("bigcherry/v1", "bigcherry/v2", "bigcherry/v3")):
-                        raise ValueError("invalid stored serving manifest identity")
-                    processes = doc.get("spec", {}).get("processes", {})
-                    engine = processes.get("engine", {})
-                    runtime = engine.get("runtime", {})
-                    home = runtime.get("radiance_home")
-                    if home is None:
-                        continue  # older manifests have no typed runtime path
-                    if not isinstance(home, str) or not home.startswith("/"):
-                        raise ValueError("invalid stored runtime path")
-                    refs.setdefault(home, []).append(
-                        f"stored serving manifest {saved.name}")
-                except (OSError, ValueError, TypeError, AttributeError) as exc:
-                    errors.append(f"unreadable stored manifest {saved}: {exc}")
-    except OSError as exc:
-        errors.append(f"cannot enumerate stored serving manifests: {exc}")
-    return refs, errors

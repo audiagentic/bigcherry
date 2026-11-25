@@ -22,10 +22,9 @@ if TYPE_CHECKING:
 SCHEMA_VERSION = 1
 MANIFEST_NAME = "run.manifest.json"
 
-# "legacy" is a reader-only kind for adopted flat runs/<name>/ directories.
 # New producers still create only nested run kinds.
 NESTED_RUN_KINDS = frozenset({"ab", "accept", "stream", "replay", "capture", "kl", "profile", "build", "bump", "release"})
-RUN_KINDS = NESTED_RUN_KINDS | {"legacy"}
+RUN_KINDS = NESTED_RUN_KINDS
 
 RUN_STATES = ("created", "running", "completed", "failed", "cancelled", "interrupted")
 TERMINAL_STATES = frozenset({"completed", "failed", "cancelled"})

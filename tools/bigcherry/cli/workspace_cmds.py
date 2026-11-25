@@ -50,10 +50,9 @@ def cmd_run_new(args: Namespace) -> int:
 
 def _find(root: Path, run_id: str):
     # Diagnostic lookup must still resolve corrupt nested manifests so status
-    # can report their actual error. Include adopted flat runs, not unadopted.
+    # can report their actual error.
     hits = [e.path for e in retention.inspect_workspace(root, measure=False).runs
-            if e.run_id.startswith(run_id) and
-            (e.kind != "legacy" or e.manifest is not None)]
+            if e.run_id.startswith(run_id)]
     return hits
 
 
@@ -219,30 +218,6 @@ def cmd_clean(args: Namespace) -> int:
     return 0
 
 
-def cmd_legacy_runs(args: Namespace) -> int:
-    from ..core import legacy_runs
-
-    root = work_root(args.work_root)
-    report = legacy_runs.migrate(root, apply=args.apply)
-    if args.json:
-        json.dump(report, sys.stdout, indent=1, sort_keys=True)
-        print()
-    else:
-        for row in report["runs"]:
-            pins = ", ".join(ref["id"] for ref in row["references"]) or "-"
-            print(f'{row["status"]:12} {row["path"]}  build refs: {pins}'
-                  + (f'  ERROR: {row["error"]}' if row.get("error") else ""))
-        for row in report["loose_files"]:
-            pins = ", ".join(ref["id"] for ref in row.get("references", [])) or "-"
-            print(f'loose {row["status"]:7} {row["path"]}  build refs: {pins}'
-                  + (f'  ERROR: {row["error"]}' if row.get("error") else ""))
-        print(f'legacy runs: {json.dumps(report["totals"], sort_keys=True)}'
-              + (" (dry run: no files changed)" if not args.apply else ""))
-        if report.get("error"):
-            print(report["error"], file=sys.stderr)
-    return 3 if report["totals"]["errors"] else 0
-
-
 def register(sub) -> None:
     run = sub.add_parser("run", help="create and inspect managed runs under the work root (run new | status | harvest | quarantine | restore | purge)")
     rsub = run.add_subparsers(dest="run_action", required=True)
@@ -278,14 +253,6 @@ def register(sub) -> None:
     pg.add_argument("--grace-days", type=float, default=7.0)
     pg.add_argument("--work-root")
     pg.set_defaults(func=_cmd_quarantine_family)
-
-    legacy = sub.add_parser("legacy-runs", help="inspect/adopt flat historical runs (dry-run by default)")
-    legacy_sub = legacy.add_subparsers(dest="legacy_action", required=True)
-    migrate = legacy_sub.add_parser("migrate", help="scan every file; write missing v1 manifests only with --apply")
-    migrate.add_argument("--work-root", help="the work root (default: BC_WORK_ROOT)")
-    migrate.add_argument("--apply", action="store_true", help="write manifests using the run manifest lock")
-    migrate.add_argument("--json", action="store_true", help="detailed per-run report")
-    migrate.set_defaults(func=cmd_legacy_runs)
 
     cl = sub.add_parser("clean", help="dry-run report of what cleanup would reclaim and why everything else is protected")
     cl.add_argument("--work-root")

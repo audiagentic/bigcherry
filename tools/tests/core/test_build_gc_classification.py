@@ -78,7 +78,8 @@ def test_dead_runner_lease_requires_operator_action():
             assert inspect()["action"] == "candidate"
 
 
-def test_unreadable_foreign_process_cannot_be_assumed_idle():
+def test_unreadable_foreign_process_does_not_block_cleanup():
+    """A process the cleaner cannot inspect (another user's, or outside the container) cannot hold a build here."""
     with TemporaryDirectory() as tmp:
         root = Path(tmp)
         (root / "runs").mkdir()
@@ -88,20 +89,8 @@ def test_unreadable_foreign_process_cannot_be_assumed_idle():
         policy = retention.Policy(min_age_days=0, newest_k=0)
         error = "cannot inspect process 1 exe: [Errno 13] Permission denied"
         with patch.object(build_gc, "_proc_references", return_value=([], [error])):
-            entry = next(
-                x
-                for x in build_gc.inspect(root, policy=policy, measure=False)
-                if x["path"] == str(build)
-            )
-            assert entry["action"] == "protected"
-            assert "process scan incomplete" in str(entry["reasons"])
-            result = build_gc.apply(root, policy=policy, blocked_check=lambda: None)
-            assert not result["removed"]
-        assert (build / "bin").exists()
-        with patch.object(build_gc, "_proc_references", return_value=([], [])):
-            entry = next(
-                x
-                for x in build_gc.inspect(root, policy=policy, measure=False)
-                if x["path"] == str(build)
-            )
+            entry = next(x for x in build_gc.inspect(root, policy=policy, measure=False) if x["path"] == str(build))
             assert entry["action"] == "candidate"
+            result = build_gc.apply(root, policy=policy, blocked_check=lambda: None)
+            assert [Path(r["path"]) for r in result["removed"]] == [build]
+        assert not build.exists()

@@ -180,9 +180,8 @@ class Cleanup(unittest.TestCase):
             self.assertEqual(by["handmade-dir"].size_bytes, 1000)
             self.assertEqual(by[bad.run_id].action, "protected")
             unknown = {p.name for p in plan.unknown}
-            self.assertEqual(unknown, {"stray"})
-            self.assertEqual(by["scratch"].action, "protected")
-            self.assertIn("unmanaged", " ".join(by["scratch"].reasons))
+            self.assertEqual(unknown, {"stray", "scratch"})     # a flat directory under runs/ is listed, never classified
+            self.assertNotIn("scratch", by)
             self.assertEqual(plan.totals()["candidate"]["runs"], 0)
 
     def test_a_manifest_that_names_another_run_is_not_trusted(self):
