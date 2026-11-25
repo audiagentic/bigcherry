@@ -1,4 +1,4 @@
-# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.17.0)
+# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.18.0)
 
 Gate E takes a published release, downloads its archive, checksum and receipt, installs it into an isolated root with the ROCm SDK (7.2.4),
 verifies the root, then starts, canaries and stops two production layouts under a short GPU lease: `flashnext-4gpu` and `qwen27b-tp3`.
@@ -31,6 +31,8 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.15.0 | cacec67c | 186 s | 26 s | the embedding gather as the first owned kernel of the bc-iqr overlay plugin (libbciqr listed first for libr3 layouts); output hashes and resource records equal to the base row |
 | 2020.16.0 | 9890c229 | 226 s | 25 s | the vocabulary head as the second owned unit of the bc-iqr overlay (libr3 still built a copy of the unit: its exclusion entry did not match, see 2020.17.0) |
 | 2020.17.0 | bea7cb21 | 196 s | 26 s | the IQR GEMM family as the third owned unit (rad0065 archived); libr3 builds none of the three owned units, so both layouts ran their IQR embedding, vocabulary head and GEMM rows from libbciqr only; a cold release build |
+| 2020.17.1 | 70e8068a | 237 s | 20 s | the owner writes the draft and measured manifests in-process (no writer child); helpers take typed settings on a sealed descriptor (no manifest); card selection through one mapping; shared-memory identity from the owner segment. A release build with the compiler cache took about 6 minutes |
+| 2020.18.0 | cc31784b | 196 s | 20 s | the power profile is selected by x-bigcherry.power.profile from one power-profiles.yaml; --power-profile removed |
 
 ## How to read this, and when Gate E need not be run again
 
