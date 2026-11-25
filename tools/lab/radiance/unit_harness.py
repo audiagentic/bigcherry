@@ -108,7 +108,7 @@ def release_plugin(tag: str | None, arch: str) -> Path:
 
 # ------------------------------------------------------------------------------------------------------- composition
 
-def compose(patches: list[str], tree: Path | None, scratch: Path) -> Path:
+def compose(patches: list[str], tree: Path | None, scratch: Path, without: list[str] = ()) -> Path:
     """The source the plugin is built from: ``tree`` as given, or the production composition plus ``patches``."""
     if tree is not None:
         return tree
@@ -116,6 +116,7 @@ def compose(patches: list[str], tree: Path | None, scratch: Path) -> Path:
     from bigcherry.patch import compose_check
     source = engines.load(paths.REPO_ROOT, ENGINE).promotion_source
     ids = list(compose_check.production_ids(ENGINE, source)) if source else []
+    ids = [p for p in ids if p not in without]
     ids += [p for p in patches if p not in ids]
     out = scratch / "src"
     compose_check.materialize_tree(ENGINE, ids, out)
@@ -169,7 +170,16 @@ CASES_BLOCK = ('                if (const char* uh_cases = std::getenv("UH_HASH_
                '                    }\n')
 
 
+# A plugin that carries only some units has no entry point for the rest: the loader notes the absence and goes on
+# (the rows without a kernel then return "unsupported", like libr3's own stubbed rows).
+SYM_ANCHOR = '    if (e || !p) { std::printf("  FAIL  dlsym(%s): %s\\n", n, e ? e : "null"); ++g_fail; return false; }\n'
+SYM_TOLERANT = ('    if ((e || !p) && std::getenv("UH_TOLERATE_ABSENT")) { *out = nullptr; return true; }\n')
+
+
 def inject_selftest(text: str) -> str:
+    if text.count(SYM_ANCHOR) != 1:
+        raise HarnessError("the selftest changed: the dlsym check is not found exactly once")
+    text = text.replace(SYM_ANCHOR, SYM_TOLERANT + SYM_ANCHOR, 1)
     for anchor in (HASH_ANCHOR, CASES_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError("the selftest changed: the harness's edit anchor is not found exactly once "
@@ -203,11 +213,11 @@ target_link_options(libr4d PRIVATE ${CMAKE_BINARY_DIR}/uh_stubs.o)
 
 def cmake_build(source: Path, build: Path, options: list[str], targets: list[str], log: Path) -> None:
     env = dict(os.environ)
-    run(["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release", *options], log, env=env)
+    run(["cmake", "-S", str(source), "-B", str(build), "-G", "Ninja", *options], log, env=env)
     run(["cmake", "--build", str(build), "--target", *targets, "-j", str(max(1, (os.cpu_count() or 2) // 2))], log, env=env)
 
 
-def build_plugin(arch: str, tree: Path, units: list[str], out: Path, reference: Path) -> Path:
+def build_plugin(arch: str, tree: Path, units: list[str], out: Path, reference: Path, libr3: Path | None = None) -> Path:
     """Build ``units`` for ``arch`` into a plugin; returns the plugin file."""
     log = out / "build.log"
     prefix = out / "prefix"
@@ -216,7 +226,7 @@ def build_plugin(arch: str, tree: Path, units: list[str], out: Path, reference: 
     if arch == "gfx1100":
         options = [f"-DCMAKE_PREFIX_PATH={prefix}", f"-DRADIANCE_SRC={tree}", "-DR3_TARGETS=gfx1100", "-DR3_NATIVE=ON",
                    "-DR3_ONLY=" + ";".join(units)]
-        cmake_build(ROOT / "engines/radiance/components/libr3", build, options, ["libr3"], log)
+        cmake_build((libr3 or ROOT / "engines/radiance/components/libr3"), build, options, ["libr3"], log)
     elif arch == "gfx1201":
         cmakefile = tree / "libr4d" / "CMakeLists.txt"
         text = cmakefile.read_text(encoding="utf-8")
@@ -239,14 +249,14 @@ def build_plugin(arch: str, tree: Path, units: list[str], out: Path, reference: 
     return found[0]
 
 
-def selftest_binary(arch: str, tree: Path, out: Path) -> Path:
+def selftest_binary(arch: str, tree: Path, out: Path, libr3: Path | None = None) -> Path:
     """The selftest with the harness's edits, built once per (architecture, edited source) and kept."""
     if arch == "gfx1100":
         # the rewritten copy libr3 runs on gfx11; configure makes it, one cheap unit is enough
         scratch = out / "selftest-build"
         prefix = out / "prefix"
         probe = scratch / "r4d-src" / "r4d_selftest.cpp"
-        run(["cmake", "-S", str(ROOT / "engines/radiance/components/libr3"), "-B", str(scratch), "-G", "Ninja",
+        run(["cmake", "-S", str(libr3 or ROOT / "engines/radiance/components/libr3"), "-B", str(scratch), "-G", "Ninja",
              "-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_PREFIX_PATH={prefix}", f"-DRADIANCE_SRC={tree}",
              "-DR3_TARGETS=gfx1100", "-DR3_NATIVE=ON", "-DR3_ONLY=r4d_prefetch"], out / "selftest.log")
         source = probe
@@ -365,7 +375,7 @@ def hash_cases(spec: dict) -> str:
 
 def selftest_env(arch: str, device: str, extra: dict | None = None) -> dict:
     env = dict(os.environ)
-    env.update(HIP_VISIBLE_DEVICES=device, OPENBLAS_NUM_THREADS="8")
+    env.update(HIP_VISIBLE_DEVICES=device, OPENBLAS_NUM_THREADS="8", UH_TOLERATE_ABSENT="1")
     env.update(extra or {})
     return env
 
@@ -451,19 +461,20 @@ def stage_build(args) -> Path:
     out = Path(args.out) if args.out else work_root() / "unit-harness" / f"{args.family or 'units'}-{args.arch}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
-    tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out)
+    tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
     tree_key = out / "tree"
     tree_key.write_text(str(tree), encoding="utf-8")
-    ref_plugin = release_plugin(args.release, args.arch)
-    plugin = build_plugin(args.arch, tree, units + [u for u in (fam or {}).get("support_units", []) if u not in units], out, ref_plugin)
+    ref_plugin = Path(args.reference) if args.reference else release_plugin(args.release, args.arch)
+    plugin = build_plugin(args.arch, tree, units + [u for u in (fam or {}).get("support_units", []) if u not in units], out, ref_plugin,
+                         Path(args.libr3) if args.libr3 else None)
     built = time.monotonic() - started
-    binary = selftest_binary(args.arch, tree, out)
+    binary = selftest_binary(args.arch, tree, out, Path(args.libr3) if args.libr3 else None)
     ref = kernel_records(ref_plugin, args.arch)
     cand = kernel_records(plugin, args.arch)
     pattern = re.compile(fam["kernels"]) if fam else None
     diff = diff_records(ref, cand, pattern)
     state = {"family": args.family, "units": units, "arch": args.arch, "plugin": str(plugin), "selftest": str(binary),
-             "release": ref_plugin.parts[-4], "reference_plugin": str(ref_plugin), "resources": diff,
+             "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + ref_plugin.parts[-5], "reference_plugin": str(ref_plugin), "resources": diff,
              "build_seconds": round(built, 1)}
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built {', '.join(units)} for {args.arch} in {built:.0f} s (selftest {'cached' if built < 5 else 'ready'}): {plugin}")
@@ -550,6 +561,9 @@ def add_build_arguments(sp) -> None:
     sp.add_argument("--unit", action="append", help="libr4d unit name(s), comma separated (resource records only)")
     sp.add_argument("--arch", required=True, choices=sorted(PLUGIN))
     sp.add_argument("--patch", action="append", help="a patch id added to the production composition")
+    sp.add_argument("--reference", help="a plugin file to compare against instead of an installed release (e.g. an earlier harness build)")
+    sp.add_argument("--libr3", help="the libr3 component directory to build (gfx1100; default: this checkout's)")
+    sp.add_argument("--without", action="append", help="a production patch id left out of the composition")
     sp.add_argument("--tree", help="an already composed source tree instead of the production composition")
     sp.add_argument("--release", help="the installed release to compare against (default: the newest)")
     sp.add_argument("--out", help="output folder (default: under the work root)")

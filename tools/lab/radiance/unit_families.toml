@@ -19,7 +19,7 @@ case = "gemm_iqr_tiled"
 # Extra cases on top of the case's own matrix, "N:K:M" each: the V4 trunk shapes at every row count around a tile edge,
 # a ragged N (5376) and tail row counts.
 shapes = [[5376, 2560], [5120, 2304], [6144, 5120], [5120, 6656]]
-rows = [65, 96, 128, 129, 192, 193, 255, 256, 257, 1024, 2047, 2048, 2049]
+rows = [65, 96, 128, 129, 130, 160, 192, 193, 255, 256, 257, 1024, 2047, 2048, 2049]
 tail_rows = [129, 193, 257, 2049]
 tail_shape = [13312, 5120]
 
@@ -30,5 +30,5 @@ rows = ["gemm_iqr_tiled"]
 command = ["--perfiqr", "{N}", "{K}", "{M}", "{B}", "{iters}", "--cold", "256"]
 label = "iqr k{B} tiled"
 shapes = [[13312, 5120], [5120, 6656], [6144, 5120], [5120, 2304]]
-rows_m = [65, 96, 128, 192, 256, 512, 2048]
+rows_m = [65, 96, 128, 129, 160, 192, 256, 512, 2048]
 bits = [6, 7]
