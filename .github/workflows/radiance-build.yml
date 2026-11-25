@@ -92,6 +92,14 @@ concurrency:
   group: radiance-build-${{ (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') && github.run_id || github.ref }}
   cancel-in-progress: true
 
+# Builds of main after each merge exist to refresh the ccache and the upstream clone for the next PR. When merges
+# queue up, only the newest main build matters (it builds every earlier change as well, from the cache the earlier
+# builds saved), so a newer push cancels an older one still running. Pull-request builds are serialised per PR by
+# pr-ci.yml, and a release bundle build is never cancelled: both get a unique group.
+concurrency:
+  group: radiance-build-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'main' || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
 # Host settings are untracked; CI uses the tracked example host (it declares the rocm-sdks the recipes name).
 env:
   BIGCHERRY_ENVIRONMENT: config/environment.example.toml
