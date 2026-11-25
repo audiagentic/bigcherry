@@ -2637,6 +2637,30 @@ void power_profile_selection() {
     catch (const ss::PlanFailed& e) { assert(std::string(e.what()).find("power-profiles.yaml") != std::string::npos); }
     // the compiled-in file is the shipped one: its stock profile exists (the engine decodes the rest in CI's inspector)
     assert(v2::embedded_power_profiles_yaml().find("stock:") != std::string::npos);
+
+    // this host's site file: per-BDF settings only, closed keys, a lower-case BDF, evidence required
+    const Json site = {{"schema", 1},
+                       {"devices", {{"0000:03:00.0", {{"settings", {{"sclk_max_mhz", 2900}, {"vddgfx_offset_mv", -75}}},
+                                                        {"evidence", "run-1"}}}}}};
+    const auto site_loaded = v2::decode_power_site(site);
+    assert(site_loaded && site_loaded.value().at("0000:03:00.0").sclk_max_mhz == 2900 &&
+           site_loaded.value().at("0000:03:00.0").vddgfx_offset_mv == -75);
+    assert(v2::decode_power_site(Json(nullptr)).value().empty());
+    const auto site_refused = [&](Json doc, const char* field) {
+        const auto r = v2::decode_power_site(doc);
+        assert(!r && r.error().path.find(field) != std::string::npos);
+    };
+    Json upper_bdf = site; upper_bdf["devices"]["0000:0A:00.0"] = site["devices"]["0000:03:00.0"];
+    site_refused(upper_bdf, "0000:0A:00.0");
+    Json site_extra = site; site_extra["devices"]["0000:03:00.0"]["model"] = "x";
+    site_refused(site_extra, "model");
+    Json site_offset = site; site_offset["devices"]["0000:03:00.0"]["settings"]["sclk_offset_mhz"] = 50;
+    site_refused(site_offset, "sclk_offset_mhz");
+    Json site_no_evidence = site; site_no_evidence["devices"]["0000:03:00.0"].erase("evidence");
+    site_refused(site_no_evidence, "0000:03:00.0");
+    // --qualify-power is a lab apply: refused on its own, before any config is read
+    const auto qualify_alone = run_bc_serve({"serve", "any", "--run-dir", "/tmp/qualify-alone", "--qualify-power"});
+    assert(qualify_alone.exit_code != 0 && qualify_alone.output.find("--allow-power-apply") != std::string::npos);
 }
 
 int main(int argc, char** argv) {

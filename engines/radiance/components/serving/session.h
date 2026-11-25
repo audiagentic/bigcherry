@@ -192,6 +192,8 @@ struct Hooks {
     // Exactly one manifest-authenticated power admission, after the writer
     // resolves selected cards but before any measuring/serving child starts.
     Callback<v2::Status(const std::filesystem::path&, v2::PlanUse)> admit_power;
+    // This host's power-site.yaml text for the native config inspector ("" = the host has none).
+    std::string power_site_yaml;
     // One owner-recorded bound for verified measuring-helper teardown AND counter release.
     std::chrono::milliseconds helper_stop_timeout{std::chrono::seconds(60)};
 };
@@ -311,6 +313,7 @@ struct NativeConfigInspection {
     std::vector<std::string> rank_devices;
     NativeEngineSettings settings{};
     XBigcherry x_bigcherry;   // the file's BigCherry-owned section, decoded against the closed v1 schema
+    v2::PowerSite power_site;           // this host's per-BDF power settings (empty without a site file)
     v2::PowerProfiles power_profiles;   // the named power profiles, converted by the same engine and decoded strictly
     Json receipt;
 };
@@ -381,7 +384,14 @@ struct NativeAdmissionRequest {
     Env runtime_overrides;
 };
 
+// What the operator asked of the power controller for this start and the evidence the resolver may use for it.
+struct PowerRequest {
+    bool apply = false;                 // --allow-power-apply
+    v2::S10PowerEvidence evidence;      // probe, receipt qualification, qualify flag (site overrides come from the config)
+};
+
 struct EnginePlanInputs {
+    PowerRequest power;
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
     std::filesystem::path self; // this bc-serve (writes the manifests)
     std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)

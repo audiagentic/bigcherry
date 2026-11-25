@@ -17,6 +17,8 @@
 
 #include <fcntl.h>
 #include <nlohmann/json.hpp>
+#include "power_qualification.h"
+
 #include <unistd.h>
 
 namespace {
@@ -138,6 +140,7 @@ struct SimulatedCard {
     std::optional<std::string> hwmon = "hwmon2";
     int64_t voltage = -100, shader = 2600, memory = 1300, cap = 300000000;
     int64_t max_shader = 3200, max_memory = 1500;
+    std::string identity = "kernel=k1;amdgpu=v1;board=744c:1002:0e3b";
     std::optional<int64_t> staged_shader, staged_memory, staged_voltage;
 };
 class SimulatedHardware final : public Hardware {
@@ -172,6 +175,7 @@ class SimulatedHardware final : public Hardware {
         snapshot.pci = address;
         snapshot.amdgpu = simulated.amdgpu;
         snapshot.hwmon = simulated.hwmon;
+        snapshot.identity = simulated.identity;
         auto fill = [&](ControlId id, int64_t current, int64_t min, int64_t max) {
             snapshot.controls[static_cast<size_t>(id)] = Capability{current, min, max, simulated.writable};
         };
@@ -982,6 +986,67 @@ void real_records_are_safe() {
     expect(!pending, "malformed unresolved journal blocks future writes");
 }
 
+// A receipt is the qualification: it matches only the same BDF, exact settings and board identity of an apply that
+// read back exactly and restored exactly. The workload it names is evidence, never a match key.
+void receipts_qualify() {
+    using bc::serving::power::probe_of;
+    using bc::serving::power::qualifying_receipt;
+    const auto pci = bdf("0000:03:00.0");
+    const auto settings = [](int64_t watts) {
+        bc::serving::v2::PowerSettings value;
+        value.power_cap_w = watts;
+        return value;
+    };
+    const auto run = [&](const fs::path& root, const std::string& id, int64_t watts, size_t fail_on) {
+        SimulatedHardware hardware;
+        SimulatedCard card;
+        card.pci = pci;
+        hardware.cards.push_back(card);
+        hardware.fail_on = fail_on;
+        PowerPlan plan;
+        plan.mode = Mode::apply;
+        plan.profile = "p";
+        plan.profile_digest = Digest::parse("sha256:" + std::string(64, 'a')).value();
+        plan.manifest_digest = Digest::parse("sha256:" + std::string(64, 'b')).value();
+        Tuning tuning;
+        tuning.board_cap = Watts{watts};
+        plan.devices.push_back({{Role{}, pci}, tuning});
+        DiskRecords records(root / "journals", root / "receipts");
+        SessionPower session(plan, id, hardware, records, [] { return true; }, [] { return true; });
+        session.set_workload("some-config");
+        const auto began = session.begin();
+        if (!began)
+            expect(!session.finish(), "restoration after a qualifying apply");
+    };
+    Temporary t;
+    run(t.root, "good", 250, std::numeric_limits<size_t>::max());
+    run(t.root, "failed", 260, 0); // the first power write fails: rolled back, never qualifies
+    const auto receipts = t.root / "receipts";
+    const std::string identity = "kernel=k1;amdgpu=v1;board=744c:1002:0e3b";
+    const auto found = qualifying_receipt(receipts, pci, settings(250), identity);
+    expect(found && *found == "good", "an exact applied, read back and restored receipt qualifies its setting");
+    expect(!qualifying_receipt(receipts, pci, settings(240), identity), "a different setting is not qualified");
+    expect(!qualifying_receipt(receipts, pci, settings(260), identity), "a failed apply does not qualify");
+    expect(!qualifying_receipt(receipts, bdf("0000:06:00.0"), settings(250), identity), "another BDF is not qualified");
+    expect(!qualifying_receipt(receipts, pci, settings(250), "kernel=k2;amdgpu=v1;board=744c:1002:0e3b"),
+           "another kernel is not qualified");
+    expect(!qualifying_receipt(receipts, pci, settings(250), ""), "an empty identity qualifies nothing");
+    auto receipt = load_json(receipts / "good.power.json");
+    expect(receipt.at("workload") == "some-config", "the receipt names the workload as evidence");
+    receipt["observations"]["stop"]["cards"][0]["power_cap_uw"] = 1;
+    write_text(receipts / "good.power.json", receipt.dump());
+    expect(!qualifying_receipt(receipts, pci, settings(250), identity), "an inexact restore does not qualify");
+    SimulatedHardware hardware;
+    SimulatedCard card;
+    card.pci = pci;
+    hardware.cards.push_back(card);
+    const auto probe = probe_of(hardware.inspect(pci).value());
+    expect(probe.bdf == pci.value && probe.driver == "amdgpu" && probe.controls.at("power_cap_w").supported &&
+               probe.controls.at("power_cap_w").minimum == 200000000 &&
+               probe.controls.at("power_cap_w").original_readable,
+           "the probe is the transaction's own capability read");
+}
+
 void recovery_binding_disk() {
     Temporary t;
     const auto fixture =
@@ -1376,6 +1441,7 @@ int main() {
         python_refusal_and_recovery_parity();
         real_records_are_safe();
         recovery_binding_disk();
+        receipts_qualify();
         diagnostics();
         std::cout << "bc_power_transaction_test: 5 groups passed "
                      "(4 Python golden profiles, crash/recovery, hardware fakes)\n";

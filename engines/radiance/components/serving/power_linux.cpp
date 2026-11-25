@@ -211,6 +211,11 @@ v2::Result<CardSnapshot> LinuxHardware::do_inspect(const PciAddress& pci) {
     snapshot.amdgpu = !ec && driver.filename() == "amdgpu";
     if (!snapshot.amdgpu)
         return snapshot;
+    // Plain concatenation, compared by equality; any piece the host does not expose is simply empty.
+    const auto piece = [](const fs::path& file) { return trim(read_text(file).value_or("")); };
+    snapshot.identity = "kernel=" + piece(root_ / "proc/sys/kernel/osrelease") +
+                        ";amdgpu=" + piece(root_ / "sys/module/amdgpu/version") + ";board=" + piece(root / "device") +
+                        ":" + piece(root / "subsystem_vendor") + ":" + piece(root / "subsystem_device");
     const auto overdrive_file = root / "pp_od_clk_voltage";
     const auto od = read_text(overdrive_file);
     if (od) {

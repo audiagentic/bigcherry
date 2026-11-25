@@ -16,6 +16,8 @@ struct WriterInputs {
   nlohmann::json calibration_records; // array of P2 store records (calibration_store.py); may be empty
   std::string power_profile;          // the named profile (x-bigcherry.power.profile); "stock" observes
   S10PowerProfile power_rules;        // that profile's rules from the loaded profile file; empty for stock
+  bool power_apply = false;           // --allow-power-apply with a non-stock profile: the plan applies, else it observes
+  S10PowerEvidence power_evidence;    // site overrides, the capability probe and the receipt qualification
   int64_t now_unix_s = 0;
 };
 
@@ -24,6 +26,11 @@ struct WriterInputs {
 // observes by default; stock exists and has no rules.
 using PowerProfiles = std::map<std::string, S10PowerProfile>;
 Result<PowerProfiles> decode_power_profiles(const nlohmann::json &document);
+// This host's power-site.yaml as the engine's YAML parser converted it: null (no file) or exactly
+// {schema: 1, devices: {BDF: {settings, evidence}}}. Per-BDF settings override the named profile for that card only;
+// they are a request like any other, still subject to the probe range, the pairing rule and qualification.
+using PowerSite = std::map<std::string, PowerPatch>;
+Result<PowerSite> decode_power_site(const nlohmann::json &document);
 // The profile file compiled into bc-serve (the text the engine converts).
 const std::string &embedded_power_profiles_yaml();
 

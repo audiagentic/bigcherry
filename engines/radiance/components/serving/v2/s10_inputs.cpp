@@ -154,6 +154,49 @@ Result<PowerProfiles> decode_power_profiles(const json &doc) {
   return out;
 }
 
+Result<PowerSite> decode_power_site(const json &doc) {
+  if (doc.is_null()) return PowerSite{};
+  const auto bad = [](std::string path, std::string why) {
+    return make_error(ConfigErrorCode::invalid_value, std::move(path), std::move(why), "fix this host's power-site.yaml");
+  };
+  const auto closed = [&](const json &o, const std::string &path, std::initializer_list<const char *> keys) -> Status {
+    if (!o.is_object()) return bad(path, "expected a mapping");
+    for (auto it = o.begin(); it != o.end(); ++it)
+      if (std::find_if(keys.begin(), keys.end(), [&](const char *k) { return it.key() == k; }) == keys.end())
+        return bad(path + "." + it.key(), "unknown key");
+    return std::nullopt;
+  };
+  if (auto e = closed(doc, "power-site", {"schema", "devices"})) return *e;
+  if (!doc.contains("schema") || doc.at("schema") != 1 || !doc.contains("devices") || !doc.at("devices").is_object())
+    return bad("power-site", "expected schema: 1 and a devices mapping");
+  static const std::regex bdf_form("^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]$");
+  PowerSite out;
+  for (auto d = doc.at("devices").begin(); d != doc.at("devices").end(); ++d) {
+    const std::string at = "power-site.devices." + d.key();
+    if (!std::regex_match(d.key(), bdf_form)) return bad(at, "expected a lower-case PCI BDF such as 0000:03:00.0");
+    if (auto e = closed(d.value(), at, {"settings", "evidence"})) return *e;
+    if (!d.value().contains("settings") || !d.value().contains("evidence") || !d.value().at("evidence").is_string() ||
+        d.value().at("evidence").get<std::string>().empty())
+      return bad(at, "needs settings and a non-empty evidence string");
+    const json &settings = d.value().at("settings");
+    if (auto e = closed(settings, at + ".settings", {"vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "power_cap_w"}))
+      return *e;
+    if (settings.empty()) return bad(at + ".settings", "a device needs at least one setting");
+    for (auto s = settings.begin(); s != settings.end(); ++s)
+      if (!s.value().is_number_integer()) return bad(at + ".settings." + s.key(), "expected an integer");
+    const auto optional = [&](const char *key) -> std::optional<int64_t> {
+      return settings.contains(key) ? std::optional<int64_t>(settings.at(key).get<int64_t>()) : std::nullopt;
+    };
+    PowerPatch value;
+    value.vddgfx_offset_mv = optional("vddgfx_offset_mv");
+    value.sclk_max_mhz = optional("sclk_max_mhz");
+    value.mclk_max_mhz = optional("mclk_max_mhz");
+    value.power_cap_w = optional("power_cap_w");
+    out.emplace(d.key(), value);
+  }
+  return out;
+}
+
 Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, const WriterInputs &w) {
   S10Inputs in;
   in.now_unix_s = w.now_unix_s;
@@ -165,7 +208,12 @@ Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, 
                   "power profile " + w.power_profile + " is not in engines/radiance/power-profiles.yaml");
     in.profile = w.power_rules;
   }
-  in.mode = PowerMode::kObserve;   // every named profile observes; an apply is the operator's explicit request (S3)
+  // A named profile observes unless the operator explicitly asked to apply (--allow-power-apply); stock never writes.
+  in.mode = w.power_apply && w.power_profile != "stock" ? PowerMode::kApply : PowerMode::kObserve;
+  in.power = w.power_evidence;
+  for (const auto &[bdf, settings] : in.power.site_overrides)
+    if (std::none_of(m.spec.facts.gpus.begin(), m.spec.facts.gpus.end(), [&](const GpuFact &g) { return g.bdf == bdf; }))
+      return fail("site.power", bdf + " is not a detected GPU of this host");
 
   const bool has_helpers = !m.spec.processes.helpers.empty();
   const auto &placement = m.spec.handoff ? std::optional(m.spec.handoff->placement) : std::nullopt;

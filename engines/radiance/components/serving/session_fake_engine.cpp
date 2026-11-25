@@ -203,13 +203,16 @@ int main(int argc, char** argv) {
         // The fake has no YAML parser: the profile document the real engine would convert comes from the test (default:
         // the stock-only file), and the profile descriptor must be a readable sealed memfd as a real call gets.
         json power_profiles = {{"schema", 1}, {"profiles", {{"stock", {{"default_mode", "observe"}}}}}};
-        if (argc == 5) {
-            const int profile_fd = std::atoi(argv[4]);
-            if (profile_fd < 3 || ::fcntl(profile_fd, F_GET_SEALS) < 0) {
-                std::fprintf(stderr, "fake inspector: invalid sealed profile descriptor\n");
+        json power_site = nullptr;   // the site file's JSON also comes from the test; its descriptor must still be sealed
+        for (int at = 4; at < argc; at += 2) {
+            const int descriptor = std::atoi(argv[at]);
+            if (descriptor < 3 || ::fcntl(descriptor, F_GET_SEALS) < 0) {
+                std::fprintf(stderr, "fake inspector: invalid sealed profile or site descriptor\n");
                 return 20;
             }
         }
+        if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_POWER_SITE"))
+            power_site = json::parse(configured);
         if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_POWER_PROFILES"))
             power_profiles = json::parse(configured);
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v2"},
@@ -226,6 +229,7 @@ int main(int argc, char** argv) {
                                     {"tuning", native_tuning},
                                     {"x_bigcherry", x_bigcherry},
                                     {"power_profiles", power_profiles},
+                                    {"power_site", power_site},
                                     {"tp", tp},
                                     {"cards", cards},
                                     {"rank_devices", rank_devices},

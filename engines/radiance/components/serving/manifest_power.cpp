@@ -175,9 +175,9 @@ bool owner_has_gpu_lease(const std::filesystem::path& leases, const std::filesys
 }
 
 ManifestPower::ManifestPower(power::Hardware& hardware, power::Records& records, power::Sensor& sensor,
-                             power::SessionPower::Predicate lease, bool allow_apply)
+                             power::SessionPower::Predicate lease, bool allow_apply, std::string workload)
     : hardware_(hardware), records_(records), sensor_(sensor), lease_(std::move(lease)),
-      allow_apply_(allow_apply) {}
+      allow_apply_(allow_apply), workload_(std::move(workload)) {}
 
 v2::Status ManifestPower::begin(const std::filesystem::path& manifest, v2::PlanUse use) {
     if (transaction_)
@@ -205,6 +205,7 @@ v2::Status ManifestPower::begin(const std::filesystem::path& manifest, v2::PlanU
     execution_ = PowerExecution{"power-" + new_instance_id(), authenticated.value().metadata.instance_id};
     transaction_ = std::make_unique<power::SessionPower>(plan.value(), execution_->run_id, hardware_, records_,
                                                          lease_, [this] { return verified_exit_; });
+    transaction_->set_workload(workload_);
     return transaction_->begin();
 }
 

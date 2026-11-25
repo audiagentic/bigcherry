@@ -21,7 +21,7 @@ struct PowerExecution {
 class ManifestPower final {
   public:
     ManifestPower(power::Hardware& hardware, power::Records& records, power::Sensor& sensor,
-                  power::SessionPower::Predicate lease, bool allow_apply);
+                  power::SessionPower::Predicate lease, bool allow_apply, std::string workload = {});
     v2::Status begin(const std::filesystem::path& manifest, v2::PlanUse use);
     v2::Status verify_serving(const std::filesystem::path& manifest);
     v2::Status capture(power::WindowPhase phase);
@@ -37,6 +37,7 @@ class ManifestPower final {
     power::Sensor& sensor_;
     power::SessionPower::Predicate lease_;
     bool allow_apply_, verified_exit_ = false;
+    std::string workload_;   // the config that ran; receipt evidence only
     std::unique_ptr<power::SessionPower> transaction_;
     std::optional<PowerExecution> execution_;
     std::optional<power::PowerPlan> bound_;
