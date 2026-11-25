@@ -64,6 +64,8 @@ There is a single, engine-owned native production weight-materialization path ca
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate 7244cef0/1c3584a8/5aa5fa0f changes core/engine_bringup.cpp staging completion, host-only bounded reconstruction/refill and failure lifetime. Before extraction re-read approved target native loader and existing APIs, avoid backport/clone stale 2.2.0 sweep code; preserve copy completion and host/refill accounting. Existing native LTX C06 consumer and safety gates unchanged; no dependency on optional provider adoption.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 6 optional video lane, or earlier if generic production correctness requires. Existing C06 issued self-attention but temporary test staging persists; extract single native production load/refill/materialization seam, delete duplicate staging with same failure ownership. Keep LTX numerical/issue gates under LTX02, RUM15 precision independent. No generic new graph/loader.
+
 ## Change Log
 
 - 2026-11-22T08:21:43.996915+00:00 (created-by): Created by gpt-6
@@ -73,3 +75,4 @@ There is a single, engine-owned native production weight-materialization path ca
 
 - RV4648
 - 2026-11-25T02:48:37.694195+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:52:48.071581+00:00 (updated-by): Updated: section:notes

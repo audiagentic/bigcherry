@@ -95,6 +95,8 @@ Owner direction 2026-11-01: resource budgets are tunables too. Derived settings 
 
 BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): RAD12: Fold automatic lane-size choice into RCS10 while retaining the negative four-class A/B as evidence.; RAD14: Move outstanding shape-aware geometry and dispatch tuning to RCS10 with RAD14's kernel baselines.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 2: do not reimplement native resource admission, v26 or policy calibration already delivered. Use ENG01/ENG03 and RHP09/16 actual current cost/eligibility; prioritize capacity versus actual_rows/lane and crossover/MTP/prefill budget based on exposed path. First start bounded, same existing cache/typed YAML/receipt, incompatible evidence observe/remeasure; record defaults and override reason. No new autotuner, full sweep or blanket delay to unrelated performance work.
+
 ## Ledger-events
 
 - chg_20261102_002943_planning-every-resource-budge_5643
@@ -103,3 +105,4 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 - 2026-11-02T00:29:49.283929+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:11:48.561589+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:51:25.764875+00:00 (updated-by): Updated: section:notes

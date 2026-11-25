@@ -59,12 +59,13 @@ Small. Risk: the lab experiment needs the live-policy calibration store, which t
 
 ## Notes
 
-
-
 **2026-11-24 not workable as written, not a regression.** A serving start is production-only (no lab experiment), so the stamped run cannot be started; the compute side comes from the helper's own kernel timing instead. Left open as an instrumentation question for the product owner.
+
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 2/3: prior stamped run blocked by production-only start. Use existing authorized lab YAML arm/diagnostic setting after cutover; otherwise minimum existing diagnostic-surface fix to activate ENG05 stamps, not new protocol. Correlate actual same-step engine/helper timings and union of exposed wait, keep cross-clock uncertainty. VTP55 needs this before fusion; ENG01/03 share baseline.
 
 ## Change Log
 
 - 2026-11-23T21:25:58.957879+00:00 (created-by): Created by agent
 - 2026-11-23T21:26:29.042735+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-23T23:21:51.904383+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:51:55.930820+00:00 (updated-by): Updated: section:notes

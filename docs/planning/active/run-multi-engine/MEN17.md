@@ -69,6 +69,8 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN23. MEN23 describes an acceptance e
 
 Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Existing exact candidate binding and independent reference correctness remain essential. Use same actual installed dense/helper cohort and affected workload checks as RSC11/RSP01; do not require separate duplicated runs. Keep unrelated existing acceptance tasks independent.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 0 source finding: 2020.17.0 overlay parity evidence could not use normal baseline comparator because two launches in one measure share run_id; tools/bigcherry/core/results.py:70 intentionally requires distinct launch IDs. Correct existing producer to allocate distinct existing run IDs with common parent/campaign context (reuse core/workspace.py and campaign/planner.py patterns); preserve comparator independent-launch check, no new ID/receipt scheme. Card-free two-launch regression, replay existing receipts only where independent identity actually known. Bind actual candidate/installed home and independent reference, no redundant GPU measurement.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -88,3 +90,5 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - RV4668
 - 2026-11-25T03:31:54.393313+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:30:40.599872+00:00 (updated-by): Updated: section:notes
+- RV4679
+- 2026-11-25T18:51:09.347812+00:00 (updated-by): Updated: section:notes

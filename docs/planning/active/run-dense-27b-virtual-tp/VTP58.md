@@ -57,9 +57,12 @@ Measured context: VTP56 notes. Kernel work follows the composition rules (RCS19 
 
 2026-11-25 result: the 64 weight x 256 activation tile for 129-256 rows was built and gated on gfx1100 with the discrete harness (about 3 minutes a build): byte identical (555 of 555 hashes), no spills, but four forms need 240-246 VGPR (the shipped tile's cap was 239) and 47,616 B of shared memory; cold replay on 72 points shows no win (2-3 percent faster on three shapes within noise, 4-6 percent slower on the largest, 662 to 689 and 665 to 700 microseconds). Halving the weight decodes is paid back by the doubled activation traffic. Archived unchanged (docs/archive/unmerged-candidates-2026-11/vtp58-iqr-tall-tile.patch). Open directions: lower the decode cost per weight itself (the fused single band still pays about 20 percent over int8; the same fused tile is the floor for every band count), or a K-split variant that keeps two bands' decode shared (needs the accumulators in registers for both and does not fit). Harness caveat from the same run: a harness-built gfx1100 libr3 differs from the shipped release in five IQR forms (240 VGPR with 2-3 spills against 236 and none) although the sources compose the same; compare candidates against a harness-built baseline, and find the flag that differs.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 4 conditional only: 64x256 tall tile rejected (4–6% slower largest shapes); do not rerun. Current IQR GEMM owner bc-iqr since #1603, no new libr3 rewrite. Only lower per-weight decode cost or feasible sharing with bounded traffic/resource proof; test actual unit/row and retain archived candidate. No requirement for every historical item before serving promotion.
+
 ## Change Log
 
 - 2026-11-25T00:42:24.671410+00:00 (created-by): Created by lead
 - 2026-11-25T00:42:47.934646+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T02:12:40.230589+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:07:56.842281+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T18:52:25.163112+00:00 (updated-by): Updated: section:notes

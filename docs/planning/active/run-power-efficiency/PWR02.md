@@ -67,6 +67,8 @@ RECONCILED 2026-11-10 (gateway audit): DONE: the XTX sweeps and one 40-minute so
 
 2026-11-25 update: historical MoE cap-ineffective claim is workload-specific. Dense TP3 2020.11.4 now binds XTX 272 W cap (PWR10). The R9700 300/250/210/300 W discovery sweep is recorded in docs/reference/power-tuning-evidence-2026-11.md; prefill watts 223/215/205/218 with nearly unchanged speed, not independent production qualification. November uncapped -125 failed, paired SCLK/UV discovery saved power; retain UV research and existing control. PWR10 owns immediate min-cap/clock qualification; PWR02 owns broader per-board efficiency frontier (MCLK, R9700 offset once backend exists, gfx1030 real role, paired clock/voltage/cap, profile/DPM only after reversible backend). Reuse PWR01 phase energy and PWR07 sensors, no duplicate runs. No VBIOS/firmware limit bypass.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 5 after immediate PWR10 qualification, independent of model work. Reuse PWR01 synchronized GPU/CPU phase energy; dense TP3 vs MoE separate. Select measured non-regressing points, no historical undervolt defaults or dynamic power writes. WSL08 required for detached ownership, foreground remains default.
+
 ## Change Log
 
 - 2026-10-27T02:15:44.041717+00:00 (created-by): Created by agent
@@ -104,3 +106,4 @@ Next: evaluate XTX OD_MCLK within its reported 97–1250 MHz supported range (pe
 
 - RV4581
 - 2026-11-25T01:04:39.069746+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T18:52:32.773757+00:00 (updated-by): Updated: section:notes

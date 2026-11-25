@@ -65,6 +65,9 @@ Low implementation risk for offline mock; medium for instrumentation, high for i
 
 Dependencies: none; blocks RWQ02 quality attribution, RWQ03 selector scope, RWQ05 hardware campaigns. The first baseline comparison is already recorded; this item is NOT completed by that historical evidence alone.
 
+2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 5 only if current measured multi-rank Flash-Next transport is exposed. Existing WHT6 quality damage means exact default until actual op/layer distribution attribution and RWQ02/03/05 quality proof; no generic compressed wire on all models. Reuse actual controls and approved KLD, no new transport if not justified.
+
 ## Change Log
 
 - 2026-10-15T00:00:00+00:00 (created-by): Initial plan; unimplemented GPU work remains pending.
+- 2026-11-25T18:52:40.209909+00:00 (updated-by): Updated: section:notes
