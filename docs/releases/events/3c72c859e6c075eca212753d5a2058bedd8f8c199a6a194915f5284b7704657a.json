@@ -1,0 +1,27 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261125_055432_finish-native-serving-on-curre_5249",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR08.md",
+    "docs/planning/active/run-multi-engine/MEN24.md",
+    "docs/planning/active/run-serving-configuration/RSC11.md",
+    "docs/planning/active/run-serving-configuration/RSC05.md",
+    "docs/planning/active/run-serving-configuration/RSC01.md",
+    "docs/planning/active/run-serving-configuration/RSC03.md",
+    "docs/planning/active/run-serving-configuration/RSC02.md",
+    "docs/design/radiance-native-yaml-launch.md"
+  ],
+  "plan-item-ids": [
+    "RSC01",
+    "RSC02",
+    "RSC03",
+    "RSC05",
+    "RSC11",
+    "PWR08",
+    "MEN24"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Make native single-model Fleet cutover independent of next upstream bump. Source audit of current-pin broker, card selection, queue accounting, scalar budget, native offline entry and lifecycle. Retain measured admission and existing owner; defer unneeded per-card and multi-model changes. No runtime changes.",
+  "timestamp-utc": "2026-11-25T05:54:32.098581Z",
+  "user-summary-candidate": "Finish native serving on current Radiance pin"
+}

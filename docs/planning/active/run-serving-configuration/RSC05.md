@@ -65,6 +65,8 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Preserve native cards as local visibility order, exact ordered BDF and helper disjointness, required actual provider/row (native missing name can warn), verify same native parser snapshot/root and selected local ordinal for per-card memory headroom. Do not treat native config port as derived GPU fact; refusal on unsupported mapping rather than automatic replacement. Readback physical BDF used for power/receipts.
 
+2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. Pinned Fleet::choose_cards uses cards_of(m) in authored order and first tp for single model. Preserve existing ordered BDF -> ROCR mask -> local HIP ordinals, including any model-specific cards subset: require exact admitted sequence, not just same unordered set. Check after Fleet chooses and before Engine starts, and set equivalent order for offline native measurement/quality (which bypass choose_cards). Preserve rad0016 rank-device selection and helper disjointness; power uses same physical BDFs. No second device selector; use existing discovery and native chosen order. Only later adopt native per-card map keyed by these exact local ordinals when supporting pin is qualified.
+
 ## Change Log
 
 - 2026-11-02T03:40:33.029040+00:00 (created-by): Created by agent
@@ -85,3 +87,4 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 - 2026-11-25T02:44:28.360126+00:00 (updated-by): Updated: section:notes
 - RV4657
 - 2026-11-25T03:25:58.046952+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:53:42.955101+00:00 (updated-by): Updated: section:notes
