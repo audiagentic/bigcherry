@@ -2,7 +2,7 @@
 id: RCS22
 order: 0
 plan: build-radiance-components
-state: deprecated
+state: pending
 created-at: '2026-11-25T00:40:56.481749+00:00'
 breadth: ''
 skill: advanced
@@ -85,3 +85,4 @@ Design review (2026-11-25): the engine's loader already composes several kernel 
 - 2026-11-25T02:52:53.904253+00:00 (updated-by): Updated: section:steps, section:validation
 - 2026-11-25T09:42:30.060875+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T09:43:05.806498+00:00 (state-transition): State: pending → deprecated
+- 2026-11-25T10:44:52.138475+00:00 (state-transition): State: deprecated → pending
