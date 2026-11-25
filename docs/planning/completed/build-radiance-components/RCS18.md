@@ -2,7 +2,7 @@
 id: RCS18
 order: 0
 plan: build-radiance-components
-state: pending
+state: deprecated
 created-at: '2026-11-18T08:41:57.683317+00:00'
 breadth: ''
 skill: advanced
@@ -59,6 +59,8 @@ The surviving gfx1030 libr2 helper imports r3_rewrite.py, r3_compat.h, r3_gen_st
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native U3/U4/U5 IQR scalar row does not cover local u6/u7 or all IQ8R groups; CMake exact gfx1100 target condition. Do not confuse discovery with qualified release. No forced switch or duplicate library migration before RCS15 decision.
 
+2026-11-25 closed as not adopted: no native libr3d row qualified (RCS15, RCS16). The generated paths are not retired; the libr3 rewrites, the family targets (#1545), the composition gates (#1552, #1580, #1584) and the unit harness (#1565) stand.
+
 ## Change Log
 
 - 2026-11-18T08:41:57.683317+00:00 (created-by): Created by agent
@@ -68,3 +70,5 @@ The surviving gfx1030 libr2 helper imports r3_rewrite.py, r3_compat.h, r3_gen_st
 
 - RV4630
 - 2026-11-25T02:39:22.226560+00:00 (updated-by): Updated: section:title, section:steps, section:notes, section:acceptance_criteria
+- 2026-11-25T09:42:20.096402+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:42:56.124438+00:00 (state-transition): State: pending → deprecated

@@ -2,7 +2,7 @@
 id: RCS21
 order: 0
 plan: build-radiance-components
-state: pending
+state: deprecated
 created-at: '2026-11-25T00:40:51.713419+00:00'
 breadth: ''
 skill: advanced
@@ -63,6 +63,8 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native libr3d int8 wave-matrix layout/group-rounding and scalar packed IQR added on candidate; do not force same operand traits where layout/storage differs. Derive shared math only where actual arithmetic and storage allow, use native base for covered rows, local overlay for required deltas. Keep native upstream layout and ABI, no general compatibility shim or backport.
 
+2026-11-25 closed as deferred: the traits seam and the unified fused tile are a maintainability and upstream-path refactor with no measurable gain (the harness can prove equal bytes and resources, not speed). The gfx1100 and gfx1201 fused tiles each ship and are gated (rad0065, libr3 rewrites, find-1-or-0 pairing). Reopen when upstream asks for the patch or a bump makes the two copies diverge.
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
@@ -78,3 +80,5 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 - 2026-11-25T02:40:25.241991+00:00 (updated-by): Updated: section:notes
 - RV4633
 - 2026-11-25T02:40:46.557497+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:42:24.891543+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:43:00.957766+00:00 (state-transition): State: pending → deprecated

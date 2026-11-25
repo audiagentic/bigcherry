@@ -2,7 +2,7 @@
 id: RCS22
 order: 0
 plan: build-radiance-components
-state: pending
+state: deprecated
 created-at: '2026-11-25T00:40:56.481749+00:00'
 breadth: ''
 skill: advanced
@@ -65,6 +65,8 @@ Design review (2026-11-25): the engine's loader already composes several kernel 
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Upstream loader already exports rad_plugin_info, rad_kernel_schema_count/at, rad_kernel_count/at and requires rad_plugin_abi_version AND rad_plugin_abi_layout. Use those exports; no new descriptor entry point, new ABI or composition hash. Shared op schema and multiple candidate rows are intended; reject inconsistent schema, duplicate plugin name, accidental shadow or missing required provider, not intended overlay/base alternatives. Native hierarchy exclusive, absent named plugin warns and may fall to other named provider, so test actual winning row and expected coverage. RCS22 optional after RCS15/23, not dependency of first bump.
 
+2026-11-25 closed as deferred: family plugins would change the engine loader for build-time and rollback gains the family compile targets and the unit harness already give (one family builds and gates in about 2.5 minutes against a 25 to 28 minute lane build; with the ccache fix a full cached build takes 5 minutes). Reopen if per-family rollback is wanted.
+
 ## Change Log
 
 - 2026-11-25T00:40:56.481749+00:00 (created-by): Created by lead
@@ -81,3 +83,5 @@ Design review (2026-11-25): the engine's loader already composes several kernel 
 - RV4634
 - 2026-11-25T02:41:17.067458+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T02:52:53.904253+00:00 (updated-by): Updated: section:steps, section:validation
+- 2026-11-25T09:42:30.060875+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:43:05.806498+00:00 (state-transition): State: pending → deprecated
