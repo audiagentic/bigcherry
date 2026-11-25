@@ -8,6 +8,10 @@ engine's libr4d sources via `rewrites.txt` + `native/*.rw` and loaded through
 `RADIANCE_HOME`. It is BigCherry source compiled against the installed engine,
 not a patch to the engine itself.
 
+## Terms
+
+libr4d is upstream's gfx12 kernel library source; libr3d is upstream's own native RDNA3 library (a different library); libr3 is this component: BigCherry's gfx11 provider, libr4d's units compiled for gfx11 through `r3_compat.h` plus our native rewrites. It is generated, not upstream's, and is to be built as `libbcr3.so` (`bc` marks what we own). Full definitions, the plan items and the ownership rules: `docs/design/radiance-kernel-composition.md`.
+
 ## Outcome
 
 Native gfx11 attention defaults on through the typed serving manifest's
