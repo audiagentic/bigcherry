@@ -135,7 +135,7 @@ _PATCH_TOML_REQUIRED_KEYS = frozenset({"schema", "id", "order", "state", "kind"}
 _PATCH_TOML_STRING_LIST_KEYS = frozenset({
     "plan-ids", "requires", "conflicts", "requires-options", "forbids-options",
     "subsystems", "hardware", "validation-architectures", "backends",
-    "experiment-contracts", "tags",
+    "experiment-contracts", "tags", "units",
 })
 _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEYS | frozenset({
     "kind", "origin", "backend", "upstream", "upstream-ref", "retirement",
@@ -368,6 +368,8 @@ class PatchDescriptor:
     plan_item: str | None = None
     backends: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    #: The kernel translation units whose own source this patch edits (RCS19 ownership); empty for a patch that edits none.
+    units: tuple[str, ...] = ()
 
     @property
     def experiment_contract(self) -> str | None:
@@ -744,6 +746,7 @@ def _packaged_descriptor(
         plan_ids=record["plan-ids"],
         backends=record["backends"],
         tags=record["tags"],
+        units=record["units"],
         requires=record["requires"],
         conflicts=record["conflicts"],
         requires_options=record["requires-options"],
