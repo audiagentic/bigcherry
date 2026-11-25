@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.17.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.17.0...bc-radiance-2020.17.1) (2026-11-25)
+
+
+### Fixes
+
+* **serving:** mixed-architecture tensor-parallel ranks resolve their power settings per architecture ([#1619](https://github.com/audiagentic/bigcherry/issues/1619)) ([d3a70b3](https://github.com/audiagentic/bigcherry/commit/d3a70b358f0366388a2ab70c8304162f1cdb57f8))
+
 ## [2020.17.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.16.0...bc-radiance-2020.17.0) (2026-11-25)
 
 
