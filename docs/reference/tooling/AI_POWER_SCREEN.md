@@ -4,8 +4,8 @@
 
 This is **platform qualification tooling**, not a Radiance component or
 serving-time gate. It can run with no model, engine build, serving process,
-PyTorch, Windows application or downloaded ROCm package. The platform ships
-source in the existing tools tree; build the small executable on demand with
+PyTorch, Windows application or downloaded ROCm package. The platform retains
+source in the existing tools tree; build the standalone executable on demand with
 the SDK that is actually installed. Nothing is added to the engine runtime
 archive or engine CMake. No maintained fork of Sweet-Spot Tuner.
 
@@ -19,14 +19,16 @@ settings. No copied third-party code or assets.
 One canonical `engines/radiance/power-profiles.yaml` remains the named profile
 intent. The platform reads it through `hardware.power_profiles`; no new
 profile file format or duplicate resolver. PWR07/08 and the existing owner
-transaction remain responsible for consent, actual hardware changes, recovery
-and restoration. PWR12 must not call a second writer. PWR10 and PWR02 remain
+transaction remain responsible for consent, hardware changes and recovery.
+For an independent test PWR12 may call the existing platform PowerTransaction
+used by gpu-power; it does not implement a second writer or modify the native
+serving owner. PWR10 and PWR02 remain
 responsible for qualification and performance/energy promotion. A screen is
 a diagnostic result, never production authorization.
 
 ## Run independently
 
-From a repository checkout, using the installed ROCm SDK:
+From a repository checkout, using the installed ROCm SDK and platform Python environment (with its existing PyYAML dependency):
 
 ```sh
 test -n "${BC_WORK_ROOT:?set the project work root}"
@@ -34,12 +36,12 @@ test -n "${ROCM_PATH:?select the installed ROCm SDK}"
 mkdir -p "$BC_WORK_ROOT/ai-power-screen"
 nice -n 19 "$ROCM_PATH/bin/hipcc" -O2 -std=c++17 -Wall -Wextra \
     tools/bigcherry/hardware/ai_probe.cpp \
-    -L"$ROCM_PATH/lib" -Wl,-rpath,"$ROCM_PATH/lib" -lhipblaslt \
+    -L"$ROCM_PATH/lib" -Wl,-rpath,"$ROCM_PATH/lib" -lhipblaslt -lrocblas \
     -o "$BC_WORK_ROOT/ai-power-screen/ai-probe"
 "$BC_WORK_ROOT/ai-power-screen/ai-probe" --self-test
 ```
 
-The self-test is CPU-only. For real GPU work, use the verified GPU lease,
+The self-test is CPU-only. The native memory transform needs the actual target architectures in the hipcc build (add the corresponding --offload-arch flags when building on a different host). For real GPU work, use the verified, named GPU lease,
 one selected physical PCI BDF and expected architecture. Do not run during
 another workload. Use `PYTHONPATH=tools python -m bigcherry gpu-ai-screen --help`
 for the platform command. The native executable is a low-level diagnostic:
@@ -71,15 +73,63 @@ owner has applied and verified the candidate. Change only `--profile`,
 replace `--stock-confirmed` with `--reference <stock.json>`, and choose a
 new output file. The operator/transaction must keep the lease through probe
 exit and restore. Do not manually leave a candidate applied across leases.
-There is intentionally no independent apply command in this first slice;
-the ongoing native power owner must supply an authorized test-only
-transaction before unattended candidate qualification. Empty placeholder
+For independent temporary application, add `--apply-profile --confirm-idle`
+to the candidate command, only with explicit operator consent and no GPU users
+or unresolved journals from **any** owner. The existing platform transaction
+performs the range/writeability/original-state preflight, durable journal,
+apply/readback and restoration. It uses the same recovery directory as
+`gpu-power`. The native owner has per-session journals, so the operator must
+also verify those have been resolved; the platform journal scan is not a
+global native-session registry. No candidate is applied before matching the
+confirmed stock receipt, verifying current controls and checking thermal
+limits. The selected BDF alone may be changed. Cancellation is cooperative
+through reaping/restoration. Lost lease or unverified child exit refuses
+restoration and retains the active journal. A failed restore or full readback
+mismatch is nonpass, with the run ID/journal in the result; use existing
+`gpu-power restore --run-id ID --processes-exited` under a verified lease after
+checking all GPU users are gone. The existing controller does not support
+SCLK offset application on RDNA4; that control explicitly refuses independent
+apply, and can be screened observe-only under its authorized native owner.
+No new controller, native journal schema, reset, or profile promotion. Empty placeholder
 profiles (e.g. efficient/quiet/performance without rules) are refused, not
 treated as successfully tested. The candidate must match each requested
 setting; other observed controls and device identity must match the stock
 reference. Unsupported settings and absent required readbacks refuse.
 
-Use a single supported dtype initially. Multiple requested types and burst
+Use a single supported dtype initially. Set `--provider hipblaslt` (default)
+or `--provider rocblas` explicitly. The latter supports the tested FP16,
+BF16, FP32 and INT8 paths on gfx1030 and gfx1100; E4M3 FP8 uses hipBLASLt
+where supported. No silent provider fallback or claim that a selected library
+exercises every instruction. For current-settings diagnostics without a
+factory assertion, use stock with `--observe-current` instead of
+`--stock-confirmed`; the output cannot be used as a stock candidate reference.
+The extended receipt is schema 2; re-record old schema-1 stock references.
+
+Include `memory` in `--dtype` with explicit even `--memory-mib` (total for two
+buffers) and `--headroom-mib` (at least 256 MiB). The probe checks live free
+VRAM before and after allocation, uses bounded host chunks, address- and
+iteration-dependent patterns, H2D/D2D/D2H transfers and a GPU complement
+transform, checking both complete buffers. The requested memory budget is
+not a fraction automatically chosen from available VRAM. For example, a
+small smoke may use `--dtype memory --memory-mib 128 --headroom-mib 512`;
+larger resident-memory tests require an appropriate measured safe budget.
+No multi-GPU/collective or simultaneous model-resident coverage is implied.
+
+For an actual thermal-envelope screen select `--min-hotspot-c` and optional
+`--warmup-seconds` per case, in addition to the required safe maximum.
+The workload runs for warmup plus requested measured time. Native monotonic
+timestamps and sampled temperatures must bracket the entire final requested
+interval with no sample gap above 1 s and every sample at or above the
+minimum; if it never reaches that interval, the case is inconclusive even
+with correct results. The maximum always applies (including warmup/setup).
+The memory sensor is sampled if available; its reported limit and an
+optional `--max-memory-c` bound it. A requested missing sensor refuses.
+Power sample mean is descriptive, not phase energy. No forced temperature
+target, fan setting or cooling policy. A short warm-window check is not
+a long hot soak.
+
+Use a named GPU lease and an environment carrying that same instance;
+an anonymous lease without AGENT_INSTANCE is correctly refused. Multiple requested types and burst
 gaps run in order, stopping at the first nonpass; a supported subset never
 silently passes an unsupported request. Choose `--seconds` per case and
 a lease longer than total cases plus setup/cleanup. Output files are separate
@@ -95,8 +145,10 @@ fence before any restore or new mutation.
 ## Numerical and identity contract
 
 The native probe uses actual HIP-visible PCI identity and validates the
-expected architecture before allocation. It selects a hipBLASLt heuristic
-from the installed SDK, records opaque algorithm bytes and versions, and
+expected architecture before allocation. It selects a hipBLASLt heuristic or explicitly uses the installed rocBLAS
+public default GEMM dispatch with atomics disabled. It records provider and
+library versions; hipBLASLt also records opaque algorithm bytes, while
+rocBLAS honestly records default dispatch, not an exact internal solution ID. It
 checks every active HIP/library operation. The corpus consists of two
 deterministic signed matrices. Floating inputs are exactly representable
 +/- 1/16, integer inputs +/-1. A CPU independent integer dot sum is exact
@@ -110,8 +162,9 @@ exercises burst/idle transitions, not an assertion of full GPU saturation.
 
 The stock receipt and candidate must match physical BDF/architecture, role,
 probe binary digest, kernel version, types, geometry, duration and pause
-recipe. Compare actual HIP/driver/hipBLASLt versions, opaque heuristic and
-workspace for each case. Verify observed controls before, between and after
+recipe. Compare actual HIP/driver/library versions, provider, dispatch identity and
+workspace for each case. A rocBLAS default route does not prove identical internal
+kernel selection. Every iteration is independently checked against the CPU oracle. Verify observed controls before, between and after
 cases; record the profile digest and reference receipt digest. A profile
 label alone is not evidence. The output includes the observed junction
 temperature range. This is a short independent arithmetic screen, **not**
@@ -120,17 +173,19 @@ identity, all matrix instructions, memory residency, driver reset absence
 or complete inference stability. A nonexact provider at the stock reference
 is unqualified and must not be interpreted as undervolt instability.
 
-The next PWR12 slices should reuse actual native kernel replay for
-IQ8R/IQR/attention/GDN/MoE, especially gfx1030 where hipBLASLt is absent;
-reuse existing memory/transfer integrity tests with measured safe budget.
-Add a nonexact floating corpus only with independently justified tolerance
-and a frozen stock reference. Do not introduce another kernel backend
+Existing native kernel replay for IQ8R/IQR/attention/GDN/MoE and collective
+transfers remains the separate production-role gate. Do not launch an engine
+from this platform diagnostic or create an arbitrary subprocess protocol.
+Use those existing harnesses under the appropriate production owner.
+A nonexact floating corpus would require independently justified tolerance
+and a frozen stock reference; it is not needed for the exact screen. Do not introduce another kernel backend
 framework or make every profile test every model. Full hot conditioning
 under normal cooling, memory temperatures, cold and hot transitions,
 driver health, actual production replay/quality and synchronized phase
 energy belong to the finalist validation, using existing PWR10/PWR02.
-No forced cooling, factory reset, crash-edge search, voltage change or
-profile promotion by this tool.
+No forced cooling, factory reset, crash-edge search, automatic voltage change
+or profile promotion by this tool. Explicit authorized candidate transactions
+use only the existing controller.
 
 ## First implementation evidence (2026-11-26)
 
@@ -161,7 +216,53 @@ oracle verifies exact nonzero values. The gfx1100 BF16 differences included
 observed 0x30000000 vs zero and 0x3d000003 vs 0x3d000000; the precise provider
 cause is unresolved. Do not lower the oracle tolerance to make that case pass.
 The gfx1030 missing provider returned a heuristic error, not a stability
-verdict. No actual power controls or profile settings were changed. No
-temperature conditioning, near-full VRAM, stock-vs-candidate, energy
-qualification or engine replay was performed in this slice. PWR12 remains
-open for those independent qualification extensions.
+verdict. No actual power controls or profile settings were changed. No temperature conditioning, near-full VRAM, stock-vs-candidate, energy
+qualification or engine replay was performed in this first slice.
+
+
+## Completion implementation and measured evidence (2026-11-26)
+
+The first slice merged in #1627 (ca5f35ad9). The independent extension uses the
+same platform owner and no engine changes. Actual ROCm 7.2.4 compilation
+for gfx1030/gfx1100/gfx1201 and CPU oracle self-test passed. 72 targeted
+offline tests passed, including actual existing PowerTransaction with the
+fake sysfs/amdgpu driver (candidate readback, mismatch, verified restoration),
+unreaped-child and restoration failure paths, lease-loss kill/reap, invalid
+reference refusal, memory budget and thermal interval coverage.
+
+Short named-lease observe-current CLI runs, N=768, 1 s, 2 ms gap, except
+the indicated memory and hot-window rows. No operator factory assertion
+or power mutation. Every passing CLI result reported unchanged before/after
+identity and controls; every result was non-production-qualified.
+
+| Arch | Provider / dtype | Clean iterations |
+|---|---|---:|
+| gfx1030 | rocBLAS FP16 | 288 |
+| gfx1030 | rocBLAS BF16 -> FP32 | 264 |
+| gfx1030 | rocBLAS FP32 | 238 |
+| gfx1030 | rocBLAS INT8 -> INT32 | 270 |
+| gfx1100 | rocBLAS BF16 -> FP32 | 312 |
+| gfx1100 | rocBLAS FP32 | 264 |
+| gfx1100 | rocBLAS INT8 -> INT32 | 267 |
+| gfx1201 | hipBLASLt E4M3 FP8 -> FP32 | 332 |
+| gfx1030 | HIP memory 128 MiB | 9 complete passes |
+| gfx1100 | HIP memory 128 MiB | 14 complete passes |
+| gfx1201 | HIP memory 128 MiB | 12 complete passes |
+| gfx1100 | hipBLASLt FP16, 1 s conditioning + 2 s final, 40 C floor | 1,584 sustained / 738 burst |
+
+Earlier gfx1100 FP16 and gfx1201 all five types passed as above. The
+gfx1100 hipBLASLt BF16 mismatch and gfx1030 missing hipBLASLt library
+are retained, not reclassified; rocBLAS supplies an independently checked
+route without any additional SDK. FP8 is not claimed on gfx1030 or gfx1100.
+Memory tests leave at least the specified 512 MiB headroom before and
+after allocation. The XTX sampled 48 C during both short warm-window
+cases; a 70 C floor with the same bounded recipe correctly returned
+inconclusive despite 1,585 clean FP16 iterations. These prove the guard,
+not hot operating-envelope stability. No new power profiles or defaults.
+
+Actual clock/voltage/cap application was deliberately not performed.
+The controller integration is tested on fake sysfs; real changed-profile
+validation, representative extended hot/resident soak, driver-health and
+production replay/KLD/phase-energy evidence remain PWR12's physical
+qualification boundary with PWR10/PWR02. Never interpret the screen as
+permission to alter hardware. The existing active plans were not edited.

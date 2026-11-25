@@ -165,6 +165,10 @@ void memory_screen(const std::string& bdf, const std::string& arch, int hip_vers
         throw Failure(3, "requested memory budget exceeds free VRAM minus reserved headroom");
     const size_t bytes = budget / 2, words = bytes / sizeof(uint32_t);
     Buffer a(bytes), b(bytes);
+    size_t free_after = 0, total_after = 0;
+    HIP(hipMemGetInfo(&free_after, &total_after));
+    if (free_after < headroom || total_after != total)
+        throw Failure(3, "memory headroom not preserved after allocation");
     const size_t chunk = std::min(words, size_t(1) << 20);
     std::vector<uint32_t> host(chunk);
     std::cout << "{\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
@@ -172,7 +176,8 @@ void memory_screen(const std::string& bdf, const std::string& arch, int hip_vers
               << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
               << ",\"provider\":\"hip-memory\",\"library_version\":\"" << hip_version
               << "\",\"workspace\":0,\"algorithm\":\"address-pattern-v1\",\"allocated_bytes\":" << budget
-              << ",\"free_before_bytes\":" << free << ",\"total_bytes\":" << total;
+              << ",\"free_before_bytes\":" << free << ",\"free_after_bytes\":" << free_after
+              << ",\"total_bytes\":" << total;
     const int64_t start = mono_ns();
     int64_t iterations = 0;
     do {
@@ -282,27 +287,27 @@ int main(int argc, char** argv) {
         size_t workspace = 0;
         rocblas_datatype rin{}, rout{}, rcompute{};
         if (provider == "hipblaslt") {
-        LT(hipblasLtCreate(&h.h));
-        int lt_version = 0; LT(hipblasLtGetVersion(h.h, &lt_version));
-        version = std::to_string(lt_version);
-        auto setup = hipblasLtMatmulDescCreate(&h.desc, f.compute, f.scale);
-        if (setup == HIPBLAS_STATUS_NOT_SUPPORTED) throw Failure(3, "dtype not supported");
-        lt(setup, "create matmul descriptor");
-        LT(hipblasLtMatrixLayoutCreate(&h.in, f.in, n, n, n));
-        LT(hipblasLtMatrixLayoutCreate(&h.out, f.out, n, n, n));
-        LT(hipblasLtMatmulPreferenceCreate(&h.pref));
-        const size_t limit = 32ull << 20;
-        LT(hipblasLtMatmulPreferenceSetAttribute(h.pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &limit, sizeof(limit)));
-        int found = 0;
-        auto st = hipblasLtMatmulAlgoGetHeuristic(h.h, h.desc, h.in, h.in, h.out, h.out, h.pref, 1, &algo, &found);
-        if (st == HIPBLAS_STATUS_NOT_SUPPORTED || (st == HIPBLAS_STATUS_SUCCESS && !found))
-            throw Failure(3, "no supported algorithm");
-        lt(st, "get heuristic");
-        if (algo.state != HIPBLAS_STATUS_SUCCESS || algo.workspaceSize > limit)
-            throw Failure(3, "invalid heuristic");
-        workspace = algo.workspaceSize;
-        const char* hex = "0123456789abcdef";
-        for (uint8_t v : algo.algo.data) { algorithm += hex[v >> 4]; algorithm += hex[v & 15]; }
+            LT(hipblasLtCreate(&h.h));
+            int lt_version = 0; LT(hipblasLtGetVersion(h.h, &lt_version));
+            version = std::to_string(lt_version);
+            auto setup = hipblasLtMatmulDescCreate(&h.desc, f.compute, f.scale);
+            if (setup == HIPBLAS_STATUS_NOT_SUPPORTED) throw Failure(3, "dtype not supported");
+            lt(setup, "create matmul descriptor");
+            LT(hipblasLtMatrixLayoutCreate(&h.in, f.in, n, n, n));
+            LT(hipblasLtMatrixLayoutCreate(&h.out, f.out, n, n, n));
+            LT(hipblasLtMatmulPreferenceCreate(&h.pref));
+            const size_t limit = 32ull << 20;
+            LT(hipblasLtMatmulPreferenceSetAttribute(h.pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &limit, sizeof(limit)));
+            int found = 0;
+            auto st = hipblasLtMatmulAlgoGetHeuristic(h.h, h.desc, h.in, h.in, h.out, h.out, h.pref, 1, &algo, &found);
+            if (st == HIPBLAS_STATUS_NOT_SUPPORTED || (st == HIPBLAS_STATUS_SUCCESS && !found))
+                throw Failure(3, "no supported algorithm");
+            lt(st, "get heuristic");
+            if (algo.state != HIPBLAS_STATUS_SUCCESS || algo.workspaceSize > limit)
+                throw Failure(3, "invalid heuristic");
+            workspace = algo.workspaceSize;
+            const char* hex = "0123456789abcdef";
+            for (uint8_t v : algo.algo.data) { algorithm += hex[v >> 4]; algorithm += hex[v & 15]; }
         } else {
             rin = roc_type(f.in); rout = roc_type(f.out); rcompute = roc_type(f.scale);
             RB(rocblas_create_handle(&r.h));
