@@ -70,16 +70,33 @@ int main() {
         check(std::chrono::steady_clock::now() - t1 < milliseconds(1000), "fault ends later waits at once");
         w.stop();
     }
-    {   // helper dies before it is watched: the barrier fails at once, not at the bound
-        Seg s; HelperWatch w; check(w.start(s.h()), "watch");
+    {   // helper dies before it is watched: the barrier fails at once, not at the bound. The death is complete before
+        // the watcher starts, so the watcher can only find an exited process (no race with its first pass).
+        Seg s;
         const pid_t p = fake_helper();
         publish_helper(s.h(), p);
         kill(p, SIGKILL); waitpid(p, nullptr, 0);
+        HelperWatch w; check(w.start(s.h()), "watch");
         const auto t0 = std::chrono::steady_clock::now();
         const WaitResult r = await_helpers_registered(s.h(), w, milliseconds(20000));
         check(r == WaitResult::Fault, "a dead helper fails the barrier");
         check(std::chrono::steady_clock::now() - t0 < milliseconds(5000), "a dead helper does not wait out the bound");
         check(load(&s.h()->helper_fault) != 0, "death leaves the sticky fault");
+        w.stop();
+    }
+    {   // helper dies after it is watched: the watcher raises the fault; the barrier then fails at once. The test waits
+        // for the event it asserts (the watcher holding the helper, then the fault word), each bounded by the
+        // registration bound, never a fixed sleep.
+        Seg s; HelperWatch w; check(w.start(s.h()), "watch");
+        const pid_t p = fake_helper();
+        publish_helper(s.h(), p);
+        const auto limit = std::chrono::steady_clock::now() + registration_bound();
+        while (!w.watching(0) && std::chrono::steady_clock::now() < limit) { w.notice(); std::this_thread::yield(); }
+        check(w.watching(0), "the watcher holds the helper");
+        kill(p, SIGKILL); waitpid(p, nullptr, 0);
+        while (!load(&s.h()->helper_fault) && std::chrono::steady_clock::now() < limit) std::this_thread::yield();
+        check(load(&s.h()->helper_fault) != 0, "the watcher raised the fault for the dead helper");
+        check(await_helpers_registered(s.h(), w, milliseconds(20000)) == WaitResult::Fault, "a helper that died while watched fails the barrier");
         w.stop();
     }
     std::puts("r3_helper_registration_test: OK");
