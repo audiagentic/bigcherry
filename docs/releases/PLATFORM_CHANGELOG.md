@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.73.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.72.0...bc-platform-1.73.0) (2026-11-25)
+
+
+### New and changed
+
+* **release:** the pin-bump drift phase stops on owned-unit origins that are blocked or changed upstream ([#1606](https://github.com/audiagentic/bigcherry/issues/1606)) ([d9a3014](https://github.com/audiagentic/bigcherry/commit/d9a30141d2d91c484f23d7739aae0bf414178260))
+
 ## [1.72.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.71.0...bc-platform-1.72.0) (2026-11-25)
 
 
