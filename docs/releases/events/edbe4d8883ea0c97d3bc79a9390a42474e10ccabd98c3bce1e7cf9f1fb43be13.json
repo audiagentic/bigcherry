@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261125_225100_expose-the-independent-ai-scre_1205",
+  "files": [
+    ".github/workflows/core-offline-validation.yml",
+    "docs/planning/active/run-power-efficiency/PWR12.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/reference/tooling/TOOLING.md",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/bigcherry/cli/main.py",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py"
+  ],
+  "plan-item-ids": [
+    "PWR12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Fix canonical tooling boundary in PWR12 by using an independent platform CLI handler, exercising the new screen in existing card-free CI; no changes to power controller or other plans.",
+  "timestamp-utc": "2026-11-25T22:51:00.702753Z",
+  "user-summary-candidate": "Expose the independent AI screen through the platform CLI"
+}

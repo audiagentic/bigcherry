@@ -58,6 +58,10 @@ jobs:
           python -m unittest discover -s tools/tests/core -p 'test_*.py'
           python -m unittest discover -s tools/tests/radiance -p 'test_*.py'
           python -m unittest discover -s tools/tests/bench -p 'test_*.py'
+      - name: Independent GPU AI screen (card-free)
+        env:
+          PYTHONPATH: tools
+        run: python -m pytest -q -p no:cacheprovider tools/tests/hardware/test_ai_probe.py
       - name: ROCm SDK suite
         # The SDK tests keep every build bound to a named ROCm stack. The launcher's cleanup and plan-check tests
         # went with the launcher (S16); the native owner's own tests cover those behaviours.

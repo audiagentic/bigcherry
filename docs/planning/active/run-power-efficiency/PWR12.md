@@ -22,7 +22,7 @@ Build a small engine-independent GPU arithmetic and memory-integrity qualificati
 1. Platform numerical screen (implemented first slice): native HIP/hipBLASLt executable built separately from engine against installed SDK, platform hardware.ai_probe runner, explicit BDF/expected architecture/role and profile selection from existing reader; lease required, no writes. Check actual observed controls before/between/after, match stock receipt and algorithm/library/version/geometry, independent exact CPU oracle, sustained and burst modes, bounded thermal monitoring and timeout. No pass from missing library, unsupported type or wrong card.
 2. Portability and broader numerical coverage: stock-qualify actual SDK algorithm/provider per gfx1030/1100/1201 and dtype. FP16, BF16, FP32, E4M3 FP8, INT8 first; gfx1030 missing hipBLASLt provider, gfx1100 BF16 first selected algorithm has nonzero CPU-oracle deviations. Diagnose on verified stock, use existing kernel replay/native dot/math provider where hipBLASLt unavailable or not exact; do not reinterpret failed stock as voltage instability or loosen the exact oracle. Add floating non-exact corpus only with independent tolerance and frozen stock byte oracle; no hand-declared ABI or new provider framework. Use existing tests for actual IQ8R/IQR/MoE/attention/GDN, memory patterns, H2D/D2H and collective transfers. For standalone VRAM coverage reuse existing copy integrity harness or a small bounded pattern probe only if missing; explicit measured free budget/headroom, no blanket near-full reservation.
 3. Hot profile qualification: normal cooling, observe hotspot and memory temp where supported, bounded preconditioning to actual serving envelope, cold boost and hot bursts, stock-candidate-stock and matched actual workload. Existing power controller alone may apply/restore (PWR07/08/10); coordinate with those owners after in-flight work, no concurrent edits or second writer. Test-only candidate path requires explicit consent, lease, fresh range/readback, durable journal and verified child exit/restore; never use a synthetic pass as authorization. If owner has no independent test transaction entrypoint yet, keep screen read-only and explicitly record this blocker. No automatic undervolt search to crash, no fan/firmware override.
-4. Reuse results under PWR10/PWR02: actual per-card and profile content digest, effective settings, matched runtime/driver/firmware and production replay, thermal envelope, host/device fault logs, phase tokens/J and throughput. Same current reference and actual controlled conditions; nonregression or explicit operator tradeoff. No second receipt store or default changes. Add discoverable gpu-power screen CLI alias only if useful when current power CLI settles; current platform module is directly runnable. No native engine dependency.
+4. Reuse results under PWR10/PWR02: actual per-card and profile content digest, effective settings, matched runtime/driver/firmware and production replay, thermal envelope, host/device fault logs, phase tokens/J and throughput. Same current reference and actual controlled conditions; nonregression or explicit operator tradeoff. No second receipt store or default changes. Independent canonical bigcherry gpu-ai-screen command registered separately from gpu-power; no direct-module compatibility entrypoint. No native engine dependency.
 
 ## Detailed Solution & Technical Design
 
@@ -34,7 +34,7 @@ Architecture: platform tools/bigcherry/hardware/ai_probe.py orchestrates a stand
 
 ## Files
 
-tools/bigcherry/hardware/ai_probe.cpp, tools/bigcherry/hardware/ai_probe.py, tools/tests/hardware/test_ai_probe.py, docs/reference/tooling/AI_POWER_SCREEN.md; later reuse existing replay/transfer tools, no engine package additions.
+tools/bigcherry/hardware/ai_probe.cpp, tools/bigcherry/hardware/ai_probe.py, tools/tests/hardware/test_ai_probe.py, docs/reference/tooling/AI_POWER_SCREEN.md; later reuse existing replay/transfer tools, no engine package additions., tools/bigcherry/cli/ai_probe_cmds.py (one independent registration in cli/main.py), existing core-offline CI step for card-free tests.
 
 ## Validation
 
@@ -58,7 +58,10 @@ Baseline main 3305d3064 (2026-11-26). PWR07/PWR08/PWR06 in_progress; no existing
 
 Final first-slice checks: 29 targeted offline tests pass including native-result coverage and lease-loss kill/reap checks; warning-free ROCm compile and CPU oracle test passed. Platform tooling map points to independent command. Matching reference safety ceiling is required. First slice remains observe-only; no automatic application, no full profile qualification. No existing plans altered.
 
+PR #1627 initial CI failed the existing tooling-boundary test rejecting direct python3 -m bigcherry module invocation in docs. Corrected to the canonical platform CLI gpu-ai-screen with separate handler and one parser registration (existing gpu-power handlers untouched); new hardware tests added to existing card-free CI. 40 targeted tests including tooling boundary now pass. No engine/runtime/other plan changes.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
 - 2026-11-25T22:44:23.614740+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:50:51.480167+00:00 (updated-by): Updated: section:steps, section:files, section:notes

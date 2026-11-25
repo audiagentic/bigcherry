@@ -41,7 +41,7 @@ nice -n 19 "$ROCM_PATH/bin/hipcc" -O2 -std=c++17 -Wall -Wextra \
 
 The self-test is CPU-only. For real GPU work, use the verified GPU lease,
 one selected physical PCI BDF and expected architecture. Do not run during
-another workload. Use `PYTHONPATH=tools python3 -m bigcherry.hardware.ai_probe --help`
+another workload. Use `PYTHONPATH=tools python -m bigcherry gpu-ai-screen --help`
 for the platform command. The native executable is a low-level diagnostic:
 use the wrapper for an operational screen, including temperature guard and
 lease verification. No direct low-level invocation without a lease.
@@ -55,7 +55,7 @@ ceiling using actual device facts, not the example tuner's settings.
 
 ```sh
 agent-lease acquire gpu --ttl 12m --est 5m --wait -- \
-    env PYTHONPATH=tools python3 -m bigcherry.hardware.ai_probe \
+    env PYTHONPATH=tools python -m bigcherry gpu-ai-screen \
     --probe "$BC_WORK_ROOT/ai-power-screen/ai-probe" \
     --profiles engines/radiance/power-profiles.yaml \
     --profile stock --stock-confirmed \

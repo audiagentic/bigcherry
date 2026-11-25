@@ -201,3 +201,16 @@ def test_lost_lease_kills_and_reaps_probe(tmp_path):
         result = a.run_case(ns.probe, BDF, "gfx1100", "fp16", 768, 1, 0, 2, sensor, 85000, tmp_path)
     assert result["status"] == "lease_lost"
     assert proc.returncode == -9 and proc.waited
+
+
+def test_canonical_cli_is_separate_from_power_control():
+    from bigcherry.cli.main import build_parser
+    parser = build_parser()
+    ns = parser.parse_args([
+        "gpu-ai-screen", "--probe", "probe", "--profiles", "profiles.yaml",
+        "--profile", "stock", "--bdf", BDF, "--arch", "gfx1100",
+        "--role", "engine", "--stock-confirmed", "--seconds", "1",
+        "--max-hotspot-c", "85", "--output", "screen.json"])
+    assert ns.func.__module__ == "bigcherry.cli.ai_probe_cmds"
+    assert ns.profile == "stock"
+    assert ns.stock_confirmed

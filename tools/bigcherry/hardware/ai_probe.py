@@ -11,16 +11,13 @@ import argparse
 import hashlib
 import json
 import os
-import signal
 import re
 import subprocess
-import sys
 import tempfile
 import time
 from pathlib import Path
 
 from . import lease, power_probe, power_profiles
-from .power_receipt import write_json_atomic
 
 DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8")
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
@@ -242,51 +239,3 @@ def screen(args: argparse.Namespace) -> dict:
             if result["status"] == "pass":
                 result.update(status="inconclusive", reason=result["readback_error"])
     return result
-
-
-def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--probe", required=True, type=Path, help="native probe built with the installed ROCm SDK")
-    p.add_argument("--profiles", required=True, type=Path, help="canonical power-profiles.yaml")
-    p.add_argument("--profile", required=True)
-    p.add_argument("--bdf", required=True)
-    p.add_argument("--arch", required=True, help="expected architecture; verified by HIP probe")
-    p.add_argument("--role", required=True, help="engine or concrete helperN")
-    p.add_argument("--stock-confirmed", action="store_true", help="operator has verified factory settings; never writes")
-    p.add_argument("--reference", type=Path, help="passing stock screen for candidate")
-    p.add_argument("--dtype", nargs="+", choices=DTYPES, default=["fp16"])
-    p.add_argument("--n", type=int, default=768)
-    p.add_argument("--seconds", type=int, required=True, help="per dtype and load pattern")
-    p.add_argument("--pause-ms", nargs="+", type=int, default=[0, 2], help="0 sustained, positive burst gap")
-    p.add_argument("--setup-timeout", type=int, default=60, help="extra seconds allowed for SDK setup/oracle")
-    p.add_argument("--max-hotspot-c", type=int, required=True, help="explicit safe upper ceiling, bounded by available reported limits")
-    p.add_argument("--output", required=True, type=Path)
-    args = p.parse_args(argv)
-    if (not BDF.fullmatch(args.bdf) or not ARCH.fullmatch(args.arch) or
-            not 16 <= args.n <= 2048 or not 1 <= args.seconds <= 3600 or
-            not 1 <= args.setup_timeout <= 300 or not 1 <= args.max_hotspot_c <= 110 or
-            not all(0 <= x <= 1000 for x in args.pause_ms) or
-            len(set(args.dtype)) != len(args.dtype) or len(set(args.pause_ms)) != len(args.pause_ms)):
-        p.error("invalid device, bounds or duplicate test cases")
-    if args.output.exists() or args.output.is_symlink():
-        p.error("output already exists; use a new evidence path")
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    def cancelled(signum, frame):
-        raise ScreenError("screen interrupted", "cancelled")
-
-    previous = signal.signal(signal.SIGTERM, cancelled)
-    try:
-        result = screen(args)
-    except (ScreenError, OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        result = {"kind": "ai-power-screen", "schema_version": 1,
-                  "status": getattr(exc, "status", "inconclusive"), "reason": str(exc),
-                  "production_qualified": False}
-    finally:
-        signal.signal(signal.SIGTERM, previous)
-    write_json_atomic(args.output, result)
-    print(f"AI power screen: {result['status']} ({args.output})")
-    return 0 if result["status"] == "pass" else 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())
