@@ -457,8 +457,8 @@ def replay_point(binary: Path, ref: Path, cand: Path, arch: str, device: str, sp
             "windows": rounds, "converged": done}
 
 
-def replay_points(spec: dict) -> list[dict]:
-    return [{"N": n, "K": k, "M": m, "B": b} for n, k in spec["shapes"] for m in spec["rows_m"] for b in spec["bits"]]
+def replay_points(spec: dict, bits: list[int] | None = None, rows: list[int] | None = None) -> list[dict]:
+    return [{"N": n, "K": k, "M": m, "B": b} for n, k in spec["shapes"] for m in (rows or spec["rows_m"]) for b in (bits or spec["bits"])]
 
 
 def classify(ratio: float, tol: float) -> str:
@@ -497,7 +497,7 @@ def stage_build(args) -> Path:
 
 
 def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_windows: int = 14, verdict_tol: float = 0.04, skip_replay: bool = False,
-                  skip_hash: bool = False) -> dict:
+                  skip_hash: bool = False, bits: list[int] | None = None, rows: list[int] | None = None) -> dict:
     state = json.loads((out / "build.json").read_text(encoding="utf-8"))
     fam = families().get(state["family"]) if state["family"] else None
     if not fam:
@@ -525,7 +525,7 @@ def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_
     if changed_rows and not skip_replay:
         spec = fam["replay"]
         for row in changed_rows:
-            for point in replay_points(spec):
+            for point in replay_points(spec, bits, rows):
                 got = replay_point(binary, ref, plugin, arch, device, spec, point, row, iters=replay_iters, tol=tol,
                                    max_windows=max_windows)
                 got["row"], got["verdict"] = row, classify(got["ratio"], verdict_tol)
@@ -594,6 +594,8 @@ def main(argv: list[str] | None = None) -> int:
     measure_p.add_argument("--tolerance", type=float, default=0.015)
     measure_p.add_argument("--max-windows", type=int, default=12)
     measure_p.add_argument("--no-replay", action="store_true")
+    measure_p.add_argument("--bits", type=int, nargs="+", help="code widths to replay (default: the family's)")
+    measure_p.add_argument("--rows", type=int, nargs="+", help="row counts to replay (default: the family's)")
     measure_p.add_argument("--no-hash", action="store_true", help="skip the selftest hash stage")
     run_p = commands.add_parser("run", help="build, resource check, then hash and replay under the gpu lease")
     add_build_arguments(run_p)
@@ -607,7 +609,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "measure":
             stage_measure(Path(args.out), replay_iters=args.iters, tol=args.tolerance, max_windows=args.max_windows,
-                          skip_replay=args.no_replay, skip_hash=args.no_hash)
+                          skip_replay=args.no_replay, skip_hash=args.no_hash, bits=args.bits, rows=args.rows)
             text, ok = summary(Path(args.out))
             print(text)
             return 0 if ok else 1
