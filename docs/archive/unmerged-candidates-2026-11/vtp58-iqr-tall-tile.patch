@@ -1,0 +1,196 @@
+# vtp58-iqr-tall-tile.patch: IQR fused prefill at 64 weight rows x 256 activation rows (129-256 rows), gfx1100 native rewrite; diff of the two libr3 native rewrite files, unchanged.
+# Rejected: no win on gfx1100 (see the README row).
+diff --git a/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw b/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw
+index 0cc648ef5..0f63b2795 100644
+--- a/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw
++++ b/engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw
+@@ -145,3 +145,75 @@ template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, b
+ @@ replace
+ template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
+ @@ end
++
++# Tile geometry as a parameter of the body (default: the shipped 128 weight rows x 128 activation rows), so the fused IQR
++# tile can also run 64 weight rows x 256 activation rows with the same accumulator tiles a wave. These blocks come after
++# the paired ones above on purpose: they anchor on the text those leave behind (the Fused parameter).
++@@ find 1
++constexpr uint32_t kPFK = 64;
++@@ replace
++constexpr uint32_t kPFK = 64;
++// A tile shape: kPWW x kPWA waves, each kPTW weight tiles x kPTA activation tiles of 16 x 16.
++template <uint32_t TW, uint32_t TA, uint32_t WW, uint32_t WA>
++struct PrefillGeometry {
++    static constexpr uint32_t PTW = TW, PTA = TA, PWW = WW, PWA = WA;
++    static constexpr uint32_t BN = WW * TW * 16u, BM = WA * TA * 16u;   // weight x activation rows
++    static constexpr uint32_t waves = WW * WA, units = WW * TW;         // units: 16-row weight tiles a block
++};
++using PrefillGeo128 = PrefillGeometry<kPTW, kPTA, kPWW, kPWA>;
++// Half the weight rows, twice the activation rows: the same tiles a wave, so the same accumulators.
++using PrefillGeoTall = PrefillGeometry<kPTW, kPTA, kPWW / 2u, kPWA * 2u>;
++@@ end
++
++@@ find 1
++template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
++@@ replace
++template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false,
++          class Geo = PrefillGeo128>
++@@ end
++
++@@ find 1
++    static_assert(!ROWF || RB == 32, "a row's scale and a block's factor fold as RB 32's one scale");
++@@ replace
++    // This block's tile shape; every name below shadows the shipped geometry's constant of the same name.
++    constexpr uint32_t kPTW = Geo::PTW, kPTA = Geo::PTA, kPWW = Geo::PWW, kPWA = Geo::PWA;
++    constexpr uint32_t kPBN = Geo::BN, kPBM = Geo::BM, kPWaves = Geo::waves;
++    constexpr uint32_t kPrefillLds = 2u * kPBM * (kPFK + 8u);
++    constexpr uint32_t kTPR = kPWaves * kWave / kPBM;   // threads staging one activation row
++    constexpr uint32_t kCH = kPFK / (32u * kTPR);       // 32-byte pieces a thread stages
++    static_assert(kTPR * kCH * 32u == kPFK && kPBM * kTPR == kPWaves * kWave, "whole threads stage whole rows");
++    static_assert(!ROWF || RB == 32, "a row's scale and a block's factor fold as RB 32's one scale");
++@@ end
++
++@@ find 1
++    static_assert(kPBM * 2u == kPWaves * kWave, "two threads stage an activation row");
++@@ replace
++@@ end
++
++@@ find 1
++    const uint32_t sr = tid / 2u, sc = (tid % 2u) * 32u;
++@@ replace
++    const uint32_t sr = tid / kTPR, sc = (tid % kTPR) * kCH * 32u;
++@@ end
++
++@@ find 1
++    Stage8 pa = stage8_load(asrc, true);
++@@ replace
++    Stage8 pa[kCH];
++#pragma unroll
++    for (uint32_t v = 0; v < kCH; ++v) pa[v] = stage8_load(asrc + 32u * v, true);
++@@ end
++
++@@ find 1
++        stage8_store<kPFK>(s_a[half % 2u], sr, sc, pa);
++@@ replace
++#pragma unroll
++        for (uint32_t v = 0; v < kCH; ++v) stage8_store<kPFK>(s_a[half % 2u], sr, sc + 32u * v, pa[v]);
++@@ end
++
++@@ find 1
++        pa = stage8_load(asrc + c1, true);
++@@ replace
++#pragma unroll
++        for (uint32_t v = 0; v < kCH; ++v) pa[v] = stage8_load(asrc + c1 + 32u * v, true);
++@@ end
+diff --git a/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw b/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw
+index 0168d18b0..811216c0e 100644
+--- a/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw
++++ b/engines/radiance/components/libr3/native/r4d_gemm_iqr.hip.rw
+@@ -336,9 +336,10 @@ constexpr uint32_t kIqrTokenTile = 16u;
+ /* ---- the forms built: r4d_iqr.h's list ------------------------------------------------ */
+ @@ replace
+ 
+-// Fused one-band policy: eight waves each decode one of the eight weight units.
+-// Reuse each wave's padded transpose storage for its two fragment-order halves.
+-template <class F>
++// Fused one-band policy: one wave decodes each of the block's weight units (eight at the shipped 128 x 128 geometry,
++// four at the 64 x 256 one; the other waves wait at the barriers). Reuse each decoding wave's padded transpose storage
++// for its two fragment-order halves.
++template <class F, class Geo = PrefillGeo128>
+ struct IqrFusedPre {
+     Ctx c;
+     uint8_t* tr;
+@@ -346,7 +347,7 @@ struct IqrFusedPre {
+     __device__ void end(uint32_t) const {}
+     __device__ __forceinline__ void prepare(uint32_t n0, uint32_t kb) const {
+         using D = Dec<F>;
+-        static_assert(kPWaves == kPWW * kPTW);
++        static_assert(Geo::units <= Geo::waves);
+         static_assert(kTrBytes >= 2u * kTileBytes);
+         static_assert(kTrBytes % 16u == 0);
+         const uint32_t tid = threadIdx.x, lane = tid % kWave, wave = tid / kWave;
+@@ -354,6 +355,7 @@ struct IqrFusedPre {
+         uint8_t* const t = tr + wave * kTrBytes;
+         // All consumers must finish reading the preceding block before reuse.
+         __syncthreads();
++        if (wave < Geo::units) {
+         uint32_t w[16];
+         const typename D::Raw code = D::fetch(c, rt, kb, lane, true);
+         D::rows(code, c, rb_ratio<F>(c, rt * 16u + (lane & 15u), kb), w);
+@@ -367,6 +369,7 @@ struct IqrFusedPre {
+             *(uint4*)d = f[h].v;
+             *(uint4*)(d + 16) = f[h].w;
+         }
++        }
+         __syncthreads();
+     }
+     __device__ __forceinline__ Stage8 load(uint32_t part, uint32_t half, uint32_t lane) const {
+@@ -379,11 +382,11 @@ struct IqrFusedPre {
+ };
+ 
+ // Qualified compiled records: 236–239 VGPR, zero spill, 6 waves, 36864 bytes LDS.
+-template <class F>
++template <class F, class Geo = PrefillGeo128>
+ struct IqrFusedCertificate {
+-    static constexpr uint32_t lds = kPrefillLds + 2u * kPBM * sizeof(float)
+-                                  + kPWaves * kTrBytes + Dec<F>::kTab;
+-    static constexpr bool geometry = kPWaves == kPWW * kPTW &&
++    static constexpr uint32_t lds = 2u * Geo::BM * (kPFK + 8u) + 2u * Geo::BM * sizeof(float)
++                                  + Geo::units * kTrBytes + Dec<F>::kTab;
++    static constexpr bool geometry = Geo::units <= Geo::waves && Geo::waves * kWave == 256u &&
+         kTrBytes >= 2u * kTileBytes && kTrBytes % 16u == 0u;
+     static constexpr bool rowf = F::SC == kRowF32 &&
+         ((F::L == 16u && F::B >= 2u && F::B <= 7u) ||
+@@ -394,27 +397,27 @@ struct IqrFusedCertificate {
+         F::LV == 0u && F::LRB == 0u && (rowf || bf16);
+ };
+ 
+-template <class F>
+-__global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
++template <class F, class Geo = PrefillGeo128>
++__global__ __launch_bounds__(Geo::waves * kWave) R4D_WAVES(6)
+ void iqr_fused_prefill_kernel(Ctx c, const uint8_t* __restrict__ A, const float* __restrict__ Sa,
+                               const uint16_t* __restrict__ Sw, uint16_t* __restrict__ C,
+                               uint32_t M, uint32_t K, uint32_t N, uint32_t a_ld, uint32_t sa_ld) {
+     using D = Dec<F>;
+     __shared__ __attribute__((aligned(16))) int8_t s_tab[D::kTab];
+-    __shared__ __attribute__((aligned(16))) uint8_t s_tr[kPWaves * kTrBytes];
++    __shared__ __attribute__((aligned(16))) uint8_t s_tr[Geo::units * kTrBytes];
+     c.tab = s_tab;
+-    D::stage(s_tab, c, threadIdx.x, kPWaves * kWave);
++    D::stage(s_tab, c, threadIdx.x, Geo::waves * kWave);
+     __syncthreads();
+-    const IqrFusedPre<F> pre{c, s_tr};
++    const IqrFusedPre<F, Geo> pre{c, s_tr};
+     if constexpr (F::SC == kRowF32) {
+         constexpr Form f{ F::KIND, F::B, F::LV, F::L, F::LRB, F::SC, 0 };
+         const uint8_t* const sb = c.S;
+-        gemm_8a8_prefill_body<true, 32, IqrFusedPre<F>, true, kBlock, true>(
++        gemm_8a8_prefill_body<true, 32, IqrFusedPre<F, Geo>, true, kBlock, true, Geo>(
+             A, Sa, nullptr, Sw, C, M, K, N, a_ld, sa_ld, c.nkb, pre,
+             (const float*)sb, (const float*)(sb + cf_off(f, N, K)));
+     } else {
+         static_assert(F::SC == kBf16 && F::LRB == 0);
+-        gemm_8a8_prefill_body<true, 0, IqrFusedPre<F>, false, kBlock, true>(
++        gemm_8a8_prefill_body<true, 0, IqrFusedPre<F, Geo>, false, kBlock, true, Geo>(
+             A, Sa, nullptr, Sw, C, M, K, N, a_ld, sa_ld, c.nkb, pre);
+     }
+ }
+@@ -438,4 +441,19 @@ void iqr_fused_prefill_kernel(Ctx c, const uint8_t* __restrict__ A, const float*
+             return rc == RAD_OK && hipGetLastError() == hipSuccess ? RAD_OK : R4D_NO(RAD_E_DEVICE);
+         }
+     }
++    // The rows above one 128-row band that still fit one 256-row band: half the weight rows a block, so each weight
++    // unit is decoded once per 256 activation rows instead of once per 128.
++    if constexpr (IqrFusedCertificate<F, PrefillGeoTall>::verified) {
++        using Tall = PrefillGeoTall;
++        if ((uint32_t)g.M > kPBM && (uint32_t)g.M <= Tall::BM && g.N % Tall::BN == 0) {
++            const Ctx c = ctx_of(g);
++            const int rc = R4D_EMIT(stream, (iqr_fused_prefill_kernel<F, Tall>),
++                dim3(1u, (uint32_t)(g.N / Tall::BN), 1), dim3(Tall::waves * kWave), 0,
++                c, (const uint8_t*)g.a->data, (const float*)g.as->data,
++                (const uint16_t*)g.bs->data, (uint16_t*)g.y->data,
++                (uint32_t)g.M, (uint32_t)g.K, (uint32_t)g.N,
++                (uint32_t)g.a_ld, (uint32_t)g.sa_ld);
++            return rc == RAD_OK && hipGetLastError() == hipSuccess ? RAD_OK : R4D_NO(RAD_E_DEVICE);
++        }
++    }
+ @@ end

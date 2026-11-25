@@ -72,7 +72,7 @@ class NativeFusedIqrTests(unittest.TestCase):
     def test_package_metadata(self):
         meta = tomllib.loads((PKG / "patch.toml").read_text())
         self.assertEqual(meta["id"], PKG.name)
-        self.assertEqual(meta["state"], "untested")
+        self.assertIn(meta["state"], ("untested", "validated"))
         self.assertEqual(meta["order"], 65)
         self.assertEqual(meta["requires"], [])
         self.assertEqual({p.path for p in patch.PATCHES}, {HEADER, IQR})

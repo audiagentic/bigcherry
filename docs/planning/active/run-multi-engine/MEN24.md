@@ -79,6 +79,8 @@ CORRECTION 2026-11-04: the earlier note that MEN19 were absorbed into this item 
 
 Concurrent #1563 RCS15 inventory and advisory triage reused; composition remains unproven. BU03 #1561 owns CI speed measurements; MEN24 owns actual bump phase timing only, reuse CI data, no duplicate telemetry. #1560 names release 2020.12.0; no Gate E proof verified for that release here.
 
+Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Existing bump phases, RCS20 family targets and RCS25 discrete tests stay; no artificial extra bumps or historical replays merely to close this plan. Measure improvements during actual requested bumps. Reuse existing Gate E and affected-path tests, no blanket new hardware matrix.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -93,3 +95,4 @@ Concurrent #1563 RCS15 inventory and advisory triage reused; composition remains
 - 2026-11-25T02:37:17.678402+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria
 - 2026-11-25T02:53:58.730361+00:00 (updated-by): Updated: section:detailed_solution
 - 2026-11-25T02:55:02.743727+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T04:30:33.417688+00:00 (updated-by): Updated: section:notes

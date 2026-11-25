@@ -1,5 +1,7 @@
 # Radiance serving configs: one native YAML per deployment with an `x-bigcherry` section
 
+> **Serving/configuration closure sweep (2026-11-25):** [Field ownership, measured caches and caller migration](radiance-serve-config-review-20261125.md) specifies the remaining S18 work against the current implementation. In particular, native server.port remains authored, run capture is evidence-only, and actual resolved power settings scope performance calibration.
+
 > **Launch-transport decision superseded (2026-11-25):** [Native YAML launch and manifest retirement](radiance-native-yaml-launch.md) retains the one-file authoring and native-parser rules below, but replaces manifest-based execution with native --config, owner-only typed admission and evidence-only run capture. This is the target design, not a claim that the current binary already implements it.
 
 Status: design for RUM04 (Radiance 2.2 bump), 2026-11-20. Owner decision: the bump carries every serving config, and
@@ -24,7 +26,7 @@ options; BigCherry owns cross-process settings, derived decisions and proofs) an
 4. Nothing is authored twice. A value Radiance owns never appears in `x-bigcherry`; where BigCherry needs it
    (TP, model, cards, kernels) it reads Radiance's resolved value from the inspector and checks it against its own
    intent (rank count, rank archs), refusing with both sources named.
-5. Machine facts and derived values are never authored: port, runtime home, BDFs, host pool / KV tier / checkpoint
+5. Machine facts and derived values are never authored: runtime home, BDFs, host pool / KV tier / checkpoint
    slots (the memory plan), helper indices. bc-serve supplies them into the sealed launch.
 
 ## File shape
@@ -60,7 +62,7 @@ x-bigcherry:
 ```
 
 A helper config adds `helpers` (ordered groups: `arch`, `count` number or `all`, `placement` head|tail, optional
-`budget-mib`, `share`) and the `handoff`/`helper` sub-tables. `server.port` is not authored: bc-serve sets it.
+`budget-mib`, `share`) and the `handoff`/`helper` sub-tables. `server.port` is a native authored option, preserved by bc-serve (closure review); lab arms author a distinct endpoint if required.
 
 ## The `x-bigcherry` schema (v1)
 
