@@ -79,7 +79,7 @@ apply/readback and restoration. It uses the same recovery directory as
 `gpu-power`. The native owner has per-session journals, so the operator must
 also verify those have been resolved; the platform journal scan is not a
 global native-session registry. No candidate is applied before matching the
-confirmed stock receipt, verifying current controls and checking thermal
+required reference receipt, verifying current controls and checking thermal
 limits. The selected BDF alone may be changed. Cancellation is cooperative
 through reaping/restoration. Lost lease or unverified child exit refuses
 restoration and retains the active journal. A failed restore or full readback
@@ -100,8 +100,12 @@ BF16, FP32 and INT8 paths on gfx1030 and gfx1100; E4M3 FP8 uses hipBLASLt
 where supported. No silent provider fallback or claim that a selected library
 exercises every instruction. For current-settings diagnostics without a
 factory assertion, use stock with `--observe-current` instead of
-`--stock-confirmed`; the output cannot be used as a stock candidate reference.
-Use a managed stock run ID. Previous standalone JSON is historical diagnostic evidence only; re-record stock through the managed command.
+`--stock-confirmed`. That receipt is not a factory-stock reference. An
+explicitly authorized **research-only** candidate may use it only with
+`--observe-current --apply-profile --confirm-idle --reference <run-id>`;
+its original controls and identity must exactly match the observed reference.
+The ordinary factory-confirmed candidate path still refuses observed references.
+Both paths remain diagnostic and cannot authorize production. Use a managed reference run ID. Previous standalone JSON is historical diagnostic evidence only; re-record stock through the managed command.
 
 Include `memory` in `--dtype` with explicit even `--memory-mib` (total for two
 buffers) and `--headroom-mib` (at least 256 MiB). The probe checks live free
@@ -116,9 +120,10 @@ No multi-GPU/collective or simultaneous model-resident coverage is implied.
 For an actual thermal-envelope screen select `--min-hotspot-c` and optional
 `--warmup-seconds` per case, in addition to the required safe maximum.
 The workload runs for warmup plus requested measured time. Native monotonic
-timestamps and sampled temperatures must bracket the entire final requested
-interval with no sample gap above 1 s and every sample at or above the
-minimum; if it never reaches that interval, the case is inconclusive even
+timestamps and sampled temperatures must establish the entire requested
+interval inside the actual workload, ending within 1 s of native completion,
+with no sample gap above 1 s and every sample at or above the minimum.
+Post-exit cooling samples cannot serve as in-load coverage; if it never reaches that interval, the case is inconclusive even
 with correct results. The maximum always applies (including warmup/setup).
 The memory sensor is sampled if available; its reported limit and an
 optional `--max-memory-c` bound it. A requested missing sensor refuses.
@@ -156,8 +161,9 @@ Use `bigcherry run status <run-id>` and `bigcherry run harvest <run-id>`
 under the usual workspace rules. Existing capture/v1 harvest keeps the
 JSON evidence in evidence-hold; all screens are diagnostic-only, including
 passes, not synthetic inference metrics or calibration records. Candidate
-reference must be a completed managed stock run with passing coverage and
-explicit factory confirmation. Retain the typed run reference and digest
+reference must be a completed managed run with passing coverage and
+explicit factory confirmation (or explicitly selected observed research
+reference as described above). Retain the typed run reference and digest
 of its exact receipt. The old arbitrary --output argument is removed.
 No engine runs or hardware settings are changed by this output alignment.
 
@@ -174,16 +180,22 @@ deterministic signed matrices. Floating inputs are exactly representable
 for the chosen dimension range. The outputs are FP16 for FP16, FP32 for
 BF16/FP32/E4M3 FP8, and INT32 for INT8. The sole floating bit-equivalence
 exception is +0 versus -0; no tolerance is applied to other values. Poison
-the destination before every matmul and read back all elements after
-synchronizing. Require at least two successful iterations and elapsed
-coverage. Sustained mode has zero inter-launch pause; positive pause
-exercises burst/idle transitions, not an assertion of full GPU saturation.
+the destination before every matmul. Default `--batch 1` reads back all
+elements after every launch. For sustained load, `--batch` (1–256) checks
+every element of every GEMM on-device against the independent CPU-generated
+reference before overwriting it, with exact coverage and mismatch counts,
+and independently checks the last result and the reference buffer on CPU
+each batch. Known single-element mismatch injection verifies the device
+checker at entry and exit. Memory always uses batch 1. Require at least
+two successful iterations and elapsed coverage. Positive pause is between
+batches (between launches at batch 1); neither mode alone proves GPU saturation.
 
 The stock receipt and candidate must match physical BDF/architecture, role,
-probe binary digest, kernel version, types, geometry, duration and pause
-recipe. Compare actual HIP/driver/library versions, provider, dispatch identity and
+probe binary digest, kernel version, types, geometry, batch size, duration
+and pause recipe. Compare actual HIP/driver/library versions, provider, dispatch identity and
 workspace for each case. A rocBLAS default route does not prove identical internal
-kernel selection. Every iteration is independently checked against the CPU oracle. Verify observed controls before, between and after
+kernel selection. Every iteration is checked against the independent CPU-generated oracle,
+using the selected checking mode. Verify observed controls before, between and after
 cases; record the profile digest and reference receipt digest. A profile
 label alone is not evidence. The output includes the observed junction
 temperature range. This is a short independent arithmetic screen, **not**
@@ -279,9 +291,106 @@ cases; a 70 C floor with the same bounded recipe correctly returned
 inconclusive despite 1,585 clean FP16 iterations. These prove the guard,
 not hot operating-envelope stability. No new power profiles or defaults.
 
-Actual clock/voltage/cap application was deliberately not performed.
+In the preceding implementation slice, actual clock/voltage/cap application was deliberately not performed.
 The controller integration is tested on fake sysfs; real changed-profile
 validation, representative extended hot/resident soak, driver-health and
 production replay/KLD/phase-energy evidence remain PWR12's physical
 qualification boundary with PWR10/PWR02. Never interpret the screen as
 permission to alter hardware. The existing active plans were not edited.
+
+## Authorized physical research screens (2026-11-26)
+
+The operator authorized temporary hardware writes. All four cards reported
+positive factory caps, zero readable voltage offset and auto performance
+mode, but factory maximum clock state was not independently established.
+The observed reference mode was selected explicitly; no factory assertion,
+native qualification receipt, authored profile change, or production
+promotion was made. The candidate profile input was a managed capture
+`20261125T232552Z-pwr12-profile-input-53adfc83cd0e`, derived from the canonical
+YAML and actual board-cap minima. The 2700 MHz clock-only and -75 mV research
+arms were explicitly selected alongside the existing 2700/-125 candidate.
+Each mutation had a separate named GPU lease, idle and unresolved-journal
+checks covering both platform and native owners, and exact original readback
+after reaping/restoration. The two owner journal schemas are distinct;
+neither directory alone is a global fence. Do not use unattended cross-owner
+application until the owner admission/recovery relationship is resolved.
+
+All four observed references passed supported FP16/BF16/FP32/INT8 arithmetic
+(and E4M3 FP8 on gfx1201), plus 512 MiB memory. One-second matched diagnostic
+arms passed minimum caps (both gfx1100 and gfx1030: 272 W; gfx1201: 210 W),
+and both gfx1100 cards passed 2700 MHz at 0/-75/-125 mV. All ten temporary
+applications restored exactly. These are short screens, not hot qualification.
+
+A 30 s FP16 N=2048 host-readback screen reached only 49 C and averaged
+17.2 W: `20261125T232930Z-gpu-ai-screen-fc2e6257ed8b`. The batched
+implementation was therefore added, and all supported dtype paths and
+512 MiB memory passed again on all four physical cards at N=768, batch 32
+(memory batch 1). The initial mixed screen missing the memory batch tag
+and the earlier BF16 hot-window failure remain retained diagnostics; no
+passing status was manufactured. ROCm 7.2.4 three-architecture native
+build and CPU self-test passed, as did 78 targeted offline tests.
+
+### Bounded hot research
+
+N=768, batch 32, 10 s warmup plus 30 s measured, zero inter-batch pause.
+BF16 uses rocBLAS on gfx1100/gfx1030; gfx1201 uses hipBLASLt FP32.
+Requested measured junction floors were 60 C on gfx1100 and 50 C on
+gfx1201/gfx1030, with junction and memory ceilings of 80 C. These are
+bounded research conditions, not universal production thresholds.
+Power is the arithmetic mean of polled board power, not integrated energy.
+Iteration counts include warmup. Temperatures for passes are the verified
+in-load hot window; inconclusive rows show maximum observed junction.
+All candidate transactions restored exact original controls.
+
+| Card/role | Arm | Result | Junction C | Clean GEMMs | Sample mean W | Managed run ID |
+|---|---|---|---|---:|---:|---|
+| gfx1100 helper0 | observed | pass | 70–72 | 292544 | 199.4 | 20261125T233549Z-gpu-ai-screen-7bfa40c4b2df |
+| gfx1100 helper0 | 2700/0 | pass | 62–66 | 273216 | 156.9 | 20261125T233630Z-gpu-ai-screen-c0a4abf3e5fb |
+| gfx1100 helper0 | 2700/-125 | inconclusive | max 60 | 280832 | 123.5 | 20261125T233711Z-gpu-ai-screen-1dab6288dc0d |
+| gfx1100 helper1 | observed | pass | 74–77 | 300832 | 234.8 | 20261125T233753Z-gpu-ai-screen-c83b3e0390f6 |
+| gfx1100 helper1 | 2700/0 | pass | 65–67 | 281632 | 174.9 | 20261125T233834Z-gpu-ai-screen-2294c3fbd862 |
+| gfx1100 helper1 | 2700/-125 | inconclusive | max 59 | 282272 | 131.3 | 20261125T233915Z-gpu-ai-screen-dce4ef490e29 |
+| gfx1201 engine | observed | pass | 65–78 | 150080 | 208.8 | 20261125T233957Z-gpu-ai-screen-abd015478395 |
+| gfx1201 engine | 210 W cap | thermal stop | max 80 | — | 204.2 | 20261125T234038Z-gpu-ai-screen-4ba2c9004f0e |
+| gfx1030 helper2 | observed | pass | 63–69 | 199232 | 217.6 | 20261125T234109Z-gpu-ai-screen-6f2194df315d |
+| gfx1030 helper2 | 272 W cap | pass | 67–72 | 199008 | 221.1 | 20261125T234150Z-gpu-ai-screen-2985454b1aec |
+
+The XTX clock-only arms reduced sampled board power by 21.3% and
+25.5%, while clean iteration counts fell approximately 6.6% and 6.4%.
+This synthetic workload is not serving throughput. The -125 mV arms
+were numerically clean but did not meet the thermal coverage gate;
+neither is qualified. The R9700 cap was stopped at the ceiling, not
+retried at a higher limit. The 6900 XT cap passed but did not establish
+power savings. Preserve all outcomes, not only passes.
+
+
+### Large-residency research
+
+Separate memory cases requested 20 s and at least two full checked passes,
+with an explicit 2048 MiB reserve and budgets rounded down to 512 MiB from
+observed total VRAM minus 3072 MiB. These are independent allocations,
+not concurrent model residency or hot GEMM/VRAM coverage.
+
+| Card/role | Arm | Allocation MiB | Complete passes | Result | Managed run ID |
+|---|---|---:|---:|---|---|
+| gfx1100 helper0 | observed | 20992 | 2 | pass | 20261125T234240Z-gpu-ai-screen-88fa0285175c |
+| gfx1100 helper0 | 2700/0 | 20992 | 2 | pass | 20261125T234307Z-gpu-ai-screen-24a0f2f6d7ee |
+| gfx1100 helper1 | observed | 20992 | 2 | pass | 20261125T234346Z-gpu-ai-screen-abca1fd9f379 |
+| gfx1100 helper1 | 2700/0 | 20992 | 2 | pass | 20261125T234413Z-gpu-ai-screen-d570544c6a49 |
+| gfx1201 engine | observed | 29184 | 2 | pass | 20261125T234444Z-gpu-ai-screen-bfcef0f1a2c2 |
+
+The two XTX arms restored exactly and each allocation left about
+3522 MiB available after allocation. The R9700 left about 3364 MiB;
+the thermally stopped candidate was not repeated. The gfx1030 12800 MiB
+reference/candidate pair was queued behind the separate release Gate E
+GPU lease and is not part of the verified results above.
+
+The managed capture/v1 harvest verified all 36 completed screen bundles
+including nonpasses, plus the separately managed candidate input. Raw
+receipts and verified evidence-hold copies retain native results,
+reference links, original/restored controls and transaction journals;
+the historic diagnostic capture remains retained. No production
+qualification is implied. Factory verification, extended thermal and
+burst coverage, actual production kernel/replay quality, driver health,
+and measured phase energy/throughput remain outstanding under PWR12
+and its existing PWR10/PWR02 ownership boundary.

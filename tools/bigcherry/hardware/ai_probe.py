@@ -106,16 +106,25 @@ def sample(sensor: Path, limit: int | None, samples: list[int]) -> None:
         raise ScreenError("thermal ceiling reached", "thermal")
 
 
-def hot_window(samples: list[tuple[int, int]], end_ns: int, seconds: int, minimum_mc: int) -> bool:
-    """Bracket the entire final measured interval with hot samples, no large gaps."""
-    begin = end_ns - seconds * 1_000_000_000
-    left = [i for i, (t, _) in enumerate(samples) if t <= begin]
-    right = [i for i, (t, _) in enumerate(samples) if t >= end_ns]
-    if not left or not right:
-        return False
-    window = samples[left[-1]:right[0]+1]
-    return (len(window) >= 2 and all(v >= minimum_mc for _, v in window) and
-            all(b[0]-a[0] <= int(4 * POLL_SECONDS * 1e9) for a, b in zip(window, window[1:])))
+def hot_window(samples: list[tuple[int, int]], start_ns: int, end_ns: int,
+               seconds: int, minimum_mc: int) -> dict | None:
+    """Prove a full sampled interval inside load, near its end, not cooldown."""
+    max_gap = int(4 * POLL_SECONDS * 1e9)
+    in_load = [(t, v) for t, v in samples if start_ns <= t <= end_ns]
+    if not in_load or end_ns - in_load[-1][0] > max_gap:
+        return None
+    begin = in_load[-1][0] - seconds * 1_000_000_000
+    left = [i for i, (t, _) in enumerate(in_load) if t <= begin]
+    if not left:
+        return None
+    window = in_load[left[-1]:]
+    gaps = [b[0]-a[0] for a, b in zip(window, window[1:])]
+    if (not gaps or any(v < minimum_mc for _, v in window) or
+            any(g <= 0 or g > max_gap for g in gaps)):
+        return None
+    return {"start_ns": window[0][0], "end_ns": window[-1][0],
+            "minimum_mc": min(v for _, v in window), "maximum_mc": max(v for _, v in window),
+            "max_gap_ns": max(gaps), "samples": len(window)}
 
 
 def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
@@ -124,6 +133,7 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
              provider: str = "hipblaslt", warmup_seconds: int = 0,
              min_hotspot_c: int | None = None, headroom_mib: int = 512,
              memory_sensor: Path | None = None, memory_limit: int | None = None,
+             batch: int = 1,
              cancelled=lambda: False) -> dict:
     """Always reap the probe before returning; requested coverage is never a skip."""
     samples: list[int] = []
@@ -147,7 +157,7 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
     launch_ns = time.monotonic_ns()
     with tempfile.TemporaryFile(dir=output_dir) as stdout, tempfile.TemporaryFile(dir=output_dir) as stderr:
         proc = subprocess.Popen([str(binary), bdf, arch, dtype, str(n), str(duration), str(pause),
-                                 provider, str(headroom_mib)], stdout=stdout, stderr=stderr)
+                                 provider, str(headroom_mib), str(batch)], stdout=stdout, stderr=stderr)
         failure = None
         try:
             while proc.poll() is None:
@@ -178,12 +188,13 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
         raw = stdout.read().decode("utf-8", errors="replace")
         diagnostic = stderr.read().decode("utf-8", errors="replace")
     result = {"dtype": dtype, "n": n, "pause_ms": pause, "requested_seconds": seconds,
-              "warmup_seconds": warmup_seconds, "hotspot_min_mc": min(samples),
+              "warmup_seconds": warmup_seconds, "batch": batch, "hotspot_min_mc": min(samples),
               "hotspot_max_mc": max(samples), "samples": len(samples),
               "memory_min_mc": min(memory_samples) if memory_samples else None,
               "memory_max_mc": max(memory_samples) if memory_samples else None,
               "mean_sampled_power_uw": sum(power_samples)//len(power_samples) if power_samples else None,
-              "power_samples": len(power_samples), "exit": proc.returncode}
+              "power_samples": len(power_samples), "exit": proc.returncode,
+              "junction_samples": timestamps}
     if failure is not None:
         return result | {"status": failure.status, "diagnostic": str(failure)}
     if proc.returncode != 0:
@@ -194,10 +205,12 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
     except (IndexError, ValueError):
         raise ScreenError("probe did not emit a valid result") from None
     validate_native(payload, bdf, arch, dtype, n, provider, duration, setup_timeout,
-                    headroom_mib, launch_ns=launch_ns)
+                    headroom_mib, launch_ns=launch_ns, batch=batch)
     result["native"] = payload
-    if min_hotspot_c is not None and not hot_window(timestamps, payload["end_ns"], seconds, min_hotspot_c*1000):
-        return result | {"status": "inconclusive", "diagnostic": "hot window not reached/observed"}
+    if min_hotspot_c is not None:
+        result["hot_window"] = hot_window(timestamps, payload["start_ns"], payload["end_ns"], seconds, min_hotspot_c*1000)
+        if result["hot_window"] is None:
+            return result | {"status": "inconclusive", "diagnostic": "hot window not reached/observed"}
     result["hot_window_verified"] = min_hotspot_c is not None
     return result | {"status": "pass"}
 
@@ -205,7 +218,7 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
 
 def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                     provider: str, duration: int, setup_timeout: int,
-                    headroom_mib: int, *, launch_ns: int | None = None) -> None:
+                    headroom_mib: int, *, launch_ns: int | None = None, batch: int = 1) -> None:
     """Reject incomplete or mismatched native coverage in live and reference receipts."""
     valid_algorithm = (isinstance(payload, dict) and
                        isinstance(payload.get("algorithm"), str) and
@@ -215,7 +228,7 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
     if (not valid_algorithm or payload.get("status") != "pass" or
             payload.get("bdf") != bdf or payload.get("arch") != arch or
             payload.get("dtype") != dtype or payload.get("n") != n or
-            payload.get("provider") != provider or
+            payload.get("provider") != provider or payload.get("batch") != batch or
             not isinstance(payload.get("library_version"), str) or not payload["library_version"] or
             type(payload.get("iterations")) is not int or payload["iterations"] < 2 or
             type(payload.get("elapsed_s")) not in (int, float) or
@@ -227,6 +240,10 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
             (launch_ns is not None and not launch_ns <= payload["start_ns"] < payload["end_ns"] <= time.monotonic_ns()) or
             payload["end_ns"] - payload["start_ns"] < duration * 1e9):
         raise ScreenError("probe result identity or coverage mismatch")
+    if dtype != "memory":
+        if (payload["iterations"] % batch or type(payload.get("host_checks")) is not int or
+                payload["host_checks"] != payload["iterations"] // batch):
+            raise ScreenError("matrix verification coverage mismatch")
     if dtype == "memory":
         if (payload.get("allocated_bytes") != n * 2**20 or
                 type(payload.get("free_before_bytes")) is not int or
@@ -237,7 +254,7 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
 
 def case_identity(case: dict) -> tuple:
     native = case["native"]
-    return tuple(case[k] for k in ("dtype", "n", "pause_ms", "requested_seconds", "warmup_seconds")) + tuple(
+    return tuple(case[k] for k in ("dtype", "n", "pause_ms", "requested_seconds", "warmup_seconds", "batch")) + tuple(
         native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm"))
 
 
@@ -279,7 +296,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     if args.profile == "stock":
         if args.reference or args.stock_confirmed == args.observe_current:
             raise ScreenError("stock arm requires exactly one of --stock-confirmed or --observe-current and no reference")
-    elif not settings or not args.reference or args.stock_confirmed or args.observe_current:
+    elif not settings or not args.reference or args.stock_confirmed or (args.observe_current and not args.apply_profile):
         raise ScreenError("candidate requires matching nonempty profile rules and --reference")
     if args.apply_profile:
         if args.profile == "stock" or not args.confirm_idle or journal_dir is None:
@@ -300,7 +317,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                "settings": settings, "probe_digest": digest(binary), "kernel": os.uname().release,
                "dtypes": args.dtype, "n": args.n, "seconds": args.seconds,
                "pause_ms": args.pause_ms, "max_hotspot_c": args.max_hotspot_c,
-               "provider": args.provider, "memory_mib": args.memory_mib, "headroom_mib": args.headroom_mib,
+               "provider": args.provider, "batch": args.batch, "memory_mib": args.memory_mib, "headroom_mib": args.headroom_mib,
                "setup_timeout": args.setup_timeout,
                "warmup_seconds": args.warmup_seconds, "min_hotspot_c": args.min_hotspot_c,
                "max_memory_c": args.max_memory_c, "observe_current": args.observe_current,
@@ -315,31 +332,41 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         reference = None
     if reference_bytes is not None:
         keys = ("bdf", "arch", "role", "probe_digest", "kernel", "dtypes", "n", "seconds", "pause_ms", "max_hotspot_c",
-                "provider", "memory_mib", "headroom_mib", "warmup_seconds", "min_hotspot_c", "max_memory_c",
+                "provider", "batch", "memory_mib", "headroom_mib", "warmup_seconds", "min_hotspot_c", "max_memory_c",
                 "setup_timeout")
         if (not isinstance(reference, dict) or reference.get("kind") != "ai-power-screen" or reference.get("schema_version") != 2 or reference.get("status") != "pass" or
-                reference["request"]["profile"] != "stock" or reference["request"]["stock_confirmed"] is not True or
-                reference["request"]["observe_current"] is not False or reference["request"]["apply_profile"] is not False or
+                reference["request"]["profile"] != "stock" or
+                reference["request"]["stock_confirmed"] is not (not args.observe_current) or
+                reference["request"]["observe_current"] is not args.observe_current or
+                reference["request"]["apply_profile"] is not False or
                 any(reference["request"][k] != request[k] for k in keys)):
-            raise ScreenError("incompatible or unpassed stock screen")
+            raise ScreenError("incompatible or unpassed stock screen (observed references require explicit research mode)")
         recipe = [(dtype, pause) for dtype in args.dtype for pause in args.pause_ms]
         if (reference["before"] != reference["after"] or len(reference["cases"]) != len(recipe)):
             raise ScreenError("stock reference lacks complete passing coverage")
         for c, (dtype, pause) in zip(reference["cases"], recipe):
             n = args.memory_mib if dtype == "memory" else args.n
             provider = "hip-memory" if dtype == "memory" else args.provider
+            batch = 1 if dtype == "memory" else args.batch
             if (c.get("status") != "pass" or
-                    (c["dtype"], c["n"], c["pause_ms"], c["requested_seconds"], c["warmup_seconds"]) !=
-                    (dtype, n, pause, args.seconds, args.warmup_seconds) or
+                    (c["dtype"], c["n"], c["pause_ms"], c["requested_seconds"], c["warmup_seconds"], c["batch"]) !=
+                    (dtype, n, pause, args.seconds, args.warmup_seconds, batch) or
                     (args.min_hotspot_c is not None and c.get("hot_window_verified") is not True)):
                 raise ScreenError("stock reference lacks complete passing coverage")
             validate_native(c["native"], args.bdf, args.arch, dtype, n, provider,
                             args.seconds + args.warmup_seconds, args.setup_timeout,
-                            args.headroom_mib or 512)
+                            args.headroom_mib or 512, batch=batch)
+            if args.min_hotspot_c is not None:
+                window = hot_window(c["junction_samples"], c["native"]["start_ns"], c["native"]["end_ns"],
+                                    args.seconds, args.min_hotspot_c*1000)
+                if window is None or window != c.get("hot_window"):
+                    raise ScreenError("reference hot window lacks sampled coverage")
         if args.apply_profile:
             if before != reference["before"]:
-                raise ScreenError("current controls/identity differ from confirmed stock reference; no writes")
-            verify_settings(before, {})
+                raise ScreenError("current controls/identity differ from " +
+                                  ("observed" if args.observe_current else "confirmed stock") + " reference; no writes")
+            if not args.observe_current:
+                verify_settings(before, {})
         else:
             verify_settings(before, settings, reference["before"])
     elif not args.observe_current:
@@ -355,6 +382,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     result = {"kind": "ai-power-screen", "schema_version": 2, "request": request,
               "before": before, "reference_digest": ("sha256:" + hashlib.sha256(reference_bytes).hexdigest()
                                    if reference_bytes is not None else None),
+              "reference_basis": ("observed" if args.observe_current else "factory_confirmed") if reference else None,
               "cases": [], "status": "inconclusive", "thermal_ceiling_mc": limit,
               "memory_ceiling_mc": mem_limit, "production_qualified": False,
               "transaction": {"state": "not_requested"}}
@@ -396,7 +424,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                                 provider="hip-memory" if dtype == "memory" else args.provider,
                                 warmup_seconds=args.warmup_seconds, min_hotspot_c=args.min_hotspot_c,
                                 headroom_mib=args.headroom_mib or 512, memory_sensor=mem_sensor,
-                                memory_limit=mem_limit, cancelled=cancelled)
+                                memory_limit=mem_limit, cancelled=cancelled,
+                                batch=1 if dtype == "memory" else args.batch)
                 result["cases"].append(case)
                 if case["status"] != "pass":
                     raise ScreenError(f"{dtype}/{pause} ms: {case['status']}", case["status"])
@@ -425,6 +454,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         if tx is not None:
             receipt = result["transaction"]
             receipt["state"] = tx.state
+            receipt["events"] = list(getattr(tx, "events", []))
             # Any unverifiable child exit or lost lease preserves the journal
             # for existing recovery. Do not restore under a live child.
             if tx.touched:
@@ -442,4 +472,5 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                     receipt.update(state="restore_unverified", reason=str(exc))
                     result["screen_status"] = result["status"]
                     result.update(status="restore_failed", reason=str(exc))
+            receipt["events"] = list(getattr(tx, "events", []))
     return result
