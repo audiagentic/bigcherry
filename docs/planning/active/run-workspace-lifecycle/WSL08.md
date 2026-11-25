@@ -59,6 +59,8 @@ Source: gateway prior-work audit 2026-11-10 (missing item 1) and power review (d
 
 2026-11-25 native power recovery dependency: RSC02 owns verified child-exit restoration, this item owns detached start lease lifetime, expiry and crash ownership. Foreground bc-serve serve in verified lease is first supported hardware apply path. Do not enable detached power application until lease persists through owner/children, verified stop/restore, and expiry/kill recovery with new mutation fenced; no promise SIGKILL auto restore without real proof.
 
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Preserve foreground lease through all measurement/helpers/native Fleet and exact restore. Detached owner lifetime and stale-journal/crash/expiry proof remain here; no authorization via capture manifest. RSC02 owns transaction, no second supervisor.
+
 ## Status 2026-11-19
 
 The launcher that detached serving processes is retired (S16 #1131); `bc-serve serve` is a foreground owner and `agent-lease acquire gpu ... -- <command>` holds the lease for exactly the owner's lifetime (used for every hardware run on 2026-11-19: the lease was held until the owner had stopped its children and restored power, and was free afterwards). What remains of this item is the case of a start that is left running on purpose (`bc-serve start` detached): decide whether the lease should then belong to the owner process, with `bc-serve stop` releasing it.
@@ -72,3 +74,5 @@ The launcher that detached serving processes is retired (S16 #1131); `bc-serve s
 
 - RV4585
 - 2026-11-25T01:06:41.047513+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4599
+- 2026-11-25T01:41:03.020836+00:00 (updated-by): Updated: section:notes

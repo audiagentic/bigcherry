@@ -282,6 +282,8 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 
 2026-11-25 power parity follow-up: verify installed native bundle can resolve authorized named power policy from existing host/site source and registry with same owner, no Python runtime or private BDF in release. Add card-free installed fresh/replay test and link actual leased nonstock apply/restore evidence from PWR10/RSC02. Existing generated v3 contract and native YAML remain unchanged, no separate config format.
 
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Installed release acceptance: one native --config engine path and same YAML helper path, no active --manifest launch CLI/reader or old writer child in binary, no duplicated site/profile TOML or private host data. Existing capture output is evidence only. All 16 configs, dense/helper parity, actual native qualified min-cap foreground and restore with RSC11/PWR10. No duplicate release lane.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -306,3 +308,5 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 - 2026-11-22T12:18:04.798791+00:00 (updated-by): Updated: section:detailed_solution
 - RV4586
 - 2026-11-25T01:07:16.136319+00:00 (updated-by): Updated: section:notes
+- RV4598
+- 2026-11-25T01:40:33.632790+00:00 (updated-by): Updated: section:notes
