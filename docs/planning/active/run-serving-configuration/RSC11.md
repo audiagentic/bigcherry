@@ -19,7 +19,7 @@ One existing programme owns the remaining serving acceptance and native launch m
 
 ## Steps
 
-S0–S16 historical; S17 residual RSC04/09/10 and PWR04/09 acceptance with existing owners, including RHP12, RSC13/14, WSL08 and RSP01. S18-A: exact pin, caller and field inventory (launch/evidence/unrelated artifact), RSC01/RSC12 strict YAML, authored native port and variant semantics, approved roster/red tests. S18-B: RSC05 physical selection, RSC03 measured-only cache and live room checks, RSC14 contention tests, RSC06 helper settings/transport, PWR07/08 owner power and RHP16 effective calibration eligibility. S18-C: RSC02 native --config online/offline/quality with narrow typed facts; remove executable engine/helper/owner manifest and writer/cache input, migrate MEN20/21/17 lab/campaign callers, owner status/receipt consumers and RSP01 installed assets in same cutover. S18-D: installed full currently supported roster, same-build dense/helper parity, PWR10 nonstock apply/readback/restore and independent S17 gates. One integration branch, no compatibility release; routine release Gate E plus affected paths after S18.
+S17: reconcile existing evidence for residual obligations, retain genuinely outstanding work with its owner. S18: migrate authored serving policy to YAML; extract only actual resource/helper/power inputs from launch manifest; switch existing owner and engine/helper paths to native YAML; migrate affected callers and remove obsolete launch reader/writer; qualify the changed paths together. No dual launch or separate programme. Use existing owner status, cache, transport and controller. Do not depend on unrelated cleanup or kernel migration.
 
 ## Detailed Solution & Technical Design
 
@@ -35,7 +35,7 @@ docs/design/radiance-native-yaml-launch.md is the complete implementation design
 
 ## Validation
 
-Card-free actual argv/FD/root/identity, strict YAML/variant/site/profile, mixed TP power, resource/refit and helper/transport failure fixtures; exact pinned patch compose/anchor/build/installed tests. Capture absent/deleted/changed cannot affect launch, zero executable --manifest callers and no full Manifest reader linked to engine/helper. Native stock and managed native single-model/measurement/quality paths, all currently supported installed configs (enumerated from the candidate roster) start/canary/stop; same-build dense/helper and existing RHP12 four clean ABBA pairs, real min-cap native apply before measure and exact restore, no default promotion. Preserve every S17 transferred acceptance, including actual bounded host-margin retry and three six-stream soaks; no new manifest to refit. No claim from card-free alone.
+Reuse current CI and targeted existing parser/extension, admission, helper, cache, owner and power tests; add only missing cases for changed behavior. Cheap validation of approved YAML roster, exact pinned composition/build, existing Gate E dense TP3 and helper/MoE lifecycle, measured reuse and relevant parity/quality. Share one real minimum-cap apply/readback/restore run with PWR10. Additional GPU runs only for materially different affected paths or unresolved regression/noise. Zero executable manifest launch callers, capture not a launch input. Preserve existing required safety/quality/no-regression gates; no blanket full-roster GPU matrix, repeated historical soaks or independent research as S18 prerequisites.
 
 ## Effort & Risk
 
@@ -83,6 +83,8 @@ S15 prior proof source: docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md.
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. S18 full supported deployment roster now 18 at audit, dynamically enumerate exact candidate and installed configs; 16 historical RUM04 proof remains. Native --check parser only, separate actual row/format and memory inspection; explicit plan-only managed seam before weights, native Fleet reserve/headroom/NUMA semantics. Gate E current two layouts through 2020.11.5 is install/canary/stop only, not native launch/quality/power proof. S18 full native cutover matrix; later bump two existing Gate E plus affected configs/independent required cohorts, no repeated unrelated historical trials. RCS25 discrete before full build, native launch and power one coordinated cutover.
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Make README authoritative S17/S18 index (old TOML/v2/replay directions removed). Refresh actual launch versus read-only evidence versus unrelated artifact caller inventory, including bench/workloads.py, cli/workload.py, gate-e.sh, parity/PWR01/helpers, calibration-ingest and generated fixtures. S18-A field/port/variant/roster; B typed measured cache and host recheck, helper/power and policy eligibility; C actual native online/offline launch plus owner status and lab/campaign/installed assets; D full supported matrix and existing S17 proof. No dual launch. Current direct native model port stays authored; no hidden override. Maintain exact run provenance and S17 structured preweight one retry; RSC14 contention tests. Evidence-only flags not blanket-deleted, no launch from capture. No claim completed from historical Gate E.
+
+Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite.
 
 ## Status 2026-11-19
 
@@ -178,3 +180,4 @@ runs remain lead-owned.
 - RV4659
 - 2026-11-25T03:26:13.110103+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T03:34:04.609044+00:00 (updated-by): Updated: section:steps
+- 2026-11-25T04:30:18.338487+00:00 (updated-by): Updated: section:steps, section:validation, section:notes

@@ -290,6 +290,8 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Retain approved asset allowlist and installed membership checks: runtime_assets.NATIVE_RELEASE_PROFILES and release_archive.cpp kNativeProfiles currently duplicated (18) with test_native_profiles.py equality and generated presets. Derive from one existing approved list/build input, dynamic size and exact installed membership; never allow arbitrary archive YAML. Ship one YAML policy parser and portable profiles, not private site. Gate E script no --power-profile override; verify actual native launch, status/readback/stop, no old executable reader; historical evidence readers not prohibited.
 
+Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Keep current approved asset allowlists/equality test and Gate E; no generator refactor or full GPU roster matrix. Reuse RSC11 and MEN17 same installed evidence, add only affected paths.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -323,3 +325,4 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 - 2026-11-25T02:53:44.093549+00:00 (updated-by): Updated: section:notes
 - RV4669
 - 2026-11-25T03:32:26.110400+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T04:30:56.056571+00:00 (updated-by): Updated: section:notes

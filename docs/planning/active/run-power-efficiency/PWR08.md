@@ -35,7 +35,7 @@ engines/radiance/components/serving/{main.cpp,session.cpp,session.h,xbigcherry.c
 
 ## Validation
 
-Strict YAML rules, same-arch distinct BDF and mixed TP, unknown/duplicate/unsupported/wrong qualification, zero cap, changed source after sealing, same effective plan through measurement/final, named cache changed settings, observe no writes. Card-free owner/transaction tests, actual PWR10 leased native YAML apply/restore, output/quality/performance/energy gates.
+Reuse existing profile parser/resolver/transaction tests for selected BDFs, unsupported/unqualified settings, stock no writes and exact restoration. Add missing mixed-TP and same-name effective settings cases. One shared real PWR10 minimum-cap native launch/readback/restore under lease and relevant output/performance check; no full control sweep, historical retuning or new qualification framework.
 
 ## Effort & Risk
 
@@ -72,6 +72,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native memory/queue changes affect performance and measured room, not power authority. Owner-only YAML profile and native PowerPlan independent of manifest/Fleet; no new hashes, retain existing receipt and actual build/profile/board compatibility. Required profile requalifies if context changed or refuses; stock no writes. No universal nonstock sweep on routine bump.
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Existing policy_calibration_inputs keys profile name only; same name can resolve changed actual caps/clocks/voltage/BDF overrides. Supply resolved ordered control settings and verified readback to RHP16 existing calibration eligibility, not merely profile label. Memory plan key only actual resource-affecting values, time/energy key separate. YAML selected profile replaces active CLI --power-profile, Gate E stock YAML and PWR01 lab arm edits; explicit apply consent/lease separate. Migrate private local device intent explicitly; no automatic reactivation.
+
+Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Keep existing voltage/clock/cap capability; use existing qualification and actual settings/readback, not extra security machinery. Paired undervolt research and any default promotion remain separate.
 
 ## Change Log
 
@@ -118,3 +120,4 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - 2026-11-25T02:47:36.773505+00:00 (updated-by): Updated: section:notes
 - RV4662
 - 2026-11-25T03:28:39.913911+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T04:30:48.155358+00:00 (updated-by): Updated: section:validation, section:notes

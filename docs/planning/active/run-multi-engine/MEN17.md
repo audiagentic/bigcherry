@@ -67,6 +67,8 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN23. MEN23 describes an acceptance e
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Bind acceptance and bench metadata to actual verified owner/child/endpoint, not /proc --manifest or newest record. Stock Gate E uses named stock YAML, nonstock intended lab arms use one YAML change with separate consent. Existing run evidence and independent KLD ref, no stale/missing provenance pass. S18 full supported config matrix distinct routine affected release gates.
 
+Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Existing exact candidate binding and independent reference correctness remain essential. Use same actual installed dense/helper cohort and affected workload checks as RSC11/RSP01; do not require separate duplicated runs. Keep unrelated existing acceptance tasks independent.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -85,3 +87,4 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN23. MEN23 describes an acceptance e
 - 2026-11-25T02:53:31.547189+00:00 (updated-by): Updated: section:detailed_solution
 - RV4668
 - 2026-11-25T03:31:54.393313+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T04:30:40.599872+00:00 (updated-by): Updated: section:notes
