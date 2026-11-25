@@ -22,8 +22,8 @@ LOC = "0000:03:00.0"
 
 
 class _Layout:
-    engine_indices = (2,)
-    helpers = (SimpleNamespace(index=0), SimpleNamespace(index=1))
+    engine_bdfs = ("0000:09:00.0",)
+    helper_bdfs = ("0000:03:00.0", "0000:06:00.0")
 
 
 class ApplyRestoreTests(unittest.TestCase):
@@ -51,7 +51,7 @@ class ApplyRestoreTests(unittest.TestCase):
             mock.patch.object(power_cmds, "_sys", lambda: {"sysfs_root": self.root, "fileops": self.drv, "platform_name": "linux"}),
             mock.patch.object(power_cmds.gpu_lease, "held_by_this_process", lambda *a, **k: self.lease),
             mock.patch.object(power_cmds.environment, "load_default", lambda: SimpleNamespace(host=lambda name=None: host)),
-            mock.patch.object(power_cmds.radiance_layout, "resolve", lambda name, h, budgets: _Layout()),
+            mock.patch.object(power_cmds.radiance_inventory, "resolve", lambda name, host=None, **kw: _Layout()),
             mock.patch("sys.stdout", new_callable=io.StringIO),
         ]
         for p in self.patches:
@@ -104,11 +104,6 @@ class ApplyRestoreTests(unittest.TestCase):
         self.assertIn("outside the device range", err.getvalue())
         self.assertEqual(self.drv.log, [])
         self.assertEqual(self.offset("0000:03:00.0"), 0)
-
-    def test_a_layout_card_with_no_locator_is_an_error(self):
-        self.devices[0] = Device(index=0, arch="gfx1100", model="", vram_mib=0, locator="", power=None)
-        with mock.patch("sys.stderr", new_callable=io.StringIO):
-            self.assertEqual(power_cmds.cmd_apply(self.args()), 2)
 
     def test_no_configured_settings_in_the_layout_is_an_empty_explicit_request(self):
         for i in (0, 1):

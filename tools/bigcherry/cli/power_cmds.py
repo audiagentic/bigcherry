@@ -24,7 +24,7 @@ from argparse import Namespace
 from pathlib import Path
 
 from ..core import environment
-from ..engine_adapters import radiance_layout
+from ..engine_adapters import radiance_inventory, radiance_layout
 from ..hardware import gpu_power, power_setup
 from ..hardware import lease as gpu_lease
 from ..hardware.power_transaction import PowerFailed, PowerRefused, PowerTransaction
@@ -112,28 +112,22 @@ def _sys() -> dict:
     return {}
 
 
-def _selected(args: Namespace) -> dict[str, environment.Device]:
-    """The cards the layout uses, by PCI locator: the only ones a transaction may touch."""
+def _selected(args: Namespace) -> dict[str, environment.Device | None]:
+    """The cards the layout uses, by PCI BDF from bc-serve's detection: the only ones a transaction may touch. The value is
+    the host's power override for that BDF, or None when the card has none."""
     host = environment.load_default().host(getattr(args, "host", None))
-    r = radiance_layout.resolve(args.layout, host, budgets={})
-    wanted = list(r.engine_indices) + [h.index for h in r.helpers]
-    by_index = {d.index: d for d in host.devices}
-    out: dict[str, environment.Device] = {}
-    for i in wanted:
-        d = by_index.get(i)
-        if d is None or not d.locator:
-            raise radiance_layout.LayoutError(f"layout {args.layout}: card {i} has no PCI locator in the host inventory")
-        out[d.locator] = d
-    return out
+    layout = radiance_inventory.resolve(args.layout, host=host)
+    overrides = {d.locator: d for d in host.devices if d.locator}
+    return {bdf: overrides.get(bdf) for bdf in (*layout.engine_bdfs, *layout.helper_bdfs)}
 
 
 def cmd_apply(args: Namespace) -> int:
     try:
         selected = _selected(args)
-    except radiance_layout.LayoutError as exc:
+    except (radiance_inventory.InventoryError, radiance_layout.LayoutError) as exc:
         print(f"gpu-power apply: {exc}", file=sys.stderr)
         return 2
-    requested = {loc: _setting(d.power) for loc, d in selected.items() if d.power}
+    requested = {bdf: _setting(d.power) for bdf, d in selected.items() if d is not None and d.power}
     tx = PowerTransaction(args.run_id, _journal_dir(), lease_ok=gpu_lease.held_by_this_process, **_sys())
     try:
         tx.prepare(requested, sorted(selected))
