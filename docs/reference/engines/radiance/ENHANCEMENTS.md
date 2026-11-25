@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (43)
+## Engine patches (44)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -56,6 +56,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0061_iq8r_f32_scale](../../../../engines/radiance/patches/rad0061_iq8r_f32_scale/SUMMARY.md) | `diagnostic` | Preserve the exact FP32 product of the U8 per-group and BF16 per-row IQ8R scales in the existing native `libr4d` group-256 relayout and GEMM readers; use BigCherry's existing native rewrite of that source for the XTX `libr3` plugin. The CPU `libref` reference is unchanged. |
 | [rad0063_vhead_world_ranks](../../../../engines/radiance/patches/rad0063_vhead_world_ranks/SUMMARY.md) | `untested` | The vocabulary-weighted head tool builds its width classes for two ranks only (it splits the vocabulary in halves). The engine shards a class by rows over the rank count and needs every rank's slice of a class to be the same number of rows, a multiple of 256, holding exactly the ids of that rank's vocabulary share; a row whose id lies outside the rank's share is dropped by the head kernel (it is never written, never read back). |
 | [rad0064_owned_weighted_head](../../../../engines/radiance/patches/rad0064_owned_weighted_head/SUMMARY.md) | `validated` | The uneven ownership split of the 27B layout (two XTX and one R9700) refused any container whose output head is stored as width classes: it read only a plain `output.weight`. The three-rank vocabulary-weighted head gives every rank the same number of rows per class (a multiple of 256 x 3, padded with dropped rows), so the classes shard by rows exactly as in the even split; only the vocabulary-sized tensors need the explicit span of the rank's vocabulary share: the token table and the id-to-row map. This patch declares those two spans instead of refusing, and leaves the plain-head path unchanged. Requires rad0019. |
+| [rad0065_iqr_fused_gfx1201](../../../../engines/radiance/patches/rad0065_iqr_fused_gfx1201/SUMMARY.md) | `untested` | Use block-local decoding rather than publishing a global integer fragment plane for the single-band prefill tile on gfx1201. Selection is a constexpr certificate for computed trellis kind 6, including the qualified 16-level row-f32 and bf16 forms and the 15-level row-f32 form; only one activation band may use this route. |
 
 ## Components (6)
 
