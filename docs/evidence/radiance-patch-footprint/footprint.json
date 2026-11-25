@@ -38,7 +38,8 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace"
+      "rad0055_step_phase_trace",
+      "rad0064_owned_weighted_head"
     ],
     "radiance-diag": [
       "rad0008_hc_upmix_rt_sweep",
@@ -74,7 +75,8 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace"
+      "rad0055_step_phase_trace",
+      "rad0064_owned_weighted_head"
     ],
     "radiance-native": [],
     "radiance-routing-evidence": [
@@ -111,7 +113,8 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace"
+      "rad0055_step_phase_trace",
+      "rad0064_owned_weighted_head"
     ],
     "radiance-vtp44-evidence": [
       "rad0008_hc_upmix_rt_sweep",
@@ -150,18 +153,19 @@
       "rad0053_v4_kv_layouts",
       "rad0042_kv_b16_selftest",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace"
+      "rad0055_step_phase_trace",
+      "rad0064_owned_weighted_head"
     ]
   },
   "totals": {
-    "composed_patches": 39,
-    "edits": 671,
-    "anchors": 639,
-    "upstream_anchors": 604,
+    "composed_patches": 40,
+    "edits": 672,
+    "anchors": 640,
+    "upstream_anchors": 605,
     "created_target_anchors": 35,
-    "anchor_sites": 662,
-    "anchor_bytes": 79461,
-    "inserted_bytes": 592769,
+    "anchor_sites": 663,
+    "anchor_bytes": 80052,
+    "inserted_bytes": 593647,
     "created_edits": 32,
     "upstream_files": 81
   },
@@ -1455,6 +1459,30 @@
       "created_edits": 1
     },
     {
+      "patch": "rad0064_owned_weighted_head",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "upstream_files": [
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_files": [],
+      "edits": 1,
+      "anchors": 1,
+      "upstream_anchors": 1,
+      "created_target_anchors": 0,
+      "anchor_sites": 1,
+      "anchor_bytes": 591,
+      "inserted_bytes": 878,
+      "created_edits": 0
+    },
+    {
       "patch": "rad0008_hc_upmix_rt_sweep",
       "sources": [
         "radiance",
@@ -1560,13 +1588,14 @@
         "rad0030_int8_pipelined_prefill",
         "rad0052_b16_kv_geometries",
         "rad0053_v4_kv_layouts",
-        "rad0054_attn_prefill_fp8"
+        "rad0054_attn_prefill_fp8",
+        "rad0064_owned_weighted_head"
       ],
-      "anchors": 42,
-      "anchor_sites": 42,
-      "anchor_bytes": 4991,
-      "inserted_bytes": 13558,
-      "patch_count": 10
+      "anchors": 43,
+      "anchor_sites": 43,
+      "anchor_bytes": 5582,
+      "inserted_bytes": 14436,
+      "patch_count": 11
     },
     {
       "path": "core/config.cpp",
