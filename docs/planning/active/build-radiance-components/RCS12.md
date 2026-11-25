@@ -69,9 +69,11 @@ CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RCS09,RCS13 These are uncomple
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 1 priority. Re-audit remaining C-class allowances by actual call path. v26 topology already exists; moe_lane_common.h kExpertWidth/kGateUpWidth have no other component references and old moe_remote_shm.h zero-arg byte-size helpers have no other component references; distinguish dead definitions/test fixtures from live consumers before rewriting. Use existing container/worker_bootstrap/v26 shape/worker_footprint/gemv_geometry and GPU-contract tests; prove two non-Flash-Next synthetic geometries and checked invalid counts/format paths only where coverage missing. No v27 or duplicate schema; remove/reclassify actual guard entries with source proof. Preserve actual native production helper cases; RAD19/RAD23 only remaining real capabilities.
 
+2026-11-26 roadmap reconciliation at 165d6f724: Absorb residual RCS14 topology acceptance, not another v26 migration: preserve card-free topology/invalid count/overflow/offset/old version/ACK/plane isolation/exactly-once and non-Flash-Next geometry; verify no topology constants remain beyond typed representation/protocol limits; reuse existing v26 tests and proof. Preserve RCS14 independent representative TP1 two-helper and TP2 one-helper output/speed/KLD acceptance (existing matched evidence if applicable), actual TP3+remote only if enough physically separate cards; unsupported combinations refuse. RAD23 owns actual remaining supported role combinations, not hypothetical capacity. RCS14 historical Gates A–F retained. Also own VTP34 audit C01/C02/C10 model-derived shape, GEMV and heat, C18 shared model ownership/geometry and C20 dormant ngram model constants (if disabled, explicitly document scope/refusal, no new GPU ngram support); check C04/07/12/23/24 already-fixed against native cutover only when affected. VTP34 acceptance of data-only new model/topology preserved here and RSC11; archived audit remains source.
+
 ## Execution staging (2026-11-13)
 
-Split out as separate items: GEMV K bound (step 3) -> [RCS13](../../completed/build-radiance-components/RCS13.md); remote-MoE topology bounds (audit C05) -> [RCS14](RCS14.md). RHP01/RHP02 carry the heat-feed work; the shm protocol is shared, so order matters:
+Split out as separate items: GEMV K bound (step 3) -> [RCS13](../../completed/build-radiance-components/RCS13.md); remote-MoE topology bounds (audit C05) -> [RCS14](../../completed/build-radiance-components/RCS14.md). RHP01/RHP02 carry the heat-feed work; the shm protocol is shared, so order matters:
 
 1. Stage 1, parallel and ABI-free: RCS13 (kernel/dispatch, card-free then a short hardware identity) and RHP01 stage 1-2 (rad0010 current-pin tests, missing hardware cells); RHP02 slice A (inactive observer ABI and engine seam).
 2. Stage 2: RCS14 gates A-E card-free in order, then gate F hardware parity on Flash-Next helper layouts, then TP3 remote helpers.
@@ -101,3 +103,5 @@ Each stage ends with the standard decode and prefill A/B and KLD; nothing in a l
 - RV4519
 - RV4677
 - 2026-11-25T18:50:05.922467+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T19:01:49.205335+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:05:22.837890+00:00 (updated-by): Updated: section:execution_staging_2026_11_13

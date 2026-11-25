@@ -7,7 +7,6 @@
 | Active plan | Single responsible scope |
 | --- | --- |
 | [VTP32](VTP32.md) | Per-op-kind physical-card split costs and measured `tp_ownership` decisions |
-| [VTP34](VTP34.md) | Single manifest authority and generic configuration audit C01–C24 |
 | [VTP36](VTP36.md) | Physical TP3 prefill/decode performance and mixed-device kernel, collective and split evidence |
 | [VTP37](VTP37.md) | INT8 W8A8 TP3 decode/prefill route and exact fused collective/normalisation admission |
 | [VTP38](VTP38.md) | Production physical TP3 host transport and optional ordered reduction |
@@ -16,6 +15,9 @@
 | [VTP45](VTP45.md) | Outstanding VTP44 follow-ups: routing determinism, selftest geometry, R9700-only and KLD |
 
 ## Completed source/evidence, not pending dependencies
+
+- [VTP34](../../completed/run-dense-27b-virtual-tp/VTP34.md) superseded: C01–C24 audit retained; native configuration and model geometry work transferred to RSC11/RCS12 and existing owners.
+- [VTP56](../../completed/run-dense-27b-virtual-tp/VTP56.md) superseded: shipped IQR tiles and negative results retained; remaining work in VTP57/VTP58.
 
 - [VTP14](../../completed/run-dense-27b-virtual-tp/VTP14.md) holds the native Radiance integration and physical TP3 foundation. Avoid a second virtual-rank scheduler.
 - [VTP01](../../completed/run-dense-27b-virtual-tp/VTP01.md)–[VTP13](../../completed/run-dense-27b-virtual-tp/VTP13.md) preserve the original Q6/Q8 geometry, capacity, per-GPU kernels, host collective and model-quality decisions.

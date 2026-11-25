@@ -102,6 +102,8 @@ BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed dis
 
 2026-11-04 closed PR #506 (multi-row packed-f16 W4 decode GEMV, R3_MOE_WORKER_GEMV_W4MR, default-off) archived as experiments/radiance/RAD23-w4-gemv-mr/change.patch; never validated end to end (needs per-kernel time, --replay-sweep vs W4H2/CPU reference, then A/B and KLD). PR #482 (LANE_QUANT) was superseded by #481.
 
+2026-11-26 roadmap reconciliation at 165d6f724: RCS14 residual real role/topology hardware acceptance absorbed jointly with RCS12: existing v26 counts and tests are delivered; no protocol migration. Preserve representative TP1 two-helper and TP2 one-helper exact output and speed/KLD proof; TP3+remote only if admitted separate helper capacity and actual supported workload, otherwise explicit refusal. No arbitrary support for all counts; RCS12 checks generic shape/geometry and typed limits.
+
 ## Current evidence reconciliation (2026-11-10)
 
 The old future-tense KLD/test notes were written before later runs. The 2G tail is the conservative named default; the 14G+CPU-combine flashnext-4gpu layout exists. RAD46 v1.17.0 4G/14G p99.9 gate failures supersede the earlier pass for current quality decisions. RHP10 closed the long-context tail matrix. See the linked status matrix; do not rerun it.
@@ -584,3 +586,4 @@ the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place reco
 
 - RV4241
 - 2026-11-20T02:30:52.024772+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-25T19:01:54.016721+00:00 (updated-by): Updated: section:notes

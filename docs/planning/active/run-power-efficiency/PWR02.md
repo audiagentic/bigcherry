@@ -69,6 +69,8 @@ RECONCILED 2026-11-10 (gateway audit): DONE: the XTX sweeps and one 40-minute so
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 5 after immediate PWR10 qualification, independent of model work. Reuse PWR01 synchronized GPU/CPU phase energy; dense TP3 vs MoE separate. Select measured non-regressing points, no historical undervolt defaults or dynamic power writes. WSL08 required for detached ownership, foreground remains default.
 
+2026-11-26 roadmap reconciliation at 165d6f724: External reference: Sweet-Spot Tuner v3.5.15, commit a2a31ce63cc1d40af72997de621115eaa2dcd54d (https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15); see docs/reference/power-tuning-evidence-2026-11.md, hot AI qualification section. Use small staged Pareto search only after PWR10 cap-only acceptance and candidate AI integrity screen: independently supported cap-only/clock-only first, pair viable points, voltage at matched clock/cap only as justified, MCLK last/optional. Compare actual phase tokens/J and wall throughput/latency/quality, not speed squared/watt from graphics. Preserve owner no-regression standard (explicit approved alternate objective if trading throughput); user report 259->162 W at -7.1% compute is illustrative on one RX9070XT, not transferable to R9700/XTX/6900 or LLM speed. Use current stock A/B and stop on numerical failure, reset, thermal inconclusive or unavailable required test. No automatic max-power/+clock, Fast Timing, persistent settings or search for crash; all per BDF and under lease. No second optimiser/qualification store; record accepted settings through PWR07/08/10 existing receipt and YAML. Existing 2026-11 matched-clock and negative UV evidence retained.
+
 ## Change Log
 
 - 2026-10-27T02:15:44.041717+00:00 (created-by): Created by agent
@@ -107,3 +109,4 @@ Next: evaluate XTX OD_MCLK within its reported 97–1250 MHz supported range (pe
 - RV4581
 - 2026-11-25T01:04:39.069746+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T18:52:32.773757+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T22:03:12.550197+00:00 (updated-by): Updated: section:notes
