@@ -148,7 +148,18 @@ The three layers above keep upstream's source as an untouched input and change i
 
 **Staging.** (1) The inventory: for every libr4d unit, the share of lines we rewrite or patch and the number of patches that touch it, plus the upstream commit count per unit per release. (2) The manifest and the drift check, run against the last twelve releases to prove it reproduces the churn above. (3) Take ownership of one family (the fused tile and the embedding gather are small and recent), gated like any kernel change. (4) The remaining IQR units. (5) Review the set at each pin bump.
 
-## 12. Open questions
+## 12. Naming: `bc` marks what we own
+
+Rule: anything carrying `bc` is ours; anything without it is upstream's, pinned and untouched. The convention already exists in the repository (the `bc_*` implementation headers added by our patches, `bc-serve`, `bc-release`, the `libbcgfx12` interposer plugin, the `bigcherryrad` release archive); this extends it to the kernel providers so that no reader mistakes one of our builds for native or upstream.
+
+- **Source files.** An owned unit is `bc_<family>_<kernel>.hip` (or `.h`). The manifest (section 11) records which upstream unit slot it replaces, so the build knows to leave that upstream file out.
+- **Symbols and types.** Names we introduce carry a `bc_` prefix (kernels, tile types, certificates). Names the engine's row table requires of the unit slot keep their upstream spelling; they are the ABI.
+- **Libraries.** Our builds of the architecture providers are `libbcr3.so` (gfx11) and `libbcr4d.so` (gfx12), once they contain owned units; the later family plugins are `libbc-<family>-<arch>.so`. A stock upstream provider, where one is loaded at all (a comparison arm, a reference), keeps its upstream name, so the RCS15 arms read unambiguously: arm A `libbcr3`, arm B upstream's native library. The old names are not kept as aliases.
+- **Provenance in the identity.** The plugin identity string and the artifact identity carry a provider tag (`bc` or `upstream`) and the owned-unit manifest digest, so serving manifests, logs and the plan cache show which provider ran.
+- **What the rename touches (all ours).** `archs.toml` (the `plugin` field is data), the component outputs, the plugin name string in the registry, the hard-coded `libr4d.so` search in the `libbcgfx12` plugin, the helper plugin default and its override setting, the serving layer's plugin field, the release asset inventory and `bc-release verify`. The engine's own plugin loader takes the path from configuration, so no change to upstream core is expected; stage 0 of RCS23 verifies this with a start of both architectures before anything else moves.
+- **When.** One coordinated change at the start of RCS23, not piecemeal, with a release that restores cleanly (releases are self-contained, so the previous release keeps its old names). Until then `libr3.so` is already a generated build rather than upstream's, and the rename is the honest label.
+
+## 13. Open questions
 
 - Which of the neutral patches the owner wants offered upstream, and when.
 - Whether `gemm_quant` is split before layer 3.
