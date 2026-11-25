@@ -2,7 +2,7 @@
 id: RCS21
 order: 0
 plan: build-radiance-components
-state: deprecated
+state: in_progress
 created-at: '2026-11-25T00:40:51.713419+00:00'
 breadth: ''
 skill: advanced
@@ -82,3 +82,4 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 - 2026-11-25T02:40:46.557497+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T09:42:24.891543+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T09:43:00.957766+00:00 (state-transition): State: pending → deprecated
+- 2026-11-25T10:44:47.321276+00:00 (state-transition): State: deprecated → in_progress

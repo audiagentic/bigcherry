@@ -2,7 +2,7 @@
 id: RCS23
 order: 0
 plan: build-radiance-components
-state: deprecated
+state: in_progress
 created-at: '2026-11-25T00:54:41.130343+00:00'
 breadth: ''
 skill: advanced
@@ -69,6 +69,8 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 
 2026-11-25 closed as deferred: arm B found no kernel to own as an overlay (upstream's gfx1100 IQR is a correctness reference only), and the cost of a bump to upstream main is in the engine patches (11 of 35 patches fail on 1c104de4, four clusters), not in kernels. The composition gates now stop a bump at the first collision. Reopen when a bump lands a kernel conflict the gates cannot resolve.
 
+2026-11-25 reopened by the owner ("complete all the plan items regarding the lib rework and grouping"; the earlier deferral for lack of a speed gain is withdrawn). Staged order, each stage proved with the unit harness (bytes, resource records, replay) and merged on its own: S1 inventory and baseline snapshot per IQR unit (read-only, evidence page); S2 RCS21 traits seam and the unified fused tile; S3 the IQR family as an overlay plugin libbc-iqr-<arch>.so first in the loader hierarchy with the origin manifest and the pin-triage upstream check, retiring the shadowed rewrites and patches (archive unchanged); S4 RCS22 only if the loader needs more than the existing hierarchy; S5 close with the installed-release qualification and Gate E. Builds and gates by bigcherry-2 or the lead; GPT reviews only and returns code as text.
+
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
@@ -85,3 +87,5 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 - 2026-11-25T02:41:48.148300+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T09:42:34.865375+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T09:43:10.649436+00:00 (state-transition): State: pending → deprecated
+- 2026-11-25T10:44:56.988012+00:00 (state-transition): State: deprecated → in_progress
+- 2026-11-25T10:45:06.870940+00:00 (updated-by): Updated: section:notes
