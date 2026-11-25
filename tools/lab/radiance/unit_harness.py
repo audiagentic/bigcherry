@@ -226,7 +226,7 @@ def build_plugin(arch: str, tree: Path, units: list[str], out: Path, reference: 
     write_prefix(tree, arch, prefix)
     build = out / "build"
     if arch == "gfx1100":
-        options = [f"-DCMAKE_PREFIX_PATH={prefix}", f"-DRADIANCE_SRC={tree}", "-DR3_TARGETS=gfx1100", "-DR3_NATIVE=ON",
+        options = ["-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_PREFIX_PATH={prefix}", f"-DRADIANCE_SRC={tree}", "-DR3_TARGETS=gfx1100", "-DR3_NATIVE=ON",
                    "-DR3_ONLY=" + ";".join(units)]
         cmake_build((libr3 or ROOT / "engines/radiance/components/libr3"), build, options, ["libr3"], log)
     elif arch == "gfx1201":
@@ -242,7 +242,7 @@ def build_plugin(arch: str, tree: Path, units: list[str], out: Path, reference: 
         text = text[:match.start()] + "set(R4D_UNITS\n" + "\n".join(lines[u] for u in units) + "\n)\n" + text[match.end():]
         text += STUBS.replace("@STUBGEN@", str(Path(__file__).with_name("unit_stubs.py"))).replace("@REFERENCE@", str(reference))
         cmakefile.write_text(text, encoding="utf-8")
-        cmake_build(tree / "libr4d", build, [f"-DCMAKE_PREFIX_PATH={prefix}", "-DRAD_GPU_TARGETS=gfx1201"], ["libr4d"], log)
+        cmake_build(tree / "libr4d", build, ["-DCMAKE_BUILD_TYPE=Release", f"-DCMAKE_PREFIX_PATH={prefix}", "-DRAD_GPU_TARGETS=gfx1201"], ["libr4d"], log)
     else:
         raise HarnessError(f"architecture {arch}: gfx1100 or gfx1201")
     found = sorted(build.rglob(PLUGIN[arch]))

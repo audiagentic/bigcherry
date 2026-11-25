@@ -1,0 +1,40 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-iq8r-f32-source/libr4d/r4d_fp8_layout.cpp")
+s=p.read_text()
+def change(a,b):
+ global s
+ assert s.count(a)==1,(s.count(a),a[:90])
+ s=s.replace(a,b)
+change('''        ffill(out, wide ? "r4d.iq8r.s.t16" : "r4d.i8.s.t16", RAD_BF16, g.N, g.sk, g.N * g.sk * 2);''',
+'''        ffill(out, wide ? "r4d.iq8r.s.f32.t16" : "r4d.i8.s.t16",
+              wide ? RAD_F32 : RAD_BF16, g.N, g.sk, g.N * g.sk * (wide ? 4 : 2));''')
+change('''        uint16_t* d = (uint16_t*)dst;
+        if (n == 2) {
+            /* IQ8R: the two levels' product, the one bf16 the fold multiplies by. */
+            if (!pl[1].data) return RAD_E_SHAPE;
+            for (long long r = 0; r < N; ++r) {
+                const uint8_t* s1 = r4d_enc::row(pl[0], r);
+                const float s2 = rad_load_f32(pl[1].data, RAD_BF16, r);
+                for (long long kb = 0; kb < nkb; ++kb)
+                    rad_store_f32(d, RAD_BF16, ((r / 16) * nkb + kb) * 16 + r % 16,
+                                  (float)s1[kb] * s2);
+            }
+            return RAD_OK;
+        }
+        const uint16_t* s''','''        if (n == 2) {
+            // Preserve the exactly representable product of the 8-bit
+            // coefficient and BF16 row gain through GEMM's F32 fold.
+            if (!pl[1].data) return RAD_E_SHAPE;
+            float* d = (float*)dst;
+            for (long long r = 0; r < N; ++r) {
+                const uint8_t* s1 = r4d_enc::row(pl[0], r);
+                const float s2 = rad_load_f32(pl[1].data, RAD_BF16, r);
+                for (long long kb = 0; kb < nkb; ++kb)
+                    d[((r / 16) * nkb + kb) * 16 + r % 16] = (float)s1[kb] * s2;
+            }
+            return RAD_OK;
+        }
+        uint16_t* d = (uint16_t*)dst;
+        const uint16_t* s''')
+p.write_text(s)
+print('new IQ8R F32 tile-major scale descriptor and native relayout staged')

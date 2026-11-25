@@ -1,0 +1,506 @@
+diff --git a/engines/radiance/components/serving/serving_test.cpp b/engines/radiance/components/serving/serving_test.cpp
+index 6a0410962..dca56063e 100644
+--- a/engines/radiance/components/serving/serving_test.cpp
++++ b/engines/radiance/components/serving/serving_test.cpp
+@@ -1446,6 +1446,7 @@ void session_engine_plan(Fixture& t) {
+                 tweak(pre.native_admission->runtime_overrides);
+                 const fs::path pre_run = run / ("native-preflight-" + std::to_string(++preflight_runs));
+                 fs::create_directories(pre_run);
++                fs::permissions(pre_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+                 std::vector<ss::ChildKind> kinds;
+                 ss::Hooks hooks;
+                 hooks.wait = [](std::chrono::milliseconds) { return true; };
+@@ -1481,6 +1482,7 @@ void session_engine_plan(Fixture& t) {
+                         .dump();
+                 const fs::path tuned_run = run / "native-preflight-tuning";
+                 fs::create_directories(tuned_run);
++                fs::permissions(tuned_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+                 const ss::EngineStart tuned = ss::plan_engine_only(pre, tuned_run, ss::Hooks{});
+                 const Json& tuning = tuned.native_preflight_values.at("tuning");
+                 assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
+@@ -1543,6 +1545,7 @@ void session_engine_plan(Fixture& t) {
+         }
+         const fs::path gated_run = run / "native-admission";
+         fs::create_directories(gated_run);
++        fs::permissions(gated_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         // The measured manifest is stored for the next start of this config, from any run dir, in the work root.
+         const fs::path cache_tripwire = ss::named_store_index(t.work_root(), gated.named_config);
+         int writer_calls = 0;
+@@ -1740,6 +1743,7 @@ void session_engine_plan(Fixture& t) {
+         replay_admissions = 0;
+         const fs::path later_run = run / "native-later-start";
+         fs::create_directories(later_run);
++        fs::permissions(later_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+         const auto later = ss::plan_engine_only(gated, later_run, stored_hooks);
+         assert(later.manifest == original_manifest && later.summary.at("replay") == true &&
+@@ -1752,6 +1756,7 @@ void session_engine_plan(Fixture& t) {
+         // identity is kept as provenance, and the new manifest replaces the stored one.
+         const fs::path rebuilt_run = run / "native-rebuilt-start";
+         fs::create_directories(rebuilt_run);
++        fs::permissions(rebuilt_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+         auto rebuilt = gated;
+         // The installed layout of a newer release: <root>/releases/<tag>/radiance_home.
+@@ -1785,6 +1790,7 @@ void session_engine_plan(Fixture& t) {
+             for (const auto& file : fs::directory_iterator(attempt_cache)) fs::remove(file.path());
+             const fs::path unusable_run = run / "native-unusable-store";
+             fs::create_directories(unusable_run);
++            fs::permissions(unusable_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+             std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+             const size_t before = inspector_roles.size();
+             const auto measured_again = ss::plan_engine_only(rebuilt, unusable_run, admission_hooks);
+@@ -1797,6 +1803,7 @@ void session_engine_plan(Fixture& t) {
+         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+         const fs::path owner_run = run / "native-serving-owner";
+         fs::create_directories(owner_run);
++        fs::permissions(owner_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         ss::EnginePlanInputs fresh = gated;
+         fresh.work_root = t.root / "work-owner-measures";   // no stored measurement here: this owner measures
+         fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
+@@ -1875,6 +1882,7 @@ void session_engine_plan(Fixture& t) {
+         assert(!fs::exists(native_yaml));
+         owner.run_dir = run / "native-stored-owner";
+         fs::create_directories(owner.run_dir);
++        fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         fresh.stored_manifest = original_manifest;
+         assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
+         serving_power_verified = cleared_children = serving_handoff_seen = false;
+@@ -1890,6 +1898,7 @@ void session_engine_plan(Fixture& t) {
+         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+         const fs::path low_room_run = run / "native-low-room";
+         fs::create_directories(low_room_run);
++        fs::permissions(low_room_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         const fs::path meminfo = t.root / "proc/meminfo";
+         std::ifstream prior_room_file(meminfo);
+         const std::string prior_room((std::istreambuf_iterator<char>(prior_room_file)), std::istreambuf_iterator<char>());
+@@ -1956,6 +1965,7 @@ void session_engine_plan(Fixture& t) {
+             drift_yaml, native_root, gated.native_admission->runtime_overrides};
+         const fs::path drift_run = t.root / "native-runtime-drift-run";
+         fs::create_directories(drift_run);
++        fs::permissions(drift_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         ss::Hooks drift_hooks;
+         std::map<pid_t, std::string> drift_roles;
+         std::vector<std::string> drift_role_order;
+@@ -2133,6 +2143,7 @@ void session_engine_plan(Fixture& t) {
+         drifting.options.profile = profile;
+         const fs::path drift_run = run / "transient-drift";
+         fs::create_directories(drift_run);
++        fs::permissions(drift_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         int writer_calls = 0;
+         drifting.runner = [&](const std::vector<std::string>& argv) {
+             if (++writer_calls == 1)
+@@ -2566,6 +2577,7 @@ void session_engine_plan(Fixture& t) {
+         lab.engine_binary = BC_FAKE_ENGINE;
+         const fs::path lab_run = t.root / "lab-session-run";
+         fs::create_directories(lab_run);
++        fs::permissions(lab_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         bool writer_checked = false;
+         fs::path produced;
+         std::string expected_experiment = lab.experiment_file.string();
+@@ -2729,6 +2741,7 @@ void helper_vram_owner_graph(Fixture& t) {
+     ss::Session owner;
+     owner.run_dir = t.root / "native-helper-owner";
+     fs::create_directories(owner.run_dir);
++    fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+     owner.timing.health_timeout = owner.timing.helper_timeout = std::chrono::seconds(6);
+     owner.timing.health_interval = owner.timing.helper_interval = std::chrono::milliseconds(30);
+     owner.timing.stop_grace = std::chrono::seconds(1);
+diff --git a/engines/radiance/components/serving/session.cpp b/engines/radiance/components/serving/session.cpp
+index 4ebc74963..36fb14e56 100644
+--- a/engines/radiance/components/serving/session.cpp
++++ b/engines/radiance/components/serving/session.cpp
+@@ -26,6 +26,7 @@
+ #include <charconv>
+ #include <csignal>
+ #include <cstdint>
++#include <cstdio>
+ #include <cstring>
+ #include <cstdlib>
+ #include <ctime>
+@@ -1106,6 +1107,24 @@ HelperReadiness read_helper_readiness(const fs::path& log) {
+     return HelperReadiness::pending;
+ }
+ 
++// The run directory is private to its owner: created 0700 here (only the last component; an existing directory is
++// never loosened), and refused when it is not ours or is open to group or world.
++void prepare_run_dir(const fs::path& run_dir) {
++    std::error_code ec;
++    if (run_dir.has_parent_path())
++        fs::create_directories(run_dir.parent_path(), ec);
++    if (::mkdir(run_dir.c_str(), 0700) != 0 && errno != EEXIST)
++        throw std::runtime_error("cannot create the run directory " + run_dir.string() + ": " + errno_text());
++    if (const auto why = run_dir_refusal(run_dir, ::geteuid()))
++        throw std::runtime_error("refusing to serve: " + *why);
++}
++
++std::string mode_text(mode_t m) {
++    char buf[8];
++    std::snprintf(buf, sizeof buf, "%04o", unsigned(m & 07777));
++    return buf;
++}
++
+ class Owner {
+   public:
+     explicit Owner(const Session& s) : s_(s) {}
+@@ -1124,10 +1143,12 @@ class Owner {
+     }
+ 
+     int run() {
+-        fs::create_directories(s_.run_dir);
+-        lock_ = ::open((s_.run_dir / "session.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
++        prepare_run_dir(s_.run_dir);
++        lock_ = ::open((s_.run_dir / "session.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+         if (lock_ < 0)
+             throw std::runtime_error("cannot open the session lock: " + errno_text());
++        if (::fchmod(lock_, 0600) != 0) // a lock file an earlier version made 0644 is tightened
++            throw std::runtime_error("cannot restrict the session lock: " + errno_text());
+         if (::flock(lock_, LOCK_EX | LOCK_NB) != 0) {
+             std::string who;
+             if (const auto r = read_record(s_.run_dir))
+@@ -1164,7 +1185,15 @@ class Owner {
+                     throw PlanFailed("cannot archive previous feature-state snapshot: " + ec.message());
+             }
+         }
+-        fs::remove(s_.run_dir / "session.sock", ec);
++        // A leftover socket of a crashed owner is stale; anything else at that path (a symlink, a file, another
++        // user's socket) is not ours to remove and is refused.
++        if (fs::symlink_status(s_.run_dir / "session.sock", ec).type() != fs::file_type::not_found) {
++            if (const auto why = socket_refusal(s_.run_dir / "session.sock", ::geteuid(), 0600)) {
++                std::cerr << "bc-serve: refusing to serve: " << *why << '\n';
++                return 1;
++            }
++            fs::remove(s_.run_dir / "session.sock", ec);
++        }
+         record_ = {{"schema_version", 1},    {"owner_pid", ::getpid()}, {"started_at", utc_now()},
+                    {"state", "created"},     {"events", Json::array()}, {"processes", Json::array()},
+                    {"errors", Json::array()}};
+@@ -1186,7 +1215,14 @@ class Owner {
+             std::cerr << "bc-serve: cannot persist native host-facts start receipt: " << e.what() << '\n';
+             return 1;
+         }
+-        listen_socket();
++        try {
++            listen_socket();
++        } catch (const std::exception& e) {
++            std::cerr << "bc-serve: " << e.what() << '\n';
++            record_["errors"].push_back(e.what());
++            event("failed");
++            return 1;
++        }
+ 
+         struct sigaction sa{};
+         sa.sa_handler = on_signal;
+@@ -1617,9 +1653,20 @@ class Owner {
+         listen_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
+         if (listen_ < 0)
+             throw std::runtime_error("control socket: " + errno_text());
+-        if (::bind(listen_, addr.get(), sizeof addr.addr) != 0 || ::listen(listen_, 8) != 0)
++        // The socket file is created 0600 by the bind itself (the umask is narrowed around it), so it is never
++        // reachable with a wider mode, then its identity is verified before anything is accepted.
++        const mode_t previous = ::umask(0177);
++        const int bound = ::bind(listen_, addr.get(), sizeof addr.addr);
++        const int bind_errno = errno;
++        ::umask(previous);
++        if (bound != 0) {
++            errno = bind_errno;
++            throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
++        }
++        if (const auto why = socket_refusal(addr.path, ::geteuid(), 0600))
++            throw std::runtime_error("refusing to serve: " + *why);
++        if (::listen(listen_, 8) != 0)
+             throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
+-        ::chmod(addr.path.c_str(), 0600);
+     }
+ 
+     // Wait up to `d` while answering the control socket; false once a stop is requested.
+@@ -1642,6 +1689,10 @@ class Owner {
+         const int fd = ::accept4(listen_, nullptr, nullptr, SOCK_CLOEXEC);
+         if (fd < 0)
+             return;
++        if (const auto peer = peer_uid(fd); !peer || !control_peer_allowed(*peer, ::geteuid())) {
++            ::close(fd); // another user's connection: no reply, no command read
++            return;
++        }
+         std::string cmd = read_until(fd, Clock::now() + 2s, true);
+         cmd = cmd.substr(0, cmd.find('\n'));
+         if (cmd == "status") {
+@@ -2009,6 +2060,48 @@ class Owner {
+ 
+ } // namespace
+ 
++std::optional<std::string> run_dir_refusal(const fs::path& dir, uid_t owner) {
++    struct stat st{};
++    if (::stat(dir.c_str(), &st) != 0)
++        return "the run directory " + dir.string() + " cannot be inspected: " + errno_text();
++    if (!S_ISDIR(st.st_mode))
++        return "the run directory " + dir.string() + " is not a directory";
++    if (st.st_uid != owner)
++        return "the run directory " + dir.string() + " is owned by uid " + std::to_string(st.st_uid) +
++               ", not uid " + std::to_string(owner);
++    if ((st.st_mode & 077) != 0)
++        return "the run directory " + dir.string() + " is accessible to group or others (mode " +
++               mode_text(st.st_mode) + "); it must be private (0700)";
++    return std::nullopt;
++}
++
++std::optional<std::string> socket_refusal(const fs::path& path, uid_t owner, mode_t mode) {
++    struct stat st{};
++    if (::lstat(path.c_str(), &st) != 0)
++        return "the control socket " + path.string() + " cannot be inspected: " + errno_text();
++    if (!S_ISSOCK(st.st_mode))
++        return "the control socket path " + path.string() + " is not a socket (a symlink or file is refused)";
++    if (st.st_uid != owner)
++        return "the control socket " + path.string() + " is owned by uid " + std::to_string(st.st_uid) +
++               ", not uid " + std::to_string(owner);
++    if ((st.st_mode & 07777) != mode)
++        return "the control socket " + path.string() + " has mode " + mode_text(st.st_mode) + ", not " +
++               mode_text(mode);
++    return std::nullopt;
++}
++
++bool control_peer_allowed(uid_t peer, uid_t owner) {
++    return peer == owner || peer == 0;
++}
++
++std::optional<uid_t> peer_uid(int fd) {
++    ucred cred{};
++    socklen_t len = sizeof cred;
++    if (::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0 || len != sizeof cred)
++        return std::nullopt;
++    return cred.uid;
++}
++
+ int serve(const Session& session) {
+     Owner owner(session);
+     return owner.run();
+@@ -2054,7 +2147,7 @@ std::optional<Json> control(const fs::path& run_dir, const std::string& command,
+ 
+ int start_detached(const std::vector<std::string>& self_argv, const fs::path& run_dir,
+                    std::chrono::milliseconds timeout) {
+-    fs::create_directories(run_dir);
++    prepare_run_dir(run_dir);
+     Env env;
+     for (char** e = environ; e && *e; ++e) {
+         const std::string kv(*e);
+diff --git a/engines/radiance/components/serving/session.h b/engines/radiance/components/serving/session.h
+index c93047e13..df8d1a470 100644
+--- a/engines/radiance/components/serving/session.h
++++ b/engines/radiance/components/serving/session.h
+@@ -265,6 +265,16 @@ int start_detached(const std::vector<std::string>& self_argv, const std::filesys
+ std::optional<nlohmann::json> control(const std::filesystem::path& run_dir, const std::string& command,
+                                       std::chrono::milliseconds timeout);
+ 
++/* Control-socket safety (used by the owner before it accepts; public so the tests exercise each check).
++ * run_dir_refusal: why `dir` is not a directory owned by `owner` closed to group and world; nullopt when it is.
++ * socket_refusal: why `path` is not a socket (a symlink is not) owned by `owner` with exactly `mode`.
++ * control_peer_allowed: whether a client with effective uid `peer` may use the socket of an owner running as
++ * `owner`: the owner itself, or root (which reaches the 0600 socket and the owner's processes regardless). */
++std::optional<std::string> run_dir_refusal(const std::filesystem::path& dir, uid_t owner);
++std::optional<std::string> socket_refusal(const std::filesystem::path& path, uid_t owner, mode_t mode);
++bool control_peer_allowed(uid_t peer, uid_t owner);
++std::optional<uid_t> peer_uid(int fd);
++
+ /* The last session record in the run directory, if any. */
+ std::optional<nlohmann::json> read_record(const std::filesystem::path& run_dir);
+ 
+diff --git a/engines/radiance/components/serving/session_stored_test.cpp b/engines/radiance/components/serving/session_stored_test.cpp
+index d0773ca2a..122973882 100644
+--- a/engines/radiance/components/serving/session_stored_test.cpp
++++ b/engines/radiance/components/serving/session_stored_test.cpp
+@@ -134,6 +134,7 @@ struct Case {
+          bool refuse_power = false)
+         : root(case_root), stored(world.stored), bytes(world.bytes) {
+         fs::create_directories(run);
++        fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+         inputs = world.plan().inputs;
+         inputs.stored_manifest = stored;
+         if (bad_build) { // the engine on disk is no longer the one that measured the plan
+diff --git a/engines/radiance/components/serving/session_test.cpp b/engines/radiance/components/serving/session_test.cpp
+index 6291c5dcb..24d98006b 100644
+--- a/engines/radiance/components/serving/session_test.cpp
++++ b/engines/radiance/components/serving/session_test.cpp
+@@ -15,6 +15,7 @@
+ #include <cassert>
+ #include <csignal>
+ #include <cstdio>
++#include <cstring>
+ #include <cstdlib>
+ #include <fstream>
+ #include <iostream>
+@@ -30,6 +31,7 @@
+ #include <netinet/in.h>
+ #include <sys/mman.h>
+ #include <sys/socket.h>
++#include <sys/un.h>
+ #include <sys/stat.h>
+ #include <sys/wait.h>
+ #include <unistd.h>
+@@ -74,6 +76,7 @@ struct Case {
+ 
+     explicit Case(const std::string& name) : run(g_root / (std::to_string(++g_case) + "-" + name)) {
+         fs::create_directories(run);
++        fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // 0700: a run directory is private
+         session.run_dir = run;
+         session.timing.health_timeout = 5s;
+         session.timing.health_interval = 50ms;
+@@ -381,6 +384,148 @@ void long_run_dir() {
+     assert(!fs::exists(c.run / "session.sock"));
+ }
+ 
++mode_t mode_of(const fs::path& p) {
++    struct stat st{};
++    assert(::lstat(p.c_str(), &st) == 0);
++    return st.st_mode & 07777;
++}
++
++// A bound UNIX-domain socket file at `path` with the given mode.
++void bind_socket_file(const fs::path& path, mode_t mode) {
++    const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
++    assert(fd >= 0);
++    sockaddr_un a{};
++    a.sun_family = AF_UNIX;
++    // through a descriptor on the directory: the test paths are longer than sun_path
++    const int dir = ::open(path.parent_path().c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC);
++    assert(dir >= 0);
++    const std::string via = "/proc/self/fd/" + std::to_string(dir) + "/" + path.filename().string();
++    assert(via.size() < sizeof a.sun_path);
++    std::strncpy(a.sun_path, via.c_str(), sizeof a.sun_path - 1);
++    assert(::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0);
++    ::close(dir);
++    assert(::chmod(path.c_str(), mode) == 0);
++    ::close(fd); // the file stays
++}
++
++// The checks the owner makes before it accepts, one by one: directory, socket identity and mode, peer user.
++void control_socket_checks() {
++    const fs::path dir = g_root / "checks";
++    fs::create_directories(dir);
++    const uid_t me = ::geteuid();
++    fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace);
++    assert(!ss::run_dir_refusal(dir, me));
++    assert(ss::run_dir_refusal(dir, me + 1)); // not ours
++    for (const mode_t m : {0750, 0705, 0755, 0770, 0777}) {
++        ::chmod(dir.c_str(), m);
++        assert(ss::run_dir_refusal(dir, me)); // open to group or others
++    }
++    ::chmod(dir.c_str(), 0700);
++    assert(ss::run_dir_refusal(dir / "absent", me));
++    std::ofstream(dir / "file") << "x";
++    assert(ss::run_dir_refusal(dir / "file", me)); // not a directory
++
++    bind_socket_file(dir / "ok.sock", 0600);
++    assert(!ss::socket_refusal(dir / "ok.sock", me, 0600));
++    assert(ss::socket_refusal(dir / "ok.sock", me + 1, 0600)); // another user's socket
++    bind_socket_file(dir / "wide.sock", 0666);
++    assert(ss::socket_refusal(dir / "wide.sock", me, 0600));
++    bind_socket_file(dir / "group.sock", 0660);
++    assert(ss::socket_refusal(dir / "group.sock", me, 0600));
++    fs::create_symlink(dir / "ok.sock", dir / "link.sock");
++    assert(ss::socket_refusal(dir / "link.sock", me, 0600)); // a symlink to our own socket is still refused
++    assert(ss::socket_refusal(dir / "file", me, 0600));      // a regular file
++    assert(ss::socket_refusal(dir / "absent.sock", me, 0600));
++
++    // peers: the owner itself and root; any other uid is refused
++    assert(ss::control_peer_allowed(me, me) && ss::control_peer_allowed(0, me));
++    assert(!ss::control_peer_allowed(me + 1, me) && !ss::control_peer_allowed(me + 1000, 0 + me + 1));
++    int pair[2];
++    assert(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
++    const auto peer = ss::peer_uid(pair[0]);
++    assert(peer && *peer == me);
++    ::close(pair[0]);
++    ::close(pair[1]);
++    assert(!ss::peer_uid(-1));
++}
++
++// start_detached creates the run directory 0700 whatever the umask, and refuses one open to others without
++// changing it.
++void run_dir_created_private() {
++    const mode_t previous = ::umask(0);
++    const fs::path fresh = g_root / "private-fresh" / "run";
++    // the child exits at once: only the directory it was handed matters
++    assert(ss::start_detached({"/bin/false"}, fresh, 5s) == 1);
++    assert(mode_of(fresh) == 0700);
++    assert(mode_of(fresh.parent_path()) == 0777); // only the run directory itself is restricted
++
++    const fs::path open_dir = g_root / "private-open";
++    fs::create_directories(open_dir);
++    ::chmod(open_dir.c_str(), 0755);
++    bool refused = false;
++    try {
++        ss::start_detached({"/bin/false"}, open_dir, 5s);
++    } catch (const std::runtime_error& e) {
++        refused = std::string(e.what()).find("accessible to group or others") != std::string::npos;
++    }
++    assert(refused && mode_of(open_dir) == 0755); // refused, never loosened or silently tightened
++    ::umask(previous);
++}
++
++// A permissive umask still yields a 0600 socket and lock; stop and status work for the owner; a client of
++// another user gets no answer.
++void control_socket_private_under_permissive_umask() {
++    Case c("umask");
++    c.prepare();
++    const mode_t previous = ::umask(0);
++    const pid_t owner = c.owner();
++    ::umask(previous);
++    c.wait_state({"running"});
++    assert(mode_of(c.run / "session.sock") == 0600);
++    assert(mode_of(c.run / "session.lock") == 0600);
++    assert(mode_of(c.run) == 0700);
++    assert(!ss::socket_refusal(c.run / "session.sock", ::geteuid(), 0600));
++    const auto status = ss::control(c.run, "status", 2s);
++    assert(status && status->at("state") == "running" && status->at("owner_pid") == owner);
++    const auto stopped = ss::control(c.run, "stop", 10s);
++    assert(stopped && stopped->value("ok", false));
++    assert(exit_code(owner) == 0);
++    assert(!fs::exists(c.run / "session.sock"));
++}
++
++// The owner serves no one in a run directory open to others, nor over a symlinked or foreign socket path.
++void owner_refuses_unsafe_paths() {
++    Case open("open-dir");
++    open.prepare();
++    ::chmod(open.run.c_str(), 0755);
++    assert(exit_code(open.owner()) == 1);
++    assert(mode_of(open.run) == 0755 && !fs::exists(open.run / "session.sock"));
++
++    Case linked("symlink");
++    linked.prepare();
++    const fs::path target = linked.run / "elsewhere";
++    std::ofstream(target) << "keep";
++    fs::create_symlink(target, linked.run / "session.sock");
++    assert(exit_code(linked.owner()) == 1);
++    assert(fs::is_symlink(linked.run / "session.sock") && text(target) == "keep");
++    assert(!ss::control(linked.run, "status", 1s));
++
++    Case wide("wide-socket"); // a leftover socket that is not exactly 0600 is not ours to clean up
++    wide.prepare();
++    bind_socket_file(wide.run / "session.sock", 0666);
++    assert(exit_code(wide.owner()) == 1);
++    assert(mode_of(wide.run / "session.sock") == 0666);
++
++    Case stale("stale-socket"); // a leftover 0600 socket of a crashed owner is replaced
++    stale.prepare();
++    bind_socket_file(stale.run / "session.sock", 0600);
++    const pid_t owner = stale.owner();
++    stale.wait_state({"running"});
++    assert(ss::control(stale.run, "status", 2s));
++    assert(ss::control(stale.run, "stop", 10s));
++    assert(exit_code(owner) == 0);
++}
++
+ void canary_fails() {
+     Case c("canary");
+     c.behaviour["answer"] = "Lyon, of course.";
+@@ -1725,6 +1870,10 @@ int test_main(int argc, char** argv) {
+     power_hook_returned_status_errors();
+     helper_shared_segment_gate();
+     long_run_dir();
++    control_socket_checks();
++    run_dir_created_private();
++    control_socket_private_under_permissive_umask();
++    owner_refuses_unsafe_paths();
+     canary_fails();
+     engine_fails_to_start();
+     engine_refuses_the_stored_plan();
