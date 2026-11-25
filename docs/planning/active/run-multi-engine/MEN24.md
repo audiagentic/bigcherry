@@ -83,6 +83,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. Build sequence: exact selected source/patch composition once -> actual affected family/unit compile from existing graph -> RCS25 only for changed kernel rows -> canonical integrated lane when needed -> existing installed qualification, reuse proof. BU03 owns cache trust and duplicate CI work, RCS19 freshness and composed-input check, RCS20 merged family targets. Do not force extra historical transition replay or two artificial bumps to finish this work; collect evidence in actual requested bumps. Native YAML launch migration is ordinary component build work, not a new lane or build system.
 
+2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. S18 can land on 2.2.0 independently of next upstream release. At actual next approved bump compare 5e0cd1e2 per-card budget, 4865bd6b/4fbce0c9 multi-model queue behavior, 0158f244 ownership and 5aa5fa0f/80e094b3 against remaining narrow local hooks; adopt native behavior and retire only redundant qualified enhancement. Do not reimplement or backport these now, do not make bump a migration gate. Single-model skip-broker/skip-queue behavior verified at pin. Retain exact candidate validation and affected path testing, not historical matrix.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -99,3 +101,4 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-25T02:55:02.743727+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:30:33.417688+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:21:26.606234+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:54:06.101509+00:00 (updated-by): Updated: section:notes
