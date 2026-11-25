@@ -11,7 +11,7 @@ work: S
 priority: P1
 ---
 
-# Kernel composition seams: anchor gate, unit ownership and naming rules for patches and rewrites
+# Kernel composition gates: provenance and anchors, compile, link and export, qualification; source ownership records and patched-source freshness
 
 ## Description
 
@@ -19,7 +19,7 @@ Managed patches and native rewrites both transform the same upstream kernel text
 
 ## Steps
 
-1. Anchor gate: apply the patch set to the pinned source, then run the rewrite check with the real rules against the patched source (allowed failures: the known bc_* sources, after applying the bc patches); put it in the offline patch job with a fixture reproducing the fused-tile collision. 2. Unit ownership: patch metadata declares the upstream units it edits; a check lists any unit edited by more than one layer. 3. Naming rule: a type, kernel or constant introduced by a patch or rewrite carries an architecture/patch suffix; lint rejects an unsuffixed introduction. 4. Layer order and the additive-first rule documented in the patch-author guidance. 5. First customer: the gfx1201 fused-tile package, rebuilt with distinct names and a separate gfx12 body, lane-built on both architectures, then promoted.
+1. Gate 1 (seconds, offline): apply the ordered patch set (bc patches included) to the pinned source, run the real rewrite check against it; exactly-one-of-pair for alternative groups; declared dependencies; region overlap; digest of the resulting source. 2. Gate 2: compile the affected translation units for gfx1100 and gfx1201 (host and device passes, architecture macros, explicit template instantiations) with failing fixtures: duplicate type, repeated template default argument, device-only definition clash, conflicting conditional compilation. 3. Gate 3: link the affected family or a contract fixture and check duplicate definitions, unresolved symbols, exported names, external device symbols. 4. Gate 4: resource, byte identity, selftest and replay for the affected family and the units that include a changed shared header. 5. Ownership records in patch metadata: affected units (expanded through the include graph), owned regions, consumed anchors. 6. Naming: architecture suffix only where two architectures must both define a name; uniqueness proven by gate 3; upstream and ABI names never renamed. 7. Freshness: make the libr3 generation depend on a digest of the patched inputs, with a test that changing an upstream header regenerates output without deleting the build directory. 8. First customer: the gfx1201 fused tile through the standard lane.
 
 ## Detailed Solution & Technical Design
 
@@ -35,7 +35,7 @@ tools/bigcherry/release (patch checks), tools/tests/patch, engines/radiance/patc
 
 ## Validation
 
-The collision that blocked the gfx1201 patch fails the gate in seconds on the unmodified package and passes on the fixed one; existing patches all pass the gate; patch tests and lint pass; both architectures lane-build with the gfx1201 package applied, the gfx1100 resource records unchanged against the shipped release.
+Fixtures: a vanished anchor, a doubled anchor and an exactly-one-of-pair violation fail gate 1; a duplicate type, a repeated template default and a device-only definition clash fail gate 2 and not gate 1; every existing patch set passes; the regeneration test passes; both architectures lane-build with the gfx1201 package applied and the gfx1100 resource records unchanged against the shipped release.
 
 ## Effort & Risk
 
@@ -47,7 +47,7 @@ Small. Risk: the gate needs the bc patches applied first to avoid false failures
 
 ## Acceptance Criteria
 
-A patch or rewrite that edits another owner's anchored text, or defines an already-defined name, is refused before any lane build; the gfx1201 fused tile ships through the standard lane.
+Every managed patch set applies to the pinned source, every required anchor resolves under its declared variant, and every transformation has ownership and dependency metadata. Compile and link checks reject invalid declarations, duplicate definitions and symbol conflicts for both architectures before a lane build. No family is qualified until the affected and dependent kernels pass their correctness and resource gates.
 
 ## Notes
 
@@ -60,3 +60,4 @@ Stage 0 of the native RDNA3 migration brief (additive gfx12 body, distinct ident
 - 2026-11-25T00:40:42.311181+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:22.694997+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:42:02.400302+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T00:52:35.276328+00:00 (updated-by): Updated: section:title, section:steps, section:validation, section:acceptance_criteria

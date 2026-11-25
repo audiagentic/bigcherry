@@ -19,7 +19,7 @@ An earlier branch groups every upstream unit into eight families (core, gemm_qua
 
 ## Steps
 
-1. Refresh the branch against main. 2. Full libr3 build and the component tests. 3. Record once: build time of one family from a cold and a warm cache against the full plugin, so the benefit is measured. 4. Merge.
+1. Refresh the branch against main. 2. Full libr3 build and the component tests. 3. Record cold and warm build time of one family against the full plugin, and report the include-graph closure per family (a changed shared header rebuilds which families). 4. Merge. The family targets are a development accelerator; they are not evidence that separate family libraries link (that is RCS22).
 
 ## Detailed Solution & Technical Design
 
@@ -47,7 +47,7 @@ Small; the branch is compile-only. One Ninja command per build directory.
 
 ## Acceptance Criteria
 
-The family targets are on main with a recorded one-family against full build time.
+The family targets are on main with a recorded one-family against full build time, cold and warm, and a family dependency-closure report.
 
 ## Notes
 
@@ -57,3 +57,4 @@ Design: docs/design/radiance-kernel-composition.md section 7.
 
 - 2026-11-25T00:40:47.022098+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:27.469152+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-25T00:52:40.010572+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria

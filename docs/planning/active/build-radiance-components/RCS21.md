@@ -47,13 +47,16 @@ Medium. Risk: a traits seam that costs registers; each port is gated on resource
 
 ## Acceptance Criteria
 
-The neutral changes have a single source for both architectures and a documented keep-local or offer-upstream decision each.
+A shared fused-tile source retains each architecture's native operand and accumulator representation, qualified geometry and dispatch certificate. Both architectures give byte-identical results with no measured performance regression (cold and warm replay) and unchanged control kernels. Resource records and instruction counts (WMMA, lane exchanges, barriers, loads, accumulator conversions) are compared with the shipped per-architecture versions and any difference is reviewed. The embedding butterflies and head prefetch are ported only after this first port shows zero regression.
 
 ## Notes
 
 Depends on RCS19 (anchor gate, naming). Evidence for each neutral change: the fused-prefill, embedding, head and weighted-head evidence notes.
 
+Review (2026-11-25): the traits layer must resolve at compile time and inline (no runtime trait object, no conversion through a common accumulator layout); the fused tile is neutral algorithm and policy with architecture-specific data motion; keep the qualified certificate (computed trellis forms, L=16 and the one L=15, scale classes, single band) rather than a broader traits-derived rule; launch bounds, wave count and shared memory placement stay part of the qualified design.
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:32.230236+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-25T00:52:44.694931+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
