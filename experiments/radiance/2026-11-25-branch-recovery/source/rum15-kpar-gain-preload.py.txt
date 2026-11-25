@@ -1,0 +1,44 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-factor-epilogue-kpar-preload-source/libr4d/r4d_gemm_fp8a8.hip")
+s=p.read_text()
+old="""    const uint32_t rt = blockIdx.x, ngrp = cols / SB, nunit = cols / kBlock;
+    const uint32_t ksuper = cols / r4d_fp8::kSuperK;
+    /* Token tile j is tokens 16 j .. 16 j + 15; a column past M reads token M - 1. */"""
+new="""    const uint32_t rt = blockIdx.x, ngrp = cols / SB, nunit = cols / kBlock;
+    const uint32_t ksuper = cols / r4d_fp8::kSuperK;
+    // RUM15 K-parallel experiment: issue the fixed row-gain memory load
+    // before K-group MMAs, not after the long K loop. It is one uint4
+    // covering eight BF16 values, held across K, then converted once.
+    uint4 gain_packed{};
+    if constexpr (SB == 256u) {
+        const uint16_t* gains = (const uint16_t*)
+            ((const uint8_t*)Sa + (size_t)rows * ngrp);
+        gain_packed = *(const uint4*)(gains + rt * 16u + acc_row(lane, 0));
+    }
+    /* Token tile j is tokens 16 j .. 16 j + 15; a column past M reads token M - 1. */"""
+assert s.count(old)==1,s.count(old)
+s=s.replace(old,new)
+old="""    if constexpr (SB == 256u) {
+        const uint16_t* gains = (const uint16_t*)
+            ((const uint8_t*)Sa + (size_t)rows * ngrp);
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j)
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                out[j][t] *= bscale(gains[rt * 16u + acc_row(lane, t)]);
+    }"""
+new="""    if constexpr (SB == 256u) {
+        const uint32_t packed[4] = {
+            gain_packed.x, gain_packed.y, gain_packed.z, gain_packed.w
+        };
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j)
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                out[j][t] *= bscale((uint16_t)
+                    (packed[t / 2u] >> (16u * (t % 2u))));
+    }"""
+assert s.count(old)==1,s.count(old)
+s=s.replace(old,new)
+p.write_text(s)
+print("K-parallel invariant gain 16B aligned read hoisted ahead of K MMA, deterministic F32 epilogue preserved",flush=True)

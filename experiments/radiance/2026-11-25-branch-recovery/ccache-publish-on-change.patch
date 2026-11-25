@@ -1,0 +1,35 @@
+diff --git a/.github/workflows/radiance-build.yml b/.github/workflows/radiance-build.yml
+index 1deafacdd..996f3b396 100644
+--- a/.github/workflows/radiance-build.yml
++++ b/.github/workflows/radiance-build.yml
+@@ -272,16 +272,28 @@ jobs:
+         continue-on-error: true
+         run: python3 .github/scripts/ci_build_profile.py work/builds
+ 
++      # The artifact is a copy of the cache for the lab; a build that missed nothing (every compile came from the restored
++      # cache) leaves it as the last published one, so packaging and uploading 0.3 to 5 GiB again adds nothing. The
++      # counters were zeroed at the start of the build and live in the cache directory, so the count is this build's.
++      # An unreadable count publishes (unknown is not "unchanged").
++      - name: Did the build change the cache
++        id: ccache_changed
++        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
++        run: |
++          misses=$(docker run --rm -e CCACHE_DIR=/src/work/.ccache -v "$GITHUB_WORKSPACE:/src" '${{ needs.image.outputs.image }}' ccache --print-stats | awk '$1 == "cache_miss" {print $2}')
++          echo "ccache misses this build: ${misses:-unreadable}"
++          if [ "${misses:-}" = "0" ]; then echo "changed=false" >> "$GITHUB_OUTPUT"; else echo "changed=true" >> "$GITHUB_OUTPUT"; fi
++
+       # Only main is a trusted seed: never publish a PR's compiler objects.
+       - name: Package ccache for the lab
+-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
++        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.ccache_changed.outputs.changed == 'true'
+         # fingerprint/compiler.json is written by root in Docker; packing on
+         # the host user failed with PermissionError on every main build.
+         run: |
+           docker run --rm -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' python3 tools/lab/radiance/ci_ccache.py pack --cache work/.ccache --out work/ci-ccache-artifact
+ 
+       - name: Publish verified main ccache
+-        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
++        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.ccache_changed.outputs.changed == 'true'
+         uses: actions/upload-artifact@v4
+         with:
+           name: radiance-ccache-main

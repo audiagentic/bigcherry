@@ -1,0 +1,1018 @@
+{
+  "counts": {
+    "total": 77,
+    "iq8r": 54
+  },
+  "stats": {
+    "all_iq8r": {
+      "count": 54,
+      "median_ratio": 1.0595895056093916,
+      "mean_delta_pct": 7.287044047824524,
+      "median_delta_pct": 5.958950560939158,
+      "min_delta_pct": -12.76391554702495,
+      "max_delta_pct": 35.641352903637525,
+      "median_stock_drift_abs_pct": 0.22888965726798327
+    },
+    "decode_m1_16": {
+      "count": 20,
+      "median_ratio": 0.9998896427015997,
+      "mean_delta_pct": 1.5562506245475767,
+      "median_delta_pct": -0.011035729840025432,
+      "min_delta_pct": -12.76391554702495,
+      "max_delta_pct": 10.911136107986486,
+      "median_stock_drift_abs_pct": 0.05574089259976489
+    },
+    "decode_m17_64": {
+      "count": 16,
+      "median_ratio": 1.0713358031968974,
+      "mean_delta_pct": 7.097776145513072,
+      "median_delta_pct": 7.133580319689726,
+      "min_delta_pct": -4.183308808072317,
+      "max_delta_pct": 22.889469103568306,
+      "median_stock_drift_abs_pct": 0.18252786126551346
+    },
+    "prefill_m65_plus": {
+      "count": 18,
+      "median_ratio": 1.0825099641489477,
+      "mean_delta_pct": 13.822830431297978,
+      "median_delta_pct": 8.250996414894773,
+      "min_delta_pct": 2.0327721155470435,
+      "max_delta_pct": 35.641352903637525,
+      "median_stock_drift_abs_pct": 0.44772920638991853
+    }
+  },
+  "rows": [
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 1,
+      "stock1_us": 4.3,
+      "f32_us": 4.71,
+      "stock2_us": 4.31,
+      "baseline_us": 4.305,
+      "f32_ratio": 1.094076655052265,
+      "f32_pct_delta": 9.407665505226493,
+      "stock_drift_pct": 0.23255813953488857
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 2,
+      "stock1_us": 4.32,
+      "f32_us": 4.74,
+      "stock2_us": 4.31,
+      "baseline_us": 4.3149999999999995,
+      "f32_ratio": 1.0984936268829666,
+      "f32_pct_delta": 9.849362688296658,
+      "stock_drift_pct": -0.23148148148149916
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 4,
+      "stock1_us": 4.35,
+      "f32_us": 4.77,
+      "stock2_us": 4.34,
+      "baseline_us": 4.345,
+      "f32_ratio": 1.097813578826237,
+      "f32_pct_delta": 9.781357882623709,
+      "stock_drift_pct": -0.22988505747125743
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 8,
+      "stock1_us": 4.42,
+      "f32_us": 4.89,
+      "stock2_us": 4.41,
+      "baseline_us": 4.415,
+      "f32_ratio": 1.1075877689694222,
+      "f32_pct_delta": 10.758776896942223,
+      "stock_drift_pct": -0.2262443438914019
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 9,
+      "stock1_us": 4.45,
+      "f32_us": 4.93,
+      "stock2_us": 4.44,
+      "baseline_us": 4.445,
+      "f32_ratio": 1.1091113610798649,
+      "f32_pct_delta": 10.911136107986486,
+      "stock_drift_pct": -0.22471910112359383
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 18,
+      "stock1_us": 5.14,
+      "f32_us": 5.88,
+      "stock2_us": 5.14,
+      "baseline_us": 5.14,
+      "f32_ratio": 1.143968871595331,
+      "f32_pct_delta": 14.39688715953309,
+      "stock_drift_pct": 0.0
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 32,
+      "stock1_us": 5.24,
+      "f32_us": 5.96,
+      "stock2_us": 5.25,
+      "baseline_us": 5.245,
+      "f32_ratio": 1.1363203050524309,
+      "f32_pct_delta": 13.632030505243087,
+      "stock_drift_pct": 0.190839694656475
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 33,
+      "stock1_us": 5.74,
+      "f32_us": 7.06,
+      "stock2_us": 5.75,
+      "baseline_us": 5.745,
+      "f32_ratio": 1.228894691035683,
+      "f32_pct_delta": 22.889469103568306,
+      "stock_drift_pct": 0.17421602787455193
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 64,
+      "stock1_us": 9.03,
+      "f32_us": 10.29,
+      "stock2_us": 9.02,
+      "baseline_us": 9.024999999999999,
+      "f32_ratio": 1.1401662049861496,
+      "f32_pct_delta": 14.016620498614962,
+      "stock_drift_pct": -0.11074197120708451
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 1,
+      "stock1_us": 35.27,
+      "f32_us": 35.32,
+      "stock2_us": 35.15,
+      "baseline_us": 35.21,
+      "f32_ratio": 1.0031241124680488,
+      "f32_pct_delta": 0.31241124680487786,
+      "stock_drift_pct": -0.34023249220301865
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 2,
+      "stock1_us": 35.2,
+      "f32_us": 35.26,
+      "stock2_us": 35.2,
+      "baseline_us": 35.2,
+      "f32_ratio": 1.0017045454545452,
+      "f32_pct_delta": 0.17045454545452365,
+      "stock_drift_pct": 0.0
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 4,
+      "stock1_us": 35.3,
+      "f32_us": 35.37,
+      "stock2_us": 35.28,
+      "baseline_us": 35.29,
+      "f32_ratio": 1.0022669311419665,
+      "f32_pct_delta": 0.22669311419665217,
+      "stock_drift_pct": -0.05665722379601945
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 8,
+      "stock1_us": 36.41,
+      "f32_us": 36.36,
+      "stock2_us": 46.95,
+      "baseline_us": 41.68,
+      "f32_ratio": 0.8723608445297505,
+      "f32_pct_delta": -12.76391554702495,
+      "stock_drift_pct": 28.948091183740754
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 9,
+      "stock1_us": 36.48,
+      "f32_us": 35.94,
+      "stock2_us": 36.5,
+      "baseline_us": 36.489999999999995,
+      "f32_ratio": 0.9849273773636613,
+      "f32_pct_delta": -1.5072622636338684,
+      "stock_drift_pct": 0.05482456140351033
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 18,
+      "stock1_us": 38.92,
+      "f32_us": 40.91,
+      "stock2_us": 39.03,
+      "baseline_us": 38.975,
+      "f32_ratio": 1.0496472097498395,
+      "f32_pct_delta": 4.964720974983949,
+      "stock_drift_pct": 0.28263103802672607
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 32,
+      "stock1_us": 39.79,
+      "f32_us": 42.46,
+      "stock2_us": 40.11,
+      "baseline_us": 39.95,
+      "f32_ratio": 1.062828535669587,
+      "f32_pct_delta": 6.282853566958702,
+      "stock_drift_pct": 0.8042221663734583
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 33,
+      "stock1_us": 42.78,
+      "f32_us": 50.92,
+      "stock2_us": 51.53,
+      "baseline_us": 47.155,
+      "f32_ratio": 1.0798430707242075,
+      "f32_pct_delta": 7.984307072420749,
+      "stock_drift_pct": 20.45348293595137
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 64,
+      "stock1_us": 73.78,
+      "f32_us": 68.37,
+      "stock2_us": 68.93,
+      "baseline_us": 71.355,
+      "f32_ratio": 0.9581669119192768,
+      "f32_pct_delta": -4.183308808072317,
+      "stock_drift_pct": -6.5735971808078
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 1,
+      "stock1_us": 135.35,
+      "f32_us": 135.28,
+      "stock2_us": 135.28,
+      "baseline_us": 135.315,
+      "f32_ratio": 0.9997413442707757,
+      "f32_pct_delta": -0.02586557292243441,
+      "stock_drift_pct": -0.0517177687476833
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 2,
+      "stock1_us": 135.63,
+      "f32_us": 135.57,
+      "stock2_us": 135.62,
+      "baseline_us": 135.625,
+      "f32_ratio": 0.9995944700460829,
+      "f32_pct_delta": -0.0405529953917072,
+      "stock_drift_pct": -0.007373000073718217
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 4,
+      "stock1_us": 136.13,
+      "f32_us": 136.09,
+      "stock2_us": 136.12,
+      "baseline_us": 136.125,
+      "f32_ratio": 0.999742883379247,
+      "f32_pct_delta": -0.025711662075300623,
+      "stock_drift_pct": -0.007345919341794627
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 8,
+      "stock1_us": 137.37,
+      "f32_us": 137.36,
+      "stock2_us": 137.34,
+      "baseline_us": 137.35500000000002,
+      "f32_ratio": 1.0000364020239525,
+      "f32_pct_delta": 0.0036402023952497586,
+      "stock_drift_pct": -0.021838829438747265
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 9,
+      "stock1_us": 137.31,
+      "f32_us": 137.55,
+      "stock2_us": 137.36,
+      "baseline_us": 137.335,
+      "f32_ratio": 1.0015655149816143,
+      "f32_pct_delta": 0.156551498161428,
+      "stock_drift_pct": 0.036413953827119094
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 18,
+      "stock1_us": 140.15,
+      "f32_us": 139.69,
+      "stock2_us": 140.06,
+      "baseline_us": 140.10500000000002,
+      "f32_ratio": 0.9970379358338387,
+      "f32_pct_delta": -0.29620641661612934,
+      "stock_drift_pct": -0.06421691045308542
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 32,
+      "stock1_us": 142.53,
+      "f32_us": 141.81,
+      "stock2_us": 142.64,
+      "baseline_us": 142.58499999999998,
+      "f32_ratio": 0.9945646456499634,
+      "f32_pct_delta": -0.5435354350036614,
+      "stock_drift_pct": 0.07717673472249498
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 33,
+      "stock1_us": 143.67,
+      "f32_us": 143.25,
+      "stock2_us": 143.58,
+      "baseline_us": 143.625,
+      "f32_ratio": 0.9973890339425587,
+      "f32_pct_delta": -0.26109660574412663,
+      "stock_drift_pct": -0.06264355815408518
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 64,
+      "stock1_us": 146.69,
+      "f32_us": 144.92,
+      "stock2_us": 146.65,
+      "baseline_us": 146.67000000000002,
+      "f32_ratio": 0.9880684529897046,
+      "f32_pct_delta": -1.1931547010295418,
+      "stock_drift_pct": -0.02726838911990548
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 1,
+      "stock1_us": 19.29,
+      "f32_us": 19.29,
+      "stock2_us": 19.33,
+      "baseline_us": 19.31,
+      "f32_ratio": 0.9989642672190575,
+      "f32_pct_delta": -0.10357327809424888,
+      "stock_drift_pct": 0.20736132711249855
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 2,
+      "stock1_us": 19.45,
+      "f32_us": 19.34,
+      "stock2_us": 19.44,
+      "baseline_us": 19.445,
+      "f32_ratio": 0.9946001542813062,
+      "f32_pct_delta": -0.5399845718693785,
+      "stock_drift_pct": -0.051413881748063606
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 4,
+      "stock1_us": 19.53,
+      "f32_us": 19.39,
+      "stock2_us": 19.54,
+      "baseline_us": 19.535,
+      "f32_ratio": 0.9925774251343742,
+      "f32_pct_delta": -0.7422574865625808,
+      "stock_drift_pct": 0.05120327700971483
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 8,
+      "stock1_us": 19.6,
+      "f32_us": 19.18,
+      "stock2_us": 19.64,
+      "baseline_us": 19.62,
+      "f32_ratio": 0.9775739041794087,
+      "f32_pct_delta": -2.2426095820591296,
+      "stock_drift_pct": 0.20408163265306367
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 9,
+      "stock1_us": 19.7,
+      "f32_us": 19.22,
+      "stock2_us": 19.71,
+      "baseline_us": 19.705,
+      "f32_ratio": 0.9753869576249683,
+      "f32_pct_delta": -2.46130423750317,
+      "stock_drift_pct": 0.05076142131981154
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 18,
+      "stock1_us": 21.94,
+      "f32_us": 22.83,
+      "stock2_us": 21.99,
+      "baseline_us": 21.965,
+      "f32_ratio": 1.0393808331436376,
+      "f32_pct_delta": 3.9380833143637606,
+      "stock_drift_pct": 0.22789425706470912
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 32,
+      "stock1_us": 22.65,
+      "f32_us": 24.93,
+      "stock2_us": 22.65,
+      "baseline_us": 22.65,
+      "f32_ratio": 1.1006622516556293,
+      "f32_pct_delta": 10.066225165562926,
+      "stock_drift_pct": 0.0
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 33,
+      "stock1_us": 27.1,
+      "f32_us": 30.06,
+      "stock2_us": 27.24,
+      "baseline_us": 27.17,
+      "f32_ratio": 1.1063673168936325,
+      "f32_pct_delta": 10.636731689363256,
+      "stock_drift_pct": 0.5166051660516535
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_nt_m16",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 64,
+      "stock1_us": 38.9,
+      "f32_us": 43.32,
+      "stock2_us": 38.99,
+      "baseline_us": 38.945,
+      "f32_ratio": 1.1123379124406214,
+      "f32_pct_delta": 11.233791244062141,
+      "stock_drift_pct": 0.23136246786632508
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 65,
+      "stock1_us": 30.71,
+      "f32_us": 40.91,
+      "stock2_us": 30.58,
+      "baseline_us": 30.645,
+      "f32_ratio": 1.3349649208680046,
+      "f32_pct_delta": 33.49649208680046,
+      "stock_drift_pct": -0.4233148811462195
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 128,
+      "stock1_us": 31.34,
+      "f32_us": 42.51,
+      "stock2_us": 31.34,
+      "baseline_us": 31.34,
+      "f32_ratio": 1.3564135290363752,
+      "f32_pct_delta": 35.641352903637525,
+      "stock_drift_pct": 0.0
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 129,
+      "stock1_us": 31.77,
+      "f32_us": 42.69,
+      "stock2_us": 31.62,
+      "baseline_us": 31.695,
+      "f32_ratio": 1.3469001419782298,
+      "f32_pct_delta": 34.69001419782298,
+      "stock_drift_pct": -0.47214353163361755
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 258,
+      "stock1_us": 32.6,
+      "f32_us": 43.32,
+      "stock2_us": 32.98,
+      "baseline_us": 32.79,
+      "f32_ratio": 1.3211344922232389,
+      "f32_pct_delta": 32.11344922232389,
+      "stock_drift_pct": 1.1656441717791344
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "1024",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 512,
+      "stock1_us": 38.45,
+      "f32_us": 44.7,
+      "stock2_us": 38.85,
+      "baseline_us": 38.650000000000006,
+      "f32_ratio": 1.1565329883570503,
+      "f32_pct_delta": 15.653298835705032,
+      "stock_drift_pct": 1.040312093628093
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 65,
+      "stock1_us": 87.18,
+      "f32_us": 90.6,
+      "stock2_us": 90.41,
+      "baseline_us": 88.795,
+      "f32_ratio": 1.0203277211554704,
+      "f32_pct_delta": 2.0327721155470435,
+      "stock_drift_pct": 3.704978206010545
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 128,
+      "stock1_us": 89.16,
+      "f32_us": 94.68,
+      "stock2_us": 96.38,
+      "baseline_us": 92.77,
+      "f32_ratio": 1.0205885523337286,
+      "f32_pct_delta": 2.0588552333728583,
+      "stock_drift_pct": 8.097801704800368
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 129,
+      "stock1_us": 160.16,
+      "f32_us": 170.79,
+      "stock2_us": 159.86,
+      "baseline_us": 160.01,
+      "f32_ratio": 1.0673707893256672,
+      "f32_pct_delta": 6.73707893256672,
+      "stock_drift_pct": -0.18731268731267958
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 258,
+      "stock1_us": 238.07,
+      "f32_us": 251.01,
+      "stock2_us": 237.17,
+      "baseline_us": 237.62,
+      "f32_ratio": 1.0563504755491961,
+      "f32_pct_delta": 5.635047554919614,
+      "stock_drift_pct": -0.3780400722476651
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "12288",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 512,
+      "stock1_us": 328.72,
+      "f32_us": 337.42,
+      "stock2_us": 329.55,
+      "baseline_us": 329.135,
+      "f32_ratio": 1.025172041867319,
+      "f32_pct_delta": 2.5172041867318917,
+      "stock_drift_pct": 0.25249452421514107
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 65,
+      "stock1_us": 164.64,
+      "f32_us": 178.69,
+      "stock2_us": 165.17,
+      "baseline_us": 164.90499999999997,
+      "f32_ratio": 1.0835935841848339,
+      "f32_pct_delta": 8.359358418483387,
+      "stock_drift_pct": 0.32191448007774515
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 128,
+      "stock1_us": 177.88,
+      "f32_us": 184.88,
+      "stock2_us": 177.27,
+      "baseline_us": 177.575,
+      "f32_ratio": 1.0411375475151345,
+      "f32_pct_delta": 4.113754751513454,
+      "stock_drift_pct": -0.3429278165055005
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "5120",
+        "N": "16384",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 129,
+      "stock1_us": 213.75,
+      "f32_us": 228.0,
+      "stock2_us": 212.13,
+      "baseline_us": 212.94,
+      "f32_ratio": 1.0707241476472247,
+      "f32_pct_delta": 7.072414764722468,
+      "stock_drift_pct": -0.7578947368421018
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 65,
+      "stock1_us": 59.45,
+      "f32_us": 69.04,
+      "stock2_us": 59.81,
+      "baseline_us": 59.63,
+      "f32_ratio": 1.157806473251719,
+      "f32_pct_delta": 15.780647325171904,
+      "stock_drift_pct": 0.6055508830950407
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 128,
+      "stock1_us": 60.88,
+      "f32_us": 69.95,
+      "stock2_us": 61.08,
+      "baseline_us": 60.980000000000004,
+      "f32_ratio": 1.1470974089865529,
+      "f32_pct_delta": 14.709740898655287,
+      "stock_drift_pct": 0.3285151116951379
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 129,
+      "stock1_us": 99.27,
+      "f32_us": 107.51,
+      "stock2_us": 99.56,
+      "baseline_us": 99.41499999999999,
+      "f32_ratio": 1.0814263441130616,
+      "f32_pct_delta": 8.14263441130616,
+      "stock_drift_pct": 0.29213256774454077
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 258,
+      "stock1_us": 139.12,
+      "f32_us": 158.52,
+      "stock2_us": 142.52,
+      "baseline_us": 140.82,
+      "f32_ratio": 1.1256923732424373,
+      "f32_pct_delta": 12.569237324243732,
+      "stock_drift_pct": 2.443933294997125
+    },
+    {
+      "op": "gemm_nt_q",
+      "kernel": "gemm_iq8r_tiled",
+      "params": {
+        "K": "6144",
+        "N": "5120",
+        "dtype": "i8a8h",
+        "group": "256"
+      },
+      "size": 512,
+      "stock1_us": 175.86,
+      "f32_us": 193.87,
+      "stock2_us": 184.87,
+      "baseline_us": 180.365,
+      "f32_ratio": 1.074875945998392,
+      "f32_pct_delta": 7.487594599839209,
+      "stock_drift_pct": 5.123393608552251
+    }
+  ]
+}
