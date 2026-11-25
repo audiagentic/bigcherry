@@ -7,6 +7,7 @@
 #include "live_policy_ingest.h"
 #include "calibration_watch.h"
 #include "manifest_writer.h"
+#include "v2/helper_settings.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
 #include "resources.h"
@@ -1773,7 +1774,7 @@ class Owner {
             }
             const pid_t pid = spawn(
                 h.argv, child_environment(environ, h.runtime), log, [&](pid_t p) { track(h.role, p, log); },
-                plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
+                h.settings ? h.settings->descriptor() : -1);
             const auto deadline = Clock::now() + s_.timing.helper_timeout;
             bool ready = false;
             while (Clock::now() < deadline) {
@@ -2661,8 +2662,10 @@ struct HelperSelection {
     const Json& facts;
 };
 
+// The helpers' typed settings come from the manifest the owner holds in memory (helper_settings, HIP-free), one sealed
+// descriptor per helper; the helper never opens a manifest.
 std::vector<HelperStart> helper_starts(HelperSelection selected, const fs::path& home,
-                                       const fs::path& helper_binary, const fs::path& manifest,
+                                       const fs::path& helper_binary, const v2::Manifest& manifest,
                                        bool measuring) {
     const Json& processes = selected.processes;
     const Json& facts = selected.facts;
@@ -2680,9 +2683,12 @@ std::vector<HelperStart> helper_starts(HelperSelection selected, const fs::path&
                              ": BDF/ordinal/architecture changed since the resolver selected it");
         HelperStart h;
         h.role = "helper" + std::to_string(i);
-        h.argv = {helper_binary.string(), "--manifest", manifest.string(), "--role", h.role};
-        if (measuring)
-            h.argv.push_back("--measuring");
+        auto settings = helper_settings(manifest, h.role);
+        if (!settings)
+            throw PlanFailed(v2::render_human("helper settings", settings.error()));
+        settings.value().measuring = measuring;
+        h.settings = std::make_shared<PinnedManifest>(helper_settings_to_json(settings.value()).dump());
+        h.argv = {helper_binary.string(), "--settings-fd", std::to_string(h.settings->descriptor()), "--role", h.role};
         h.runtime = {{"RADIANCE_HOME", home.string()},
                      {"ROCR_VISIBLE_DEVICES", std::to_string(worker.at("hip_ordinal").get<int>())},
                      {"HIP_VISIBLE_DEVICES", "0"}};
@@ -2714,7 +2720,7 @@ void require_segment(const std::string& name) {
 }
 
 void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::path& run_dir,
-                            const Hooks& hooks, std::vector<pid_t>* pids, int inherited_manifest_fd) {
+                            const Hooks& hooks, std::vector<pid_t>* pids) {
     for (const HelperStart& h : helpers) {
         const fs::path log = run_dir / (h.role + "-measuring-" + stamp() + ".log");
         {
@@ -2727,7 +2733,7 @@ void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::p
                 require_callback(hooks.started.invoke("session.hooks.started", ChildKind::measuring_helper,
                                                       h.role + " measuring", p, log),
                                  "hooks.started");
-        }, inherited_manifest_fd);
+        }, h.settings ? h.settings->descriptor() : -1);
         pids->push_back(pid);
         const auto deadline = Clock::now() + std::chrono::minutes(15);
         bool ready = false;
@@ -3457,10 +3463,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             write_atomic(attempt_dir / "carried-from.json", carried->provenance().dump(2) + "\n");
         } else {
         const auto measuring_helpers = helper_starts(
-            {processes, current_facts}, frozen_runtime_home, helper_binary, measuring_execution, true);
+            {processes, current_facts}, frozen_runtime_home, helper_binary, verified.parsed, true);
         const auto baseline = measure_helper_baseline(processes, in);
         MeasuringHelpers group(hooks);
-        launch_measure_helpers(measuring_helpers, run_dir, hooks, &group.pids, verified.pinned->descriptor());
+        launch_measure_helpers(measuring_helpers, run_dir, hooks, &group.pids);
         measured_helpers_mib = helper_resident_mib(group.pids);
         require_segment(handoff);
         launch.root.require_matches(snapshot.resolution_root());
@@ -3664,7 +3670,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.pinned_manifest = std::move(final_snapshot.pinned);
         out.argv = {absolute_engine.string(), "--manifest", out.execution_manifest().string(), "--role", "engine"};
         out.helpers = helper_starts({processes, after_facts}, frozen_runtime_home, helper_binary,
-                                    out.execution_manifest(), false);
+                                    final_snapshot.parsed, false);
         out.native_helper_resident_mib = measured_helpers_mib;
         out.handoff_shm = handoff;
         out.summary["plan_measurement_attempt"] = attempt_id;
@@ -3972,7 +3978,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (!native_helper_build.empty() && file_sha256(helper_binary) != native_helper_build)
         throw PlanFailed("replay: native helper build changed during admission");
     out.helpers = helper_starts({current_config->manifest.at("process_helpers"), facts}, native_runtime_home,
-                                fs::absolute(helper_binary), out.execution_manifest(), false);
+                                fs::absolute(helper_binary), accepted, false);
     if (accepted.spec.handoff) {
         out.handoff_shm = accepted.spec.handoff->transport.shm;
         if (!hooks.selected_segment)
@@ -4001,5 +4007,55 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                                    const Hooks& hooks) {
     return replay_stored_manifest(given, run_dir, hooks, nullptr);
 }
+
+// `bc-serve helper-exec MANIFEST ROLE [--measuring] -- WORKER [ARGS...]`: for the lab scripts that run one helper alone
+// (replays, sweeps, profiling). It does what the owner does for a helper, no more: read the manifest, take the role's
+// typed settings, seal them in a memfd and exec the worker with --settings-fd. The worker never opens a manifest.
+int helper_exec_command(int argc, char** argv) {
+    // argv: bc-serve helper-exec MANIFEST ROLE [--measuring] -- WORKER ARGS...
+    int i = 2;
+    if (argc < i + 4) {
+        std::fprintf(stderr, "usage: bc-serve helper-exec MANIFEST helperN [--measuring] -- WORKER [ARGS...]\n");
+        return 2;
+    }
+    const fs::path manifest_path = argv[i++];
+    const std::string role = argv[i++];
+    bool measuring = false;
+    if (i < argc && std::strcmp(argv[i], "--measuring") == 0) {
+        measuring = true;
+        ++i;
+    }
+    if (i >= argc || std::strcmp(argv[i], "--") != 0 || i + 1 >= argc) {
+        std::fprintf(stderr, "bc-serve helper-exec: the worker command follows --\n");
+        return 2;
+    }
+    ++i;
+    auto manifest = v2::load_manifest(manifest_path, measuring ? v2::PlanUse::measuring : v2::PlanUse::serving);
+    if (!manifest) {
+        std::fputs(v2::render_human("bc-serve helper-exec", manifest.error()).c_str(), stderr);
+        return v2::exit_code_of(manifest.error());
+    }
+    auto settings = helper_settings(manifest.value(), role);
+    if (!settings) {
+        std::fputs(v2::render_human("bc-serve helper-exec", settings.error()).c_str(), stderr);
+        return v2::exit_code_of(settings.error());
+    }
+    settings.value().measuring = measuring;
+    PinnedManifest sealed(helper_settings_to_json(settings.value()).dump());
+    const int flags = ::fcntl(sealed.descriptor(), F_GETFD);
+    if (flags < 0 || ::fcntl(sealed.descriptor(), F_SETFD, flags & ~FD_CLOEXEC) != 0) {
+        std::fprintf(stderr, "bc-serve helper-exec: cannot hand the settings descriptor to the worker\n");
+        return 2;
+    }
+    const std::string fd_text = std::to_string(sealed.descriptor());
+    std::vector<char*> args{argv[i], const_cast<char*>("--settings-fd"), const_cast<char*>(fd_text.c_str()),
+                            const_cast<char*>("--role"), const_cast<char*>(role.c_str())};
+    for (int k = i + 1; k < argc; ++k) args.push_back(argv[k]);
+    args.push_back(nullptr);
+    ::execv(args[0], args.data());
+    std::fprintf(stderr, "bc-serve helper-exec: cannot start %s: %s\n", args[0], std::strerror(errno));
+    return 2;
+}
+
 
 } // namespace bc::serving::session

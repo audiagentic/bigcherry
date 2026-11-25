@@ -1,6 +1,15 @@
 #include "helper_settings.h"
 
 #include <algorithm>
+#include <cmath>
+#include <limits>
+#include <regex>
+#include <set>
+#include <type_traits>
+
+#include "document_bytes.h"
+#include "serving_codec.h"
+#include "strict_json.h"
 
 namespace bc::serving {
 namespace {
@@ -26,7 +35,6 @@ v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_vi
 
     HelperSettings s;
     s.role = std::string(role);
-    s.content_sha256 = m.metadata.content_digest;
     s.model = m.spec.intent.model;
     s.plan_cache_key = v2::plan_cache_key(m);
     s.layout = m.spec.intent.layout;
@@ -110,6 +118,264 @@ v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_vi
         }
     }
     return s;
+}
+
+namespace {
+using Json = nlohmann::json;
+struct Fault {
+    v2::ConfigErrorCode code;
+    std::string path, message;
+};
+
+// Reads one closed JSON object: every member is asked for by name (a missing one is a fault) and done() refuses the rest.
+class Wire {
+  public:
+    Wire(const Json& object, std::string path) : o_(object), path_(std::move(path)) {
+        if (!o_.is_object()) throw Fault{v2::ConfigErrorCode::invalid_type, path_, "expected an object"};
+    }
+    const Json& at(const char* key) {
+        if (!o_.contains(key)) throw Fault{v2::ConfigErrorCode::missing_field, path_ + "." + key, "missing"};
+        used_.insert(key);
+        return o_.at(key);
+    }
+    bool boolean(const char* key) {
+        const Json& v = at(key);
+        if (!v.is_boolean()) bad(key, "a boolean");
+        return v.get<bool>();
+    }
+    std::string text(const char* key) {
+        const Json& v = at(key);
+        if (!v.is_string()) bad(key, "a string");
+        return v.get<std::string>();
+    }
+    uint64_t u64(const char* key, uint64_t max = UINT64_MAX) {
+        const Json& v = at(key);
+        if (!v.is_number_unsigned() || v.get<uint64_t>() > max) bad(key, "an unsigned integer in range");
+        return v.get<uint64_t>();
+    }
+    uint32_t u32(const char* key) { return static_cast<uint32_t>(u64(key, UINT32_MAX)); }
+    double real(const char* key) {
+        const Json& v = at(key);
+        if (!v.is_number()) bad(key, "a number");
+        return v.get<double>();
+    }
+    template <class T>
+    std::vector<T> list(const char* key) {
+        const Json& v = at(key);
+        if (!v.is_array()) bad(key, "an array");
+        std::vector<T> out;
+        for (const Json& e : v) {
+            if constexpr (std::is_same_v<T, double>) {
+                if (!e.is_number()) bad(key, "an array of numbers");
+                out.push_back(e.get<double>());
+            } else {
+                if (!e.is_number_unsigned() || e.get<uint64_t>() > std::numeric_limits<T>::max())
+                    bad(key, "an array of unsigned integers in range");
+                out.push_back(static_cast<T>(e.get<uint64_t>()));
+            }
+        }
+        return out;
+    }
+    std::string path(const char* key) const { return path_ + "." + key; }
+    void done() const {
+        for (auto it = o_.begin(); it != o_.end(); ++it)
+            if (!used_.count(it.key())) throw Fault{v2::ConfigErrorCode::unknown_field, path_ + "." + it.key(), "unknown member"};
+    }
+
+  private:
+    [[noreturn]] void bad(const char* key, const char* want) const {
+        throw Fault{v2::ConfigErrorCode::invalid_type, path_ + "." + key, std::string("expected ") + want};
+    }
+    const Json& o_;
+    std::string path_;
+    std::set<std::string> used_;
+};
+
+template <class T>
+std::optional<T> nested(Wire& w, const char* key) {
+    const Json& v = w.at(key);
+    if (v.is_null()) return std::nullopt;
+    T out{};
+    if (const auto e = v2::decode(v, w.path(key), &out)) throw Fault{e->code, e->path, e->message};
+    return out;
+}
+}  // namespace
+
+Json helper_settings_to_json(const HelperSettings& s) {
+    Json o;
+    o["helper"] = {{"count", s.helper.count}, {"index", s.helper.index}, {"engine_ranks", s.helper.engine_ranks},
+                   {"cpu", s.helper.cpu}, {"power_save", s.helper.power_save}, {"queue_warm", s.helper.queue_warm},
+                   {"combine", s.helper.combine}, {"combine_min_rows", s.helper.combine_min_rows},
+                   {"combine_threads", s.helper.combine_threads}, {"cpu_set_auto", s.helper.cpu_set_auto}};
+    o["handoff"] = {{"shm", s.handoff.shm}, {"heat", s.handoff.heat}, {"histogram", s.handoff.histogram},
+                    {"placement", s.handoff.placement}, {"max_rows", s.handoff.max_rows},
+                    {"small_rows", s.handoff.small_rows}, {"gemv_large_rows", s.handoff.gemv_large_rows},
+                    {"histogram_period_s", s.handoff.histogram_period_s}, {"moe_down_tile", s.handoff.moe_down_tile},
+                    {"skip_owned", s.handoff.skip_owned}};
+    o["role"] = s.role;
+    o["model"] = s.model;
+    o["radiance_home"] = s.radiance_home;
+    o["measuring"] = s.measuring;
+    o["plan_cache_key"] = s.plan_cache_key;
+    o["layout"] = s.layout;
+    o["objective"] = s.objective;
+    o["lab_profile"] = s.lab_profile;
+    o["plugin"] = s.plugin;
+    o["plugin_file"] = s.plugin_file;
+    o["formats"] = s.formats;
+    o["budgets_mib"] = s.budgets_mib;
+    o["shares"] = s.shares;
+    // The wire is integer-only like every v2 document: speeds travel in thousandths, as the manifest holds them.
+    Json speeds = Json::array();
+    for (double v : s.balance_speeds) speeds.push_back(static_cast<uint64_t>(std::llround(v * 1000.0)));
+    o["balance_speeds_milli"] = speeds;
+    o["small_lanes"] = s.small_lanes;
+    o["budget_mib"] = s.budget_mib;
+    o["gemv"] = s.gemv;
+    o["gemv_h2"] = s.gemv_h2;
+    o["moe_form"] = s.moe_form;
+    o["moe_long_rows"] = s.moe_long_rows;
+    o["gemv_wide"] = s.gemv_wide;
+    o["gemv_w4h2"] = s.gemv_w4h2;
+    o["gemv_mr"] = s.gemv_mr;
+    o["rows"] = s.rows;
+    o["rows_small"] = s.rows_small;
+    o["rows_kernel"] = s.rows_kernel;
+    o["fuseroute"] = s.fuseroute;
+    o["vecio"] = s.vecio;
+    o["sparse_act"] = s.sparse_act;
+    o["lane_quant"] = s.lane_quant;
+    o["native"] = s.native;
+    o["fp16"] = s.fp16;
+    o["ahalf"] = s.ahalf;
+    o["balance"] = s.balance;
+    o["capture"] = s.capture;
+    o["poison"] = s.poison;
+    o["test_stop_at"] = s.test_stop_at;
+    o["capture_every"] = s.capture_every;
+    o["capture_max"] = s.capture_max;
+    o["trace"] = s.trace;
+    o["moe_probe"] = s.moe_probe;
+    o["refusal_trace"] = s.refusal_trace;
+    o["sweep_fast"] = s.sweep_fast;
+    o["live_policy"] = s.live_policy ? v2::encode(*s.live_policy) : Json(nullptr);
+    o["live_calibration"] = s.live_calibration ? v2::encode(*s.live_calibration) : Json(nullptr);
+    o["forced"] = s.forced ? v2::encode(*s.forced) : Json(nullptr);
+    o["epoch_cycle_s"] = s.epoch_cycle_s;
+    return o;
+}
+
+v2::Result<HelperSettings> helper_settings_from_json(const Json& j) {
+    try {
+        Wire w(j, "helper_settings");
+        HelperSettings s;
+        {
+            Wire h(w.at("helper"), "helper_settings.helper");
+            s.helper.count = h.u32("count");
+            s.helper.index = h.u32("index");
+            s.helper.engine_ranks = h.u32("engine_ranks");
+            s.helper.cpu = h.boolean("cpu");
+            s.helper.power_save = h.boolean("power_save");
+            s.helper.queue_warm = h.boolean("queue_warm");
+            s.helper.combine = h.boolean("combine");
+            s.helper.combine_min_rows = h.u32("combine_min_rows");
+            s.helper.combine_threads = h.u32("combine_threads");
+            s.helper.cpu_set_auto = h.boolean("cpu_set_auto");
+            h.done();
+        }
+        {
+            Wire h(w.at("handoff"), "helper_settings.handoff");
+            s.handoff.shm = h.text("shm");
+            s.handoff.heat = h.text("heat");
+            s.handoff.histogram = h.text("histogram");
+            s.handoff.placement = h.text("placement");
+            s.handoff.max_rows = h.u32("max_rows");
+            s.handoff.small_rows = h.u32("small_rows");
+            s.handoff.gemv_large_rows = h.u32("gemv_large_rows");
+            s.handoff.histogram_period_s = h.u32("histogram_period_s");
+            s.handoff.moe_down_tile = h.u32("moe_down_tile");
+            s.handoff.skip_owned = h.boolean("skip_owned");
+            h.done();
+        }
+        s.role = w.text("role");
+        s.model = w.text("model");
+        s.radiance_home = w.text("radiance_home");
+        s.measuring = w.boolean("measuring");
+        s.plan_cache_key = w.text("plan_cache_key");
+        s.layout = w.text("layout");
+        s.objective = w.text("objective");
+        s.lab_profile = w.boolean("lab_profile");
+        s.plugin = w.text("plugin");
+        s.plugin_file = w.text("plugin_file");
+        s.formats = w.text("formats");
+        s.budgets_mib = w.list<uint64_t>("budgets_mib");
+        s.shares = w.list<uint64_t>("shares");
+        for (uint64_t milli : w.list<uint64_t>("balance_speeds_milli")) s.balance_speeds.push_back(static_cast<double>(milli) / 1000.0);
+        s.small_lanes = w.list<uint32_t>("small_lanes");
+        s.budget_mib = w.u64("budget_mib");
+        s.gemv = w.u32("gemv");
+        s.gemv_h2 = w.u32("gemv_h2");
+        s.moe_form = w.u32("moe_form");
+        s.moe_long_rows = w.u32("moe_long_rows");
+        s.gemv_wide = w.boolean("gemv_wide");
+        s.gemv_w4h2 = w.boolean("gemv_w4h2");
+        s.gemv_mr = w.boolean("gemv_mr");
+        s.rows = w.boolean("rows");
+        s.rows_small = w.boolean("rows_small");
+        s.rows_kernel = w.boolean("rows_kernel");
+        s.fuseroute = w.boolean("fuseroute");
+        s.vecio = w.boolean("vecio");
+        s.sparse_act = w.boolean("sparse_act");
+        s.lane_quant = w.boolean("lane_quant");
+        s.native = w.boolean("native");
+        s.fp16 = w.boolean("fp16");
+        s.ahalf = w.boolean("ahalf");
+        s.balance = w.boolean("balance");
+        s.capture = w.text("capture");
+        s.poison = w.text("poison");
+        s.test_stop_at = w.text("test_stop_at");
+        s.capture_every = w.u32("capture_every");
+        s.capture_max = w.u32("capture_max");
+        s.trace = w.u32("trace");
+        s.moe_probe = w.u32("moe_probe");
+        s.refusal_trace = w.boolean("refusal_trace");
+        s.sweep_fast = w.boolean("sweep_fast");
+        s.live_policy = nested<v2::LivePolicy>(w, "live_policy");
+        s.live_calibration = nested<v2::LiveCalibration>(w, "live_calibration");
+        s.forced = nested<v2::ForcedChurn>(w, "forced");
+        s.epoch_cycle_s = w.u32("epoch_cycle_s");
+        w.done();
+        // What the owner promised and the process was started as must agree before anything touches a device.
+        static const std::regex role_form("^helper[0-9]+$");
+        if (!std::regex_match(s.role, role_form))
+            throw Fault{v2::ConfigErrorCode::invalid_value, "helper_settings.role", "not a helper role: " + s.role};
+        if (s.helper.count == 0 || s.helper.index >= s.helper.count || s.role != "helper" + std::to_string(s.helper.index))
+            throw Fault{v2::ConfigErrorCode::ownership_mismatch, "helper_settings.helper",
+                        "index " + std::to_string(s.helper.index) + " of " + std::to_string(s.helper.count) +
+                            " helpers does not match role " + s.role};
+        if (s.budgets_mib.size() != s.helper.count || s.shares.size() != s.helper.count ||
+            s.budget_mib != s.budgets_mib[s.helper.index])
+            throw Fault{v2::ConfigErrorCode::ownership_mismatch, "helper_settings.budgets_mib",
+                        "the budgets and shares do not describe this helper's place among " +
+                            std::to_string(s.helper.count)};
+        if (s.handoff.shm.size() < 2 || s.handoff.shm.front() != '/')
+            throw Fault{v2::ConfigErrorCode::invalid_value, "helper_settings.handoff.shm", "not a shared-memory segment name"};
+        return s;
+    } catch (const Fault& f) {
+        return v2::make_error(f.code, f.path, f.message);
+    }
+}
+
+v2::Result<HelperSettings> read_helper_settings(int fd) {
+    std::string bytes;
+    try {
+        bytes = v2::read_sealed_document(fd, "helper settings descriptor");
+    } catch (const std::exception& e) {
+        return v2::make_error(v2::ConfigErrorCode::io_failure, "helper_settings", e.what());
+    }
+    auto parsed = v2::parse_strict_json(bytes, "helper settings descriptor");
+    if (!parsed) return parsed.error();
+    return helper_settings_from_json(parsed.value());
 }
 
 v2::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v2::PlanUse use) {

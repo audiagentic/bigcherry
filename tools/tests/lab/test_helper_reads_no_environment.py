@@ -82,12 +82,13 @@ class HelperReadsNoEnvironmentTests(unittest.TestCase):
         self.assertEqual(env_findings('(void)::setenv("GPU_MAX_HW_QUEUES", "5", 0);'), [])
         self.assertEqual(env_findings('// getenv("X") in a comment\nputs("getenv(\\"X\\")");'), [])
 
-    def test_a_helper_without_a_manifest_does_not_start(self) -> None:
+    def test_a_helper_without_its_settings_does_not_start(self) -> None:
         text = ENTRY.read_text(encoding="utf-8")
-        self.assertIn('usage: r3_moe_worker --manifest FILE --role helperN', text)
-        # exactly one place decides that an unmeasured manifest is acceptable
-        self.assertEqual(text.count("PlanUse::measuring"), 1)
-        self.assertEqual(text.count('"--measuring"'), 1)
+        self.assertIn('usage: r3_moe_worker --settings-fd FD --role helperN', text)
+        # the helper reads no manifest: its settings arrive typed on one descriptor, and the measuring start is a field
+        self.assertNotIn("load_helper_settings", text)
+        self.assertNotIn("PlanUse::", text)
+        self.assertNotIn('"--manifest"', text)
 
 
 if __name__ == "__main__":

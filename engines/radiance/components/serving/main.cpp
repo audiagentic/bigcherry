@@ -631,6 +631,8 @@ int main(int argc, char** argv) {
             const std::string cmd(argv[1]);
             if (cmd == "explain")
                 return explain_command(argc, argv);
+            if (cmd == "helper-exec")
+                return bc::serving::session::helper_exec_command(argc, argv);
             if (cmd == "serve" || cmd == "start" || cmd == "quality" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
         }

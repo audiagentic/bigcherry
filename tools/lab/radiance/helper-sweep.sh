@@ -20,7 +20,7 @@ FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -$N | tr '\n' ' ')
 out=$W/sweep-out; rm -rf $out
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 \
   timeout 3600 rocprofv3 --kernel-trace --output-format csv -d $out -o run -- \
-  "$B/radiance_home/helpers/r3_moe_worker" --manifest "$MANIFEST" --role helper0 \
+  "$B/radiance_home/bin/bc-serve" helper-exec "$MANIFEST" helper0 -- "$B/radiance_home/helpers/r3_moe_worker" \
     --replay-sweep "$M" "$VARIANTS" $FILES > $out.log 2>&1
 echo "rc=$?"
 python3 - $out.log $(find $out -name '*kernel_trace.csv' | head -1) <<'PY'
@@ -28,7 +28,7 @@ import csv, re, sys, collections
 log, trace = sys.argv[1], sys.argv[2]
 runs = []   # (idx, capture, layer, variant, rel_l2)
 for line in open(log):
-    m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) variant \[(.*)\] manifest \[.*\]', line)
+    m = re.match(r'SWEEP run (\d+) capture (\d+) layer (\d+) variant \[(.*)\] segment \[.*\]', line)
     if m: runs.append([int(m[1]), int(m[2]), int(m[3]), m[4], None]); continue
     m = re.search(r'engine_join .*rel_l2=(\S+) max_abs=(\S+)', line)
     if m and runs and runs[-1][4] is None: runs[-1][4] = 'rel_l2=' + m[1]
