@@ -110,7 +110,7 @@ cat >"$TMP/start-one.sh" <<'EOF'
 cfg=$1; o=$2; mkdir -p "$o"
 t0=$(date +%s); state=down
 "$BS" serve "$cfg" --model-root "$BC_MODEL_ROOT" --run-dir "$o/run" --work-root "$o/wr" \
-  --power-profile stock >"$o/serve.log" 2>&1 &
+  >"$o/serve.log" 2>&1 &
 sp=$!
 for _ in $(seq 1 300); do
   kill -0 "$sp" 2>/dev/null || break

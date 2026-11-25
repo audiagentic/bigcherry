@@ -84,8 +84,6 @@ void usage() {
            "                     profile lab; a production manifest never carries one).\n"
            "  --plan-extra TEXT   (with --write-manifest) engine arguments passed through "
            "verbatim; part of the key\n"
-           "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the "
-           "cards\n"
            "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they "
            "match\n"
            "No process is started by these commands.\n"
@@ -94,7 +92,7 @@ void usage() {
            "  serve CONFIG --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root "
            "DIR] "
            "[--set k=v]\n"
-           "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
+           "         [--engine-binary PATH] [--allow-power-apply]\n"
            "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
            "         [--step-phase-trace]  opt-in per-rank HIP event trace in run-dir; changes timing\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
@@ -137,8 +135,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
     bool record_requested = false;
-    std::string power_profile = "stock";
-    bool explicit_power_profile = false;
     fs::path calibration_records;
     bool allow_power_apply = false;
     bool strict_production_features = false;
@@ -207,9 +203,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             engine_binary = need();
         } else if (arg == "--work-root") {
             work_root = need();   // the platform's work root: where the named-config store lives
-        } else if (arg == "--power-profile") {
-            power_profile = need();
-            explicit_power_profile = true;
         } else if (arg == "--allow-power-apply") {
             allow_power_apply = true;
             passed.push_back(arg);
@@ -405,14 +398,12 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
     inputs.lab_experiment = std::move(lab_experiment);
-    inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_records_file = std::move(calibration_records);
 
     inputs.self = self;
     inputs.engine_binary = engine_binary;
     if (!native_config.empty())
         inputs.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
-    inputs.power_profile = power_profile;
     // Hardware and durable records live through the entire foreground owner.
     // A real write needs BOTH an explicit opt-in and a live ancestor-bound lease.
     bc::serving::power::LinuxHardware hardware(opts.sys_root);
@@ -748,7 +739,6 @@ int main(int argc, char** argv) {
             s8_replay_evidence_file;
         bool auto_calibrate_live_policy = false;   // default off: no in-session calibration unless asked for
         std::string expected_owner_attempt;
-        std::string power_profile;
         // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
         // explicit live policy and NO experiment, so the plan it measures is the production plan.
         bool calibration_run = false;
@@ -817,8 +807,6 @@ int main(int argc, char** argv) {
                 calibration_records_file = need_arg("--calibration-records");
             else if (arg == "--s8-replay-evidence")
                 s8_replay_evidence_file = need_arg("--s8-replay-evidence");
-            else if (arg == "--power-profile")
-                power_profile = need_arg("--power-profile");
             else if (arg == "--plan-cache")
                 plan_cache = need_arg("--plan-cache");
             else if (arg == "--engine-binary")
@@ -857,8 +845,8 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--plan-extra goes with --write-manifest");
         if ((!s8_replay_evidence_file.empty() && (write_manifest.empty() || unmeasured)))
             throw std::runtime_error("--s8-replay-evidence requires a measured --write-manifest");
-        if (write_manifest.empty() && (!calibration_records_file.empty() || !power_profile.empty()))
-            throw std::runtime_error("--calibration-records and --power-profile go with --write-manifest");
+        if (write_manifest.empty() && !calibration_records_file.empty())
+            throw std::runtime_error("--calibration-records goes with --write-manifest");
         if (plan_mode && !unmeasured &&
             expected_owner_attempt.empty())
             throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
@@ -928,9 +916,6 @@ int main(int argc, char** argv) {
                     "session-owned --unmeasured requires --expected-plan-key, --engine-binary and --plan-extra");
             if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
-            if (power_profile.empty())
-                throw std::runtime_error(
-                    "--write-manifest needs --power-profile NAME (stock observes the cards)");
             // The same two steps the session owner runs in-process (write_native_manifest); this command is their CLI.
             bc::serving::NativeWriterRequest request;
             request.calibration_records = Json::array();
@@ -957,7 +942,8 @@ int main(int argc, char** argv) {
             request.expected_plan_key = expected_plan_key;
             request.expected_owner_attempt = expected_owner_attempt;
             request.plan_cache = plan_cache;
-            request.power_profile = power_profile;
+            request.power_profile = request.inspected.x.power_profile();
+            request.power_rules = bc::serving::session::selected_power_rules(native.power_profiles, request.power_profile);
             request.manifest_name = write_manifest.filename().string();
             request.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
             request.lab_profile = !(experiment_file.empty() && !calibration_run);

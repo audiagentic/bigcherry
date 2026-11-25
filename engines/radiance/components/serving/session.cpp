@@ -2140,10 +2140,10 @@ namespace {
 ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks,
                                ChildKind kind, const std::string& role, int inherited_input_fd = -1,
                                int working_directory_fd = -1,
-                               size_t max_output_bytes = v2::kMaxDocumentBytes) {
+                               size_t max_output_bytes = v2::kMaxDocumentBytes, int extra_inherited_fd = -1) {
     if (argv.empty() || argv.front().empty())
         throw std::runtime_error("planning child: empty command");
-    if ((inherited_input_fd >= 0 && inherited_input_fd < 3) ||
+    if ((inherited_input_fd >= 0 && inherited_input_fd < 3) || (extra_inherited_fd >= 0 && extra_inherited_fd < 3) ||
         (working_directory_fd >= 0 && working_directory_fd < 3))
         throw std::runtime_error("planning child: inherited descriptors must be greater than 2");
     const Wait& wait = hooks.wait;
@@ -2187,9 +2187,10 @@ ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& 
                 ::_exit(126); // never recorded: run nothing
             if (working_directory_fd >= 0 && ::fchdir(working_directory_fd) != 0)
                 ::_exit(126);
-            if (inherited_input_fd >= 0) {
-                const int flags = ::fcntl(inherited_input_fd, F_GETFD);
-                if (flags < 0 || ::fcntl(inherited_input_fd, F_SETFD, flags & ~FD_CLOEXEC) != 0)
+            for (const int inherited : {inherited_input_fd, extra_inherited_fd}) {
+                if (inherited < 0) continue;
+                const int flags = ::fcntl(inherited, F_GETFD);
+                if (flags < 0 || ::fcntl(inherited, F_SETFD, flags & ~FD_CLOEXEC) != 0)
                     ::_exit(126);
             }
             ::execve(cargv[0], cargv.data(), cenv.data());
@@ -2281,6 +2282,15 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
     return run_planning_child(argv, env, hooks, ChildKind::manifest_writer, "manifest writer");
 }
 
+v2::S10PowerProfile selected_power_rules(const v2::PowerProfiles& loaded, const std::string& name) {
+    if (name == "stock") return {name, {}};
+    const auto found = loaded.find(name);
+    if (found == loaded.end())
+        throw PlanFailed("native config admission: x-bigcherry.power.profile " + name +
+                         " is not a profile of engines/radiance/power-profiles.yaml");
+    return found->second;
+}
+
 namespace {
 std::string tail_text(const std::string& s, size_t n = 2000);
 }
@@ -2304,11 +2314,15 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
     }
     NativeExecutionRoot::require_descriptor_matches(resolution_root_fd, snapshot.resolution_root());
 
+    // The profile file compiled into bc-serve goes to the same engine call on a second sealed descriptor: the engine's
+    // YAML parser is the only one, and its JSON comes back inside the report.
+    auto profiles = std::make_shared<PinnedManifest>(v2::embedded_power_profiles_yaml());
     const ManifestRun result = run_planning_child(
-        {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor())},
+        {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor()),
+         "--bc-profile-fd", std::to_string(profiles->descriptor())},
         complete_environment, hooks, ChildKind::native_config_inspector,
         "native config inspector",
-        input->descriptor(), resolution_root_fd);
+        input->descriptor(), resolution_root_fd, v2::kMaxDocumentBytes, profiles->descriptor());
     NativeExecutionRoot::require_descriptor_matches(resolution_root_fd, snapshot.resolution_root());
     if (result.exit != 0)
         throw PlanFailed("native config inspector: matched Radiance rejected the admitted YAML snapshot: " +
@@ -2349,7 +2363,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "kernels",
                                     "listener", "tp", "tp_wire", "cards", "rank_devices",
-                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "settings"}) ||
+                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "power_profiles", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
@@ -2407,6 +2421,14 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         out.x_bigcherry = decode_x_bigcherry(engine_report.at("x_bigcherry"));
     } catch (const std::invalid_argument& error) {
         throw PlanFailed(std::string("native config admission: ") + error.what());
+    }
+    {
+        auto loaded = v2::decode_power_profiles(engine_report.at("power_profiles"));
+        if (!loaded)
+            throw PlanFailed(v2::render_human("native config admission", loaded.error()));
+        out.power_profiles = std::move(loaded.value());
+        // the selection must name a profile of the file (stock is built in)
+        (void)selected_power_rules(out.power_profiles, out.x_bigcherry.power_profile());
     }
     if (out.x_bigcherry.rank_count() != tp)
         throw PlanFailed("native config admission: x-bigcherry.ranks name " +
@@ -2493,7 +2515,8 @@ NativeWriterInput read_native_writer_input(int fd) {
     inspected.model = inspection.model;
     inspected.tp_wire = inspection.tp_wire;
     inspected.x = inspection.x_bigcherry;
-    return {std::move(snapshot), std::move(inspection.settings), std::move(inspected)};
+    return {std::move(snapshot), std::move(inspection.power_profiles), std::move(inspection.settings),
+            std::move(inspected)};
 }
 
 static void reconcile_native_config(
@@ -3050,7 +3073,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     const fs::path index = in.work_root.empty() ? fs::path{} : named_store_index(in.work_root, name);
     const std::string model_path = values.at("engine").at("model").get<std::string>();
     static_inputs.model_digest = model_stat_identity(model_path);
-    static_inputs.power_profile = in.power_profile;
+    static_inputs.power_profile = in.options.inspected->x.power_profile();
 
     static_inputs.ordered_devices = Json::array();
     for (const char* group : {"engine_cards", "helper_cards"}) {
@@ -3351,7 +3374,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     writer_base.settings = settings;
     writer_base.engine_binary = engine;
     writer_base.plan_extra = "budgets: default";
-    writer_base.power_profile = in.power_profile;
+    writer_base.power_profile = native_inspection.x_bigcherry.power_profile();
+    writer_base.power_rules = selected_power_rules(native_inspection.power_profiles, writer_base.power_profile);
     writer_base.producer_sha256 = file_sha256(in.self);
     const std::string handoff = processes.empty() ? std::string{} : "/r3-serve-" + new_instance_id();
     std::string helper_identity;
@@ -3752,10 +3776,6 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (in.options.model_root.empty())
         in.options.model_root = native_snapshot->resolution_root();
     const std::string name = m.spec.intent.layout;
-    if (in.explicit_power_profile && in.power_profile != m.spec.intent.power.profile)
-        throw ReplayFailed(ReplayRefusal::execution_projection,
-                           "replay: explicitly requested power profile differs from the stored manifest");
-    in.power_profile = m.spec.intent.power.profile;
     in.named_config = name;
     if (!in.options.inspected)   // replay reads the admitted bytes, not a file on disk
         in.options.inspected = inspect_config_snapshot(
@@ -3826,7 +3846,11 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     draft.instance_id = new_instance_id();
     draft.producer_sha256 = file_sha256(given.self);
     draft.calibration_cache = in.options.calibration_cache;
+    if (report.x_bigcherry.power_profile() != m.spec.intent.power.profile)
+        throw ReplayFailed(ReplayRefusal::execution_projection,
+                           "replay: the config selects a different power profile than the stored manifest");
     draft.s10.power_profile = m.spec.intent.power.profile;
+    draft.s10.power_rules = selected_power_rules(report.power_profiles, m.spec.intent.power.profile);
     draft.s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
     draft.s10.calibration_records = Json::array();
     if (source.at("spec").contains("experiment"))

@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_builtin_profiles_observe_and_are_portable():
-    profiles = load_profiles(ROOT / "config/power-profiles.toml")
+    profiles = load_profiles(ROOT / "engines/radiance/power-profiles.yaml")
     assert {
         "stock",
         "quiet",
@@ -35,7 +35,7 @@ def test_builtin_profiles_observe_and_are_portable():
 
 def test_soak_candidate_is_not_a_portable_default():
     p = get_profile(
-        load_profiles(ROOT / "config/power-profiles.toml"), "xtx-soak-candidate"
+        load_profiles(ROOT / "engines/radiance/power-profiles.yaml"), "xtx-soak-candidate"
     )
     assert p.settings_for("helper0", "gfx1100") == {"vddgfx_offset_mv": -125}
     assert p.settings_for("helper1", "gfx1100") == {"vddgfx_offset_mv": -125}
@@ -46,7 +46,7 @@ def test_soak_candidate_is_not_a_portable_default():
 
 def test_digest_is_stable_and_sensitive_to_content():
     p = get_profile(
-        load_profiles(ROOT / "config/power-profiles.toml"), "xtx-soak-candidate"
+        load_profiles(ROOT / "engines/radiance/power-profiles.yaml"), "xtx-soak-candidate"
     )
     assert p.source_digest.startswith("sha256:") and len(p.source_digest) == 71
     a = resolved_profile_digest(
@@ -88,15 +88,15 @@ def test_mclk_is_typed_and_changes_profile_digest_without_device_defaults():
 def test_unknown_profile_refused():
     with pytest.raises(ProfileError, match="unknown power profile"):
         get_profile(
-            load_profiles(ROOT / "config/power-profiles.toml"), "all-cards-undervolt"
+            load_profiles(ROOT / "engines/radiance/power-profiles.yaml"), "all-cards-undervolt"
         )
 
 
 def test_non_observe_and_unknown_keys_rejected(tmp_path):
-    path = tmp_path / "bad.toml"
-    path.write_text('[profiles.stock]\ndefault_mode = "apply"\n')
+    path = tmp_path / "bad.yaml"
+    path.write_text("schema: 1\nprofiles:\n  stock: {default_mode: apply}\n")
     with pytest.raises(ProfileError, match="auto-apply"):
         load_profiles(path)
-    path.write_text("[profiles.stock]\nnot_a_key = 1\n")
+    path.write_text("schema: 1\nprofiles:\n  stock: {not_a_key: 1}\n")
     with pytest.raises(ProfileError, match="unknown keys"):
         load_profiles(path)

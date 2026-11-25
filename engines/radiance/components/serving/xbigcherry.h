@@ -30,11 +30,13 @@ struct XBigcherry {
     std::vector<XRank> ranks;
     std::vector<XHelperGroup> helpers;
     // Validated sections: closed key sets, typed values, dashed key names as authored.
-    nlohmann::json service = nlohmann::json::object(), memory = nlohmann::json::object(),
+    nlohmann::json power = nlohmann::json::object(), service = nlohmann::json::object(), memory = nlohmann::json::object(),
                    handoff = nlohmann::json::object(), helper = nlohmann::json::object(),
                    kernels = nlohmann::json::object();
 
     std::int64_t rank_count() const;
+    // The named power profile of engines/radiance/power-profiles.yaml this config selects; stock when absent.
+    std::string power_profile() const { return power.contains("profile") ? power.at("profile").get<std::string>() : "stock"; }
 };
 
 // Decodes the inspector's `x_bigcherry` value. Unknown keys, wrong types, a missing required key, an unsupported

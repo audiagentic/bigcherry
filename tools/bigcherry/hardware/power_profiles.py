@@ -15,7 +15,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -115,9 +114,15 @@ def resolved_profile_digest(name: str, roles: dict[str, dict[str, int]]) -> str:
 
 
 def load_profiles(path: Path) -> dict[str, Profile]:
-    source = tomllib.loads(Path(path).read_text(encoding="utf-8"))
-    if set(source) != {"profiles"} or not isinstance(source["profiles"], dict):
-        raise ProfileError("expected exactly one [profiles] table")
+    import yaml   # tooling dependency; the owner reads the same file through the engine's YAML parser
+
+    try:
+        source = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ProfileError(f"{path}: {exc}") from exc
+    if (not isinstance(source, dict) or set(source) != {"schema", "profiles"} or source["schema"] != 1 or
+            not isinstance(source["profiles"], dict)):
+        raise ProfileError("expected exactly schema: 1 and a profiles mapping")
     result = {}
     for name, raw in source["profiles"].items():
         if not _NAME.fullmatch(name) or not isinstance(raw, dict):

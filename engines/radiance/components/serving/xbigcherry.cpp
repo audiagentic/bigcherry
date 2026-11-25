@@ -16,6 +16,7 @@ enum class Kind { text, integer, boolean, integers, scalar };
 
 const std::map<std::string, std::map<std::string, Kind>>& sections() {
     static const std::map<std::string, std::map<std::string, Kind>> table = {
+        {"power", {{"profile", Kind::text}}},
         {"service", {{"objective", Kind::text}, {"quality", Kind::text}, {"retention", Kind::text}}},
         {"memory", {{"host-pool-mib", Kind::integer}, {"host-kv-mib", Kind::integer},
                     {"host-reserve-mib", Kind::integer}, {"tail-budget-mib", Kind::integer},
@@ -95,8 +96,8 @@ XBigcherry decode_x_bigcherry(const Json& source) {
     if (source.is_null()) refuse("(section)", "is required: a serving config file carries an x-bigcherry section");
     require_object(source, "x-bigcherry");
     closed(source, "x-bigcherry",
-           {"schema", "description", "variant-of", "differs", "ranks", "helpers", "service", "memory", "handoff",
-            "helper", "kernels"});
+           {"schema", "description", "variant-of", "differs", "ranks", "helpers", "power", "service", "memory",
+            "handoff", "helper", "kernels"});
     for (const char* required : {"schema", "description", "ranks"})
         if (!source.contains(required)) refuse(std::string("x-bigcherry.") + required, "is required");
     if (whole(source.at("schema"), "x-bigcherry.schema", 0) != 1)
@@ -149,11 +150,11 @@ XBigcherry decode_x_bigcherry(const Json& source) {
             out.helpers.push_back(std::move(group));
         }
     }
-    for (Json XBigcherry::*field : {&XBigcherry::service, &XBigcherry::memory, &XBigcherry::handoff,
-                                    &XBigcherry::helper, &XBigcherry::kernels}) {
-        const char* key = field == &XBigcherry::service ? "service" : field == &XBigcherry::memory ? "memory"
-                          : field == &XBigcherry::handoff ? "handoff" : field == &XBigcherry::helper ? "helper"
-                                                                                                  : "kernels";
+    for (Json XBigcherry::*field : {&XBigcherry::power, &XBigcherry::service, &XBigcherry::memory,
+                                    &XBigcherry::handoff, &XBigcherry::helper, &XBigcherry::kernels}) {
+        const char* key = field == &XBigcherry::power ? "power" : field == &XBigcherry::service ? "service"
+                          : field == &XBigcherry::memory ? "memory" : field == &XBigcherry::handoff ? "handoff"
+                          : field == &XBigcherry::helper ? "helper" : "kernels";
         if (source.contains(key)) out.*field = section(source, key);
     }
     return out;

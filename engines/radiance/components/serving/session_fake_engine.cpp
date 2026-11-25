@@ -92,7 +92,8 @@ void reply(int fd, int status, const std::string& body) {
 int main(int argc, char** argv) {
     using nlohmann::json;
     using Clock = std::chrono::steady_clock;
-    if (argc == 3 && std::strcmp(argv[1], "--bc-inspect-native-config") == 0) {
+    if ((argc == 3 || (argc == 5 && std::strcmp(argv[3], "--bc-profile-fd") == 0)) &&
+        std::strcmp(argv[1], "--bc-inspect-native-config") == 0) {
         const int fd = std::atoi(argv[2]);
         constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
         struct stat info {};
@@ -199,6 +200,18 @@ int main(int argc, char** argv) {
                                 {"prefix_cache", true}, {"prefill_interleave", nullptr}};
         if (const char* configured_settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS"))
             native_settings.update(json::parse(configured_settings));
+        // The fake has no YAML parser: the profile document the real engine would convert comes from the test (default:
+        // the stock-only file), and the profile descriptor must be a readable sealed memfd as a real call gets.
+        json power_profiles = {{"schema", 1}, {"profiles", {{"stock", {{"default_mode", "observe"}}}}}};
+        if (argc == 5) {
+            const int profile_fd = std::atoi(argv[4]);
+            if (profile_fd < 3 || ::fcntl(profile_fd, F_GET_SEALS) < 0) {
+                std::fprintf(stderr, "fake inspector: invalid sealed profile descriptor\n");
+                return 20;
+            }
+        }
+        if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_POWER_PROFILES"))
+            power_profiles = json::parse(configured);
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v2"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", cwd}}},
@@ -212,6 +225,7 @@ int main(int argc, char** argv) {
                                                     ? json(std::getenv("TEST_NATIVE_INSPECT_TP_WIRE")) : json(nullptr)},
                                     {"tuning", native_tuning},
                                     {"x_bigcherry", x_bigcherry},
+                                    {"power_profiles", power_profiles},
                                     {"tp", tp},
                                     {"cards", cards},
                                     {"rank_devices", rank_devices},

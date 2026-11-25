@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-TABLES = {"service", "memory", "handoff", "helper", "kernels"}
+TABLES = {"power", "service", "memory", "handoff", "helper", "kernels"}
 KEY_LINE = re.compile(r"^(?P<indent> *)(?P<key>[A-Za-z0-9_.-]+):(?P<rest>.*)$")
 
 
