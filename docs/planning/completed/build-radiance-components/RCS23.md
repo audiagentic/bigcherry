@@ -2,7 +2,7 @@
 id: RCS23
 order: 0
 plan: build-radiance-components
-state: pending
+state: deprecated
 created-at: '2026-11-25T00:54:41.130343+00:00'
 breadth: ''
 skill: advanced
@@ -67,6 +67,8 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. New candidate rows/headers, head scalar and opt-in WMMA rows require per-change adoption screen; native IQR private layout is different and scalar; no automatic u6/u7 or group256 adoption. Compare actual model logical tensors through each provider own relayout, exact row selection and row contracts; preserve native ABI/layout fingerprint already required by upstream, no additional digest. Reuse existing RCS25 discrete qualification before release. Footprint 37/40 intersection is triage only; inspect actual source and indirect include closure.
 
+2026-11-25 closed as deferred: arm B found no kernel to own as an overlay (upstream's gfx1100 IQR is a correctness reference only), and the cost of a bump to upstream main is in the engine patches (11 of 35 patches fail on 1c104de4, four clusters), not in kernels. The composition gates now stop a bump at the first collision. Reopen when a bump lands a kernel conflict the gates cannot resolve.
+
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
@@ -81,3 +83,5 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 - 2026-11-25T02:05:49.620407+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria
 - RV4635
 - 2026-11-25T02:41:48.148300+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T09:42:34.865375+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:43:10.649436+00:00 (state-transition): State: pending → deprecated

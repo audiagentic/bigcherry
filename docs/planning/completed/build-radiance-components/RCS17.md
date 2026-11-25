@@ -2,7 +2,7 @@
 id: RCS17
 order: 0
 plan: build-radiance-components
-state: pending
+state: deprecated
 created-at: '2026-11-18T08:41:50.662737+00:00'
 breadth: ''
 skill: advanced
@@ -57,6 +57,8 @@ The helper loader dlopens one DSO and requires BC configurator and down-tile pin
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. New upstream row storage/layout and same ABI integer with changed fields make mixed rank tests essential. Validate actual per-rank provider/encoding/layout, native rad_plugin_abi_version AND rad_plugin_abi_layout, ordered BDF/local ordinal and exact collective/chaining semantics, helper disjointness; reversed XTX/R9700 and gfx1030 helper where used. Reuse native loader and RUM06/13 transport, no new protocol. No old plugin mixed with candidate ABI.
 
+2026-11-25 closed as not adopted: gated on adopting libr3d, which RCS15 did not support (see RCS15 and RCS16). Transport and mixed-device qualification stay with the shipped provider and the serving plan.
+
 ## Change Log
 
 - 2026-11-18T08:41:50.662737+00:00 (created-by): Created by agent
@@ -66,3 +68,5 @@ The helper loader dlopens one DSO and requires BC configurator and down-tile pin
 
 - RV4629
 - 2026-11-25T02:38:51.092289+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:42:15.291349+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:42:51.280957+00:00 (state-transition): State: pending → deprecated

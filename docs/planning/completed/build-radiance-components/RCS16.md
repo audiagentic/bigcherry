@@ -2,7 +2,7 @@
 id: RCS16
 order: 0
 plan: build-radiance-components
-state: pending
+state: deprecated
 created-at: '2026-11-18T08:41:37.901602+00:00'
 breadth: ''
 skill: advanced
@@ -59,6 +59,8 @@ At b8bca788 native h128 attention does not cover local Flash-Next h256/GQA6, and
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Original instruction to port every delta into upstream libr3d is superseded by overlay-first design #1553. New upstream native int8/IQR rows are adoption candidates, not replacements by name; preserve existing local wins and independent RUM15 precision issue.
 
+2026-11-25 closed as not adopted. The RCS15 baseline (docs/evidence/2026-11-25-rcs15-libr3d-inventory and the IQR row in RCS15) found no upstream native gfx1100 row that beats ours where we own the work: upstream's IQR GEMM is scalar and 850 to 1650 times slower at 129 and 2048 rows. Our qualified rows stay; no overlay migration is needed to keep them (RCS23 closed the same way).
+
 ## Change Log
 
 - 2026-11-18T08:41:37.901602+00:00 (created-by): Created by agent
@@ -68,3 +70,5 @@ At b8bca788 native h128 attention does not cover local Flash-Next h256/GQA6, and
 
 - RV4628
 - 2026-11-25T02:38:20.324015+00:00 (updated-by): Updated: section:title, section:steps, section:notes, section:acceptance_criteria
+- 2026-11-25T09:42:10.454262+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:42:46.436986+00:00 (state-transition): State: pending → deprecated
