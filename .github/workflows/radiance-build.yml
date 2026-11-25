@@ -38,6 +38,7 @@ on:
       - '!engines/radiance/tests/**'
       - '!engines/radiance/model_constant_guard.toml'
       - 'tools/bigcherry/campaign/**'
+      - 'tools/bigcherry/bin/bc-ccache'
       - 'tools/bigcherry/core/**'
       - 'tools/bigcherry/build/**'
       - 'config/environment.example.toml'
@@ -131,7 +132,9 @@ jobs:
       # Without this the actual compile (not the clone above) runs from scratch every time regardless of how
       # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
       # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
+      # BU03: new release compilation bypasses compiler cache pending the cold/shipped discrepancy.
       - name: Restore ccache
+        if: inputs.bundle_tag == ''
         uses: actions/cache/restore@v4
         with:
           path: work/.ccache
@@ -143,7 +146,7 @@ jobs:
         env:
           BUILD_LANE: ${{ inputs.build_lane || 'radiance:stock:linux-radiance' }}
           CI_COMPILE_JOBS: ${{ inputs.compile_jobs || 'default' }}
-          CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
+          CI_FORCE_COLD: ${{ inputs.bundle_tag != '' && 'true' || inputs.cold || 'false' }}
         run: |
           docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BUILD_LANE -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
@@ -211,8 +214,10 @@ jobs:
             # used (a limit of twice the touched bytes still dropped about a quarter of them), so the same ~135 compiles
             # missed on every run. Leftover temporary files (a fifth of the saved cache) are dropped too.
             # Only a successful build gets here, so a failed one never shrinks the cache. Main saves the result.
-            find "$CCACHE_DIR" -type f ! -newermt "@$ccache_start" -delete
-            rm -rf "$CCACHE_DIR/tmp"
+            if [ "$CI_FORCE_COLD" != "true" ]; then
+              find "$CCACHE_DIR" -type f ! -newermt "@$ccache_start" -delete
+              rm -rf "$CCACHE_DIR/tmp"
+            fi
             ccache --max-size 0
           '
 

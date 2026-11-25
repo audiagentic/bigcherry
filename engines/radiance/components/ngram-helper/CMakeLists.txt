@@ -30,14 +30,10 @@ target_link_libraries(libr3ngram PRIVATE ${CMAKE_DL_LIBS})
 # the engine loads every library there as a plugin and refuses one that exports no rad_plugin_abi_version.
 add_library(r3_ngram_helper MODULE ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_helper.hip)
 target_link_libraries(r3_ngram_helper PRIVATE radiance::abi)
-set_target_properties(r3_ngram_helper PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
+set_target_properties(r3_ngram_helper PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
+  LIBRARY_OUTPUT_DIRECTORY "${RAD_PLUGIN_OUT}/helpers")
 set_property(TARGET r3_ngram_helper PROPERTY HIP_ARCHITECTURES ${R3NGRAM_TARGETS})
 add_dependencies(libr3ngram r3_ngram_helper)
-add_custom_command(TARGET libr3ngram POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:libr3ngram>/../helpers
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:r3_ngram_helper> $<TARGET_FILE_DIR:libr3ngram>/../helpers/libr3_ngram_helper.so
-  VERBATIM)
 
 # The helper's correctness/perf harness. Not a ctest: it needs a GPU.
 add_executable(r3_ngram_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_ngram_test.cpp)

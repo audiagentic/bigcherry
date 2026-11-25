@@ -2,7 +2,7 @@
 id: RCS21
 order: 0
 plan: build-radiance-components
-state: in_progress
+state: completed
 created-at: '2026-11-25T00:40:51.713419+00:00'
 breadth: ''
 skill: advanced
@@ -67,6 +67,8 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 
 2026-11-25 reopened with the lib rework (see RCS23 notes). Finding that sizes stage S2: the fused single-band IQR tile exists twice as near-identical text, once in the rad0065 patch (libr4d, names IqrFused12*, guarded by #ifndef R3_TARGETS) and once in libr3/native/r4d_gemm_iqr.hip.rw (IqrFused*); the struct, the certificate, the kernel and the one-band dispatch are the same code, and the gemm_8a8_prefill_body Fused parameter already comes from the patch for both architectures (the libr3 rewrites carry find-1-or-0 pairs for it). Plan: one copy, arch-neutral, inside the patch (no #ifndef, one set of names), the libr3 fused blocks deleted from the .rw (the patched source already carries the tile), the naming lint taught the arch-neutral suffix by data (no exception hand-list). Proof by the unit harness on both architectures: iqr family on gfx1100 and gfx1201 against the shipped release, output hashes equal, resource records equal except the renamed gfx1201 fused symbols (listed), replay of the 65 to 128 row points no regression. A traits header is introduced only if a real difference between the two copies is found; none is expected, so the seam stays a note until a second architecture-specific tile appears.
 
+2026-11-25 completed by #1592: one arch-neutral copy of the fused single-band IQR prefill tile inside rad0065 (the libr3 duplicate deleted), proved with the unit harness on gfx1100 and gfx1201 against 2020.14.0: 555 of 555 output hashes equal on both, 0 selftest failures, the 11 fused kernels per architecture renamed with identical records and 0 spills, replay 24 points per architecture with 0 regress, composition gates 1 and 2a clean on both. The naming lint reads its suffix rules as data (patches/naming-rules.toml); exceptions fell from 188 to 75. A traits header was not built: the two copies had no real difference, so the seam stays a note until a second architecture-specific tile exists. Offering the neutral patches upstream needs the owner's approval and is not done; they stay local managed patches.
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
@@ -86,3 +88,5 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 - 2026-11-25T09:43:00.957766+00:00 (state-transition): State: pending → deprecated
 - 2026-11-25T10:44:47.321276+00:00 (state-transition): State: deprecated → in_progress
 - 2026-11-25T10:46:36.297164+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T11:44:37.636843+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T11:44:46.177275+00:00 (state-transition): State: in_progress → completed

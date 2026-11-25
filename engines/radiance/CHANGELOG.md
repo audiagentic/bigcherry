@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.14.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.14.0...bc-radiance-2020.14.1) (2026-11-25)
+
+
+### Fixes
+
+* **build:** track generated inputs and guard release artifacts ([#1574](https://github.com/audiagentic/bigcherry/issues/1574)) ([cf10a24](https://github.com/audiagentic/bigcherry/commit/cf10a24158f7f536ed5d84ca498a246f0c1bf947))
+
 ## [2020.14.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.13.0...bc-radiance-2020.14.0) (2026-11-25)
 
 

@@ -129,7 +129,11 @@ class ComponentGateTests(unittest.TestCase):
             if tree.parent.name == "components":
                 for component in components.load_all(paths.REPO_ROOT, "radiance").values():
                     for output in component.outputs:
-                        (tree / Path(output).name).write_bytes(b"x")
+                        target = (tree / "radiance_home" / output
+                                  if output.startswith("kernels/") or component.name == "ngram-helper"
+                                  else tree / output)
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(b"x")
             else:
                 home = tree / "radiance_home"
                 for directory in radiance_bump.PLUGIN_DIRS:
