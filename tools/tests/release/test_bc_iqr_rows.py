@@ -67,7 +67,10 @@ class LoadedRowTests(unittest.TestCase):
     def setUpClass(cls):
         d = Path(os.environ["BC_OVERLAY_TEST_DIR"])
         try:
-            cls.base = rows(d / ("libr4d.so" if (d / "libr4d.so").is_file() else "libr3.so"))
+            # libr3 drops the rows of units it no longer builds, so the base's row table is libr4d's (the same declarations)
+            if not (d / "libr4d.so").is_file():
+                raise unittest.SkipTest("needs libr4d.so beside libbciqr.so: libr3's row table omits the rows the overlay owns")
+            cls.base = rows(d / "libr4d.so")
             cls.overlay = rows(d / "libbciqr.so")
         except OSError as exc:
             raise unittest.SkipTest(f"libraries do not load here: {exc}")
