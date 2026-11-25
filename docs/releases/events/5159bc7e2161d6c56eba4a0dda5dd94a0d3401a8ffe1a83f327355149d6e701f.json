@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261125_231823_use-managed-run-records-for-in_6133",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR12.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py"
+  ],
+  "plan-item-ids": [
+    "PWR12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Align PWR12 screen results with existing WSL01 capture runs, platform power receipt, stock run references, standard capture harvest and recovery identity; preserve prior diagnostic evidence and remove unmanaged output argument.",
+  "timestamp-utc": "2026-11-25T23:18:23.523313Z",
+  "user-summary-candidate": "Use managed run records for independent GPU power screening"
+}

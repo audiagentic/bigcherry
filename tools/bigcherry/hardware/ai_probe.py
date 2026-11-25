@@ -14,7 +14,6 @@ import re
 import subprocess
 import tempfile
 import time
-import uuid
 from pathlib import Path
 
 from . import gpu_power, lease, power_probe, power_profiles
@@ -242,11 +241,40 @@ def case_identity(case: dict) -> tuple:
         native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm"))
 
 
+def screen_receipt(run_id: str, result: dict):
+    """Use the platform power receipt envelope; screen details are observations."""
+    from .power_receipt import Receipt
+    receipt = Receipt(run_id, request=result.get("request", {}),
+                      transaction=result.get("transaction", {"state": "not_requested", "events": []}))
+    for key, phase in (("before", "start"), ("after", "stop")):
+        if key in result:
+            receipt.observe(phase, result[key])
+    receipt.observe("ai_screen", {k: v for k, v in result.items()
+                                  if k not in ("request", "transaction", "before", "after")})
+    return receipt
+
+
+def read_screen_receipt(data: bytes, run_id: str) -> dict:
+    doc = json.loads(data)
+    if (not isinstance(doc, dict) or doc.get("schema_version") != 1 or
+            doc.get("run_id") != run_id or doc.get("manifest", {}).get("status") != "unavailable"):
+        raise ScreenError("incompatible stock power receipt")
+    observations = doc["observations"]
+    result = dict(observations["ai_screen"], request=doc["request"], transaction=doc["transaction"],
+                  before=observations["start"], after=observations["stop"])
+    return result
+
+
 def screen(args: argparse.Namespace, *, cancelled=lambda: False,
            journal_dir: Path | None = None) -> dict:
     if not BDF.fullmatch(args.bdf) or not ARCH.fullmatch(args.arch):
         raise ScreenError("invalid physical device identity")
+    input_digests = getattr(args, "input_digests", {})
+    if "profiles" in input_digests and digest(args.profiles) != input_digests["profiles"]:
+        raise ScreenError("profile input changed since run creation")
     profile = power_profiles.get_profile(power_profiles.load_profiles(args.profiles), args.profile)
+    if "profiles" in input_digests and digest(args.profiles) != input_digests["profiles"]:
+        raise ScreenError("profile input changed during read")
     settings = profile.settings_for(args.role, args.arch)
     if args.profile == "stock":
         if args.reference or args.stock_confirmed == args.observe_current:
@@ -265,6 +293,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     if cancelled():
         raise ScreenError("screen interrupted", "cancelled")
     binary = args.probe.resolve(strict=True)
+    if "probe" in input_digests and digest(binary) != input_digests["probe"]:
+        raise ScreenError("probe changed since run creation")
     request = {"bdf": args.bdf, "arch": args.arch, "role": args.role,
                "profile": profile.name, "profile_digest": profile.source_digest,
                "settings": settings, "probe_digest": digest(binary), "kernel": os.uname().release,
@@ -277,7 +307,12 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                "stock_confirmed": args.stock_confirmed, "apply_profile": args.apply_profile}
     before, hw = snapshot(args.bdf)
     reference_bytes = args.reference.read_bytes() if args.reference else None
-    reference = json.loads(reference_bytes) if reference_bytes is not None else None
+    if reference_bytes is not None:
+        if "sha256:" + hashlib.sha256(reference_bytes).hexdigest() != args.reference_digest:
+            raise ScreenError("stock power receipt changed since run creation")
+        reference = read_screen_receipt(reference_bytes, args.reference_run_id)
+    else:
+        reference = None
     if reference_bytes is not None:
         keys = ("bdf", "arch", "role", "probe_digest", "kernel", "dtypes", "n", "seconds", "pause_ms", "max_hotspot_c",
                 "provider", "memory_mib", "headroom_mib", "warmup_seconds", "min_hotspot_c", "max_memory_c",
@@ -329,7 +364,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         if args.apply_profile:
             # Reuse the existing platform GPU power transaction, recovery
             # journal and sysfs writer. No second controller or reset command.
-            tx = PowerTransaction("ai-screen-" + uuid.uuid4().hex, journal_dir,
+            tx = PowerTransaction(args.run_id, journal_dir,
                                   lease_ok=lease.held_by_this_process)
             result["transaction"] = {"state": "new", "run_id": tx.run_id, "journal": str(tx.journal_path),
                                      "original": original}

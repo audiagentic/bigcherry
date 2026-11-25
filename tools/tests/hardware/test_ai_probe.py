@@ -30,7 +30,11 @@ def args(tmp_path, **kwargs):
                      provider="hipblaslt", memory_mib=None, headroom_mib=None,
                      warmup_seconds=0, min_hotspot_c=None, max_memory_c=None,
                      observe_current=False, apply_profile=False, confirm_idle=False)
-    return Namespace(**(vars(base) | kwargs))
+    ns = Namespace(**(vars(base) | kwargs))
+    ns.run_id = "fixture-candidate"
+    ns.reference_run_id = "fixture-stock"
+    ns.reference_digest = a.digest(ns.reference) if ns.reference else None
+    return ns
 
 
 def case(pause, algorithm="00"*16, status="pass"):
@@ -91,7 +95,7 @@ def stock_reference(tmp_path):
     assert result["status"] == "pass"
     assert result["production_qualified"] is False
     ref = tmp_path/"stock.json"
-    ref.write_text(json.dumps(result))
+    a.screen_receipt("fixture-stock", result).save(ref)
     return ref
 
 
@@ -218,7 +222,7 @@ def test_canonical_cli_is_separate_from_power_control():
         "gpu-ai-screen", "--probe", "probe", "--profiles", "profiles.yaml",
         "--profile", "stock", "--bdf", BDF, "--arch", "gfx1100",
         "--role", "engine", "--stock-confirmed", "--seconds", "1",
-        "--max-hotspot-c", "85", "--output", "screen.json"])
+        "--max-hotspot-c", "85"])
     assert ns.func.__module__ == "bigcherry.cli.ai_probe_cmds"
     assert ns.profile == "stock"
     assert ns.stock_confirmed
@@ -251,7 +255,7 @@ def test_observed_current_is_not_factory_reference(tmp_path):
     assert not result["request"]["stock_confirmed"]
     assert result["request"]["observe_current"]
     ref = tmp_path/"observed.json"
-    ref.write_text(json.dumps(result))
+    a.screen_receipt("fixture-stock", result).save(ref)
     with patch.object(a.lease, "held_by_this_process", return_value=True), \
             patch.object(a, "snapshot", return_value=(TUNED,tmp_path)), \
             patch.object(a, "run_case") as run:
@@ -361,7 +365,7 @@ def test_real_transaction_integration_on_fake_sysfs(tmp_path):
         ref = a.screen(args(tmp_path))
         assert ref["status"] == "pass"
     ref_path = tmp_path/"stock.json"
-    ref_path.write_text(json.dumps(ref))
+    a.screen_receipt("fixture-stock", ref).save(ref_path)
     ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
               reference=ref_path, apply_profile=True, confirm_idle=True)
     def checked_probe(*unused, **kw):
@@ -396,7 +400,7 @@ def test_memory_result_requires_budget_and_postallocation_headroom():
 def test_invalid_stock_coverage_refuses_before_transaction(tmp_path):
     ref = stock_reference(tmp_path)
     doc = json.loads(ref.read_text())
-    doc["cases"][0]["native"]["iterations"] = 0
+    doc["observations"]["ai_screen"]["cases"][0]["native"]["iterations"] = 0
     ref.write_text(json.dumps(doc))
     ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
               reference=ref, apply_profile=True, confirm_idle=True)
@@ -406,3 +410,44 @@ def test_invalid_stock_coverage_refuses_before_transaction(tmp_path):
         with pytest.raises(a.ScreenError,match="coverage"):
             a.screen(ns,journal_dir=tmp_path)
     tx.assert_not_called()
+
+
+def test_cli_managed_capture_receipt_and_reference(tmp_path):
+    from bigcherry.cli.ai_probe_cmds import cmd_screen
+    from bigcherry.core import run_manifest as rm, harvest
+    ns = args(tmp_path)
+    ns.work_root = tmp_path / "work"
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(STOCK, tmp_path)), \
+            patch.object(a, "thermal_sensor", return_value=(tmp_path/"temp2_input", 85000)), \
+            patch.object(a, "run_case", side_effect=[case(0), case(2)]):
+        assert cmd_screen(ns) == 0
+    stock = ns.output.parent
+    manifest = rm.read_manifest(stock)
+    assert stock.parent.name == "capture"
+    assert manifest["state"] == "completed"
+    assert manifest["plan"]["item"] == "PWR12"
+    assert manifest["engine"] == "none"
+    assert manifest["execution"]["exit_code"] == 0
+    assert ns.output.name == ns.run_id + ".power.json"
+    receipt = json.loads(ns.output.read_text())
+    assert receipt["run_id"] == ns.run_id
+    assert receipt["schema_version"] == 1
+    assert receipt["observations"]["ai_screen"]["status"] == "pass"
+    assert receipt["manifest"]["status"] == "unavailable"
+    bundle = harvest.harvest(ns.work_root, stock)
+    assert bundle["diagnostic_only"]
+    assert any(f["path"].endswith(ns.output.name) for f in bundle["files"])
+    candidate = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False)
+    candidate.work_root = ns.work_root
+    candidate.reference = ns.run_id
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(TUNED, tmp_path)), \
+            patch.object(a, "thermal_sensor", return_value=(tmp_path/"temp2_input", 85000)), \
+            patch.object(a, "run_case", return_value=case(0, status="mismatch")):
+        assert cmd_screen(candidate) == 2
+    m = rm.read_manifest(candidate.output.parent)
+    assert m["references"] == [{"type": "run", "id": ns.run_id, "role": "stock"}]
+    assert m["state"] == "failed"
+    assert candidate.run_id != ns.run_id
+    assert json.loads(candidate.output.read_text())["observations"]["ai_screen"]["status"] == "mismatch"
