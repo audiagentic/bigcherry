@@ -224,8 +224,38 @@ int main(int argc, char** argv) {
     }
     const std::string manifest = arg_after(argc, argv, "--manifest");
     const std::string role = arg_after(argc, argv, "--role");
+    const std::string settings_fd_text = arg_after(argc, argv, "--settings-fd");
     json m = json::object();
-    {
+    if (!settings_fd_text.empty()) {
+        // A helper started by the owner: its typed settings arrive as one sealed descriptor, never a manifest.
+        const int fd = std::atoi(settings_fd_text.c_str());
+        struct stat info {};
+        constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+        const int seals = fd < 3 ? -1 : ::fcntl(fd, F_GET_SEALS);
+        if (fd < 3 || seals < 0 || (seals & seals_required) != seals_required || ::fstat(fd, &info) != 0 ||
+            info.st_size <= 0) {
+            std::fprintf(stderr, "fake helper: invalid sealed settings descriptor\n");
+            return 9;
+        }
+        std::string bytes(static_cast<size_t>(info.st_size), '\0');
+        if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) return 9;
+        const json settings = json::parse(bytes, nullptr, false);
+        if (!settings.is_object() || settings.value("role", std::string()) != role || !settings.contains("measuring") ||
+            !settings.contains("handoff")) {
+            std::fprintf(stderr, "fake helper: the settings are not this helper's\n");
+            return 9;
+        }
+        const char* rocr = std::getenv("ROCR_VISIBLE_DEVICES");
+        const char* hip = std::getenv("HIP_VISIBLE_DEVICES");
+        if (!rocr || !hip || std::strcmp(hip, "0") != 0) {
+            std::fprintf(stderr, "fake helper: helper visibility is not one device as HIP 0\n");
+            return 9;
+        }
+        m["shm"] = settings.at("handoff").at("shm");
+        if (settings.contains("forced") && settings.at("forced").is_object())
+            m["forced_transactions"] = settings.at("forced").at("steps").size() *
+                                       settings.at("forced").at("repeat").get<size_t>();
+    } else {
         std::ifstream in(manifest);
         std::stringstream s;
         s << in.rdbuf();

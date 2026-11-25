@@ -2,8 +2,8 @@
 /* One helper process's settings: a flat, immutable projection of the manifest the shared v1 reader verified
  * (v2::load_manifest, then v2::helper_view: helper_common, the role's patch and the lab experiment's shape, spec §2.2).
  * Not a second schema: every value is read from a v1 field and nothing is defaulted here except the diagnostics that are
- * absent from a production manifest (their off state, which is the helper's unset behaviour). r3_moe_worker --manifest
- * FILE --role helperN loads it before any GPU work; a failure is a v2::ConfigError. */
+ * absent from a production manifest (their off state, which is the helper's unset behaviour). The owner computes it and
+ * r3_moe_worker --settings-fd FD --role helperN reads it before any GPU work; a failure is a v2::ConfigError. */
 #include "manifest.h"
 
 #include <cstdint>
@@ -12,6 +12,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 namespace bc::serving {
 
@@ -31,7 +33,8 @@ struct WorkerHandoff {
 struct HelperSettings {
     WorkerHelper helper;
     WorkerHandoff handoff;
-    std::string role, content_sha256, model, radiance_home;
+    std::string role, model, radiance_home;
+    bool measuring = false;   // the measuring start: its segment identity differs from the serving one (segment_identity)
     // Projection of existing v1 identity fields, not new manifest members.
     std::string plan_cache_key, layout, objective;
     bool lab_profile = false;
@@ -63,6 +66,14 @@ struct HelperSettings {
 /* The settings of the helper with `role`, from a manifest that read_manifest accepted. BC_CFG_UNRESOLVED_REFERENCE when
  * no helper has the role. */
 v2::Result<HelperSettings> helper_settings(const v2::Manifest& m, std::string_view role);
+/* The owner-to-helper wire form: the struct itself as one JSON object on a sealed memfd (--settings-fd). The reader is the
+ * helper's only parser of owner input: an unknown member, a missing member or an ill-typed value is refused naming its
+ * field, and so are a role that is not "helperN", an index outside the helper count and a segment name that is not one. */
+nlohmann::json helper_settings_to_json(const HelperSettings& s);
+v2::Result<HelperSettings> helper_settings_from_json(const nlohmann::json& j);
+/* The sealed descriptor of a start: read, then helper_settings_from_json. */
+v2::Result<HelperSettings> read_helper_settings(int fd);
+
 /* load_manifest (for the start `use` names: serving, or the measuring start), then helper_settings. */
 v2::Result<HelperSettings> load_helper_settings(const std::filesystem::path& path, std::string_view role, v2::PlanUse use);
 

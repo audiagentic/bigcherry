@@ -12,6 +12,6 @@ M=${MODEL:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-m
 FILES=$(ls -S ${CAPDIR:-$W/captures}/*.bin | head -${N:-4} | tr '\n' ' ')
 source "$(dirname "${BASH_SOURCE[0]}")/lab-env.sh"
 env HIP_VISIBLE_DEVICES=0 ROCR_VISIBLE_DEVICES=0 \
-  timeout 3600 "$B/radiance_home/helpers/r3_moe_worker" \
-  --manifest "$MANIFEST" --role helper0 --replay-sweep "$M" production $FILES 2>&1 | \
+  timeout 3600 "$B/radiance_home/bin/bc-serve" helper-exec "$MANIFEST" helper0 -- "$B/radiance_home/helpers/r3_moe_worker" \
+  --replay-sweep "$M" production $FILES 2>&1 | \
   grep -E "^SWEEP|^replay_hash"

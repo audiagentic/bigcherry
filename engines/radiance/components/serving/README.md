@@ -14,8 +14,8 @@ admission check are implemented. The serving component now includes an
 owner-map verifier that checks the planner's owned expert sets and exact
 device byte totals. Card-free tests cover the verifier. The engine and the
 helpers read their whole configuration from the serving manifest the owner
-writes from the config's native YAML (`r3_moe_worker --manifest FILE --role
-helperN`, through `v2/helper_settings.h`; RSC06). Planning is native-only: a fresh start
+writes from the config's native YAML (`r3_moe_worker --settings-fd FD --role
+helperN`: typed `v2/helper_settings.h` on a sealed descriptor; RSC06). Planning is native-only: a fresh start
 needs an admitted native config YAML, and there is no other planning path.
 
 
