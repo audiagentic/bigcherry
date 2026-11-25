@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261125_224429_add-independent-gpu-ai-arithme_3104",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR12.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/reference/tooling/TOOLING.md",
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py"
+  ],
+  "plan-item-ids": [
+    "PWR12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add independent platform-side native HIP/hipBLASLt exact arithmetic screen and profile-bound read-only leased runner, tests and PWR12 plan; no engine runtime, settings writes or existing plan changes.",
+  "timestamp-utc": "2026-11-25T22:44:29.735060Z",
+  "user-summary-candidate": "Add independent GPU AI arithmetic power-profile screening"
+}

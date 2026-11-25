@@ -1695,6 +1695,9 @@ def build_parser() -> argparse.ArgumentParser:
     from .power_cmds import register as _register_power
 
     _register_power(sub)
+    from .ai_probe_cmds import register as _register_ai_probe
+
+    _register_ai_probe(sub)
 
     from .layout_cmds import register as _register_layout
 

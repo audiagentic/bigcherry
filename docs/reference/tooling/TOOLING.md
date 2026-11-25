@@ -32,6 +32,7 @@ The root `out/` directory is ignored scratch, never a durable evidence store; pr
 | Tuning/replay | `bigcherry.tuning` | Catalog, journal, measurement, correctness, promotion, ranking, and replay |
 | Core | `bigcherry.core` | Paths, context, configuration, artifacts, provenance, platform run-record v1 store/query, and pipeline foundations |
 | Analysis | `bigcherry.analysis` | Reusable offline reports and derived views; not production selection logic |
+| GPU power qualification | [AI power screen](AI_POWER_SCREEN.md), `bigcherry.hardware.ai_probe` | The `bigcherry gpu-ai-screen` command: independent leased matrix screening of observed named profile controls; locally built HIP diagnostic, no engine runtime dependency or power writes |
 | Profiling/diagnostics | `bigcherry.profiling` | Real-hardware diagnostic harnesses such as rocprofv3 capture and RCCL qualification |
 | Permanent tests | `tools/tests/<domain>/` | Deterministic offline tests organized with the implementation owner |
 
