@@ -1,0 +1,34 @@
+# Families the unit harness (unit_harness.py) knows: the libr4d units that make a family, the kernels whose resource
+# records are compared, the selftest case whose outputs are hashed against the shipped library over the shapes and row
+# counts the family serves (tails and ragged N included), and the rows replayed when they changed.
+#
+# A family is a name for "build these units into a small plugin and check them"; a unit that is in no family can still
+# be named with --unit (resource records only).
+
+[family.iqr]
+units = ["r4d_gemm_iqr", "r4d_gemm_iqr_p1", "r4d_gemm_iqr_p2", "r4d_gemm_iqr_p3"]
+# built only so the selftest case has its int8 reference rows (their kernels are not part of the family)
+support_units = ["r4d_gemm_fp8a8", "r4d_gemm_w8a8_tiled", "r4d_keyed"]
+# Mangled kernel names (regular expression) of the family: a kernel of the shipped library that matches and is gone from
+# the build is reported removed.
+kernels = "iqr_prefill_kernel|iqr_fused|iqr_gemm"
+# The selftest case: its own oracle checks, then the hash of the output of every IQR case it runs.
+case = "gemm_iqr_tiled"
+
+[family.iqr.hash]
+# Extra cases on top of the case's own matrix, "N:K:M" each: the V4 trunk shapes at every row count around a tile edge,
+# a ragged N (5376) and tail row counts.
+shapes = [[5376, 2560], [5120, 2304], [6144, 5120], [5120, 6656]]
+rows = [65, 96, 128, 129, 130, 160, 192, 193, 255, 256, 257, 1024, 2047, 2048, 2049]
+tail_rows = [129, 193, 257, 2049]
+tail_shape = [13312, 5120]
+
+[family.iqr.replay]
+# Rows that are replayed when the build changes them, and how: the selftest argument list for one point, the row it
+# times, and the line that carries the time.
+rows = ["gemm_iqr_tiled"]
+command = ["--perfiqr", "{N}", "{K}", "{M}", "{B}", "{iters}", "--cold", "256"]
+label = "iqr k{B} tiled"
+shapes = [[13312, 5120], [5120, 6656], [6144, 5120], [5120, 2304]]
+rows_m = [65, 96, 128, 129, 160, 192, 256, 512, 2048]
+bits = [6, 7]
