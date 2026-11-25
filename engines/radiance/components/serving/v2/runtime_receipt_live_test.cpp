@@ -74,7 +74,7 @@ int main(int argc, char** argv) {
     assert(bc::serving::manifest_content_digest(manifest, &digest, &why));
     manifest["metadata"]["content_digest"] = digest;
     assert(shm::v26::init(map, layout.bytes, shape, 1, shm::v26::Topology{1, 1},
-                          shm::v26::manifest_identity(digest)) == shm::Refusal::None);
+                          shm::v26::segment_identity(shm_name, false)) == shm::Refusal::None);
     auto* header = static_cast<shm::Header*>(map);
     header->helper_count = 1;
     auto* control = shm::placement_control(map);

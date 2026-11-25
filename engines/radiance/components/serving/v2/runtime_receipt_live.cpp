@@ -107,7 +107,7 @@ int main(int argc, char** argv) {
   if (mapping == MAP_FAILED) return refuse("cannot map worker telemetry");
   auto published = v2::publish_live_runtime_receipt(
       run_id, manifest.spec.handoff->placement.live_policy_state,
-      digest, mapping, bytes);
+      digest, manifest.spec.handoff->transport.shm, mapping, bytes);
   ::munmap(mapping, bytes);
   if (!published) return refuse("stale, mismatched or unavailable worker placement telemetry");
   auto receipt = std::move(published.value());
