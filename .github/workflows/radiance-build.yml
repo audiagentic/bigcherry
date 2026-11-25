@@ -167,15 +167,14 @@ jobs:
             export CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=content
             mkdir -p work/upstream work/.ccache
             ccache -z
-            # The restored cache carries the limit the previous main build set (twice its touched bytes), so it starts
-            # full. A limit that is already reached makes every new object evict the least recently used entry, which
-            # is an entry this build has not reached yet (the large libr3 HIP units are built late): they then miss and
-            # recompile (86% hits and 35 minutes instead of 97% and 7). Build unbounded; the trim below runs after the
-            # build, on the entries this build touched.
+            # Build unbounded: a limit that is already reached makes every new object evict the least recently used
+            # entry, which is one this build has not reached yet (the large libr3 HIP units are built late), so they
+            # miss and recompile. The cache is pruned after the build, on what this build touched.
             ccache --max-size 0
             # How much of the restored cache this build used: ccache refreshes the modification time of every entry it
             # hits or writes, so the bytes of the files newer than this marker are the touched working set.
             touch /src/work/.ccache-start-marker
+            ccache_start=$(date +%s)
             ccache_touched() { find "$CCACHE_DIR" -type f -newer /src/work/.ccache-start-marker -printf "%s\n" | awk "{s+=\$1} END {print s+0}"; }
             trap "ccache -s; echo ccache-touched-bytes=\$(ccache_touched); echo ccache-total-bytes=\$(du -sb \$CCACHE_DIR | cut -f1)" EXIT
             if [ -d work/upstream/radiance.git ]; then
@@ -207,12 +206,14 @@ jobs:
             python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
             # Fingerprint the successful build inside the CI compiler image.
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
-            # The cache holds the working set of this build and the previous one (a pin or toolchain bump replaces nearly all of
-            # it once), not a fixed 5 GiB of entries nothing uses: twice the bytes this build touched (hit or wrote).
-            # Only a successful build gets here, so a failed one never shrinks the limit. Main saves the trimmed cache.
-            touched=$(ccache_touched)
-            ccache --max-size "$(( (2 * touched + 1048575) / 1048576 ))M"
-            ccache --cleanup
+            # The cache keeps exactly what this build touched (hit or wrote) and nothing else. The ccache cleanup command is not
+            # used: it trims each small hash directory to a share of the limit, so it also removes entries this build just
+            # used (a limit of twice the touched bytes still dropped about a quarter of them), so the same ~135 compiles
+            # missed on every run. Leftover temporary files (a fifth of the saved cache) are dropped too.
+            # Only a successful build gets here, so a failed one never shrinks the cache. Main saves the result.
+            find "$CCACHE_DIR" -type f ! -newermt "@$ccache_start" -delete
+            rm -rf "$CCACHE_DIR/tmp"
+            ccache --max-size 0
           '
 
       # Only main writes the shared caches (one entry per main build, found by the restore-keys prefix above); a PR
