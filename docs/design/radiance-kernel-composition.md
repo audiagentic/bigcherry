@@ -45,13 +45,15 @@ Goal: make a kernel change a self-contained, mechanically checkable unit that co
 - Names carry their owner: a symbol introduced by a patch or rewrite carries an architecture/patch suffix, so two owners can never define the same name.
 - Derive, never hand-pick: tile selection comes from architecture traits, form fields and band counts, as in the guards already merged.
 - Evidence travels with the unit: resource table, byte identity, cold and warm replay, in the patch's own folder.
+- Test the unit, not the world: a change is checked with a small harness on the unit that changed (section 4a); full-plugin, release and serving runs are for releases.
+- Checks catch mistakes, not attackers: there is no adversary in this repository, so no cryptographic digests, fingerprints or tamper checks are added. Git commit ids, plain comparisons and version strings are the identity machinery.
 - Do not build machinery for a tree that may be retired: layers 1 and 2 pay off with the generated tree or with a native provider; layer 3 waits for the RCS15 baseline.
 
 ## 4. Layer 1: composition seams (RCS19, build first)
 
 A design review (2026-11-25) showed that a textual anchor check proves less than this section first claimed. The rewrite checker verifies match counts and the paired-run rule; it does not parse C++, preprocess architecture macros, compile host and device passes, or link. So composition is checked by four separate gates, each saying only what it proves.
 
-**Gate 1, provenance and anchors (seconds, offline).** Apply the full ordered patch set to the pinned source (the bc patches included), then run the real rewrite check against that patched source. It proves: every required anchor resolves exactly as declared; an optional alternative group has exactly one match (the default for mutually exclusive variants; a deliberate multi-match needs explicit metadata); declared dependencies exist; edited regions do not overlap. It records the digest of the resulting source. It does not prove the result is valid C++.
+**Gate 1, anchors (seconds, offline).** Apply the full ordered patch set to the pinned source (the bc patches included), then run the real rewrite check against that patched source. It proves: every required anchor resolves exactly as declared (an alternative group needs at least one match, the rule the rewriter already has); declared dependencies exist; edited regions do not overlap. It does not prove the result is valid C++.
 
 **Gate 2, compile.** Compile the affected translation units for gfx1100 and gfx1201 (host and device passes, the feature macros each architecture sets, explicit template instantiations of the touched kernels). It catches a duplicate type, a repeated template default argument, a device-only definition clash, and an architecture guard that selects the wrong branch. Run per pull request on affected units, with the compiler cache; not part of the seconds-scale gate.
 
@@ -70,6 +72,20 @@ A design review (2026-11-25) showed that a textual anchor check proves less than
 First customer, resolved 2026-11-25 and merged as an untested package (the general gates are the RCS19 tooling, in review): the gfx1201 fused-tile package keeps its shared-header edits; the five libr3 header blocks that anchored on the same text became find-1-or-0 with a paired identity block; the patch's own tile carries gfx12-suffixed names and is compiled out of the gfx11 build. Lane builds of both architectures confirmed the gfx1100 records unchanged and 11 fused kernels added on gfx1201 with no spill. Gate 1 would have caught the vanished anchors; the duplicate definition needed gate 2.
 
 Deliverables: gate 1 with fixtures (vanished anchor, doubled anchor, exactly-one-of-pair), gate 2 with failing fixtures (duplicate type, repeated template default, device-only definition, conflicting conditional compilation), the ownership records in patch metadata, the freshness dependency and its test, and the patch-author guidance. Acceptance: every managed patch set applies to the pinned source; every required anchor resolves under its declared variant; invalid declarations, duplicate definitions and symbol conflicts are rejected for both architectures before a lane build; no family is qualified until the affected and dependent kernels pass their correctness and resource gates.
+
+## 4a. Testing discretely
+
+A kernel change should be provable in minutes on one card without composing the whole system. Build the small harnesses once, reuse them everywhere, and run the large checks only at release.
+
+| What changed | Check | Cost |
+|---|---|---|
+| a patch or rewrite anchor | gate 1 | seconds, no GPU |
+| a header, template or declaration | gate 2a (syntax, host and device, both architectures) | about a minute, no GPU |
+| one kernel unit or family | unit harness: build just that unit (or the family) into a small test plugin, then on one card: compiled resource record against the shipped build, output hash against the shipped build over the shapes and row counts the unit serves, cold and warm replay of the affected rows | minutes |
+| a row's selection or contract | row-catalogue comparison between the base and the overlay (a test, no GPU) | seconds |
+| a whole release | Gate E, then serving and parity only for the rows whose kernels changed (carry the rest) | release time |
+
+**The unit harness** is the piece to build, once: a small tool that compiles one unit or family into a loadable test plugin with a loader that tolerates the absent rows, hashes selected rows' outputs and replays them with the adaptive launch rule (stop when two windows agree). The pieces already exist in scratch form (the single-unit plugin builds, the cross-plugin output-hash selftest, the replay tool with a cold flush); the work is to make them one repository tool with a stable command. Tracked as RCS25.
 
 ## 5. Layer 2: arch-neutral formulation and the upstream path (RCS21)
 
@@ -101,11 +117,11 @@ The review's central point: **the row contract, not the translation unit, is the
 
 **Plugin contract.** Each family exports one versioned descriptor entry point returning its row table, compatibility identities and ownership metadata; memory owned by the library, which the loader keeps loaded for every plan and in-flight operation that uses it. Libraries load with local symbol scope and hidden visibility by default, an explicit versioned export surface, and no correctness dependency on constructor order or on another family's private symbols.
 
-**Identity, not one hash.** `host_abi_id` (structure sizes and offsets, callbacks, enums, calling conventions, relevant definitions), `row_contract_id` (row ids, schemas, layout and scratch contracts, priorities, concurrency and chaining semantics), `device_abi_id` (target architecture, code-object version, device-linking convention, external device-symbol policy), `artifact_id` (library and code-object digests, source revision, patch set, toolchain, flags) and `composition_id` (hash of the ordered, resolved per-architecture manifest). Equal ABI ids are a necessary compatibility condition, not proof of equal behaviour. The plan cache keys on the composition and dispatch identity, not on family version strings.
+**Identity.** Keep it simple: each family plugin reports a name, a version string and the pinned upstream release it was built against; the loader refuses a library built for a different row ABI revision (one integer the engine already checks) and a duplicate row. The row contract (row ids, schemas, layout and scratch contracts, priorities, concurrency and chaining semantics) is compared by a test between the base and the overlay, not hashed. The plan cache keys on the loaded plugin names and versions.
 
 **Device code.** First version: no relocatable device code and no external device symbols; each family carries the code objects for every architecture it supports, and each is registered per selected device with explicit failure cleanup. Code objects are inspected at release (instantiated templates, device globals and constant symbols can still create linkage). No unloading while GPU work or captured graphs refer to a family; no live swapping in the first version (a quiesced engine and a fresh plan).
 
-**Release and rollback.** One sealed, atomic manifest per release describing the qualified combination, with exact file and code-object digests. Whole-release rollback first. Per-family rollback only later, after compatibility and cache invalidation are shown. Mixed gfx1100 and gfx1201 starts may load different family sets under one globally coordinated plan; the matrix covers them.
+**Release and rollback.** One manifest per release listing the family plugins and their versions; installing a release replaces the set as a whole. Whole-release rollback first (the previous release root is kept). Per-family rollback only later. Mixed gfx1100 and gfx1201 starts may load different family sets under one plan; the test matrix covers them.
 
 **Build graph.** One link per family, a per-unit compiler cache as today, a family test target; a full all-family build for release. Changing a widely included header rebuilds most families; measure it. The compile-only family targets (RCS20) are a development accelerator, not evidence that separate libraries link.
 
@@ -138,6 +154,8 @@ The family branch is refreshed on current main and in review as PR 1545 (RCS20):
 | RCS21 | traits seam, unified fused tile, upstream path | RCS19 |
 | RCS22 | loadable family plugins | RCS15 gate, RCS19 |
 | RCS23 | owned kernel families as overlay plugins, manifest, drift check, `bc` naming | RCS19, RCS21 |
+| RCS24 | cleanup pass: stale docs, tests, dead code | none |
+| RCS25 | discrete kernel test harness (section 4a) | RCS20 |
 
 RCS15 to RCS18 decide the gfx11 provider; RCS19 to RCS23 make whichever provider we keep composable and manageable. Documents they supersede or qualify are listed in section 8b.
 
@@ -163,6 +181,7 @@ RCS15 to RCS18 decide the gfx11 provider; RCS19 to RCS23 make whichever provider
 | Traits header and unified fused tile | RCS21 | lead | after RCS19 gates | one source builds on both, records equal, instructions compared |
 | Owned overlays: manifest, drift check, embedding gather first | RCS23 | lead | design merged | fixtures, twelve-transition replay, first overlay equivalent to the base |
 | Family plugin contract | RCS22 | decided at the RCS15 gate | not started | loader and registry tests, full qualification |
+| Discrete kernel test harness (build one unit, hash, replay) | RCS25 | bigcherry-2 | not started | reproduces the recorded fused-tile resource, hash and replay results in minutes |
 | Stale docs, tests and dead code | RCS24 | bigcherry-2 (build GC), lead (rest) | build GC cleanup in review | grep finds no live reference to removed concepts |
 
 GPT is used for review only on this work: design review of this document and of each step, and diff review; code it supplies comes back as text and is applied, built and committed by the owner. Builds and GPU gates stay with the lead and bigcherry-2.
@@ -187,15 +206,15 @@ Review outcome (2026-11-25), recorded because it changed the design: the first v
 
 **Measured scale.** Over 12 upstream releases (20 October to 19 November 2026): 309 commits, 52 in libr4d, 14 on the files we would shadow first (the IQR GEMM unit 6, its decoder header 3, the prefill header 2, the vocabulary head 2, the embedding gather 1); the row-table source changed 29 times. libr4d has about 170 files and 115 build units; the first overlays shadow about five units. File-level churn is low; the exposure that matters is shared headers and the row table, because they can change what an unchanged kernel means.
 
-**Origin mapping.** Each overlay family records, in a manifest, its upstream origins and what it replaces: `origins = [{ path, base_commit, base_blob, last_integrated_commit }]`, the build slots and the rows it overrides, the architectures it covers, the patches and rewrites its source absorbed, and an integration strategy per origin: `whole-unit` (our file is upstream's file plus our changes: three-way merge applies) or `extracted-family` (our file is a carved-out part of upstream's unit: an upstream change to the origin needs structural review, never a text merge). One origin may feed several owned files; one owned file may rest on several origins.
+**Origin mapping.** Each overlay family records, in a manifest, its upstream origins and what it replaces: `origins = [{ path, base_commit, last_integrated_commit }]`, the build slots and the rows it overrides, the architectures it covers, the patches and rewrites its source absorbed, and an integration strategy per origin: `whole-unit` (our file is upstream's file plus our changes: three-way merge applies) or `extracted-family` (our file is a carved-out part of upstream's unit: an upstream change to the origin needs structural review, never a text merge). One origin may feed several owned files; one owned file may rest on several origins.
 
 **Pin triage and bump: an acceptance transaction, not a merge.**
-1. Verify provenance: the base commit exists, its blob equals the manifest, the target descends from it; otherwise the unit is `unverified`, never clean.
+1. Verify provenance: the base commit exists and is an ancestor of the target; compare the origin path and source changes using git; otherwise the unit is `unverified`, never clean.
 2. Classify each origin: unchanged; changed and cleanly mergeable (candidate diff only); conflicting, renamed, split, deleted or ambiguous (blocks automatic integration, opens a reconciliation item).
 3. Include closure: report changed headers reachable from any owned source for each architecture and pass, preferring the compiler's dependency output over text search; an incomplete closure is reported as incomplete and widens the compile set.
 4. Row contract snapshot: compare row presence, schemas, constraints, priority, callback ownership and chaining semantics of the shadowed rows between the old and new pin; an unchanged owned kernel under a changed row or layout contract is the failure this catches.
 5. Gates: composition gates 1 to 3 (section 4), then qualification (resource, byte identity, replay) per overlay.
-6. Only after qualification does the manifest advance: an *examined* revision is recorded at triage, an *integrated* revision only at the end. A stopped bump never records a candidate as integrated, and resuming binds to the manifest digest, the owned-source digest and the candidate.
+6. The manifest advances only after the checks pass: the examined upstream revision is recorded at triage, the integrated one at the end, as plain git commit ids. A stopped bump leaves the integrated revision where it was.
 Outcomes per origin: no change (base verified), candidate (diff plus gates required), blocked (conflict, rename, split, uncertain), unverified (tool failure, missing history, incomplete closure).
 
 **Adoption and exit.** Two levels: change-level adoption (upstream took one of our changes: retire that change after verifying equivalence) and unit-level exit (the whole overlay row set can be dropped only when every retained local change is gone and upstream's rows are qualified in its place).
@@ -221,7 +240,7 @@ Rule: anything carrying `bc` is ours; anything without it is upstream's or built
 - **Source files.** An owned kernel source is `bc_<family>_<kernel>.hip` (or `.h`).
 - **Symbols and types.** Names we introduce carry a `bc_` prefix. Names an overlay row must keep for the engine (op names, row identities) keep their upstream spelling: they are the interface.
 - **Plugins.** Our overlays are `libbc-<family>-<arch>.so`. The base libraries keep their names (`libr4d.so`, `libr3.so`, `libr2.so`): they are upstream's units, so they carry no `bc`. There is no rename of the base libraries and no alias.
-- **Provenance in the identity.** Each overlay's plugin identity and artifact identity carry a provider tag (`bc`) and the manifest digest; serving manifests, logs and the plan cache show which overlays ran. The base libraries report as upstream-derived.
+- **Identity.** Each overlay reports a plugin name, a version string and the upstream release it was built against, so logs and serving manifests show which overlays ran. The base libraries report as upstream-derived.
 - **What a new overlay touches.** The kernel hierarchy in the serving configuration (our overlays first), the release asset inventory and `bc-release verify`, the helper plugin default where a helper loads an overlay, and nothing in the engine: its loader takes the hierarchy from configuration.
 
 ## 13. Open questions

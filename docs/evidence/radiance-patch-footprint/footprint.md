@@ -2,7 +2,7 @@
 
 Upstream pin: `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
 
-39 composed patches; **639 anchor edits** (604 upstream, 35 on patch-created files; 662 expected match sites); 671 total edits, 32 in created files; 81 upstream files.
+40 composed patches; **640 anchor edits** (605 upstream, 35 on patch-created files; 663 expected match sites); 672 total edits, 32 in created files; 81 upstream files.
 
 Counts are lexical, not a measure of independent semantics, net code savings, or successful application. Regex anchor bytes and full replacement text bytes are counted as authored, not as actual upstream match or net diff bytes.
 
@@ -46,6 +46,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `rad0004_moe_remote_diagnostics` | 1 | 1 | 4 | 4 | 5 | 222 | 5777 |
 | `rad0024_ts3_decode` | 1 | 0 | 3 | 3 | 3 | 684 | 1670 |
 | `rad0012_helper_kernel_config` | 2 | 1 | 3 | 3 | 4 | 95 | 1943 |
+| `rad0064_owned_weighted_head` | 1 | 0 | 1 | 1 | 1 | 591 | 878 |
 | `rad0008_hc_upmix_rt_sweep` | 1 | 0 | 1 | 1 | 1 | 360 | 1249 |
 | `rad0029_rank_own_split` | 1 | 0 | 1 | 1 | 1 | 311 | 4040 |
 | `rad0043_expert_stats_protected` | 1 | 0 | 1 | 1 | 1 | 76 | 1910 |
@@ -55,7 +56,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | Upstream file | Patches | Anchors | Anchor bytes | Patch IDs |
 | --- | ---: | ---: | ---: | --- |
 | `core/engine_bringup.cpp` | 13 | 33 | 2479 | `rad0002_moe_remote_handoff`, `rad0011_plan_memory`, `rad0016_vtp14_rank_code_selection`, `rad0017_vtp14_n3_shared_rendezvous`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0029_rank_own_split`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0050_b16_kv_runtime_contract`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
-| `arch/qwen35_fp8/qwen35_fp8.cpp` | 10 | 42 | 4991 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0027_mixed_one_pipelined_prefill`, `rad0028_rank_consistent_block_drafts`, `rad0030_int8_pipelined_prefill`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
+| `arch/qwen35_fp8/qwen35_fp8.cpp` | 11 | 43 | 5582 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0027_mixed_one_pipelined_prefill`, `rad0028_rank_consistent_block_drafts`, `rad0030_int8_pipelined_prefill`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8`, `rad0064_owned_weighted_head` |
 | `core/config.cpp` | 10 | 34 | 4011 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0050_b16_kv_runtime_contract`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `tests/config_test.cpp` | 9 | 12 | 1831 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `core/rad_core.h` | 8 | 9 | 545 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0054_attn_prefill_fp8` |
@@ -140,8 +141,8 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 
 | Source | Patch count |
 | --- | ---: |
-| `radiance` | 33 |
-| `radiance-diag` | 34 |
+| `radiance` | 34 |
+| `radiance-diag` | 35 |
 | `radiance-native` | 0 |
-| `radiance-routing-evidence` | 34 |
-| `radiance-vtp44-evidence` | 37 |
+| `radiance-routing-evidence` | 35 |
+| `radiance-vtp44-evidence` | 38 |
