@@ -77,6 +77,8 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 
 CONSOLIDATION 2026-11-22: MEN11 lab-script disposition and full workflow gate assigned here. This is not a new helper bench, quality producer or component evidence runner. The legacy fn-r9700-engine.sh/fn-bench-once.py/fn-helper-gate.sh names are absent from the current `tools/lab/radiance/` tree; explicitly verify historical replacements instead of unconditionally deleting.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing one maintained patch-to-release workflow and actual script dispositions remain here, not a new upstream programme. RSC11 removes executable manifest callers, MEN15/16/17 and RCS19/23/MEN24 provide bump sequence/qualification. Final real end-to-end run must use same maintained commands and candidate-bound evidence; preserve unique MEN20/21 evidence/capture gates, no duplicate benchmark/launcher.
+
 ## Change Log
 
 - 2026-10-14T22:28:08.305053+00:00 (created-by): Created by agent
@@ -91,3 +93,5 @@ CONSOLIDATION 2026-11-22: MEN11 lab-script disposition and full workflow gate as
 - RV4468
 - 2026-11-22T09:17:50.657888+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-22T09:18:12.343518+00:00 (updated-by): Updated (no visible changes)
+- RV4620
+- 2026-11-25T02:12:03.269058+00:00 (updated-by): Updated: section:notes

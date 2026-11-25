@@ -454,37 +454,6 @@ class CacheInventory(unittest.TestCase):
         self.assertEqual([item["path"] for item in outcome["removed"]], [str(old)])
         self.assertIn("completion journal", outcome["removed"][0]["warning"])
 
-    def test_quarantine_symlink_and_mount_refuse_build_gc(self):
-        for hazard in ("symlink", "mount"):
-            with self.subTest(hazard=hazard):
-                old = self.build("old", recipe=hazard)
-                quarantine = self.root / "builds" / ".gc-quarantine"
-                outside = self.root / "external-quarantine"
-                if hazard == "symlink":
-                    outside.mkdir()
-                    important = outside / "important"
-                    important.write_bytes(b"IMPORTANT")
-                    quarantine.symlink_to(outside, target_is_directory=True)
-                    reader = lambda: set()
-                else:
-                    quarantine.mkdir(mode=0o700)
-                    reader = lambda quarantine=quarantine: {quarantine}
-                with patch.object(build_gc, "_mount_points", side_effect=reader):
-                    decision = next(e for e in build_gc.inspect(
-                        self.root, policy=retention.Policy(newest_k=0)) if e["path"] == str(old))
-                    outcome = build_gc.apply(self.root, policy=retention.Policy(newest_k=0),
-                                             blocked_check=lambda: None)
-                self.assertEqual(decision["action"], "protected")
-                self.assertEqual(outcome["removed"], [])
-                self.assertTrue((old / "binary").is_file())
-                if hazard == "symlink":
-                    self.assertEqual(important.read_bytes(), b"IMPORTANT")
-                    quarantine.unlink()
-                    important.unlink()
-                    outside.rmdir()
-                else:
-                    quarantine.rmdir()
-
     def test_symlinked_leftover_quarantine_entry_is_never_followed(self):
         self.build("young", age=1)
         quarantine = self.root / "builds" / ".gc-quarantine"

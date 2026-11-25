@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.11.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.4...bc-radiance-2020.11.5) (2026-11-25)
+
+
+### Performance
+
+* **radiance:** untested gfx1201 fused single-band IQR prefill patch (rad0065), de-conflicted from the libr3 rewrites ([#1538](https://github.com/audiagentic/bigcherry/issues/1538)) ([b0dafc7](https://github.com/audiagentic/bigcherry/commit/b0dafc7ae81bee64b1679cb1e4254d1f65a6ca3b))
+
 ## [2020.11.4](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.3...bc-radiance-2020.11.4) (2026-11-24)
 
 

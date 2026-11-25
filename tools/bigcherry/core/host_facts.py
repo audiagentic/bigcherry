@@ -312,15 +312,6 @@ def _environment_hash(environment_file: Path) -> dict:
         return fact(None, "environment_unreadable")
 
 
-_BUILDER = re.compile(r"\s*\([^()\s@]+@[^()\s]+\)")
-
-
-def _kernel_build(text: str | None) -> str | None:
-    """The kernel's version line without the account and machine that built it: the record keeps the release,
-    compiler and build date, not who compiled it."""
-    return None if text is None else _BUILDER.sub("", text, count=1)
-
-
 def collect_host_facts(
     *,
     sys_root: Path = _SYS,

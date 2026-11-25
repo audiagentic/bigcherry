@@ -1,6 +1,24 @@
 # Composable Radiance kernel builds
 
-Status: design, 2026-11-25. Plan items: RCS19 to RCS22 (build-radiance-components), supplementing RCS15 to RCS18 (native RDNA3 provider migration). Nothing here is implemented yet except where marked.
+> **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
+
+Status: design, 2026-11-25. Plan items: RCS19 to RCS24 (build-radiance-components), supplementing RCS15 to RCS18 (native RDNA3 provider migration). Nothing here is implemented yet except where marked.
+
+## 0. Terms (one meaning each)
+
+| Term | Meaning |
+|---|---|
+| upstream | Radiance as released by its maintainers; we pin one release (recipes.toml) and never edit it in place |
+| libr4d | upstream's gfx12 kernel library source (units named `r4d_*`); built for the R9700 as the `libr4d.so` plugin |
+| libr3d | upstream's own native RDNA3 kernel library, a different upstream library from libr4d; status in our builds is what RCS15 measures; not used in production today |
+| libr3 | our gfx11 build of upstream's units: libr4d's units compiled for gfx11 through the compatibility header plus our native rewrites; built as `libr3.so`; upstream-derived, so it keeps its name |
+| libr2 | our gfx1030 helper library (no matrix instructions) |
+| shim | `r3_compat.h`: emulates gfx12-only instructions on gfx11 |
+| native rewrite | a `native/*.rw` block that replaces text in a libr4d unit for the gfx11 build |
+| managed patch | a package under `engines/radiance/patches` that edits the pinned source for every architecture, with a lifecycle state (untested, validated) |
+| overlay plugin | a library of kernels we own (`libbc-<family>-<arch>.so`, sources `bc_*`), placed first in the engine's kernel hierarchy so its rows override the base libraries' rows (RCS23); the existing precedent is `libbcgfx12` |
+| family | a group of units by purpose (`core`, `gemm_quant`, `gemm_dense`, `attention`, `moe`, `speculation`, `multimodal`, `collectives`) |
+| `bc` | prefix and suffix meaning "ours"; no `bc` means upstream |
 
 ## 1. Why
 
@@ -16,8 +34,8 @@ Goal: make a kernel change a self-contained, mechanically checkable unit that co
 
 - Upstream's own unit list defines the compile units; libr3 reads it from upstream's build file. Rows whose unit is left out are dropped at load.
 - Application order today: pinned source, managed patches, libr3 configure (rewrites, compat layer), compile, link into one `libr3.so`; a separate native plugin for gfx1201 (`libr4d`), built from the patched source without rewrites.
-- An earlier effort (unmerged branch) grouped every upstream unit into eight families: `core`, `gemm_quant`, `gemm_dense`, `attention`, `moe`, `speculation`, `multimodal`, `collectives`, with compile-only per-family targets and a coverage test that each unit has exactly one family. It shares objects with the full build and produces no loadable plugin.
-- The loader expects one plugin per architecture; helper contracts (remote MoE, n-gram) have their own ownership.
+- An earlier effort (PR 1545, RCS20) groups every upstream unit into eight families: `core`, `gemm_quant`, `gemm_dense`, `attention`, `moe`, `speculation`, `multimodal`, `collectives`, with compile-only per-family targets and a coverage test that each unit has exactly one family. It shares objects with the full build and produces no loadable plugin.
+- The engine's own plugin loader already supports several kernel libraries at once: it loads them with local symbol scope, orders them by an explicit hierarchy (`--kernels` or `RADIANCE_KERNELS`), and selects each op's row from the earliest library in that order; an override plugin may replace selected rows of the libraries below it, and the loader checks the combined set. Our `libbcgfx12` plugin already uses this to override selected gfx12 rows. What assumes one primary library per architecture is our deployment data (`archs.toml`, the helper configuration) and some of our code that finds `libr4d.so` by file name. Helper contracts (remote MoE, n-gram) have their own ownership.
 - Wins that exist only because of the shim (accumulate-once native layouts, native fragments, native head sums) are gfx11-specific by nature. Wins that are arithmetic-neutral (fused single-band tile, wave-local embedding butterflies, head prefetch lifetime, weighted-head ownership across ranks) are not.
 
 ## 3. Principles
@@ -27,13 +45,15 @@ Goal: make a kernel change a self-contained, mechanically checkable unit that co
 - Names carry their owner: a symbol introduced by a patch or rewrite carries an architecture/patch suffix, so two owners can never define the same name.
 - Derive, never hand-pick: tile selection comes from architecture traits, form fields and band counts, as in the guards already merged.
 - Evidence travels with the unit: resource table, byte identity, cold and warm replay, in the patch's own folder.
+- Test the unit, not the world: a change is checked with a small harness on the unit that changed (section 4a); full-plugin, release and serving runs are for releases.
+- Checks catch mistakes, not attackers: there is no adversary in this repository, so no cryptographic digests, fingerprints or tamper checks are added. Git commit ids, plain comparisons and version strings are the identity machinery.
 - Do not build machinery for a tree that may be retired: layers 1 and 2 pay off with the generated tree or with a native provider; layer 3 waits for the RCS15 baseline.
 
 ## 4. Layer 1: composition seams (RCS19, build first)
 
 A design review (2026-11-25) showed that a textual anchor check proves less than this section first claimed. The rewrite checker verifies match counts and the paired-run rule; it does not parse C++, preprocess architecture macros, compile host and device passes, or link. So composition is checked by four separate gates, each saying only what it proves.
 
-**Gate 1, provenance and anchors (seconds, offline).** Apply the full ordered patch set to the pinned source (the bc patches included), then run the real rewrite check against that patched source. It proves: every required anchor resolves exactly as declared; an optional alternative group has exactly one match (the default for mutually exclusive variants; a deliberate multi-match needs explicit metadata); declared dependencies exist; edited regions do not overlap. It records the digest of the resulting source. It does not prove the result is valid C++.
+**Gate 1, anchors (seconds, offline).** Apply the full ordered patch set to the pinned source (the bc patches included), then run the real rewrite check against that patched source. It proves: every required anchor resolves exactly as declared (an alternative group needs at least one match, the rule the rewriter already has); declared dependencies exist; edited regions do not overlap. It does not prove the result is valid C++.
 
 **Gate 2, compile.** Compile the affected translation units for gfx1100 and gfx1201 (host and device passes, the feature macros each architecture sets, explicit template instantiations of the touched kernels). It catches a duplicate type, a repeated template default argument, a device-only definition clash, and an architecture guard that selects the wrong branch. Run per pull request on affected units, with the compiler cache; not part of the seconds-scale gate.
 
@@ -49,9 +69,23 @@ A design review (2026-11-25) showed that a textual anchor check proves less than
 
 **Layer order.** pinned source, arch-neutral managed patches, libr3 rewrites (gfx11 specifics only), compile. A rewrite may rely on a patch only through a declared anchor.
 
-First customer, resolved 2026-11-25 on a branch (not yet general tooling): the gfx1201 fused-tile package keeps its shared-header edits; the five libr3 header blocks that anchored on the same text became find-1-or-0 with a paired identity block; the patch's own tile carries gfx12-suffixed names and is compiled out of the gfx11 build. Lane builds of both architectures confirmed the gfx1100 records unchanged and 11 fused kernels added on gfx1201 with no spill. Gate 1 would have caught the vanished anchors; the duplicate definition needed gate 2.
+First customer, resolved 2026-11-25 and merged as an untested package (the general gates are the RCS19 tooling, in review): the gfx1201 fused-tile package keeps its shared-header edits; the five libr3 header blocks that anchored on the same text became find-1-or-0 with a paired identity block; the patch's own tile carries gfx12-suffixed names and is compiled out of the gfx11 build. Lane builds of both architectures confirmed the gfx1100 records unchanged and 11 fused kernels added on gfx1201 with no spill. Gate 1 would have caught the vanished anchors; the duplicate definition needed gate 2.
 
 Deliverables: gate 1 with fixtures (vanished anchor, doubled anchor, exactly-one-of-pair), gate 2 with failing fixtures (duplicate type, repeated template default, device-only definition, conflicting conditional compilation), the ownership records in patch metadata, the freshness dependency and its test, and the patch-author guidance. Acceptance: every managed patch set applies to the pinned source; every required anchor resolves under its declared variant; invalid declarations, duplicate definitions and symbol conflicts are rejected for both architectures before a lane build; no family is qualified until the affected and dependent kernels pass their correctness and resource gates.
+
+## 4a. Testing discretely
+
+A kernel change should be provable in minutes on one card without composing the whole system. Build the small harnesses once, reuse them everywhere, and run the large checks only at release.
+
+| What changed | Check | Cost |
+|---|---|---|
+| a patch or rewrite anchor | gate 1 | seconds, no GPU |
+| a header, template or declaration | gate 2a (syntax, host and device, both architectures) | about a minute, no GPU |
+| one kernel unit or family | unit harness: build just that unit (or the family) into a small test plugin, then on one card: compiled resource record against the shipped build, output hash against the shipped build over the shapes and row counts the unit serves, cold and warm replay of the affected rows | minutes |
+| a row's selection or contract | row-catalogue comparison between the base and the overlay (a test, no GPU) | seconds |
+| a whole release | Gate E, then serving and parity only for the rows whose kernels changed (carry the rest) | release time |
+
+**The unit harness** is the piece to build, once: a small tool that compiles one unit or family into a loadable test plugin with a loader that tolerates the absent rows, hashes selected rows' outputs and replays them with the adaptive launch rule (stop when two windows agree). The pieces already exist in scratch form (the single-unit plugin builds, the cross-plugin output-hash selftest, the replay tool with a cold flush); the work is to make them one repository tool with a stable command. Tracked as RCS25.
 
 ## 5. Layer 2: arch-neutral formulation and the upstream path (RCS21)
 
@@ -75,17 +109,19 @@ Deliverables: the traits header and the unified fused tile as the first port (ga
 
 ## 6. Layer 3: loadable kernel families (RCS22, gated on the RCS15 baseline)
 
+The loader already composes several kernel libraries by hierarchy, so a family plugin is not a new loading mechanism: it is an override library in the existing hierarchy (section 11 makes that the primary way to own kernels). What the loader does not give us, and this layer adds, is a sealed manifest, complete callback ownership per family, stable row identities across libraries, a composition identity and a lifecycle policy.
+
 The review's central point: **the row contract, not the translation unit, is the unit of runtime composition.** Source units decide what to compile; an independently loadable family must own complete, validated kernel rows and their dependencies. The current libr3 link is built around a complete upstream row table: the declaration includes the upstream-wide host declarations, generated stubs stand in for missing entry points and the registry drops rows that point at a stub. That works for one intentionally incomplete monolith and does not establish independent families (a family whose kernel needs another family's layout or scratch callback would have it stubbed and its row silently removed).
 
 **Row ownership model.** Every row has a stable identifier, one owning family, and a complete callback set (launch, layout, relayout, scratch, init and fini, tuning), plus its concurrency, collective and chaining metadata. A callback that belongs to another family is either moved into an engine-owned common library or declared as a versioned dependency; it is never stubbed. Row order and dispatch priority are deterministic and independent of load order, because they affect which kernel wins, row-indexed behaviour and plan-cache decisions without changing arithmetic.
 
 **Plugin contract.** Each family exports one versioned descriptor entry point returning its row table, compatibility identities and ownership metadata; memory owned by the library, which the loader keeps loaded for every plan and in-flight operation that uses it. Libraries load with local symbol scope and hidden visibility by default, an explicit versioned export surface, and no correctness dependency on constructor order or on another family's private symbols.
 
-**Identity, not one hash.** `host_abi_id` (structure sizes and offsets, callbacks, enums, calling conventions, relevant definitions), `row_contract_id` (row ids, schemas, layout and scratch contracts, priorities, concurrency and chaining semantics), `device_abi_id` (target architecture, code-object version, device-linking convention, external device-symbol policy), `artifact_id` (library and code-object digests, source revision, patch set, toolchain, flags) and `composition_id` (hash of the ordered, resolved per-architecture manifest). Equal ABI ids are a necessary compatibility condition, not proof of equal behaviour. The plan cache keys on the composition and dispatch identity, not on family version strings.
+**Identity.** Keep it simple: each family plugin reports a name, a version string and the pinned upstream release it was built against; the loader refuses a library built for a different row ABI revision (one integer the engine already checks) and a duplicate row. The row contract (row ids, schemas, layout and scratch contracts, priorities, concurrency and chaining semantics) is compared by a test between the base and the overlay, not hashed. The plan cache keys on the loaded plugin names and versions.
 
 **Device code.** First version: no relocatable device code and no external device symbols; each family carries the code objects for every architecture it supports, and each is registered per selected device with explicit failure cleanup. Code objects are inspected at release (instantiated templates, device globals and constant symbols can still create linkage). No unloading while GPU work or captured graphs refer to a family; no live swapping in the first version (a quiesced engine and a fresh plan).
 
-**Release and rollback.** One sealed, atomic manifest per release describing the qualified combination, with exact file and code-object digests. Whole-release rollback first. Per-family rollback only later, after compatibility and cache invalidation are shown. Mixed gfx1100 and gfx1201 starts may load different family sets under one globally coordinated plan; the matrix covers them.
+**Release and rollback.** One manifest per release listing the family plugins and their versions; installing a release replaces the set as a whole. Whole-release rollback first (the previous release root is kept). Per-family rollback only later. Mixed gfx1100 and gfx1201 starts may load different family sets under one plan; the test matrix covers them.
 
 **Build graph.** One link per family, a per-unit compiler cache as today, a family test target; a full all-family build for release. Changing a widely included header rebuilds most families; measure it. The compile-only family targets (RCS20) are a development accelerator, not evidence that separate libraries link.
 
@@ -97,71 +133,120 @@ Decision gate: if the RCS15 baseline shows a native RDNA3 provider matches the g
 
 ## 7. Immediate step before layer 1: the family compile targets (RCS20)
 
-Refresh the unmerged family branch against main, run the full build, and merge it. It is the cheapest dev-loop gain and layer 3's starting point. Record, once, the build time of a one-family compile against a full plugin so the later benefit is measured, not assumed.
+The family branch is refreshed on current main and in review as PR 1545 (RCS20): eight family targets and the coverage test, compile-only. It is the cheapest dev-loop gain and layer 3's starting point. Once merged, record the build time of a one-family compile against a full plugin, cold and warm, so the benefit is measured, not assumed.
 
 ## 8. Relation to the native RDNA3 migration (RCS15 to RCS18)
 
 - The Stage 0 item of the migration brief (the additive gfx12 body with distinct identifiers, no removed or duplicated anchors, both architectures built and gated) is the first user of layer 1 and is already in progress as the gfx1201 fused-tile package.
-- RCS15 (freeze and measure) runs next, GPU-free parts first: refresh the upstream pin, inspect the native provider's rows, inventory local optimisations and classify each (upstream equivalent, port required, obsolete, rejected).
+- RCS15 (freeze and measure): part one is done (docs/evidence/2026-11-25-rcs15-libr3d-inventory): upstream's native RDNA3 library has no row for the IQR or the local int8 form, so the overlay model is needed whichever way the provider decision goes. Part two, the matched arms on one card for the remaining rows (MXFP4, E4M3, GDN, MoE, DFlash, attention, helpers), decides the provider.
 - Layer 2's traits seam is also the port surface for a native provider.
+
+## 8a. Programme map (plan items)
+
+| Item | What | Depends on |
+|---|---|---|
+| RCS15 | baseline: upstream libr3d against our libr3, matrix of rows | none |
+| RCS16 | native compute migration per family (only if RCS15 says libr3d is at least as good) | RCS15 |
+| RCS17 | transport and helper integration for a native provider | RCS16 |
+| RCS18 | production cutover and retirement of the generated gfx11 tree | RCS15 to RCS17 |
+| RCS19 | composition gates (anchors, compile, link, qualification), ownership records, freshness | none; first customer the gfx1201 fused tile |
+| RCS20 | merge the family compile targets | none |
+| RCS21 | traits seam, unified fused tile, upstream path | RCS19 |
+| RCS22 | loadable family plugins | RCS15 gate, RCS19 |
+| RCS23 | owned kernel families as overlay plugins, manifest, drift check, `bc` naming | RCS19, RCS21 |
+| RCS24 | cleanup pass: stale docs, tests, dead code | none |
+| RCS25 | discrete kernel test harness (section 4a) | RCS20 |
+
+RCS15 to RCS18 decide the gfx11 provider; RCS19 to RCS23 make whichever provider we keep composable and manageable. Documents they supersede or qualify are listed in section 8b.
+
+## 8b. Related documents and their status
+
+- `docs/reviews/radiance-native-libr3d/ASSESSMENT.md`, `INTEGRATION.md`, `native-rows.tsv`: written against pin 1.17 and an earlier upstream snapshot; input to RCS15, not a statement of current facts.
+- `engines/radiance/components/libr3/README.md`: component description; its terms follow section 0.
+- `docs/reference/build/PIN_BUMP.md` and the bump-radiance skill: the pin-bump flow; the planned drift check for owned kernel overlays (RCS23) is noted there and is not implemented yet.
+- `engines/radiance/components/libr3/exclude.txt`: units our gfx11 build leaves out; currently none.
+- `engines/radiance/components/libr3/native-shelved/`: rewrite files kept as source but not built (each reason is in `component.toml`).
 
 ## 9. Sequencing and ownership
 
-| Step | Plan item | Owner | Gate |
-|---|---|---|---|
-| Anchor gate, lint, patch-author guidance | RCS19 | lead | gate catches the recorded collision |
-| Merge family compile targets, time one-family builds | RCS20 | lead | full build and component tests pass |
-| Finish the gfx1201 fused tile with distinct names; promote | RCS19 (first customer) | bigcherry-2 | both architectures built, bytes equal, controls unchanged |
-| Traits header and unified fused tile | RCS21 | lead | one source builds on both, records equal |
-| Upstream preparation for the neutral patches | RCS21 | lead, with owner approval | evidence per patch |
-| RCS15 baseline, GPU-free first | RCS15 | lead, with a design reviewer | matrix committed |
-| Family plugins | RCS22 | decided at the RCS15 gate | loader and registry tests, full qualification |
+| Step | Plan item | Owner | State | Gate |
+|---|---|---|---|---|
+| gfx1201 fused tile de-conflicted (first customer of the seams) | RCS19 | bigcherry-2 | merged as an untested package (rad0065); promotion next | both architectures built, bytes equal, controls unchanged |
+| Composition gates 1 and 2 (`patch-compose-check`) | RCS19 | bigcherry-2 | in review | fixtures fail with the expected diagnostic; merged rad0065 passes |
+| Patched-source freshness dependency | RCS19 | lead | in review | regeneration test |
+| Ownership records in patch metadata | RCS19 | lead | after the gates exist | records checked in the gates |
+| Family compile targets | RCS20 | lead | in review | full build and component tests; one-family time recorded |
+| RCS15 part one (inventory) | RCS15 | lead | done | evidence note |
+| RCS15 part two (matched arms) | RCS15 | bigcherry-2 for the build and runs | not started | matrix committed; decides the provider |
+| Traits header and unified fused tile | RCS21 | lead | after RCS19 gates | one source builds on both, records equal, instructions compared |
+| Owned overlays: manifest, drift check, embedding gather first | RCS23 | lead | design merged | fixtures, twelve-transition replay, first overlay equivalent to the base |
+| Family plugin contract | RCS22 | decided at the RCS15 gate | not started | loader and registry tests, full qualification |
+| Discrete kernel test harness (build one unit, hash, replay) | RCS25 | bigcherry-2 | not started | reproduces the recorded fused-tile resource, hash and replay results in minutes |
+| Stale docs, tests and dead code | RCS24 | bigcherry-2 (build GC), lead (rest) | build GC cleanup in review | grep finds no live reference to removed concepts |
 
-GPT is used for review only: design review of this document and of each step, and diff review; where code is wanted it is returned as text in the reply and applied, built and committed by the owner. Builds and GPU gates stay with the lead and bigcherry-2.
+GPT is used for review only on this work: design review of this document and of each step, and diff review; code it supplies comes back as text and is applied, built and committed by the owner. Builds and GPU gates stay with the lead and bigcherry-2.
 
 ## 10. Acceptance for the whole programme
 
-A kernel change is a self-contained patch or rewrite with declared units, suffixed names, evidence in its own folder and a passing anchor gate; it builds and gates on its own family; arch-neutral changes have a single source for both architectures; releases name their family versions; no silent provider fallback; and for each neutral change there is a documented decision to keep it local or offer it upstream.
+A kernel change is a self-contained patch, rewrite or overlay with evidence in its own folder; it passes the composition gates (provenance and anchors, compile, link and export, qualification) before a lane build; it builds and gates on its own family; arch-neutral changes have a single source for both architectures; owned kernels are overlay plugins with an origin manifest and a transactional upstream check at each pin bump; releases name their overlay and family versions; there is no silent provider fallback; and for each neutral change there is a recorded decision to keep it local or offer it upstream.
 
-## 11. Owned units: managing upstream change (RCS23)
+## 11. Owned kernels as overlay plugins: managing upstream change (RCS23)
 
-The three layers above keep upstream's source as an untouched input and change it by patches and rewrites. For the families we have already rewritten heavily that stops paying off: the IQR GEMM unit carries 440 lines of rewrites over a 1,343-line upstream file, the prefill header 134 over 309, the vocabulary head 121 over 536, the embedding gather about 57 over 142; 19 of 48 patch packages touch libr4d. For those units we take ownership of the source and manage upstream change explicitly. We do not fork libr4d as a whole.
+Review outcome (2026-11-25), recorded because it changed the design: the first version of this section proposed taking whole source files into our tree and substituting them for upstream's units inside the upstream build. A review pointed out that the engine's loader already composes kernel libraries by hierarchy, and that unit substitution needs a new build-system seam (the unit list is parsed from upstream's build file and compiled by wrappers that always include upstream's file) plus fail-closed handling of upstream renames and splits. The overlay model needs neither.
 
-**Measured upstream churn (12 releases, 20 October to 19 November 2026).** 309 upstream commits, 52 of them in libr4d. The files that would be owned changed in 14 commits in that month (the IQR GEMM unit 6, its decoder header 3, the prefill header 2, the vocabulary head 2, the embedding gather 1), about three a week. The row-table source file changed 29 times and is never owned. libr4d has about 170 files and 115 build units; we own about five. So the merge surface is small and bounded, and a unit we do not own costs nothing.
+**The model.** Upstream's libraries stay byte-for-byte what upstream builds: libr4d for gfx12, and for gfx11 our build of the same units through the compatibility layer (libr3). The kernels we own live in our repository as families (`bc_<family>_<kernel>` sources written on the traits seam) and are built as separate **overlay plugins**, `libbc-<family>-<arch>.so`, placed first in the kernel hierarchy. For an op where an overlay row exists, the loader selects it; everything else falls through to the base library. Removing an overlay restores upstream's behaviour exactly. `libbcgfx12` is the existing precedent.
 
-**What owning means.**
-1. An owned unit is a plain source file in our repository, split by kernel family (GEMV, 16-row tile, wide tile, plane prefill, fused tile, head, embedding), written against the traits seam so one source builds for gfx12 and for gfx11.
-2. Its patches and rewrites are retired (single owner per line), except small patches that touch only unowned units.
-3. A manifest lists every owned unit: the file, the upstream commit and blob it was based on, the family, and the last upstream commit merged. The build takes owned units from our repository and every other unit from the pinned upstream source.
+**What this buys over unit substitution.**
+- No change to upstream's build list, no source resolver, no per-architecture include ordering trick, no risk of two definitions of one exported kernel.
+- The base libraries stay upstream-derived and keep their names; our code is recognisable by `bc` alone (section 12).
+- Each overlay builds, gates, versions and rolls back on its own, which is the layer-3 benefit (section 6) reached incrementally on a loader that exists.
+- Ownership is per family and reversible: a family that upstream catches up with is deleted.
 
-**Tracking upstream (the drift check, run at every pin triage and bump).**
-- For each owned unit: diff the upstream change on that file between our recorded base and the new pin. Empty: advance the base automatically. Not empty: try a three-way merge of upstream's change into our file; a clean merge is applied on a branch and sent through the gates; a conflict becomes a plan item with the upstream diff and ours side by side.
-- Include closure: a changed upstream header included by an owned unit is reported even when the unit itself did not change (the row ABI and shared types are the usual cause). Compile and link gates 2 and 3 catch what the diff cannot.
-- Unowned units are unchanged from today: pinned, patched, rewritten, with gate 1.
-- Exit: when upstream adopts a change of ours, the drift check shows our file equal to upstream's and the unit leaves the owned set (any local patch is archived unchanged).
-- Entry: a unit joins when it carries several independent changes or a restructuring and the drift check shows it is mostly ours anyway. This is a policy judgement recorded in the manifest, not a numeric threshold.
-- Hot shared files (the row table) are never owned: changes there are absorbed through patches with gate 1 and ABI checks.
+**What we must own for an overlay row.** The row descriptor (op, schema, layout, relayout, scratch, init and fini, tuning, concurrency, collective and chaining metadata) and the kernel. Upstream decoders and shared headers are compiled in from the pinned source, so a changed upstream header changes our overlay too: that exposure is what the drift check watches.
 
-**Library structure after this work.** The engine's loader contract stays: one library per architecture (libr4d for gfx12, libr3 for gfx11, libr2 for gfx1030). We do not rename or merge them in this phase; the names and files stay what the engine expects. What changes is where their source comes from: the owned families are one source tree built for both architectures (libr3 and libr4d each compile the same owned units with their traits), the unowned units still come from upstream, and the generated gfx11 tree shrinks to the unowned units and retires if a native gfx11 provider replaces it (RCS15). Splitting each library into loadable family plugins is the separate, later decision in section 6. So: separate per-architecture libraries remain as build outputs; we manage the source of the families we have changed, and upstream manages everything else.
+**Measured scale.** Over 12 upstream releases (20 October to 19 November 2026): 309 commits, 52 in libr4d, 14 on the files we would shadow first (the IQR GEMM unit 6, its decoder header 3, the prefill header 2, the vocabulary head 2, the embedding gather 1); the row-table source changed 29 times. libr4d has about 170 files and 115 build units; the first overlays shadow about five units. File-level churn is low; the exposure that matters is shared headers and the row table, because they can change what an unchanged kernel means.
 
-**Risks and answers.** The merge burden: bounded by the measured churn and automated by the drift check. Silent drift of an owned file from upstream behaviour: the manifest base commit and the per-bump drift report make every divergence explicit. Upstream ABI change: caught by the include closure and by gates 2 and 3, and by the row-contract identity if family plugins exist. A bad first decomposition: the split is staged one family at a time, each step byte identical and resource equal to the shipped build.
+**Origin mapping.** Each overlay family records, in a manifest, its upstream origins and what it replaces: `origins = [{ path, base_commit, last_integrated_commit }]`, the build slots and the rows it overrides, the architectures it covers, the patches and rewrites its source absorbed, and an integration strategy per origin: `whole-unit` (our file is upstream's file plus our changes: three-way merge applies) or `extracted-family` (our file is a carved-out part of upstream's unit: an upstream change to the origin needs structural review, never a text merge). One origin may feed several owned files; one owned file may rest on several origins.
 
-**Staging.** (1) The inventory: for every libr4d unit, the share of lines we rewrite or patch and the number of patches that touch it, plus the upstream commit count per unit per release. (2) The manifest and the drift check, run against the last twelve releases to prove it reproduces the churn above. (3) Take ownership of one family (the fused tile and the embedding gather are small and recent), gated like any kernel change. (4) The remaining IQR units. (5) Review the set at each pin bump.
+**Pin triage and bump: an acceptance transaction, not a merge.**
+1. Verify provenance: the base commit exists and is an ancestor of the target; compare the origin path and source changes using git; otherwise the unit is `unverified`, never clean.
+2. Classify each origin: unchanged; changed and cleanly mergeable (candidate diff only); conflicting, renamed, split, deleted or ambiguous (blocks automatic integration, opens a reconciliation item).
+3. Include closure: report changed headers reachable from any owned source for each architecture and pass, preferring the compiler's dependency output over text search; an incomplete closure is reported as incomplete and widens the compile set.
+4. Row contract snapshot: compare row presence, schemas, constraints, priority, callback ownership and chaining semantics of the shadowed rows between the old and new pin; an unchanged owned kernel under a changed row or layout contract is the failure this catches.
+5. Gates: composition gates 1 to 3 (section 4), then qualification (resource, byte identity, replay) per overlay.
+6. The manifest advances only after the checks pass: the examined upstream revision is recorded at triage, the integrated one at the end, as plain git commit ids. A stopped bump leaves the integrated revision where it was.
+Outcomes per origin: no change (base verified), candidate (diff plus gates required), blocked (conflict, rename, split, uncertain), unverified (tool failure, missing history, incomplete closure).
+
+**Adoption and exit.** Two levels: change-level adoption (upstream took one of our changes: retire that change after verifying equivalence) and unit-level exit (the whole overlay row set can be dropped only when every retained local change is gone and upstream's rows are qualified in its place).
+
+**Library structure at the end.** Unchanged for the engine: libr4d (gfx12), libr3 (gfx11, generated from upstream units), libr2 (gfx1030) keep their names and loading. Added: a handful of `libbc-<family>-<arch>.so` overlays, first in the hierarchy. libr2 and the native gfx11 provider (libr3d, if RCS15 selects it) stay as they are unless an overlay explicitly covers their architecture. Splitting the base libraries themselves into families is not part of this plan.
+
+**Where a shared-body edit used to be a patch.** An overlay compiles its own copy of the body it changes (for example the prefill body for the fused tile); the copy is an owned origin with an `extracted-family` or `whole-unit` strategy. That is the price of not editing upstream's text, and it is bounded by the manifest.
+
+**Staging (gated on RCS15 for the large gfx11 work).**
+0. Baseline: per-architecture snapshot of build units, row catalogues, callback dependencies and selected behaviour, including the gfx1030 exclusions.
+1. Inventory: every libr4d unit's share of lines we rewrite or patch, the patches touching it, and upstream commits per unit per release.
+2. Manifest, provenance verifier, dry-run merge, include closure and row-contract snapshot, with fixtures: unchanged owned file, changed file, wrong base blob, non-ancestor target, rename, split, moved header, changed indirect header, changed row priority, an unchanged kernel under a changed layout contract, a clean text merge that fails qualification, an upstream adoption.
+3. Replay the twelve release transitions one by one (not first against last: a change introduced and later reverted disappears in an endpoint diff); every transition classified, no unexplained clean result.
+4. First overlay: the embedding gather (a distinct source boundary): row and export equivalence, byte identity, resource parity, cold and warm no regression, removal restores the base behaviour.
+5. Second overlay: the fused tile on the traits seam, both architectures.
+6. The large IQR GEMM, prefill and head families, after the RCS15 decision, so the migration is not done twice.
+7. Two successive real pin bumps run through the new process with complete reports, verified resume and rollback.
 
 ## 12. Naming: `bc` marks what we own
 
-Rule: anything carrying `bc` is ours; anything without it is upstream's, pinned and untouched. The convention already exists in the repository (the `bc_*` implementation headers added by our patches, `bc-serve`, `bc-release`, the `libbcgfx12` interposer plugin, the `bigcherryrad` release archive); this extends it to the kernel providers so that no reader mistakes one of our builds for native or upstream.
+Rule: anything carrying `bc` is ours; anything without it is upstream's or built from upstream's units, pinned and untouched. The convention exists in the repository (the `bc_*` implementation headers added by our patches, `bc-serve`, `bc-release`, the `libbcgfx12` plugin, the `bigcherryrad` archive); this extends it to the owned kernels.
 
-- **Source files.** An owned unit is `bc_<family>_<kernel>.hip` (or `.h`). The manifest (section 11) records which upstream unit slot it replaces, so the build knows to leave that upstream file out.
-- **Symbols and types.** Names we introduce carry a `bc_` prefix (kernels, tile types, certificates). Names the engine's row table requires of the unit slot keep their upstream spelling; they are the ABI.
-- **Libraries.** Our builds of the architecture providers are `libbcr3.so` (gfx11) and `libbcr4d.so` (gfx12), once they contain owned units; the later family plugins are `libbc-<family>-<arch>.so`. A stock upstream provider, where one is loaded at all (a comparison arm, a reference), keeps its upstream name, so the RCS15 arms read unambiguously: arm A `libbcr3`, arm B upstream's native library. The old names are not kept as aliases.
-- **Provenance in the identity.** The plugin identity string and the artifact identity carry a provider tag (`bc` or `upstream`) and the owned-unit manifest digest, so serving manifests, logs and the plan cache show which provider ran.
-- **What the rename touches (all ours).** `archs.toml` (the `plugin` field is data), the component outputs, the plugin name string in the registry, the hard-coded `libr4d.so` search in the `libbcgfx12` plugin, the helper plugin default and its override setting, the serving layer's plugin field, the release asset inventory and `bc-release verify`. The engine's own plugin loader takes the path from configuration, so no change to upstream core is expected; stage 0 of RCS23 verifies this with a start of both architectures before anything else moves.
-- **When.** One coordinated change at the start of RCS23, not piecemeal, with a release that restores cleanly (releases are self-contained, so the previous release keeps its old names). Until then `libr3.so` is already a generated build rather than upstream's, and the rename is the honest label.
+- **Source files.** An owned kernel source is `bc_<family>_<kernel>.hip` (or `.h`).
+- **Symbols and types.** Names we introduce carry a `bc_` prefix. Names an overlay row must keep for the engine (op names, row identities) keep their upstream spelling: they are the interface.
+- **Plugins.** Our overlays are `libbc-<family>-<arch>.so`. The base libraries keep their names (`libr4d.so`, `libr3.so`, `libr2.so`): they are upstream's units, so they carry no `bc`. There is no rename of the base libraries and no alias.
+- **Identity.** Each overlay reports a plugin name, a version string and the upstream release it was built against, so logs and serving manifests show which overlays ran. The base libraries report as upstream-derived.
+- **What a new overlay touches.** The kernel hierarchy in the serving configuration (our overlays first), the release asset inventory and `bc-release verify`, the helper plugin default where a helper loads an overlay, and nothing in the engine: its loader takes the hierarchy from configuration.
 
 ## 13. Open questions
 
 - Which of the neutral patches the owner wants offered upstream, and when.
-- Whether `gemm_quant` is split before layer 3.
+- Whether `gemm_quant` is split before family plugins.
 - Whether per-family rollback is wanted or whole-release rollback is enough.
-- Whether the native provider replaces the gfx11 tree (decided by RCS15).
+- Which provider serves the remaining gfx11 rows (decided by RCS15 part two); the IQR and IQ8R rows are ours under either answer.
+- Whether libr2 (gfx1030) shares any owned overlay source, or keeps its own.

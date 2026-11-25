@@ -53,8 +53,15 @@ The family targets are on main with a recorded one-family against full build tim
 
 Design: docs/design/radiance-kernel-composition.md section 7.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing #1545 family compile targets and subsequent in-flight work are the single compile target owner. Expose affected-family builds to RCS19 and MEN16, actual same CMake flags/arch/object graph, reuse full-lane objects only with exact identity; changed shared header or unknown dependency widens compile set. No separate build system or incomplete family treated as production plugin.
+
 ## Change Log
 
 - 2026-11-25T00:40:47.022098+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:27.469152+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:52:40.010572+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
+
+## Reviews
+
+- RV4606
+- 2026-11-25T02:04:43.391147+00:00 (updated-by): Updated: section:notes

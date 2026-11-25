@@ -19,10 +19,7 @@ Today the layout resolver and the serving config take GPUs from the hand-written
 
 ## Steps
 
-1. Serve-time detection in C++ in the serving component (RSC01). GPUs come from /sys/class/kfd topology (gfx target, SIMDs, render minor, location) joined to /sys/bus/pci (BDF, mem_info_vram_total, current and max link). Host facts come from /proc/meminfo (MemTotal, MemAvailable, SwapTotal), /dev/shm (statvfs), CPU count and NUMA. There is no amd-smi dependency at serve time.
-2. The discovered facts feed the loader's 'discovered' layer, and layout device selection uses them, keyed by PCI locator, with the HIP ordinal derived from kfd node order.
-3. The device inventory in environment.local.toml shrinks to per-card overrides keyed by locator: calibrated power (PWR04), reserve and an exclusion flag. Every environment.Device caller in the Python tooling (51 references) is migrated to `bc-serve --detect --json` output, or to hardware.linux_amd for job placement, in the same change. No dual path.
-4. `bc-serve --detect [--json]` prints the inventory; explain shows discovered values with origin 'discovered'.
+Reuse implemented C++ discovery and current physical identity mapping; audit actual production callers rather than add another inventory. Select ordered BDFs from native cards and x-bigcherry rank/helper constraints; map to child-local ordinals via existing visibility environment, verify native Fleet and offline selected devices. Site YAML carries exclusions/constraints and per-BDF power overrides only, never handwritten hardware facts. Migrate actual serving power consumers of local environment TOML to one YAML authority (PWR08/RSC01); leave general job placement on its existing discovery, no dual serving inventory. Detect/explain names actual facts and origin.
 
 ## Detailed Solution & Technical Design
 
@@ -52,11 +49,17 @@ Card-free tests with fake sysfs and amd-smi fixtures (26.x shape included). On t
 
 No serving or layout code reads the device inventory from environment.local.toml; the remaining overrides are keyed by PCI locator. Removing or adding a GPU changes the resolved layout candidates with no config edit, and an unsatisfiable layout fails closed with a message naming the missing card.
 
+Native online/offline/helper and power selection agree on exact ordered physical BDFs including reversed/mixed TP and duplicate-arch boards, no helper overlap, wrong local ordinal refused; selected physical devices cannot change after admission. All serving selection uses discovery; per-device policy YAML only, no second hardware declaration. Existing no-config-edit discovery and missing-card refusal remain.
+
 ## Notes
 
 Prerequisite for RSC03, which derives host-pool, KV-tier and tail budgets from detected RAM and VRAM, and for layout-agnostic discovery (RHP12+). Follows no-hand-picked-resource-constants: hardware facts are discovered, and only calibrated per-card choices stay in config.
 
 PR #518 fixed the Python amd-smi discovery used by job placement, which is still needed for the job tooling. Serve-time detection is C++ so the release package stays single-language (owner, 2026-11-02). Prerequisite for RSC03 (derived budgets) and for layout-agnostic discovery (RHP12+).
+
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. RUM05 delivered ordered/disjoint-card mapping and initial room admission; reuse and regression test, do not redo its allocator. RSC05 remains owner of discovery/selection and stale authored inventory cleanup.
+
+2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 gate order. Exact candidate native Fleet and offline parser/engine/helper must preserve ordered physical BDF to local ordinal mapping and disjoint roles, including mixed TP and reversed order; compare actual selected devices, not merely YAML arch or card ordinal. PWR08 uses same selected BDFs; RSC11 integrates candidate seam and installed tests before promotion. Reuse discovery and existing identity, no new inventory or allocation path.
 
 ## Change Log
 
@@ -67,3 +70,10 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
 - 2026-11-02T03:54:07.803289+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4592
+- 2026-11-25T01:37:30.794580+00:00 (updated-by): Updated: section:steps, section:notes, section:acceptance_criteria
+- RV4623
+- 2026-11-25T02:13:56.078554+00:00 (updated-by): Updated: section:notes

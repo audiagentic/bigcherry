@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "rad0065_iqr_fused_gfx1201",
+  "pinned": "b6b8751cccb0e834a13ae9e5afca824ee9a487aa",
+  "subject-digest": "5c51b3784f3468e2324b363ade72872fed43c6e46485908a64637b6f71cd0f2b",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-27B IQR-V4 container (6/7-bit computed-trellis trunk), tensor parallel over two RX 7900 XTX and an R9700 (TP3); the patch acts on the R9700 (gfx1201) prefill GEMMs of the trunk."
+  ],
+  "checks": {
+    "ab": "cold replay (256 MiB flush before each launch, 60 launches a point, shipped and patched plugins ABBA, one R9700): all 24 single-band points win; time of the patched row against shipped 0.47 to 0.86 (13312x5120 at 128 rows 367 to 177 us, 5120x6656 165 to 129 us, 6144x5120 144 to 105 us, 5120x2304 63 to 55 us); the controls at 192, 256, 512 and 2048 rows are unchanged within 1.01; IQR against the int8 tiled route at 65 to 128 rows 2.5 times before, 1.75 times after. No serving A/B yet: the effect is on the first-token time of prompts of 65 to 128 tokens on the R9700 rank.",
+    "activation": "on the R9700 the fused kernel serves exactly the single-band prefill rows (up to 128 rows) of the 11 computed-trellis forms and nothing else: a cold replay of the IQR row on every trunk shape shows the time change only at 65, 96 and 128 rows (24 of 24 points) and none at 192, 256, 512 or 2048 rows, where the plane route still runs; the libr3 plugin of the same build is unchanged and does not contain the kernel.",
+    "identity": "output bytes identical to the shipped plugin: 491 of 491 output hashes over the stock tiled matrix plus 65 to 2049 rows on five trunk shapes (including N = 5376), 6-bit and 7-bit, bf16 and f32 scale forms, one R9700, and the 1473 oracle checks of the same matrix pass on both plugins.",
+    "mechanics": "tools/tests/patch/test_radiance_rad0065.py passes (applies once, idempotent, fails closed on a missing or duplicate anchor, routing guard); patch-lint is clean; the composition check (patch-compose-check) passes gate 1 (native rewrite anchors) and gates 2a and 2b (syntax-only and real compile of the five libr4d units the patch touches, host and device passes, gfx1201 and gfx1100: 20 passes each); the lane build carrying it (experiment on radiance:stock:linux-radiance) builds both architectures: libr3 (gfx1100) 7802 resource records, none added, changed or removed against release 2020.11.4, libr4d (gfx1201) 7724 to 7735 records, 11 fused kernels added (VGPR 217 to 239, no spills, no private memory, 36864 B of LDS), the 44 plane-route variants unchanged."
+  }
+}

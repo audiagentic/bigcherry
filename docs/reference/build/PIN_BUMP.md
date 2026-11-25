@@ -534,6 +534,8 @@ stop on the first failing check under that check's own failure code.
 | llama.cpp | `ggml-cuda-contracts` (`SOURCE_COMPILE_FAILED`, needs `clang++`) | the ggml HIP/CUDA invariants and overlay sync |
 | radiance | the component gate below | overlay sync (nothing to sync when the engine has no overlay directory), `patches.application_state` (no registered patch half-applied, no patch targeting a file the tree lacks), `components.source_present` and `components.abi_header` (each declared component has its source; `abi/rad_abi.h` declares a numeric `RAD_ABI_VERSION`) |
 
+**owned-overlay drift check (planned, RCS23; not implemented yet).** Once we own kernel overlays (`libbc-<family>-<arch>.so`), triage and bump will verify the provenance of each overlay's upstream origins (base commit, blob, ancestry), classify each origin (unchanged, clean candidate, conflict or structural change, unverified), report changed upstream headers reachable from owned sources and changes to the row contract of the rows it overrides, and only after qualification advance the recorded integrated revision. A clean text merge is never accepted without the gates. Design: `docs/design/radiance-kernel-composition.md` section 11.
+
 **radiance component gate.** radiance's BigCherry plugin components (`[components]` in `engine.toml`, e.g. libr3, which
 also produces libr3moe and the helpers) are built against the engine's plugin ABI and internal headers, so a bump can break
 them without any patch anchor failing. The compile phase runs three checks in order, each STOPping the bump:

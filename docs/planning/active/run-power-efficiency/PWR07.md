@@ -64,6 +64,10 @@ CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement 
 
 2026-11-25 audit: native C++ transaction/probe and diagnostic hooks exist; normal receipts are stock/observe. Both XTXs have reported 0 W caps in historic receipts although later direct sysfs reads were 303 W. Root cause not established. session.cpp already labels zero_cap_suspect in one path; power_linux.cpp cap.current and power_records.cpp need independent audit. R9700 SCLK offset has no native reversible backend. PWR08 consumes typed fresh capability; RSC02 owns writes/restore.
 
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Probe/receipt implementation remains here. Typed owner PowerPlan uses native LinuxHardware/actual BDF, positive cap/original/readback and existing journal. Capture/receipt may link execution identity but cannot authorize power from manifest. Retain zero-cap correction and reversible gfx1201 offset proof; no second probe.
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Bump preflight verifies actual hardware probe/restore capability and typed owner receipt on selected BDFs, invalid zero cap refusal, kernel/driver/firmware/board identity. No manifest authorization and no power writes from compiler/triage. Changes to driver/firmware require appropriate fresh capability/qualification; preserve independent host idle plans.
+
 ## Change Log
 
 - 2026-11-10T13:12:56.453273+00:00 (created-by): Created by agent
@@ -102,3 +106,7 @@ For a **validating** `xtx-cap2700-uv125` profile, bind per-BDF selected OD max, 
 - 2026-11-22T11:42:13.063598+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - RV4577
 - 2026-11-25T01:02:37.422892+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4596
+- 2026-11-25T01:39:34.429611+00:00 (updated-by): Updated: section:notes
+- RV4614
+- 2026-11-25T02:08:53.144048+00:00 (updated-by): Updated: section:notes
