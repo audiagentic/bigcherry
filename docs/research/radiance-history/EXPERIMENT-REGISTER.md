@@ -35,3 +35,7 @@ is closed or deleted. The detailed notes are linked; the code lives on the named
 Branch dispositions are archived under `experiments/radiance/<ITEM>-<name>/`. Each has a README; only changes not on main have inert patches. Experimental-only layout entries may instead be copied to `engines/radiance/layouts.toml` without changing defaults. The original RAD46 notes and reviews are in `experiments/radiance/RAD46-rad46/`.
 - `experiments/radiance/RAD27B-prefill-breakdown/`: 27B prefill breakdown arms (exact wire, one card, MTP depth 3/5/7). result on the 27B model page; arms only, not merged.
 - `experiments/radiance/RAD23-lane-quant/`: perf/rad23-lane-quant (PR #482). on main; PR closed only to drop a machine name.
+
+## 2026-11-25 oldest-branch recovery
+
+[Archive](../../../experiments/radiance/2026-11-25-branch-recovery/README.md): thirteen branch dispositions, six inert code deltas and recovered RUM09/RUM15 source and results. No production defaults or qualification changes.

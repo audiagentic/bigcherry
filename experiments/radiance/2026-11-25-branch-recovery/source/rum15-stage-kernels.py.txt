@@ -1,0 +1,133 @@
+from pathlib import Path
+root=Path("SCRATCH/rum15-iq8r-f32-source/libr4d")
+p=root/"r4d_gemm_fp8a8.hip"
+s=p.read_text()
+def c(a,b):
+ global s
+ n=s.count(a); assert n==1,(n,a[:120])
+ s=s.replace(a,b)
+c('''    constexpr uint32_t kWS = I8 ? MW * kFolds * 8u : MW * kFolds;''',
+'''    // IQ8R's tile-major scale is F32: 16 row scales per wave,
+    // whereas the legacy I8 128-group packs two BF16 into each word.
+    constexpr uint32_t kWS = I8 ? MW * kFolds * (SB == 256u ? 16u : 8u) : MW * kFolds;''')
+c('''            const uint32_t tr = (m0 + (i / (kFolds * 8u)) * 16u) / 16u;
+            const uint32_t kb = c / SB + (i / 8u) % kFolds;
+            return ((Full || tr * 16u < rows) && kb < nkb8)
+                ? ((const uint32_t*)Sa)[((size_t)tr * nkb8 + kb) * 8u + i % 8u] : 0u;''',
+'''            constexpr uint32_t words = SB == 256u ? 16u : 8u;
+            const uint32_t tr = (m0 + (i / (kFolds * words)) * 16u) / 16u;
+            const uint32_t kb = c / SB + (i / words) % kFolds;
+            return ((Full || tr * 16u < rows) && kb < nkb8)
+                ? ((const uint32_t*)Sa)[((size_t)tr * nkb8 + kb) * words + i % words] : 0u;''')
+c('''                    {
+                        const uint4 w8 =
+                            *(const uint4*)&s_ws[(wave * kFolds + f) * 8u + (lane >> 4) * 4u];
+                        const uint32_t d[4] = { w8.x, w8.y, w8.z, w8.w };
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t)
+                            wsr[t] = bscale((uint16_t)(d[t / 2] >> (16 * (t % 2))));
+                    }''',
+'''                    if constexpr (SB == 256u) {
+                        const float* scale = (const float*)&s_ws[
+                            (wave * kFolds + f) * 16u + (lane >> 4) * 8u];
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t) wsr[t] = scale[t];
+                    } else {
+                        const uint4 w8 =
+                            *(const uint4*)&s_ws[(wave * kFolds + f) * 8u + (lane >> 4) * 4u];
+                        const uint32_t d[4] = { w8.x, w8.y, w8.z, w8.w };
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t)
+                            wsr[t] = bscale((uint16_t)(d[t / 2] >> (16 * (t % 2))));
+                    }''')
+c('''    const uint8_t* __restrict__ Ap, const uint16_t* __restrict__ Sa,                           \\
+''','''    const uint8_t* __restrict__ Ap, const void* __restrict__ Sa,                               \\
+''')
+c('''        /* The lane's eight rows' bf16 scales of this group are consecutive in the tile-major
+         * plane: one 16-byte load. */
+        const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
+        const uint32_t qd[4] = { q4.x, q4.y, q4.z, q4.w };
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j) {
+            const float as = xsr[j][g];
+#pragma unroll
+            for (uint32_t t = 0; t < 4; ++t) {
+                out[j][2 * t] = __builtin_fmaf(acc_val<true>(raw[j][2 * t]),
+                                               __uint_as_float(qd[t] << 16) * as, out[j][2 * t]);
+                out[j][2 * t + 1] = __builtin_fmaf(acc_val<true>(raw[j][2 * t + 1]),
+                                                   __uint_as_float(qd[t] & 0xFFFF0000u) * as,
+                                                   out[j][2 * t + 1]);
+            }
+        }''',
+'''        // One F32 scale per weight row at IQ8R's SB=256 group.
+        // Ordinary SB=128 I8 keeps the original packed BF16 scale.
+        const size_t base = ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0);
+        float ws[8];
+        if constexpr (SB == 256u) {
+            const float* source = (const float*)Sa + base;
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t) ws[t] = source[t];
+        } else {
+            const uint16_t* source = (const uint16_t*)Sa + base;
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t) ws[t] = bscale(source[t]);
+        }
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j) {
+            const float as = xsr[j][g];
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                out[j][t] = __builtin_fmaf(acc_val<true>(raw[j][t]), ws[t] * as, out[j][t]);
+        }''')
+p.write_text(s)
+p=root/"r4d_gemm_8a8_prefill.h"
+s=p.read_text()
+def cp(a,b):
+ global s
+ n=s.count(a); assert n==1,(n,a[:120]);s=s.replace(a,b)
+cp('''    const uint16_t* __restrict__ Sw, uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N,''',
+'''    const void* __restrict__ Sw, uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N,''')
+cp('''        uint4 w8[I8 && !RB ? kPTW : 1u];
+        float wb[RB == 8 ? kPTW : 1u];''',
+'''        uint4 w8[I8 && !RB && SB != 256u ? kPTW : 1u];
+        float w32[I8 && !RB && SB == 256u ? kPTW * 8u : 1u];
+        float wb[RB == 8 ? kPTW : 1u];''')
+cp('''            ws = bscale(Sw[((size_t)wt0 * nkb + kb) * 16u]);''','''            ws = bscale(((const uint16_t*)Sw)[((size_t)wt0 * nkb + kb) * 16u]);''')
+cp('''                wb[i] = bscale(Sw[((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u]);''',
+'''                wb[i] = bscale(((const uint16_t*)Sw)[((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u]);''')
+cp('''        } else if constexpr (I8) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+                w8[i] = *(const uint4*)(Sw + ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u);''',
+'''        } else if constexpr (I8 && SB == 256u) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const float* src = ((const float*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t) w32[i * 8u + t] = src[t];
+            }
+        } else if constexpr (I8) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i)
+                w8[i] = *(const uint4*)(((const uint16_t*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u);''')
+cp('''            ws = bscale(Sw[(size_t)(n0 / kBlock) * sw_ld + kb]);''',
+'''            ws = bscale(((const uint16_t*)Sw)[(size_t)(n0 / kBlock) * sw_ld + kb]);''')
+cp('''                if constexpr (I8) {
+                    const uint32_t d[4] = { w8[i].x, w8[i].y, w8[i].z, w8[i].w };
+#pragma unroll
+                    for (uint32_t t = 0; t < 8; ++t)
+                        s[t] = as * bscale((uint16_t)(d[t / 2] >> (16 * (t % 2))));
+                } else {''',
+'''                if constexpr (I8 && SB == 256u) {
+#pragma unroll
+                    for (uint32_t t = 0; t < 8; ++t) s[t] = as * w32[i * 8u + t];
+                } else if constexpr (I8) {
+                    const uint32_t d[4] = { w8[i].x, w8[i].y, w8[i].z, w8[i].w };
+#pragma unroll
+                    for (uint32_t t = 0; t < 8; ++t)
+                        s[t] = as * bscale((uint16_t)(d[t / 2] >> (16 * (t % 2))));
+                } else {''')
+p.write_text(s)
+print('RUM15 prototype: shared r4d narrow, kpar and prefill wide-scale F32 readers staged')

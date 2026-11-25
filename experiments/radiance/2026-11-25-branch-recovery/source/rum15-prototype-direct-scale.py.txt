@@ -1,0 +1,53 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-direct-scale-source/libr4d/r4d_gemm_fp8a8.hip")
+s=p.read_text()
+def one(before,after):
+    global s
+    count=s.count(before)
+    assert count==1,(count,before[:120])
+    s=s.replace(before,after)
+one('''    auto load_q = [&](uint32_t c) {
+#pragma unroll
+        for (uint32_t r = 0; r < kWSPer; ++r) qws[r] = load_ws(c, tid + r * MW * kWave);
+#pragma unroll
+        for (uint32_t r = 0; r < kASPer; ++r) qas[r] = load_as(c, tid + r * MW * kWave);
+    };''','''    auto load_q = [&](uint32_t c) {
+        if constexpr (!(I8 && SB == 256u)) {
+#pragma unroll
+            for (uint32_t r = 0; r < kWSPer; ++r) qws[r] = load_ws(c, tid + r * MW * kWave);
+        }
+#pragma unroll
+        for (uint32_t r = 0; r < kASPer; ++r) qas[r] = load_as(c, tid + r * MW * kWave);
+    };''')
+one('''#pragma unroll
+        for (uint32_t r = 0; r < kWSPer; ++r)
+            if (tid + r * MW * kWave < kWS) s_ws[tid + r * MW * kWave] = qws[r];
+#pragma unroll
+        for (uint32_t r = 0; r < kASPer; ++r)
+            if (tid + r * MW * kWave < kAS) s_as[tid + r * MW * kWave] = qas[r];''','''        if constexpr (!(I8 && SB == 256u)) {
+#pragma unroll
+            for (uint32_t r = 0; r < kWSPer; ++r)
+                if (tid + r * MW * kWave < kWS) s_ws[tid + r * MW * kWave] = qws[r];
+        }
+#pragma unroll
+        for (uint32_t r = 0; r < kASPer; ++r)
+            if (tid + r * MW * kWave < kAS) s_as[tid + r * MW * kWave] = qas[r];''')
+one('''                    if constexpr (SB == 256u) {
+                        const float* scale = (const float*)&s_ws[
+                            (wave * kFolds + f) * 16u + (lane >> 4) * 8u];
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t) wsr[t] = scale[t];
+                    } else {''','''                    if constexpr (SB == 256u) {
+                        // RUM15 isolated experiment: read the exact F32 scale
+                        // directly from the group-256 plane at the fold.
+                        // This removes its extra LDS round trip; the question
+                        // is whether the global-load latency is worse.
+                        const size_t base = ((size_t)(wrow0 / 16u) * nkb8 +
+                                             (c0 + ks) / SB) * 16u + (lane >> 4) * 8u;
+                        const float* scale = ((const float*)Sa) + base;
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t)
+                            wsr[t] = (Full || wrow0 < rows) ? scale[t] : 0.0f;
+                    } else {''')
+p.write_text(s)
+print("Isolated RUM15 native fold prototype staged; exact F32 values, same GEMM and layout")

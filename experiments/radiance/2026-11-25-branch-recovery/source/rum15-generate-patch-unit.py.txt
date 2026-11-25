@@ -1,0 +1,72 @@
+"""Create a fail-closed diagnostic patch unit from reviewed source-side changes."""
+from pathlib import Path
+import difflib, hashlib
+base=Path('SCRATCH/radiance-22-final-568d5fcea/source/libr4d')
+candidate=Path('SCRATCH/rum15-iq8r-f32-source/libr4d')
+project=Path('WORKTREES/rum15-iq8r-f32-running')
+out=project/'engines/radiance/patches/rad0061_iq8r_f32_scale'
+out.mkdir(parents=True,exist_ok=True)
+targets=('r4d_fp8_layout.cpp','r4d_gemm_fp8a8.hip','r4d_gemm_8a8_prefill.h','r4d_selftest.cpp')
+names=('scale-layout','decode-kpar-narrow','prefill','selftest')
+text=['''"""RUM15 diagnostic: FP32 IQ8R scale products for native GEMM; not in serving-core.
+
+This is a precision-preserving experiment, not a TP3 serving enablement.
+The same Radiance libr4d source is rewritten by the libr3 component for gfx1100.
+"""
+from __future__ import annotations
+import re
+from bigcherry.patcher import Edit, FilePatch
+
+def rep(ident: str, before: str, after: str) -> Edit:
+    return Edit(id=ident, anchor=re.escape(before), mode="replace", text=after,
+                guard=re.escape(after), expect_matches=1,
+                max_span_lines=max(4, before.count("\\n")+2),
+                rationale="RUM15: preserve IQ8R U8*BF16 scale in F32 through native GPU fold")
+
+PATCHES = (''']
+for name,target in zip(names,targets):
+    before=(base/target).read_text()
+    after=(candidate/target).read_text()
+    bl=before.splitlines(keepends=True); al=after.splitlines(keepends=True)
+    matcher=difflib.SequenceMatcher(None,bl,al,autojunk=False)
+    hunks=list(matcher.get_grouped_opcodes(n=3))
+    assert hunks, target
+    text.append('    FilePatch(path='+repr('libr4d/'+target)+', language="none",\n'
+                '              description='+repr('RUM15 '+name+' F32 IQ8R scale')+', edits=(')
+    for i,group in enumerate(hunks):
+        beforeh=''.join(bl[group[0][1]:group[-1][2]])
+        afterh=''.join(al[group[0][3]:group[-1][4]])
+        assert before.count(beforeh)==1,(target,i,before.count(beforeh))
+        assert after.count(afterh)==1,(target,i,after.count(afterh))
+        text.append('        rep('+repr(f'rum15-{name}-{i+1}')+', '+repr(beforeh)+', '+repr(afterh)+'),')
+    text.append('    )),')
+    print(target,len(hunks),'hunks',sum(len(''.join(bl[g[0][1]:g[-1][2]])) for g in hunks),'anchor bytes')
+text.append(')\n')
+(out/'patch.py').write_text('\n'.join(text))
+(out/'patch.toml').write_text('''schema = 1
+id = "rad0061_iq8r_f32_scale"
+order = 61
+state = "diagnostic"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["RUM15"]
+requires = []
+conflicts = []
+tags = ["quantization", "numerical-precision"]
+''')
+(out/'README.md').write_text('''# rad0061 — diagnostic IQ8R F32 scale fold (RUM15)
+
+Opt-in native Radiance 2.2 source patch for evaluating precision, memory admission
+and GPU throughput. This patch is **not selected by serving-core**. It widens
+only the IQ8R group-256 scale layout to F32 and updates the existing decode
+(K-parallel and narrow) and prefill paths in libr4d. The registered gfx1100
+libr3 component rewrites this same source into its native WMMA implementation;
+no second kernel or loader is introduced.
+
+Requires complete validation on gfx1100 and gfx1201, all 1/16/64-row kernel
+variants, source-backed C06 numerical parity and GPU admission before production
+selection. ABI/layout fingerprint changes; existing serialized layout plans must
+not be reused. libref remains the F32 reference.
+''')
+print('wrote',out/'patch.py',len((out/'patch.py').read_bytes()),'bytes')

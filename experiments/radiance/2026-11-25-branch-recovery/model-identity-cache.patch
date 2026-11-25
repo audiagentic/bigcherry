@@ -1,0 +1,494 @@
+diff --git a/engines/radiance/components/serving/README.md b/engines/radiance/components/serving/README.md
+index d341ec7ac..f4cbfbc50 100644
+--- a/engines/radiance/components/serving/README.md
++++ b/engines/radiance/components/serving/README.md
+@@ -280,6 +280,16 @@ record or lab input forces a fresh manifest. The lookup is distinct from
+ the existing engine-memory plan cache. The old `--set layout.name=...` serving
+ path remains on its original planner.
+ 
++Named starts require `BC_WORK_ROOT`. The full model fingerprint is reused
++across run directories and configs through
++`$BC_WORK_ROOT/cache/model-identities/<sha256-of-canonical-path>.json`.
++Each ordinary file is an atomically replaced strict version-1 JSON record:
++`model` (canonical path), `stamp` (device, inode, size, mtime_ns, ctime_ns
++as decimal strings) and `digest` (the unchanged chunked SHA-256).
++An unchanged stamp skips a full-file read; a changed stamp rehashes, while
++malformed files and symlinks refuse. Stored-manifest indices retain their
++model digest only as replay attestation, not a fingerprint lookup cache.
++
+ `bc-serve start --manifest FILE --run-dir DIR --configs FILE|DIR` replays a
+ previously recorded strict-v2 manifest **without writing or normalising it**.
+ A writer-produced manifest carries a separate atomic `FILE.replay-index.json`
+diff --git a/engines/radiance/components/serving/serving_test.cpp b/engines/radiance/components/serving/serving_test.cpp
+index e948b2f3b..eeb258757 100644
+--- a/engines/radiance/components/serving/serving_test.cpp
++++ b/engines/radiance/components/serving/serving_test.cpp
+@@ -98,6 +98,10 @@ struct Fixture {
+     Fixture() : root(fs::current_path() / "bc-serving-fixture") {
+         // This test only writes in its own CTest build directory.
+         fs::remove_all(root);
++        const auto cache_root = root / "work";
++        fs::create_directories(cache_root);
++        if (::setenv("BC_WORK_ROOT", cache_root.c_str(), 1) != 0)
++            throw std::runtime_error("cannot set fixture BC_WORK_ROOT");
+         const auto nodes = root / "sys/class/kfd/kfd/topology/nodes";
+         write(nodes / "0/properties", "gfx_target_version 0\n");
+         // KFD node order, not BDF sort or device names, defines HIP ordinals.
+diff --git a/engines/radiance/components/serving/session.cpp b/engines/radiance/components/serving/session.cpp
+index 4156b505f..3b9886cf8 100644
+--- a/engines/radiance/components/serving/session.cpp
++++ b/engines/radiance/components/serving/session.cpp
+@@ -2869,8 +2869,11 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
+     static_inputs.helper_digest =
+         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
+     const fs::path index = stored_index_path(run_dir, name);
++    const char* work_root = std::getenv("BC_WORK_ROOT");
++    if (!work_root || !*work_root)
++        throw PlanFailed("named model identity requires BC_WORK_ROOT");
+     const ModelIdentity artifact =
+-        cached_model_identity(values.at("engine").at("model").get<std::string>(), index, {}, verified_model);
++        cached_model_identity(values.at("engine").at("model").get<std::string>(), fs::path(work_root), {}, verified_model);
+     static_inputs.model_digest = artifact.digest;
+     static_inputs.power_profile = in.power_profile;
+ 
+@@ -3335,7 +3338,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
+                     throw PlanFailed("native v3 measured writer did not publish ordinary S8 replay evidence");
+                 const StoredManifestIndex entry{
+                     cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model.digest,
+-                    current->model.stamp, complete_file_identity(s8_source),
++                    complete_file_identity(s8_source),
+                     StoredManifestIndex::NativeMeasurement{attempt_id, owned.owner_sha256}};
+                 write_stored_index(measured_manifest.string() + ".replay-index.json", entry);
+                 write_stored_index(cache->index, entry);
+@@ -3620,7 +3623,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
+                                                 manifest.filename().string(),
+                                                 final_snapshot.file_identity,
+                                                 cache_selection->model.digest,
+-                                                cache_selection->model.stamp,
+                                                 complete_file_identity(s8_source)};
+                 // Each manifest carries an adjacent immutable replay attestation;
+                 // the per-config index may point to another manifest on the next
+diff --git a/engines/radiance/components/serving/stored_manifest_cache.cpp b/engines/radiance/components/serving/stored_manifest_cache.cpp
+index 338cf4309..82c02aa4b 100644
+--- a/engines/radiance/components/serving/stored_manifest_cache.cpp
++++ b/engines/radiance/components/serving/stored_manifest_cache.cpp
+@@ -6,6 +6,7 @@
+ 
+ #include <algorithm>
+ #include <cerrno>
++#include <cstdlib>
+ #include <cstdint>
+ #include <cstring>
+ #include <fstream>
+@@ -57,7 +58,7 @@ void check_native_measurement(const StoredManifestIndex& entry) {
+             throw std::runtime_error("stored native measurement has an invalid attempt ID");
+     }
+     if (entry.manifest_filename != "manifest-native-" + attempt + ".json" ||
+-        entry.model_digest.empty() || !entry.model_stamp || entry.s8_digest.empty())
++        entry.model_digest.empty() || entry.s8_digest.empty())
+         throw std::runtime_error("stored native measurement is missing its manifest, model or S8 attestation");
+     check_digest(measurement.sha256, "stored native measurement");
+ }
+@@ -185,21 +186,175 @@ std::string complete_file_identity(const std::filesystem::path& path) {
+     return accumulator.hex_digest();
+ }
+ 
+-ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
++namespace {
++
++// Strict, bounded, ordinary-file cache reader. O_NOFOLLOW + fstat prevents a
++// symlink swap between a path check and open from bypassing the contract.
++std::optional<ModelIdentity> read_shared_model_identity(const std::filesystem::path& cache,
++                                                         const std::string& canonical) {
++    struct stat st{};
++    if (::lstat(cache.c_str(), &st) != 0) {
++        if (errno == ENOENT)
++            return std::nullopt;
++        throw std::runtime_error("cannot inspect shared model identity cache " + cache.string());
++    }
++    if (!S_ISREG(st.st_mode))
++        throw std::runtime_error("shared model identity cache is not an ordinary file");
++    const int fd = ::open(cache.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
++    if (fd < 0)
++        throw std::runtime_error("cannot open shared model identity cache " + cache.string());
++    bool opened = true;
++    try {
++        if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > 4096)
++            throw std::runtime_error("shared model identity cache is not a bounded ordinary file");
++        std::string bytes(static_cast<size_t>(st.st_size), '\0');
++        size_t read = 0;
++        while (read < bytes.size()) {
++            const ssize_t count = ::read(fd, bytes.data() + read, bytes.size() - read);
++            if (count < 0 && errno == EINTR)
++                continue;
++            if (count <= 0)
++                throw std::runtime_error("cannot read shared model identity cache");
++            read += static_cast<size_t>(count);
++        }
++        // Detect a growth race rather than accepting a valid prefix of a
++        // concurrently mutated file (normal writers always rename).
++        char trailing = 0;
++        const ssize_t extra = ::read(fd, &trailing, 1);
++        if (extra != 0)
++            throw std::runtime_error("shared model identity cache changed while reading");
++        const auto parsed = v2::parse_strict_json(bytes, cache.string());
++        if (!parsed)
++            throw std::runtime_error("invalid shared model identity cache: " + parsed.error().message);
++        const Json& record = parsed.value();
++        if (!record.is_object() || record.size() != 4 || !record.contains("version") ||
++            !record.at("version").is_number_integer() || record.at("version") != 1 ||
++            !record.contains("model") || !record.at("model").is_string() ||
++            record.at("model").get<std::string>() != canonical ||
++            !record.contains("stamp") || !record.contains("digest") || !record.at("digest").is_string())
++            throw std::runtime_error("shared model identity cache has an invalid shape or path");
++        ModelIdentity result{record.at("digest").get<std::string>(), parse_stamp(record.at("stamp"))};
++        check_digest(result.digest, "shared model identity cache");
++        const int closed = ::close(fd);
++        opened = false;
++        if (closed != 0)
++            throw std::runtime_error("cannot close shared model identity cache");
++        return result;
++    } catch (...) {
++        if (opened)
++            ::close(fd);
++        throw;
++    }
++}
++
++void ensure_private_directory(const std::filesystem::path& directory) {
++    if (::mkdir(directory.c_str(), 0700) != 0 && errno != EEXIST)
++        throw std::runtime_error("cannot create shared model identity directory " + directory.string());
++    struct stat st{};
++    if (::lstat(directory.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
++        throw std::runtime_error("shared model identity directory must be ordinary, not a symlink");
++}
++
++std::filesystem::path shared_cache_dir(const std::filesystem::path& work_root) {
++    if (work_root.empty() || !work_root.is_absolute())
++        throw std::runtime_error("shared model identity requires an absolute BC_WORK_ROOT");
++    struct stat st{};
++    if (::lstat(work_root.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
++        throw std::runtime_error("BC_WORK_ROOT must be an ordinary directory");
++    const auto cache = work_root / "cache";
++    ensure_private_directory(cache);
++    const auto identities = cache / "model-identities";
++    ensure_private_directory(identities);
++    return identities;
++}
++
++void write_shared_model_identity(const std::filesystem::path& cache, const std::string& canonical,
++                                 const ModelIdentity& identity) {
++    // The path hash is an index only. A strict file also stores the complete
++    // canonical model pathname, so a collision never becomes a trusted hit.
++    const std::string bytes =
++        Json{{"version", 1}, {"model", canonical}, {"stamp", write_stamp(identity.stamp)},
++             {"digest", identity.digest}}.dump(2) + "\n";
++    const std::string pattern = cache.string() + ".tmp.XXXXXX";
++    std::vector<char> temp(pattern.begin(), pattern.end());
++    temp.push_back('\0');
++    const int fd = ::mkstemp(temp.data());
++    if (fd < 0)
++        throw std::runtime_error("cannot create shared model identity temporary file");
++    bool opened = true;
++    bool renamed = false;
++    try {
++        if (::fcntl(fd, F_SETFD, FD_CLOEXEC) != 0)
++            throw std::runtime_error("cannot mark shared model identity temporary file close-on-exec");
++        size_t written = 0;
++        while (written < bytes.size()) {
++            const ssize_t count = ::write(fd, bytes.data() + written, bytes.size() - written);
++            if (count < 0 && errno == EINTR)
++                continue;
++            if (count <= 0)
++                throw std::runtime_error("cannot write shared model identity cache");
++            written += static_cast<size_t>(count);
++        }
++        if (::fdatasync(fd) != 0)
++            throw std::runtime_error("cannot sync shared model identity cache");
++        const int closed = ::close(fd);
++        opened = false;
++        if (closed != 0)
++            throw std::runtime_error("cannot close shared model identity cache");
++        // Reject a malicious symlink, including a dangling one, rather than
++        // accepting it as a miss. rename is atomic across racing writers.
++        struct stat st{};
++        if (::lstat(cache.c_str(), &st) == 0) {
++            if (!S_ISREG(st.st_mode))
++                throw std::runtime_error("shared model identity destination is not an ordinary file");
++        } else if (errno != ENOENT) {
++            throw std::runtime_error("cannot inspect shared model identity destination");
++        }
++        if (::rename(temp.data(), cache.c_str()) != 0)
++            throw std::runtime_error("cannot atomically update shared model identity cache");
++        renamed = true;
++        const int dir_fd = ::open(cache.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
++        if (dir_fd < 0)
++            throw std::runtime_error("cannot open shared model identity directory for sync");
++        const int synced = ::fsync(dir_fd);
++        ::close(dir_fd);
++        if (synced != 0)
++            throw std::runtime_error("cannot sync shared model identity directory");
++    } catch (...) {
++        if (opened)
++            ::close(fd);
++        if (!renamed)
++            ::unlink(temp.data());
++        throw;
++    }
++}
++
++} // namespace
++
++std::filesystem::path model_identity_cache_path(const std::filesystem::path& model,
++                                                const std::filesystem::path& work_root) {
++    const auto canonical = std::filesystem::canonical(model);
++    return shared_cache_dir(work_root) / (sha256_hex(canonical.string()) + ".json");
++}
++
++ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& work_root,
+                                     const FullFileReader& full_reader, const ModelIdentity* verified) {
+-    // ctime_ns cannot be restored by normal in-place writes: even a same-size
+-    // write followed by a manual mtime reset changes this identity. An actor
+-    // capable of forging kernel inode/ctime fields is outside the threat model.
++    // Keep the historic exact stamp: size, device, inode, mtime_ns, ctime_ns.
++    // Cache files are independent of any run dir, config or manifest index.
++    const auto canonical = std::filesystem::canonical(model);
++    const auto cache = shared_cache_dir(work_root) / (sha256_hex(canonical.string()) + ".json");
+     const FileStamp before = file_stamp(model);
+-    if (std::filesystem::exists(index)) {
+-        if (!std::filesystem::is_regular_file(index) || std::filesystem::is_symlink(index))
+-            throw std::runtime_error("stored model identity index is not an ordinary file");
+-        const StoredManifestIndex recorded = read_stored_index(index);
+-        if (recorded.model_stamp && recorded.model_stamp.value() == before && !recorded.model_digest.empty())
+-            return {recorded.model_digest, before};
++    const auto recorded = read_shared_model_identity(cache, canonical.string());
++    if (recorded && recorded->stamp == before) {
++        if (!(file_stamp(model) == before) || std::filesystem::canonical(model) != canonical)
++            throw std::runtime_error("model artifact changed while reading cached identity");
++        return *recorded;
+     }
+     if (verified && verified->stamp == before) {
+         check_digest(verified->digest, "verified model identity");
++        if (!(file_stamp(model) == before) || std::filesystem::canonical(model) != canonical)
++            throw std::runtime_error("model artifact changed while reusing verified identity");
++        write_shared_model_identity(cache, canonical.string(), *verified);
+         return *verified;
+     }
+     if (!full_reader)
+@@ -207,9 +362,11 @@ ModelIdentity cached_model_identity(const std::filesystem::path& model, const st
+     const std::string digest = full_reader ? full_reader.require("stored.model.full_fingerprint", model)
+                                            : complete_file_identity(model);
+     check_digest(digest, "full model identity");
+-    if (!(file_stamp(model) == before))
++    if (!(file_stamp(model) == before) || std::filesystem::canonical(model) != canonical)
+         throw std::runtime_error("model artifact changed while calculating full identity");
+-    return {digest, before};
++    const ModelIdentity result{digest, before};
++    write_shared_model_identity(cache, canonical.string(), result);
++    return result;
+ }
+ 
+ std::string static_resolution_key(const StaticResolutionInputs& in) {
+@@ -297,16 +454,13 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
+     if (!j.is_object() || j.value("version", 0) != 1 || !j.contains("key") || !j.at("key").is_string() ||
+         !j.contains("manifest") || !j.at("manifest").is_string() || !j.contains("digest") ||
+         !j.at("digest").is_string() ||
+-        j.size() != 4U + size_t(j.contains("model_digest")) + size_t(j.contains("model_stat")) +
++        j.size() != 4U + size_t(j.contains("model_digest")) +
+                         size_t(j.contains("s8_digest")) + size_t(j.contains("native_measurement")) ||
+         (j.contains("model_digest") && !j.at("model_digest").is_string()) ||
+-        (j.contains("s8_digest") && !j.at("s8_digest").is_string()) ||
+-        (j.contains("model_stat") && !j.contains("model_digest")))
++        (j.contains("s8_digest") && !j.at("s8_digest").is_string()))
+         throw std::runtime_error("stored manifest index has an unknown or missing field");
+     StoredManifestIndex result{j.at("key").get<std::string>(), j.at("manifest").get<std::string>(),
+                                j.at("digest").get<std::string>(), j.value("model_digest", std::string())};
+-    if (j.contains("model_stat"))
+-        result.model_stamp = parse_stamp(j.at("model_stat"));
+     if (const auto native = j.find("native_measurement"); native != j.end()) {
+         if (!native->is_object() || native->size() != 2 ||
+             !native->contains("attempt_id") || !native->at("attempt_id").is_string() ||
+@@ -341,11 +495,6 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
+                                         {"sha256", entry.native_measurement->sha256}};
+     if (!entry.model_digest.empty())
+         record["model_digest"] = entry.model_digest;
+-    if (entry.model_stamp) {
+-        if (entry.model_digest.empty())
+-            throw std::runtime_error("model stat requires the full model digest");
+-        record["model_stat"] = write_stamp(*entry.model_stamp);
+-    }
+     if (!entry.s8_digest.empty()) {
+         check_digest(entry.s8_digest, "stored S8 writer evidence");
+         record["s8_digest"] = entry.s8_digest;
+diff --git a/engines/radiance/components/serving/stored_manifest_cache.h b/engines/radiance/components/serving/stored_manifest_cache.h
+index 786e82483..920a57f03 100644
+--- a/engines/radiance/components/serving/stored_manifest_cache.h
++++ b/engines/radiance/components/serving/stored_manifest_cache.h
+@@ -53,7 +53,11 @@ struct ModelIdentity {
+ // the OS file boundary so a test can assert zero reads on a hit. The owner can
+ // also reuse a verified identity from the same measurement attempt.
+ using FullFileReader = callback::Guarded<std::string(const std::filesystem::path&)>;
+-ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
++// One shared cache per BC_WORK_ROOT; identical model paths reuse the digest
++// across independent run directories and named configurations.
++std::filesystem::path model_identity_cache_path(const std::filesystem::path& model,
++                                                const std::filesystem::path& work_root);
++ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& work_root,
+                                     const FullFileReader& full_reader = {},
+                                     const ModelIdentity* verified = nullptr);
+ 
+@@ -71,8 +75,7 @@ struct StoredManifestIndex {
+     std::string key;
+     std::string manifest_filename;
+     std::string digest;
+-    std::string model_digest; // optional on generic indices; mandatory for production replay attestation
+-    std::optional<FileStamp> model_stamp; // full model digest reusable only with identical stat identity
++    std::string model_digest; // binds immutable manifest to original model; never a digest lookup cache
+     std::string s8_digest; // optional full hash of the original writer's native P1/P2 replay evidence
+     struct NativeMeasurement {
+         std::string attempt_id;
+diff --git a/engines/radiance/components/serving/stored_manifest_cache_test.cpp b/engines/radiance/components/serving/stored_manifest_cache_test.cpp
+index 619e7a24f..528d4b83d 100644
+--- a/engines/radiance/components/serving/stored_manifest_cache_test.cpp
++++ b/engines/radiance/components/serving/stored_manifest_cache_test.cpp
+@@ -5,6 +5,7 @@
+ #include "stored_manifest_cache.h"
+ 
+ #include <cassert>
++#include <array>
+ #include <cstdlib>
+ #include <filesystem>
+ #include <fstream>
+@@ -97,6 +98,11 @@ int main() {
+         const fs::path model = t.root / "model.bin";
+         const fs::path saved = t.root / "manifest-record.json";
+         const fs::path index = ss::stored_index_path(t.root, "fixture");
++        const fs::path work_root = t.root / "work";
++        fs::create_directory(work_root);
++        const fs::path another_run = work_root / "runs" / "new-start";
++        fs::create_directories(another_run);
++        const fs::path new_index = ss::stored_index_path(another_run, "different-config");
+         // More than one block: changing weights past any header/table must
+         // invalidate a complete artifact identity, without loading it all.
+         std::string contents((2U * 1024U * 1024U) + 5U, 'm');
+@@ -168,32 +174,102 @@ int main() {
+         const std::string digest = ss::complete_file_identity_bytes("unchanged strict-v2 manifest bytes\n");
+         expect(digest == ss::complete_file_identity(saved),
+                "fingerprint over authenticated bytes must preserve the persisted chunked identity");
+-        // RED P2-6: the actual config-index writer stores a full model digest
+-        // keyed by stat identity, and the replay lookup must not even call the
+-        // counting full-file reader when all identity fields are unchanged.
++        // Fresh run/config must reuse the shared fingerprint. An index
++        // only binds a saved manifest to its original model digest.
+         unsigned full_model_reads = 0;
+         const auto counting_model_reader = [&](const fs::path& source) {
+             ++full_model_reads;
+             return ss::complete_file_identity(source);
+         };
+-        const ss::ModelIdentity model_first = ss::cached_model_identity(model, index, counting_model_reader);
+-        expect(full_model_reads == 1 && model_first.digest == second,
+-               "first start fingerprints all model bytes");
+-        const auto same_attempt = ss::cached_model_identity(model, index, counting_model_reader, &model_first);
+-        expect(full_model_reads == 1 && same_attempt.digest == model_first.digest,
+-               "the same measurement attempt should not reread an unchanged model before publishing the index");
+-        ss::write_stored_index(
+-            index, {original, saved.filename().string(), digest, model_first.digest, model_first.stamp});
++        const auto cache_file = ss::model_identity_cache_path(model, work_root);
++        const ss::ModelIdentity model_first = ss::cached_model_identity(model, work_root, counting_model_reader);
++        expect(full_model_reads == 1 && model_first.digest == second && fs::is_regular_file(cache_file),
++               "first start fingerprints all bytes and writes the shared cache file");
++        ss::write_stored_index(index, {original, saved.filename().string(), digest, model_first.digest});
+         expect(ss::stored_manifest_for(t.root, "fixture", original) == saved,
+-               "a freshly serialized named index must resolve using the existing on-disk fingerprint format");
+-        const ss::ModelIdentity model_hit = ss::cached_model_identity(model, index, counting_model_reader);
++               "named index must resolve using the existing manifest fingerprint");
++        ss::write_stored_index(new_index, {original, saved.filename().string(), digest, model_first.digest});
++        const auto model_hit = ss::cached_model_identity(model, work_root, counting_model_reader);
+         expect(full_model_reads == 1 && model_hit.digest == model_first.digest,
+-               "unchanged model must be a true cache hit with zero model reader calls");
+-        // A size (or inode, device, mtime_ns, ctime_ns) change must invalidate.
++               "fresh run dir and config must make zero model reader calls");
++        const auto same_attempt = ss::cached_model_identity(model, work_root, counting_model_reader, &model_first);
++        expect(full_model_reads == 1 && same_attempt.digest == model_first.digest,
++               "verified unchanged model remains a zero-read identity");
++        // Same-size rewrite with restored mtime must still invalidate ctime.
++        const auto prior_mtime = fs::last_write_time(model);
++        write(model, contents);
++        fs::last_write_time(model, prior_mtime);
++        const auto model_changed = ss::cached_model_identity(model, work_root, counting_model_reader, &model_first);
++        expect(full_model_reads == 2 && model_changed.digest == second,
++               "same-size ctime change must recompute despite restored mtime");
+         write(model, contents + "changed");
+-        const ss::ModelIdentity model_changed = ss::cached_model_identity(model, index, counting_model_reader, &model_first);
+-        expect(full_model_reads == 2 && model_changed.digest != model_first.digest,
+-               "changed model stat identity must invalidate full digest");
++        const auto model_changed_size = ss::cached_model_identity(model, work_root, counting_model_reader);
++        expect(full_model_reads == 3 && model_changed_size.digest != second,
++               "changed size must recompute and replace the shared cache");
++        write(cache_file, "{bad json");
++        bool cache_refused = false;
++        try {
++            (void)ss::cached_model_identity(model, work_root, counting_model_reader);
++        } catch (const std::exception&) {
++            cache_refused = true;
++        }
++        expect(cache_refused && full_model_reads == 3,
++               "malformed shared cache must be refused, not trusted or recomputed");
++        fs::remove(cache_file);
++        fs::create_symlink(model, cache_file);
++        cache_refused = false;
++        try {
++            (void)ss::cached_model_identity(model, work_root, counting_model_reader);
++        } catch (const std::exception&) {
++            cache_refused = true;
++        }
++        expect(cache_refused && full_model_reads == 3, "symlink cache must be rejected");
++        fs::remove(cache_file);
++
++        // Forked readers race through a cold cache key; independent atomic
++        // writers may all win, but every published record must be complete.
++        std::array<pid_t, 6> writers{};
++        for (auto& pid : writers) {
++            pid = ::fork();
++            expect(pid >= 0, "fork shared cache writer");
++            if (pid == 0) {
++                try {
++                    (void)ss::cached_model_identity(model, work_root, [&](const fs::path& source) {
++                        ::usleep(50000);
++                        return ss::complete_file_identity(source);
++                    });
++                    ::_exit(0);
++                } catch (...) {
++                    ::_exit(40);
++                }
++            }
++        }
++        for (const pid_t pid : writers) {
++            int status = 0;
++            expect(::waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0,
++                   "parallel cache writers must each succeed");
++        }
++        const auto after_race = ss::cached_model_identity(model, work_root, counting_model_reader);
++        expect(full_model_reads == 3 && after_race.digest == model_changed_size.digest,
++               "concurrent writes must yield parseable JSON with a correct cache hit");
++        // Retargeting a model symlink mid-read must refuse, not cache old bytes.
++        const fs::path alias = t.root / "model-alias.bin";
++        const fs::path alternate = t.root / "alternate.bin";
++        write(alternate, "different model bytes");
++        fs::remove(cache_file);
++        fs::create_symlink(model, alias);
++        bool swapped_refused = false;
++        try {
++            (void)ss::cached_model_identity(alias, work_root, [&](const fs::path& source) {
++                fs::remove(alias);
++                fs::create_symlink(alternate, alias);
++                return ss::complete_file_identity(source);
++            });
++        } catch (const std::exception&) {
++            swapped_refused = true;
++        }
++        expect(swapped_refused && !fs::exists(cache_file),
++               "retargeted model alias must refuse without caching a stale digest");
+         ss::write_stored_index(index, {original, saved.filename().string(), digest});
+         const auto found = ss::stored_manifest_for(t.root, "fixture", original);
+         expect(found && *found == saved, "equal static key must reuse unchanged manifest");

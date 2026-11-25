@@ -1,0 +1,148 @@
+"""Isolated experimental IQ8R two-factor U8+BF16 scale layout.
+
+Not a managed patch and not in production. Exact matches required for every
+replaced source anchor, so we never drift from the verified FP32 candidate.
+"""
+from pathlib import Path
+d=Path("SCRATCH/rum15-factors-source/libr4d")
+def patch(filename,changes):
+    p=d/filename
+    s=p.read_text()
+    for a,b in changes:
+        n=s.count(a)
+        assert n==1,(filename,n,a[:110])
+        s=s.replace(a,b)
+    p.write_text(s)
+    print("MODIFIED",filename,len(changes),flush=True)
+
+patch("r4d_fp8_layout.cpp",[
+('''ffill(out, wide ? "r4d.iq8r.s.f32.t16" : "r4d.i8.s.t16",
+              wide ? RAD_F32 : RAD_BF16, g.N, g.sk, g.N * g.sk * (wide ? 4 : 2));''',
+ '''// IQ8R stores the exact original U8 group scales tile-major, followed by
+        // one BF16 gain per output row. Extra two bytes per row amortize across K.
+        ffill(out, wide ? "r4d.iq8r.s.u8bf16.t16" : "r4d.i8.s.t16",
+              wide ? RAD_U8 : RAD_BF16, g.N, g.sk + (wide ? 2 : 0),
+              g.N * (g.sk + (wide ? 2 : 0)) * (wide ? 1 : 2));'''),
+('''            // Preserve the exactly representable product of the 8-bit
+            // coefficient and BF16 row gain through GEMM's F32 fold.
+            if (!pl[1].data) return RAD_E_SHAPE;
+            float* d = (float*)dst;
+            for (long long r = 0; r < N; ++r) {
+                const uint8_t* s1 = r4d_enc::row(pl[0], r);
+                const float s2 = rad_load_f32(pl[1].data, RAD_BF16, r);
+                for (long long kb = 0; kb < nkb; ++kb)
+                    d[((r / 16) * nkb + kb) * 16 + r % 16] = (float)s1[kb] * s2;
+            }
+            return RAD_OK;''',
+ '''            // Group code and row gain remain separate until their one F32
+            // multiplication at the GEMM fold. Preserve original BF16 bits.
+            if (!pl[1].data) return RAD_E_SHAPE;
+            auto* d = (uint8_t*)dst;
+            for (long long r = 0; r < N; ++r) {
+                const uint8_t* s1 = r4d_enc::row(pl[0], r);
+                for (long long kb = 0; kb < nkb; ++kb)
+                    d[((r / 16) * nkb + kb) * 16 + r % 16] = s1[kb];
+            }
+            const size_t off = (size_t)N * nkb;
+            for (long long r = 0; r < N; ++r) {
+                const uint16_t gain = ((const uint16_t*)pl[1].data)[r];
+                std::memcpy(d + off + (size_t)r * 2u, &gain, sizeof(gain));
+            }
+            return RAD_OK;'''),
+])
+
+patch("r4d_fp8_args.h",[
+('''        if (g->bscale->shape[1] != g->nkb) return R4D_NO(RAD_E_SHAPE);''',
+ '''        // The IQ8R factor layout reserves two bytes per row for the
+        // unmodified BF16 row gain after the tile-major U8 group coefficients.
+        if (g->bscale->shape[1] != g->nkb + (g->group == R4D_I8_GROUP_WIDE ? 2 : 0))
+            return R4D_NO(RAD_E_SHAPE);'''),
+])
+
+patch("r4d_gemm_fp8a8.hip",[
+('''    // IQ8R's tile-major scale is F32: 16 row scales per wave,
+    // whereas the legacy I8 128-group packs two BF16 into each word.
+    constexpr uint32_t kWS = I8 ? MW * kFolds * (SB == 256u ? 16u : 8u) : MW * kFolds;''',
+ '''    // IQ8R stores U8 group factors tile-major; one BF16 row gain per
+    // row is loaded once into LDS for the K loop. Other I8 stays unchanged.
+    constexpr uint32_t kWS = I8 ? MW * kFolds * (SB == 256u ? 4u : 8u) : MW * kFolds;'''),
+('''    __shared__ __attribute__((aligned(16))) uint32_t s_ws[kWS];
+    __shared__ float s_as[kAS];''',
+ '''    __shared__ __attribute__((aligned(16))) uint32_t s_ws[kWS];
+    __shared__ float s_as[kAS];
+    __shared__ uint16_t s_rg[(I8 && SB == 256u) ? MW * 16u : 1u];
+    if constexpr (I8 && SB == 256u) {
+        // A block stages its row gains only once, reused for every group.
+        if (tid < MW * 16u) {
+            const uint32_t row = m0 + tid;
+            const uint16_t* gains = (const uint16_t*)
+                ((const uint8_t*)Sa + (size_t)rows * ((cols + SB - 1u) / SB));
+            s_rg[tid] = (Full || row < rows) ? gains[row] : (uint16_t)0;
+        }
+    }'''),
+('''            constexpr uint32_t words = SB == 256u ? 16u : 8u;''',
+ '''            constexpr uint32_t words = SB == 256u ? 4u : 8u;'''),
+('''                    if constexpr (SB == 256u) {
+                        const float* scale = (const float*)&s_ws[
+                            (wave * kFolds + f) * 16u + (lane >> 4) * 8u];
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t) wsr[t] = scale[t];
+                    } else {''',
+ '''                    if constexpr (SB == 256u) {
+                        const uint8_t* code = (const uint8_t*)&s_ws[
+                            (wave * kFolds + f) * 4u + (lane >> 4) * 2u];
+#pragma unroll
+                        for (uint32_t t = 0; t < 8; ++t)
+                            wsr[t] = (float)code[t] * bscale(s_rg[
+                                wave * 16u + (lane >> 4) * 8u + t]);
+                    } else {'''),
+('''        // One F32 scale per weight row at IQ8R's SB=256 group.
+        // Ordinary SB=128 I8 keeps the original packed BF16 scale.''',
+ '''        // IQ8R compact tile-major U8 group coefficient + BF16 row gain.
+        // Ordinary SB=128 I8 keeps the original packed BF16 scale.'''),
+('''        if constexpr (SB == 256u) {
+            const float* source = (const float*)Sa + base;
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t) ws[t] = source[t];
+        } else {''',
+ '''        if constexpr (SB == 256u) {
+            const uint8_t* source = (const uint8_t*)Sa + base;
+            const uint16_t* gains = (const uint16_t*)
+                ((const uint8_t*)Sa + (size_t)rows * ngrp);
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                ws[t] = (float)source[t] *
+                        bscale(gains[rt * 16u + acc_row(lane, t)]);
+        } else {'''),
+])
+
+patch("r4d_gemm_8a8_prefill.h",[
+('''        } else if constexpr (I8 && SB == 256u) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const float* src = ((const float*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t) w32[i * 8u + t] = src[t];
+            }
+        } else if constexpr (I8) {''',
+ '''        } else if constexpr (I8 && SB == 256u) {
+            const uint16_t* gains = (const uint16_t*)
+                ((const uint8_t*)Sw + (size_t)N * nkb);
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const uint32_t rbase = (wt0 + i) * 16u + (lane >> 4) * 8u;
+                const uint8_t* src = ((const uint8_t*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    w32[i * 8u + t] = (float)src[t] * bscale(gains[rbase + t]);
+            }
+        } else if constexpr (I8) {'''),
+])
+
+patch("r4d_selftest.cpp",[
+('''            T(d_s, RAD_F32, { N, nkb }), T(d_y, RAD_BF16, { M, N }), T(nullptr, RAD_F32, { 1 }),''',
+ '''            T(d_s, RAD_U8, { N, nkb + 2 }), T(d_y, RAD_BF16, { M, N }), T(nullptr, RAD_F32, { 1 }),'''),
+])
+print("COMPLETE compact F32-exact source-factor diagnostic",flush=True)

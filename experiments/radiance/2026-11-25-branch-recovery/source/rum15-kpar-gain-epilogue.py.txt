@@ -1,0 +1,61 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-factor-epilogue-kpar-source/libr4d/r4d_gemm_fp8a8.hip")
+s=p.read_text()
+old="""        if constexpr (SB == 256u) {
+            const uint8_t* source = (const uint8_t*)Sa + base;
+            const uint16_t* gains = (const uint16_t*)
+                ((const uint8_t*)Sa + (size_t)rows * ngrp);
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                ws[t] = (float)source[t] *
+                        bscale(gains[rt * 16u + acc_row(lane, t)]);
+        } else {"""
+new="""        if constexpr (SB == 256u) {
+            // The row BF16 gain is invariant across all K groups, so keep
+            // the per-group U8 coefficient in F32 and apply the gain once
+            // after the deterministic K-parallel F32 wave reduction.
+            // This changes F32 operation association, not precision.
+            const uint8_t* source = (const uint8_t*)Sa + base;
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                ws[t] = (float)source[t];
+        } else {"""
+assert s.count(old)==1,s.count(old)
+s=s.replace(old,new)
+old="""    }
+#pragma unroll
+    for (uint32_t j = 0; j < NT; ++j) {
+        const uint32_t tok = j * 16u + col;
+        if (tok < M)
+            *(uint4*)(C + (size_t)tok * rows + rt * 16u + acc_row(lane, 0)) =
+                make_uint4(bf16x2_rne(out[j][0], out[j][1]), bf16x2_rne(out[j][2], out[j][3]),
+                           bf16x2_rne(out[j][4], out[j][5]), bf16x2_rne(out[j][6], out[j][7]));
+    }
+}
+
+// The kernel around the body, whose waves past the first return after the fold: CH"""
+new="""    }
+    if constexpr (SB == 256u) {
+        const uint16_t* gains = (const uint16_t*)
+            ((const uint8_t*)Sa + (size_t)rows * ngrp);
+#pragma unroll
+        for (uint32_t j = 0; j < NT; ++j)
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                out[j][t] *= bscale(gains[rt * 16u + acc_row(lane, t)]);
+    }
+#pragma unroll
+    for (uint32_t j = 0; j < NT; ++j) {
+        const uint32_t tok = j * 16u + col;
+        if (tok < M)
+            *(uint4*)(C + (size_t)tok * rows + rt * 16u + acc_row(lane, 0)) =
+                make_uint4(bf16x2_rne(out[j][0], out[j][1]), bf16x2_rne(out[j][2], out[j][3]),
+                           bf16x2_rne(out[j][4], out[j][5]), bf16x2_rne(out[j][6], out[j][7]));
+    }
+}
+
+// The kernel around the body, whose waves past the first return after the fold: CH"""
+assert s.count(old)==1,s.count(old)
+s=s.replace(old,new)
+p.write_text(s)
+print("RUM15 directly optimized actual K-parallel INT8 group256 kernel; BF16 gain at deterministic F32 final store",flush=True)

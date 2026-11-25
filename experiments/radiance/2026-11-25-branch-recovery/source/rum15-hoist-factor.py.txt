@@ -1,0 +1,52 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-factor-hoist-source/libr4d/r4d_gemm_8a8_prefill.h")
+s=p.read_text()
+anchor="""    for (uint32_t kb = 0; kb < nkb; ++kb) {
+        // The weight's scales for this block"""
+insert="""    // RUM15 diagnostic: convert invariant BF16 row gains only once per
+    // weight tile, instead of reloading and converting for every K group.
+    // No operation moves across the F32 fold or reorders accumulation.
+    float row_gain[(I8 && SB == 256u) ? kPTW * 8u : 1u];
+    if constexpr (I8 && SB == 256u) {
+        const uint16_t* gains = (const uint16_t*)
+            ((const uint8_t*)Sw + (size_t)N * nkb);
+#pragma unroll
+        for (uint32_t i = 0; i < kPTW; ++i) {
+            const uint32_t rbase = (wt0 + i) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+            for (uint32_t t = 0; t < 8; ++t)
+                row_gain[i * 8u + t] = bscale(gains[rbase + t]);
+        }
+    }
+
+    for (uint32_t kb = 0; kb < nkb; ++kb) {
+        // The weight's scales for this block"""
+assert s.count(anchor)==1,s.count(anchor)
+s=s.replace(anchor,insert)
+before="""        } else if constexpr (I8 && SB == 256u) {
+            const uint16_t* gains = (const uint16_t*)
+                ((const uint8_t*)Sw + (size_t)N * nkb);
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const uint32_t rbase = (wt0 + i) * 16u + (lane >> 4) * 8u;
+                const uint8_t* src = ((const uint8_t*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    w32[i * 8u + t] = (float)src[t] * bscale(gains[rbase + t]);
+            }
+        } else if constexpr (I8) {"""
+after="""        } else if constexpr (I8 && SB == 256u) {
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const uint8_t* src = ((const uint8_t*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    w32[i * 8u + t] = (float)src[t] * row_gain[i * 8u + t];
+            }
+        } else if constexpr (I8) {"""
+assert s.count(before)==1,s.count(before)
+s=s.replace(before,after)
+p.write_text(s)
+print("Hoisted immutable per-row BF16 gain load once per tile; same exact F32 product per K group",flush=True)
