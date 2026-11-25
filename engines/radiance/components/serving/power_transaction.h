@@ -100,6 +100,9 @@ struct CardSnapshot {
     PciAddress pci;
     bool amdgpu = false;
     std::optional<std::string> hwmon; // "hwmonNNN", not a path supplied by a manifest
+    // Kernel release, amdgpu version and PCI device/subsystem ids as one plain string compared by equality. A
+    // receipt qualifies a setting only for the identity it was applied on.
+    std::string identity;
     std::array<Capability, control_count> controls{};
     const Capability& at(ControlId id) const;
 };
@@ -217,6 +220,7 @@ enum class ObservationState : uint8_t {
 };
 struct ObservedCard {
     PciAddress pci;
+    std::string identity; // CardSnapshot::identity at the observation
     std::array<std::optional<int64_t>, control_count> values{};
 };
 struct Observation {
@@ -233,6 +237,7 @@ struct Receipt {
     Stage stage = Stage::fresh;
     std::vector<Event> events;
     std::vector<Observation> observations;
+    std::string workload; // the config that ran; evidence only, never a qualification match key
 };
 
 // Explicitly isolates persistence; fault tests can fail *any* durable write.
@@ -302,6 +307,9 @@ class SessionPower {
     SessionPower(PowerPlan plan, std::string run_id, Hardware& hardware, Records& records,
                  Predicate owns_gpu_lease, Predicate children_exited);
 
+    void set_workload(std::string name) {
+        receipt_.workload = std::move(name);
+    }
     v2::Status begin();  // full preflight and durable receipt/journal BEFORE writes
     v2::Status finish(); // no writes if any child group may still be alive
     v2::Status report_gfxoff(const Verdict& verdict); // advisory, persisted receipt

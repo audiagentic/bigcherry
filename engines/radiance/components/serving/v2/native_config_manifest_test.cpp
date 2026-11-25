@@ -161,6 +161,54 @@ int main(int argc, char** argv) {
         v3::S10Inputs stock;
         stock.profile.name = unmeasured.spec.intent.power.profile;
         check(v3::resolve_s10(unmeasured, stock).ok(), "stock S10 resolution changed");
+
+        // PWR08 S3: apply needs the capability probe and a qualifying receipt (or the lab-only qualifying apply)
+        const auto control = [](int64_t lo, int64_t hi) {
+            v3::S10ControlProbe c;
+            c.minimum = lo; c.maximum = hi; c.supported = true; c.original_readable = true;
+            return c;
+        };
+        v3::S10Inputs apply = inputs;
+        apply.mode = v3::PowerMode::kApply;
+        apply.power.probe = [&](const std::string& bdf) {
+            v3::S10DeviceProbe probe;
+            probe.bdf = bdf; probe.driver = "amdgpu";
+            probe.controls["vddgfx_offset_mv"] = control(-500, 0);
+            probe.controls["sclk_max_mhz"] = control(500, 5000);
+            probe.controls["power_cap_w"] = control(1000000, 400000000);
+            return probe;
+        };
+        const auto refusal_of = [&](const v3::S10Inputs& in) {
+            const auto r = v3::resolve_s10(mixed, in);
+            return r.ok() ? std::string() : v3::render_human("apply", r.error());
+        };
+        check(refusal_of(apply).find("receipt") != std::string::npos, "an unqualified apply was not refused for its receipt");
+        apply.power.qualified_by = [](const std::string&, const v3::PowerSettings&) { return std::optional<std::string>("run-1"); };
+        const auto applied = v3::resolve_s10(mixed, apply);
+        check(applied.ok() && applied.value().spec.plan.power.mode == v3::PowerMode::kApply, "a qualified apply was refused");
+        v3::S10Inputs qualifying = apply;
+        qualifying.power.qualified_by = nullptr;
+        qualifying.power.qualify = true;
+        check(v3::resolve_s10(mixed, qualifying).ok(), "the qualifying apply was refused without a receipt");
+        v3::S10Inputs out_of_range = qualifying;
+        out_of_range.power.probe = [&](const std::string& bdf) {
+            auto probe = apply.power.probe(bdf);
+            probe.controls["power_cap_w"] = control(1000000, 100000000);   // 200 W is above this card's cap range
+            return probe;
+        };
+        check(refusal_of(out_of_range).find("outside") != std::string::npos, "the qualifying apply ignored the probe range");
+        v3::S10Inputs unpaired = qualifying;
+        unpaired.profile.rules[0].settings.sclk_max_mhz.reset();
+        check(refusal_of(unpaired).find("paired SCLK") != std::string::npos, "the qualifying apply ignored the gfx1100 pairing rule");
+        // a site override replaces one card's setting, by BDF only; a BDF the host does not have is refused by the writer
+        v3::S10Inputs site = apply;
+        site.power.site_overrides[first_bdf].sclk_max_mhz = 2600;
+        const auto with_site = v3::resolve_s10(mixed, site);
+        check(with_site.ok(), "a site override was refused");
+        const auto& device_settings = with_site.value().spec.plan.power.devices;
+        const auto first = std::find_if(device_settings.begin(), device_settings.end(), [&](const auto& d) { return d.bdf == first_bdf; });
+        check(first != device_settings.end() && first->settings.sclk_max_mhz == 2600 && first->settings.vddgfx_offset_mv == -125,
+              "the site override did not replace only the named setting of that BDF");
     }
     v3::Manifest wrong_edition = unmeasured;
     wrong_edition.api_version = "bigcherry/v2";

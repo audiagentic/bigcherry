@@ -50,9 +50,16 @@ or receipt error surfaces as a failed session, never a clean stop.
 
 The power profile is the config's `x-bigcherry.power.profile` (a profile of `engines/radiance/power-profiles.yaml`, compiled
 into bc-serve and read through the engine's YAML parser; `stock` when absent) and is observational. Hardware-changing
-power profiles that change hardware require **both** a qualified profile and the opt-in
+power profiles that change hardware require **both** a qualification and the opt-in
 `--allow-power-apply`, plus an unexpired, ancestor-and-instance-bound
 GPU lease. With no opt-in the owner rejects apply before a hardware write.
+The qualification is the controller's own durable receipt (`<work-root>/power/receipts`): a setting is accepted for a
+BDF when an earlier apply of exactly that setting on the same kernel, amdgpu version and board (the receipt's plain
+`identity` string, compared by equality) read back exactly and restored exactly; the receipt's workload is evidence only.
+The first such apply is the lab run `--allow-power-apply --qualify-power` (same lease; it waives only the receipt match,
+never the probed range or the gfx1100 pairing rule). The capability probe is the transaction's own read of the card.
+This host's per-BDF settings come from `<work-root>/power-site.yaml` (`schema: 1`, `devices: {BDF: {settings, evidence}}`,
+read through the engine's YAML parser) and replace the profile's settings for that card only.
 No unit test calls the real Linux write interface: power tests use injected
 `power::Hardware`, `power::Records` and `power::Sensor`.
 PWR06 captures a no-process floor after measurement children exit, before
@@ -304,8 +311,7 @@ cache index. The original bytes are checked again immediately before
 launching a serving child.
 
 A config that selects a different power profile than the recorded one is
-refused. A stored lab manifest is refused: replay is production-only. Site per-BDF
-overrides are the next step (PWR08 S3); there is no `--power-profile` flag.
+refused. A stored lab manifest is refused: replay is production-only. There is no `--power-profile` flag.
 
 CPU-only acceptance: `bc_stored_manifest_test` (strict bytes and typed
 identity refusals), `bc_stored_manifest_cache_test` (static reuse and

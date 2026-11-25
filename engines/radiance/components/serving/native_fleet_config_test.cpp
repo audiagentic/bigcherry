@@ -305,6 +305,25 @@ int main() {
         check(profile_result && *profile_result == 0 && Json::parse(profiled.str()).at("engine").at("power_profiles") == document,
               "the inspect report did not carry the converted profile file");
         check(report.at("engine").at("power_profiles").is_null(), "a call without a profile descriptor reported profiles");
+        check(report.at("engine").at("power_site").is_null(), "a call without a site descriptor reported a site file");
+        // the third document: this host's power-site file travels the same way and comes back as JSON
+        const std::string site_yaml = "schema: 1\ndevices:\n  \"0000:03:00.0\":\n    settings:\n      power_cap_w: 200\n    evidence: run-1\n";
+        const int yaml_fd2 = sealed_memfd(inspected_yaml), profile_fd2 = sealed_memfd(profiles), site_fd = sealed_memfd(site_yaml);
+        const std::string yaml_text2 = std::to_string(yaml_fd2), profile_text2 = std::to_string(profile_fd2),
+                          site_text = std::to_string(site_fd);
+        char site_flag[] = "--bc-site-fd";
+        char* with_site[] = {command, inspect, const_cast<char*>(yaml_text2.c_str()), profile_flag,
+                             const_cast<char*>(profile_text2.c_str()), site_flag, const_cast<char*>(site_text.c_str()), nullptr};
+        std::ostringstream sited;
+        std::streambuf* before_site = std::cout.rdbuf(sited.rdbuf());
+        const auto site_result = bc::serving::inspect_native_fleet_config_command(7, with_site);
+        std::cout.rdbuf(before_site);
+        ::close(yaml_fd2);
+        ::close(profile_fd2);
+        ::close(site_fd);
+        check(site_result && *site_result == 0 &&
+                  Json::parse(sited.str()).at("engine").at("power_site").at("devices").at("0000:03:00.0").at("settings").at("power_cap_w") == 200,
+              "the inspect report did not carry the converted site file");
     }
 
     const int unsealed_fd = ::memfd_create("bc-native-config-unsealed-test", MFD_CLOEXEC | MFD_ALLOW_SEALING);
