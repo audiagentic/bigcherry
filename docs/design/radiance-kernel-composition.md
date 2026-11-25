@@ -2,6 +2,22 @@
 
 Status: design, 2026-11-25. Plan items: RCS19 to RCS22 (build-radiance-components), supplementing RCS15 to RCS18 (native RDNA3 provider migration). Nothing here is implemented yet except where marked.
 
+## 0. Terms (one meaning each)
+
+| Term | Meaning |
+|---|---|
+| upstream | Radiance as released by its maintainers; we pin one release (recipes.toml) and never edit it in place |
+| libr4d | upstream's gfx12 kernel library source (units named `r4d_*`); built for the R9700 as the `libr4d.so` plugin |
+| libr3d | upstream's own native RDNA3 kernel library, a different upstream library from libr4d; status in our builds is what RCS15 measures; not used in production today |
+| libr3 | our gfx11 build of upstream's units: libr4d's units compiled for gfx11 through the compatibility header plus our native rewrites; built as `libr3.so`; upstream-derived, so it keeps its name |
+| libr2 | our gfx1030 helper library (no matrix instructions) |
+| shim | `r3_compat.h`: emulates gfx12-only instructions on gfx11 |
+| native rewrite | a `native/*.rw` block that replaces text in a libr4d unit for the gfx11 build |
+| managed patch | a package under `engines/radiance/patches` that edits the pinned source for every architecture, with a lifecycle state (untested, validated) |
+| overlay plugin | a library of kernels we own (`libbc-<family>-<arch>.so`, sources `bc_*`), placed first in the engine's kernel hierarchy so its rows override the base libraries' rows (RCS23); the existing precedent is `libbcgfx12` |
+| family | a group of units by purpose (`core`, `gemm_quant`, `gemm_dense`, `attention`, `moe`, `speculation`, `multimodal`, `collectives`) |
+| `bc` | prefix and suffix meaning "ours"; no `bc` means upstream |
+
 ## 1. Why
 
 Our gfx1100 kernels are a generated tree: libr3 compiles upstream's gfx12 units for gfx11 through a compatibility header (`r3_compat.h`) and a set of native rewrites (`native/*.rw`). Managed patches edit the same upstream source text before libr3 rewrites it. Three costs followed from that:
@@ -104,6 +120,30 @@ Refresh the unmerged family branch against main, run the full build, and merge i
 - The Stage 0 item of the migration brief (the additive gfx12 body with distinct identifiers, no removed or duplicated anchors, both architectures built and gated) is the first user of layer 1 and is already in progress as the gfx1201 fused-tile package.
 - RCS15 (freeze and measure) runs next, GPU-free parts first: refresh the upstream pin, inspect the native provider's rows, inventory local optimisations and classify each (upstream equivalent, port required, obsolete, rejected).
 - Layer 2's traits seam is also the port surface for a native provider.
+
+## 8a. Programme map (plan items)
+
+| Item | What | Depends on |
+|---|---|---|
+| RCS15 | baseline: upstream libr3d against our libr3, matrix of rows | none |
+| RCS16 | native compute migration per family (only if RCS15 says libr3d is at least as good) | RCS15 |
+| RCS17 | transport and helper integration for a native provider | RCS16 |
+| RCS18 | production cutover and retirement of the generated gfx11 tree | RCS15 to RCS17 |
+| RCS19 | composition gates (anchors, compile, link, qualification), ownership records, freshness | none; first customer the gfx1201 fused tile |
+| RCS20 | merge the family compile targets | none |
+| RCS21 | traits seam, unified fused tile, upstream path | RCS19 |
+| RCS22 | loadable family plugins | RCS15 gate, RCS19 |
+| RCS23 | owned kernel families as overlay plugins, manifest, drift check, `bc` naming | RCS19, RCS21 |
+
+RCS15 to RCS18 decide the gfx11 provider; RCS19 to RCS23 make whichever provider we keep composable and manageable. Documents they supersede or qualify are listed in section 8b.
+
+## 8b. Related documents and their status
+
+- `docs/reviews/radiance-native-libr3d/ASSESSMENT.md`, `INTEGRATION.md`, `native-rows.tsv`: written against pin 1.17 and an earlier upstream snapshot; input to RCS15, not a statement of current facts.
+- `engines/radiance/components/libr3/README.md`: component description; its terms follow section 0.
+- `docs/reference/build/PIN_BUMP.md` and the bump-radiance skill: the pin-bump flow; the planned drift check for owned kernel overlays (RCS23) is noted there and is not implemented yet.
+- `engines/radiance/components/libr3/exclude.txt`: units our gfx11 build leaves out; currently none.
+- `engines/radiance/components/libr3/native-shelved/`: rewrite files kept as source but not built (each reason is in `component.toml`).
 
 ## 9. Sequencing and ownership
 
