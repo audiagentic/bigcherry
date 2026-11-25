@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.14.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.13.0...bc-radiance-2020.14.0) (2026-11-25)
+
+
+### New and changed
+
+* **patch:** kernel unit ownership in patch metadata, a shared-unit record, and a naming lint (RCS19) ([#1580](https://github.com/audiagentic/bigcherry/issues/1580)) ([04a043e](https://github.com/audiagentic/bigcherry/commit/04a043e415b23b87190e0d8c9025824125ff0951))
+
 ## [2020.13.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.12.0...bc-radiance-2020.13.0) (2026-11-25)
 
 

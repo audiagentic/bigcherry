@@ -96,14 +96,14 @@ class NativeFusedIqrTests(unittest.TestCase):
         self.assertIn("if constexpr (!Fused)", body)
         self.assertIn("cur[i] = pre.load(ww * kPTW + i, half, lane);", body)
         self.assertIn("pre.prepare(n0, kb);", body)
-        self.assertIn("const IqrFused12Pre<F> pre{c, s_tr};", iqr)
+        self.assertIn("const IqrFusedPre_rad0065<F> pre{c, s_tr};", iqr)
         self.assertIn("frag(w, t, lane, f);", iqr)
         self.assertIn("t + h * kTileBytes + lane * kLaneBytes", iqr)
         self.assertIn("f.v = *(const uint4*)p;", iqr)
         self.assertIn("f.w = *(const uint4*)(p + 16);", iqr)
-        self.assertIn("gemm_8a8_prefill_body<true, 32, IqrFused12Pre<F>, true, kBlock, true>", iqr)
-        self.assertIn("gemm_8a8_prefill_body<true, 0, IqrFused12Pre<F>, false, kBlock, true>", iqr)
-        fused = iqr[iqr.index("struct IqrFused12Pre {"):iqr.index("void iqr_prefill_kernel")]
+        self.assertIn("gemm_8a8_prefill_body<true, 32, IqrFusedPre_rad0065<F>, true, kBlock, true>", iqr)
+        self.assertIn("gemm_8a8_prefill_body<true, 0, IqrFusedPre_rad0065<F>, false, kBlock, true>", iqr)
+        fused = iqr[iqr.index("struct IqrFusedPre_rad0065 {"):iqr.index("void iqr_prefill_kernel")]
         self.assertNotIn("r3_bytes_12_to_11", fused)
         self.assertNotIn("__hip_atomic", fused)
         self.assertNotIn("spin", fused)

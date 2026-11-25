@@ -33,6 +33,13 @@ passing patch application never proves runtime compatibility.
    For IQ8R, the container's int8 scale group is 256 despite FWHT128;
    per-rank V and FFN widths and offsets must be whole encoding scale groups.
    Check proposed `tp-ownership` splits *before* GPU starts.
+   The compile phase also runs the composition gates before the lane build:
+   gate 1 (`composition-anchors`, failure code `NATIVE_REWRITE_DRIFT`: every libr3
+   rewrite block against the *patched* source) and gate 2a (`composition-syntax`,
+   `COMPOSITION_COMPILE_FAILED`: syntax-only host and device compiles of the units
+   the production patches touch, gfx1100 and gfx1201). The same checks run by hand
+   as `python3 -m bigcherry --engine radiance patch-compose-check`. Fix the named
+   patch or rewrite block; do not loosen a gate.
 4. Capture the current composed patch footprint before modifying packages:
    `python3 -m bigcherry --engine radiance patch-footprint --check`.
    Review `docs/evidence/radiance-patch-footprint/footprint.md` for the

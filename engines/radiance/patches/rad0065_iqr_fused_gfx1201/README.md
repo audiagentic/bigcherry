@@ -12,7 +12,7 @@ Built on both architectures with the patch applied (experiment lane): libr3 (gfx
 
 ## Detail
 
-The tile and its dispatch live in libr4d/r4d_gemm_iqr.hip under distinct gfx12 identifiers (IqrFused12Pre, IqrFused12Certificate, iqr_fused12_prefill_kernel) and are compiled only where R3_TARGETS is undefined, so libr3 keeps its own gfx11 tile. The shared prefill header gets the same Fused template parameter and four body edits that libr3's native rewrite makes for gfx11; the libr3 rewrite treats those five blocks as optional, paired with an identity block that occurs when the patch has applied them, so a source with neither form still fails the rewrite check.
+The tile and its dispatch live in libr4d/r4d_gemm_iqr.hip under one set of identifiers (IqrFusedPre_rad0065, IqrFusedCertificate_rad0065, iqr_fused_prefill_kernel_rad0065) and are architecture-neutral: libr3 compiles the same text for gfx11 through its rewrites (the earlier separate gfx11 copy in the rewrite file is gone). The shared prefill header gets the same Fused template parameter and four body edits that libr3's native rewrite makes for gfx11; the libr3 rewrite treats those five blocks as optional, paired with an identity block that occurs when the patch has applied them, so a source with neither form still fails the rewrite check.
 
 Mechanics: `python3 -m pytest tools/tests/patch/test_radiance_rad0065.py` and `PYTHONPATH=tools python3 -m bigcherry patch-lint`.
 

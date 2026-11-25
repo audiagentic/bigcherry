@@ -2,7 +2,7 @@
 id: RCS24
 order: 0
 plan: build-radiance-components
-state: pending
+state: completed
 created-at: '2026-11-25T01:02:59.740271+00:00'
 breadth: ''
 skill: intermediate
@@ -55,6 +55,10 @@ Created 2026-11-25 from the design review pass. Related: RCS19 to RCS23.
 
 2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Coordinate single docs update with RSC11 S18: PIN_BUMP.md, BUMP_COUPLING.md, bump-radiance skill, PATCH_AUTHORING/patch-author, engine/component docs and CLI help must reflect actual exact composition, origin and native launch gates after they land. Do not change operational v3 instructions ahead of code; remove obsolete option-registry/manifest launch, old cache/reader tests only at cutover. Existing GC cleanup #1547 already merged; check current status before duplicating. Update test inventory and wording when code lands, keep historical evidence.
 
+2026-11-25 status: item 1 (build GC docs and dead legacy-run code) has no live references left; item 2 fixed (#1542); item 3 decided: native-shelved/ stays as it is (four files, each marked evaluated with its evidence in component.toml and the libr3 README, none built or referenced by a test); items 5 and 7 done by #1545 and #1580 (patch-author skill carries the composition gate and the shared-unit record; the bump-radiance skill gets the pin-bump gate with the RCS19 wiring); items 4 and 6 checked: no engine doc under docs/reference/engines/radiance names the libraries wrongly. Close with the RCS19 wiring PR.
+
+2026-11-25 closed: items 1 to 7 done or decided (see the earlier status note); the composition gates and the owned-unit record are in the patch-author and bump-radiance skills (#1580, #1584). native-shelved/ stays as documented.
+
 ## Change Log
 
 - 2026-11-25T01:02:59.740271+00:00 (created-by): Created by lead
@@ -64,3 +68,6 @@ Created 2026-11-25 from the design review pass. Related: RCS19 to RCS23.
 
 - RV4609
 - 2026-11-25T02:06:19.631770+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T08:45:44.097982+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:14:19.983599+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:14:32.848396+00:00 (state-transition): State: pending → completed

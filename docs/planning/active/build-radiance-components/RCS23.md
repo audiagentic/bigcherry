@@ -2,7 +2,7 @@
 id: RCS23
 order: 0
 plan: build-radiance-components
-state: pending
+state: in_progress
 created-at: '2026-11-25T00:54:41.130343+00:00'
 breadth: ''
 skill: advanced
@@ -67,6 +67,12 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. New candidate rows/headers, head scalar and opt-in WMMA rows require per-change adoption screen; native IQR private layout is different and scalar; no automatic u6/u7 or group256 adoption. Compare actual model logical tensors through each provider own relayout, exact row selection and row contracts; preserve native ABI/layout fingerprint already required by upstream, no additional digest. Reuse existing RCS25 discrete qualification before release. Footprint 37/40 intersection is triage only; inspect actual source and indirect include closure.
 
+2026-11-25 closed as deferred: arm B found no kernel to own as an overlay (upstream's gfx1100 IQR is a correctness reference only), and the cost of a bump to upstream main is in the engine patches (11 of 35 patches fail on 1c104de4, four clusters), not in kernels. The composition gates now stop a bump at the first collision. Reopen when a bump lands a kernel conflict the gates cannot resolve.
+
+2026-11-25 reopened by the owner ("complete all the plan items regarding the lib rework and grouping"; the earlier deferral for lack of a speed gain is withdrawn). Staged order, each stage proved with the unit harness (bytes, resource records, replay) and merged on its own: S1 inventory and baseline snapshot per IQR unit (read-only, evidence page); S2 RCS21 traits seam and the unified fused tile; S3 the IQR family as an overlay plugin libbc-iqr-<arch>.so first in the loader hierarchy with the origin manifest and the pin-triage upstream check, retiring the shadowed rewrites and patches (archive unchanged); S4 RCS22 only if the loader needs more than the existing hierarchy; S5 close with the installed-release qualification and Gate E. Builds and gates by bigcherry-2 or the lead; GPT reviews only and returns code as text.
+
+2026-11-25 S1 done (docs/evidence/2026-11-25-rcs23-iqr-inventory): upstream moved the IQR units 3 commits in 2.1.0..2.2.0 and 0 since; own r4d_gemm_iqr (+p1..p3), r4d_iqr_embed and r4d_logits_vocab whole-unit; r4d_moe_iqr, r4d_iqr_layout.cpp and r4d_iqr*.h stay upstream; r4d_gemm_8a8_prefill.h is extracted-family; rewrite blocks retirable: 25 (gemm_iqr), 1 (embed), 9 (vocab) after the overlay owns the unit, the 8 prefill-header blocks stay. S3 is per unit, smallest first, on the existing precedent (engines/radiance/components/bc-gfx12: a plugin listed ahead of the base library in --kernels, its rows reuse the base layout hooks so stored bytes are unchanged). S3a embedding gather: new component bc-iqr (plugin libbciqr, rows embed_lookup_iqr, owned source bc_iqr_embed.hip with the libr3 rewrite block absorbed and one source for gfx1100 and gfx1201 where the code allows); origins.toml per owned unit (upstream path, base commit, last integrated commit, strategy whole-unit, rows overridden, architectures, absorbed rewrite blocks); pin-triage reports origin drift (git log base..target on the path) with the classification clean, candidate or blocked; libr3 stops building the unit (exclude.txt) and the .rw block is archived unchanged; the release's native serving YAML lists libbciqr first. Proof per unit: unit harness overlay against the base on both architectures (hashes, resource records, replay), a row-catalogue test (the overlay row wins, the base alone still serves it, removing the overlay restores base behaviour, no unexpected shadow), the composition gates, then the installed release plus Gate E. S3b vocab head, S3c gemm_iqr family, each the same way.
+
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
@@ -81,3 +87,8 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 - 2026-11-25T02:05:49.620407+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria
 - RV4635
 - 2026-11-25T02:41:48.148300+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T09:42:34.865375+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:43:10.649436+00:00 (state-transition): State: pending → deprecated
+- 2026-11-25T10:44:56.988012+00:00 (state-transition): State: deprecated → in_progress
+- 2026-11-25T10:45:06.870940+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T10:52:51.790343+00:00 (updated-by): Updated: section:notes

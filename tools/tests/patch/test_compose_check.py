@@ -111,15 +111,15 @@ class FixtureTests(unittest.TestCase):
         self.assertNotIn("host pass", failed)
 
     def test_a_type_both_the_patch_and_libr3_define_fails_only_where_libr3_rewrites_it(self):
-        """The rad0065 collision: libr3's rewrite adds IqrFusedPre for gfx11; a patch adding it too to the shared
+        """The rad0065 collision shape: libr3's rewrite adds kIqrTokenTile for gfx11; a patch adding it too to the shared
         source compiles on gfx12 and defines it twice on gfx11."""
-        tree = self.variant("collide", IQR, "template <class F> struct IqrFusedPre { int x; };",
+        tree = self.variant("collide", IQR, "constexpr uint32_t kIqrTokenTile = 16u;",
                             before="/* ---- the forms built: r4d_iqr.h's list ------------------------------------------------ */")
         gfx12 = self.check(tree, ["gfx1201"], [IQR])
         self.assertTrue(gfx12.ok, cc.render(gfx12))
         gfx11 = self.check(tree, ["gfx1100"], [IQR])
         self.assertFalse(gfx11.ok)
-        self.assertIn("IqrFusedPre", " ".join(gfx11.compile_failures))
+        self.assertIn("kIqrTokenTile", " ".join(gfx11.compile_failures))
 
     def test_a_patch_that_removes_a_native_rewrite_anchor_fails_gate_1(self):
         tree = Path(self.tmp.name) / "anchor"

@@ -2,7 +2,7 @@
 id: RCS19
 order: 0
 plan: build-radiance-components
-state: pending
+state: completed
 created-at: '2026-11-25T00:40:42.311181+00:00'
 breadth: ''
 skill: intermediate
@@ -71,6 +71,8 @@ Review (2026-11-25): the existing rewrite checker accepts an optional group when
 
 2026-11-25 small implementation slice: both libr2/libr3 now watch actual upstream source/header glob membership and rewrite inputs; stub generator is a link dependency. Existing patched source copied into isolated scratch and both CMake/Ninja configurations passed (libr2 3 units, libr3 115). On a changed upstream header ninja build.ninja regenerated both copies; unchanged repeat did not rerun CMake or touch the copy; added/removed header detected. Generated link rules contain r3_gen_stubs.py dependency. First source fixture lacked four patch-created headers and correctly refused libr3 configure; used complete existing patched source for this proof, not a claim of fresh selected recipe composition or full compile. #1552 composition checker now merged; remaining work is integrate exact selected patched tree into pin-bump, cover shared libr2 rewriter, upstream/owned dependency changes, use canonical CMake compile options/targets rather than reconstructed flags, and distinguish skipped from passed. No GPU or full plugin build in this slice.
 
+2026-11-25 closed. Gates: patch-compose-check with gates 1 (anchors on the patched source), 2a (syntax-only host and device, gfx1100 and gfx1201), 2b, 3 (#1552); per-patch unit ownership, the shared-unit record and the naming lint (#1580); the pin-bump compile phase runs gates 1 and 2a before components-build, stopping with NATIVE_REWRITE_DRIFT or COMPOSITION_COMPILE_FAILED, and a missing compiler stops, never passes (#1584); patch-author and bump-radiance skills carry the gates. Exact-identity binding to resume records was not built (no fingerprinting machinery, owner direction): git commit ids and plain comparisons only.
+
 ## Change Log
 
 - 2026-11-25T00:40:42.311181+00:00 (created-by): Created by lead
@@ -88,3 +90,5 @@ Review (2026-11-25): the existing rewrite checker accepts an optional group when
 - 2026-11-25T02:52:41.601297+00:00 (updated-by): Updated: section:steps, section:validation
 - 2026-11-25T05:20:55.808306+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:32:23.302601+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:14:15.155854+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:14:28.045520+00:00 (state-transition): State: pending → completed

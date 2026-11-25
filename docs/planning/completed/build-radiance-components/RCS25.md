@@ -2,7 +2,7 @@
 id: RCS25
 order: 0
 plan: build-radiance-components
-state: pending
+state: completed
 created-at: '2026-11-25T02:12:11.908255+00:00'
 breadth: ''
 skill: intermediate
@@ -63,6 +63,8 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 
 2026-11-25 implementation: production libr3 component explicitly resets R3_ONLY empty; partial test builds remain isolated. No changes to unit harness under #1565, no duplicate harness. Full production row/link and target-row proof remain with actual builds.
 
+2026-11-25 closed: docs/evidence/2026-11-25-rcs20-rcs25-family-harness/README.md. The harness (merged #1565, Release build type #1581) builds the IQR family for gfx1100 in 155 s (225 s with a cold selftest cache) against the shipped 2020.13.0, hashes 555 outputs (0 differ), 0 selftest failures, compares 3,521 resource records and replays 52 rows, without the full plugin or the engine. Known difference: 5 iqr_prefill_kernel forms (236 to 240 VGPR, 2 to 3 spills) between a cold build of the source and the shipped library, the same in two runs, output hashes equal; carried by the BU03 follow-up. Replay rows near 1.0 flip between regress and same across runs, so hashes and resource records are the stable checks.
+
 ## Change Log
 
 - 2026-11-25T02:12:11.908255+00:00 (created-by): Created by lead
@@ -76,3 +78,5 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 - 2026-11-25T02:42:19.951361+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T05:21:34.496954+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:32:38.631650+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T08:45:02.912213+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T08:45:21.158894+00:00 (state-transition): State: pending → completed

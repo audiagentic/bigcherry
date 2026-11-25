@@ -4,7 +4,7 @@
 
 > **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
 
-Status: design, 2026-11-25. Plan items: RCS19 to RCS24 (build-radiance-components), supplementing RCS15 to RCS18 (native RDNA3 provider migration). Nothing here is implemented yet except where marked.
+Status: layer 1 and the test harness are built (RCS19, RCS20, RCS25: composition gates, family targets, unit harness, pin-bump wiring). Layers 2 and 3 (traits seam, family plugins, overlay plugins: RCS21 to RCS23) are deferred, each with its reopen trigger in its plan item. The native provider was not adopted (RCS15 to RCS18). 2026-11-25.
 
 ## 0. Terms (one meaning each)
 
