@@ -19,7 +19,7 @@ Existing typed worker/kernel settings and strict loader replaced R3_* getenv. Fi
 
 ## Steps
 
-Reuse one shared BC YAML decoder and typed HelperSettings; derive per-role effective settings from YAML and assigned role, validate against actual selected physical device, model/build, shared generation and independent plan_owners. r3_moe_worker --config same sealed bytes + role, use existing bootstrap/transport for derived owner map/budget, only bounded role-specific admission facts if indispensable. Migrate engine remote/typed plugin settings (rad0002/rad0012) and manifest_identity generation to scoped actual ownership/admission digest; preserve head/tail, formats, lanes, combine/affinity, heat/live policy/calibration/forced lab gate, clean drain. Remove --manifest loader and all actual campaign/lab callers together; no R3_* config reads or legacy ABI fallback. Preserve RHP16/20 owner and per-layout outstanding gates.
+Reuse current HelperSettings and one BC YAML decoder for authored intent, assigned role and only indispensable derived bootstrap facts (budgets, shares, topology and shm namespace before worker creates segment). Same raw YAML and root. Use existing per-attempt session/segment identity shared by all roles, shape/topology and independent owner-map/generation checks, no new digest or launch document. Install existing typed engine/plugin settings before registration, migrate manifest presence marker and actual callers together. Preserve all helper settings, measuring/lab gating, formats, live/calibration/forced schedules, heat and drain. Remove manifest loader, no R3_* fallback. See design §4.2.
 
 ## Detailed Solution & Technical Design
 
@@ -63,6 +63,8 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. helper_profile.toml embedded via manifest_writer.cpp and archs.toml capability/reserve data must be classified before removing writer. Move authored defaults into one typed BC YAML policy, retain facts/calibration in existing owner. Helpers same admitted YAML plus only assigned derived role/transport facts. No per-helper generated config or manifest inheritance; actual format/row/owner map/readiness and copy drain before stop/restore. Preserve existing measured handoff literals S17 proof and RHP16/20 independent policy acceptance.
 
+docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25): v2/helper_settings.cpp::helper_settings currently projects all WorkerHelper/WorkerHandoff settings and model/home, role-specific plugin/format, budget, all helper budgets/shares, balance speeds, lanes, live/calibration/forced lab and diagnostics. Retain existing HelperSettings and typed kernel ABI; replace its producer with same BC YAML decode plus actual selected role/derived facts. Critical boot order: r3_moe_worker loads these BEFORE HIP and before v26::init/map, so the helper cannot obtain initial budget/topology/shm name solely from a segment it must create; pass only indispensable derived bootstrap facts using existing owner child handoff, not full manifest or JSON copy of YAML. v26 header manifest_digest currently comes from content_sha256; use existing unique owner-selected segment/session identity shared before init (nonzero, same for roles of each measuring/final attempt), keep shape/topology/independent owner-map/generation checks; no new digest protocol. bc_engine_settings.h manifest flag is a presence marker and DSO getter gates on it; change together with rad0002/rad0012 and actual consumers, preserve absent standalone defaults and install before native Fleet/Engine plugin registration; never turn managed missing settings into silent standalone defaults. Retain independent owner-map agreement, lab/heat/phase trace, layout and actual drains.
+
 ## Change Log
 
 - 2026-11-02T03:52:00.963006+00:00 (created-by): Created by agent
@@ -86,3 +88,6 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 - 2026-11-25T02:44:58.836045+00:00 (updated-by): Updated: section:notes
 - RV4658
 - 2026-11-25T03:26:05.495951+00:00 (updated-by): Updated: section:notes
+- RV4674
+- 2026-11-25T05:41:21.769599+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:43:45.066176+00:00 (updated-by): Updated: section:steps
