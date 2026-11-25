@@ -1,5 +1,5 @@
 {
   "engines/llamacpp": "11552.6.0",
   ".": "1.74.0",
-  "engines/radiance": "2020.17.1"
+  "engines/radiance": "2020.18.0"
 }
