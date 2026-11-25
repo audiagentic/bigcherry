@@ -1,0 +1,26 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261125_054352_clarify-concrete-native-servin_2538",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR08.md",
+    "docs/planning/active/run-serving-configuration/RSC11.md",
+    "docs/planning/active/run-serving-configuration/RSC01.md",
+    "docs/planning/active/run-serving-configuration/RSC03.md",
+    "docs/planning/active/run-serving-configuration/RSC02.md",
+    "docs/planning/active/run-serving-configuration/RSC06.md",
+    "docs/design/radiance-native-yaml-launch.md",
+    "docs/planning/active/run-serving-configuration/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC01",
+    "RSC02",
+    "RSC03",
+    "RSC06",
+    "RSC11",
+    "PWR08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Specify actual native serving migration code seams, preserve pool convergence and preweight retry, helper bootstrap and plugin settings lifetime, native Fleet preload and alias behavior, direct owner power admission. Remove contradictory exhaustive acceptance requirements. Planning only.",
+  "timestamp-utc": "2026-11-25T05:43:52.944319Z",
+  "user-summary-candidate": "Clarify concrete native serving cutover implementation"
+}

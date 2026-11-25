@@ -75,6 +75,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Keep existing voltage/clock/cap capability; use existing qualification and actual settings/readback, not extra security machinery. Paired undervolt research and any default promotion remain separate.
 
+docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25): main.cpp constructs ManifestPower and session.cpp:1213–1307 admits power through Hooks.admit_power before any measuring child, including carried plan path. Keep lifecycle ordering and power_transaction implementation. Replace ManifestPower::begin(path,use)/verify_serving(path) and writer-derived power with existing typed PowerPlan selected once from YAML/actual BDFs; verify same effective settings on final launch, no reapply on host-pool convergence/cache hit. Fix stock-only s10_inputs.cpp and role-keyed mixed TP resolver in this extraction, not by extending manifest. Use real probe/qualification and exact readback, retain allow-power-apply and verified lease/children-exit; preflight inspector is device-free. One shared min-cap test with PWR10, no new power framework.
+
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
@@ -121,3 +123,5 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - RV4662
 - 2026-11-25T03:28:39.913911+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:30:48.155358+00:00 (updated-by): Updated: section:validation, section:notes
+- RV4675
+- 2026-11-25T05:41:53.148203+00:00 (updated-by): Updated: section:notes

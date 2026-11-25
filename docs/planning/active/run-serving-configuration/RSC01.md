@@ -61,6 +61,8 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 
 2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Native server.port stays authored and is never silently overridden; lab arms author distinct port in YAML. Inventory config_as_layout generic native projection and serving.cpp resolver consumers; site/profile cannot override native fields even when equal. Split embedded helper_profile.toml authored settings from archs.toml capabilities and measured calibration; YAML only for authored serving intent. Keep device visibility/runtime home/FD/lease context distinct from tuning getenv. Explicit private site power migration, no compatibility reader.
 
+docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25): Keep native_fleet_config.cpp and v2/native_config_snapshot byte/root mechanics, but replace session.cpp inspect_native_config JSON snapshot envelope with the same raw YAML descriptor and held execution root for inspection and native --config. Reduce NativeConfigInspection/NativeEngineSettings to facts actually used by selection/resource admission; session.cpp:2441–2469 currently rejects native auto speculative depth and model-defined RoPE because the manifest projection cannot represent them. Do not reproduce those restrictions as a new schema or expand model support in this cutover. Preserve existing supported explicit values; let native defaults resolve where no BC consumer requires the value, otherwise state the actual unsupported constraint. config_loader.cpp/serving.cpp retain BC-only resolution, no native setting registry. Native Fleet parser internally uses config_parse flags; that upstream implementation is not our synthetic argv shim and must not be replaced.
+
 ## Change Log
 
 - 2026-11-02T00:52:58.694609+00:00 (created-by): Created by agent
@@ -85,6 +87,7 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 - RV4610
 - RV4637
 - RV4654
+- RV4671
 
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
@@ -93,3 +96,4 @@ Reconciliation: the C++ resolver, generated contract, strict reader, writer and 
 - 2026-11-25T02:06:52.897578+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T02:42:51.235475+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T03:25:34.302753+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:39:46.871114+00:00 (updated-by): Updated: section:notes
