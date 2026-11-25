@@ -206,7 +206,7 @@ jobs:
             python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
             # Fingerprint the successful build inside the CI compiler image.
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
-            # The cache keeps exactly what this build touched (hit or wrote) and nothing else. ccache's own cleanup is not
+            # The cache keeps exactly what this build touched (hit or wrote) and nothing else. The ccache cleanup command is not
             # used: it trims each small hash directory to a share of the limit, so it also removes entries this build just
             # used (a limit of twice the touched bytes still dropped about a quarter of them), so the same ~135 compiles
             # missed on every run. Leftover temporary files (a fifth of the saved cache) are dropped too.
