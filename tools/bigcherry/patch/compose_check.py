@@ -100,6 +100,19 @@ def production_ids(engine: str, source_name: str, experiment: str | None = None)
     return list(plan.patch_ids)
 
 
+def touched_files(engine: str, patch_ids: list[str]) -> list[str]:
+    """Files the named patches edit or create (relative to the source root), without applying anything."""
+    from . import patchset
+    from . import registry as patch_registry
+    from ..core.context import ProjectContext
+
+    patches_root = ProjectContext.resolve(engine=engine).patches_root
+    selection = patchset.resolve_exact(engine, patch_ids, directory=patches_root, required_state=None)
+    registry = patch_registry.load_registry(engine, patches_root)
+    return sorted({patch.path for module in selection.modules
+                   for patch in patch_registry.load_implementation(engine, registry.get(module.patch_id), root=patches_root)})
+
+
 # ------------------------------------------------------------------------------------------------------ units
 def units(tree: Path) -> dict[str, str]:
     """unit name -> its extra compile flags, as libr4d's build file lists them."""

@@ -57,6 +57,8 @@ BUILD_INPUTS = (
     "tools/bigcherry/patch/registry.py",
     "tools/bigcherry/patch/catalog.py",
     "tools/bigcherry/patch/pinned_source.py",
+    "tools/bigcherry/patch/compose_check.py",
+    "tools/bigcherry/patch/rebase.py",
     "tools/bigcherry/patch/source.py",
     "tools/bigcherry/bin/bc-ccache",
     "tools/bigcherry/campaign/resolution.py",
