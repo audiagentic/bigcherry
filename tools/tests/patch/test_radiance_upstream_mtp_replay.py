@@ -182,7 +182,9 @@ def test_retirement_is_isolated_from_recipe_and_discovery():
     recipes = (REPO / "engines/radiance/recipes.toml").read_text()
     for name in ("rad0013_mtp_pass_replay", "rad0047_mtp_verify_replay_summary"):
         assert (p / "archive" / name / "patch.py").is_file()
-        assert not (p / name).exists()
+        # Retired means not discoverable: no package metadata or implementation at the old path. A bare directory of
+        # Python bytecode a checkout left behind is not a package.
+        assert not (p / name / "patch.toml").exists() and not (p / name / "patch.py").exists()
         assert f'"{name}"' not in recipes
     archive_index = (p / "archive/ARCHIVE.md").read_text()
     assert "| rad0047_mtp_verify_replay_summary | rejected (was untested) |" in archive_index
