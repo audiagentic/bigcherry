@@ -13,6 +13,46 @@ work: M
 
 # Clang AST inventory of serving injected callables
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate 896ab80f adds Engine::run_quiet caller mutex. Reuse native serialized quiescent callback where available, preserve existing AST/guard audit and negative concurrent-caller/cancel test. It is not safe dynamic power authorization or proof helper generation/drain is qualified. Do not reimplement the native mutex.
+
 ## Problem
 
 RSC02 step 4 protects current externally supplied callables through private
@@ -58,3 +98,11 @@ new C++ injection sites.
 - [Serving callback boundary](../../../../engines/radiance/components/serving/README.md).
 - `engines/radiance/components/serving/callback_guard.py`.
 - Review evidence: `gpt-briefs/out/REVIEW4-rsc02-step4.md`.
+
+## Reviews
+
+- RV4644
+
+## Change Log
+
+- 2026-11-25T02:46:30.317379+00:00 (updated-by): Updated: section:notes

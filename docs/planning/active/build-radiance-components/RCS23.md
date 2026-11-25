@@ -53,6 +53,8 @@ The IQR families are owned overlay plugins with an origin manifest, retired patc
 
 Current RCS23 fixtures plus actual pin-triage/pin-bump integration and resume invalidation for changed origin/owned source/indirect header/row priority, wrong candidate and unverified/skipped gate. Evidence distinguishes candidate/no change/blocked/unverified; provider identity in installed bundle and native YAML. Qualification and rollback use existing release workflow; no automatic upstream merge or promotion.
 
+Native plugin exports and actual provider+row selection per arch/domain/encoding; compare native schema and layout/relayout/unrelayout including supported vs refused forms. Test base alone versus overlay, intended overlap allowed, unexpected fallback or shadow fails. Advance integrated revision only after discrete and required release gates; no automatic adoption or backport.
+
 ## Notes
 
 Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); sequenced in parallel with the RCS15 baseline, which decides whether a native gfx11 provider replaces the generated tree for the unowned units. Review by GPT only (code returned as text).
@@ -63,6 +65,8 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 
 2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing origin-manifest plan is build provenance only, never serving launch. Reuse the existing pin-triage/pin-bump state/selection and RCS19 compose checks; no second acceptance transaction. Review baseline c7d791540; #1557 simplification and RCS25 discrete harness take precedence. RCS15 still gates large gfx11 provider work.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. New candidate rows/headers, head scalar and opt-in WMMA rows require per-change adoption screen; native IQR private layout is different and scalar; no automatic u6/u7 or group256 adoption. Compare actual model logical tensors through each provider own relayout, exact row selection and row contracts; preserve native ABI/layout fingerprint already required by upstream, no additional digest. Reuse existing RCS25 discrete qualification before release. Footprint 37/40 intersection is triage only; inspect actual source and indirect include closure.
+
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
@@ -71,8 +75,9 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 - 2026-11-25T01:08:26.587516+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T02:12:45.058840+00:00 (updated-by): Updated: section:notes
 
-
 ## Reviews
 
 - RV4608
 - 2026-11-25T02:05:49.620407+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria
+- RV4635
+- 2026-11-25T02:41:48.148300+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

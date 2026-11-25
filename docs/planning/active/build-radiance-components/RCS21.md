@@ -59,6 +59,10 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 
 2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Keep traits seam narrow and architecture-neutral where valid. Declare actual upstream include closure, row/ABI assumptions and test shared-traits changes across affected arch/pass/provider under RCS19/RCS23. No broad new traits/compat layer solely for bump tooling; upstream adoption is local retirement after equivalence, no upstream contribution assumption.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native libr3d int8 wave-matrix layout/group-rounding and scalar packed IQR added on candidate; do not force same operand traits where layout/storage differs. Derive shared math only where actual arithmetic and storage allow, use native base for covered rows, local overlay for required deltas. Keep native upstream layout and ABI, no general compatibility shim or backport.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native libr3d int8 wave-matrix layout/group-rounding and scalar packed IQR added on candidate; do not force same operand traits where layout/storage differs. Derive shared math only where actual arithmetic and storage allow, use native base for covered rows, local overlay for required deltas. Keep native upstream layout and ABI, no general compatibility shim or backport.
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
@@ -70,3 +74,7 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 
 - RV4607
 - 2026-11-25T02:05:13.382985+00:00 (updated-by): Updated: section:notes
+- RV4632
+- 2026-11-25T02:40:25.241991+00:00 (updated-by): Updated: section:notes
+- RV4633
+- 2026-11-25T02:40:46.557497+00:00 (updated-by): Updated: section:notes
