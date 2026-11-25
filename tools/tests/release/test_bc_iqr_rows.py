@@ -1,7 +1,7 @@
 """RCS23: the overlay's rows against the base's (offline: the declarations; with built libraries: the loaded row tables).
 
 The loaded-library part needs libbciqr.so and the base library: point BC_OVERLAY_TEST_DIR at a directory holding libbciqr.so
-and libr4d.so (the unit harness's stage directory, or an installed radiance_home/kernels), else it is skipped.
+and libr4d.so (or libr3.so) (the unit harness's stage directory, or an installed radiance_home/kernels), else it is skipped.
 """
 import ctypes
 import os
@@ -67,7 +67,7 @@ class LoadedRowTests(unittest.TestCase):
     def setUpClass(cls):
         d = Path(os.environ["BC_OVERLAY_TEST_DIR"])
         try:
-            cls.base = rows(d / "libr4d.so")
+            cls.base = rows(d / ("libr4d.so" if (d / "libr4d.so").is_file() else "libr3.so"))
             cls.overlay = rows(d / "libbciqr.so")
         except OSError as exc:
             raise unittest.SkipTest(f"libraries do not load here: {exc}")

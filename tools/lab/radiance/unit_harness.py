@@ -654,16 +654,15 @@ def stage_overlay_build(args) -> Path:
     started = time.monotonic()
     tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
     ref_plugin = Path(args.reference) if args.reference else release_plugin(args.release, args.arch)
-    build_plugin(args.arch, tree, ["r4d_prefetch"], out, ref_plugin, Path(args.libr3) if args.libr3 else None)   # configures the selftest build
+    # The base the overlay runs over is a minimal build of the same source (one unit; every other row's entry point is a stub, the
+    # embed launch included), so a launch that reaches the base's kernel fails and a hash that matches the real base's proves
+    # that the overlay's own kernel ran.
+    minimal = build_plugin(args.arch, tree, ["r4d_prefetch"], out, ref_plugin, Path(args.libr3) if args.libr3 else None)
     binary = selftest_binary(args.arch, tree, out, Path(args.libr3) if args.libr3 else None)
     so = build_overlay(tree, ROOT / "engines" / ENGINE / "components" / ov["component"], ov["plugin"], out)
     stage = out / "stage"
     stage.mkdir(exist_ok=True)
-    for name in ("libr4d.so", "libr3.so"):
-        link = stage / name
-        if link.is_symlink() or link.exists():
-            link.unlink()
-        link.symlink_to(ref_plugin.parent / name)
+    shutil.copy2(minimal, stage / PLUGIN[args.arch])
     staged = stage / so.name
     shutil.copy2(so, staged)
     pattern = re.compile(ov["kernels"])

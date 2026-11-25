@@ -308,6 +308,10 @@ def _path_exists(mirror: Path, sha: str, path: str) -> bool:
         return False
 
 
+def _is_ancestor(mirror: Path, ancestor: str, descendant: str) -> bool:
+    return subprocess.run(["git", "-C", str(mirror), "merge-base", "--is-ancestor", ancestor, descendant], capture_output=True).returncode == 0
+
+
 def origin_drift(engine: str, mirror: Path, to_sha: str, *, root: Path | None = None) -> list[dict[str, Any]]:
     """What upstream did, since the last integrated commit, to each unit a component owns whole (``origins.toml``).
 
@@ -336,6 +340,10 @@ def origin_drift(engine: str, mirror: Path, to_sha: str, *, root: Path | None = 
                 item.update(state="blocked", reason=f"owned source {unit['owned-source']} does not exist")
             elif not _commit_exists(mirror, unit["base-commit"]) or not _commit_exists(mirror, unit["last-integrated"]):
                 item.update(state="blocked", reason="the base or last integrated commit is not in the upstream mirror")
+            elif _git(mirror, "rev-parse", "--is-shallow-repository").strip() == "true":
+                item.update(state="blocked", reason="the upstream mirror is shallow: the history between the commits cannot be trusted")
+            elif not _is_ancestor(mirror, unit["last-integrated"], to_sha):
+                item.update(state="blocked", reason="the last integrated commit is not an ancestor of the target")
             elif not _path_exists(mirror, unit["last-integrated"], unit["upstream-path"]):
                 item.update(state="blocked", reason=f"{unit['upstream-path']} does not exist at the last integrated commit (wrong path)")
             elif not _path_exists(mirror, to_sha, unit["upstream-path"]):
@@ -343,11 +351,14 @@ def origin_drift(engine: str, mirror: Path, to_sha: str, *, root: Path | None = 
                            if line.startswith("R")]
                 moved = next((r[2] for r in renamed if len(r) == 3 and r[1] == unit["upstream-path"]), None)
                 item.update(state="blocked", reason=(f"upstream renamed {unit['upstream-path']} to {moved}" if moved else
-                                                     f"upstream removed {unit['upstream-path']}"))
+                                                     f"upstream removed {unit['upstream-path']} (or renamed it beyond git's similarity)"))
             else:
-                log = _git(mirror, "log", "--format=%h %s", f"{unit['last-integrated']}..{to_sha}", "--", unit["upstream-path"]).splitlines()
-                if log:
-                    item.update(state="candidate", commits=log, reason=f"{len(log)} upstream commit(s) touch the origin path")
+                # The verdict is the file: a change that was reverted leaves nothing to merge. The commits are for the reader.
+                differs = subprocess.run(["git", "-C", str(mirror), "diff", "--quiet", unit["last-integrated"], to_sha, "--", unit["upstream-path"]],
+                                         capture_output=True).returncode != 0
+                if differs:
+                    log = _git(mirror, "log", "--format=%h %s", f"{unit['last-integrated']}..{to_sha}", "--", unit["upstream-path"]).splitlines()
+                    item.update(state="candidate", commits=log, reason=f"the origin path differs ({len(log)} upstream commit(s) touch it)")
             out.append(item)
     return out
 

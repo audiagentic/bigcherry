@@ -5,17 +5,22 @@
 // relayout, no format of our own. A launch the owned kernel declines is handed back to the base's.
 //
 // One plugin, both architectures: the device code is built for gfx1100 and gfx1201 and the runtime picks the code object of
-// the card the launch runs on. The base library whose hooks are used is whichever of libr4d.so / libr3.so the engine
-// loaded (the hooks are host code of r4d_iqr_layout.cpp and r4d_shapes.cpp, the same in both).
+// the card the launch runs on. The base library whose hooks are used is libr4d.so, else libr3.so (the engine loads them;
+// the hooks are host code of r4d_iqr_layout.cpp and r4d_shapes.cpp, the same in both); a launch the owned kernel declines goes
+// to the launch of the base that matches the card (libr4d for RDNA4, libr3 for RDNA3).
 //
 // embed_lookup_iqr (bc_iqr_embed.hip): the embedding gather over an IQR table.
 #include "rad_abi.h"
 #include "rad_abi_layout.h"
 
+#include <hip/hip_runtime_api.h>
+
 #include <dlfcn.h>
 #include <link.h>
 #include <cstdio>
 #include <cstring>
+#include <map>
+#include <mutex>
 #include <string>
 
 extern "C" int bc_rad_embed_lookup_iqr(const RadArgs* a, RadStream s);   // bc_iqr_embed.hip
@@ -28,12 +33,13 @@ __attribute__((visibility("hidden"))) int           r4d_dispatch_n   = 0;
 
 namespace {
 
-struct Base {
+/* One base library's exported entry points. */
+struct Lib {
     RadLaunchFn embed_lookup_iqr = nullptr;
     RadLayoutFn layout_iqr_embed = nullptr;
     RadRelayoutFn relayout_iqr_embed = nullptr;
     RadShapeFn shape_embed_lookup = nullptr;
-    bool ok = false;
+    bool hooks() const { return layout_iqr_embed && relayout_iqr_embed && shape_embed_lookup; }
 };
 
 struct Found {
@@ -51,57 +57,111 @@ int find_loaded(struct dl_phdr_info* info, size_t, void* out) {
     return 0;
 }
 
-/* The base's exported entry points, resolved once from a copy the engine already loaded (libr4d.so, else libr3.so, found
- * by file name among the loaded objects; else libr4d.so beside this plugin). Called only after every plugin is loaded. */
-const Base& base() {
-    static const Base r = [] {
-        Base x;
-        Found f;
-        dl_iterate_phdr(find_loaded, &f);
-        std::string path = !f.r4d.empty() ? f.r4d : f.r3;
-        if (path.empty()) {
-            Dl_info di{};
-            if (dladdr((const void*)&find_loaded, &di) && di.dli_fname) {
-                path = di.dli_fname;
-                const size_t s = path.rfind('/');
-                path = s == std::string::npos ? std::string() : path.substr(0, s + 1);
-            }
-            path += "libr4d.so";
+/* The entry points of the copy of `file` the engine already loaded (`loaded` is its path, from the loaded objects), else of the
+ * one beside this plugin. Empty (all null) when there is none. */
+Lib open_lib(const std::string& loaded, const char* file) {
+    Lib x;
+    std::string path = loaded;
+    if (path.empty()) {
+        Dl_info di{};
+        if (dladdr((const void*)&find_loaded, &di) && di.dli_fname) {
+            path = di.dli_fname;
+            const size_t s = path.rfind('/');
+            path = s == std::string::npos ? std::string() : path.substr(0, s + 1);
         }
-        void* h = dlopen(path.c_str(), RTLD_NOW | RTLD_NOLOAD);
-        if (!h) h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-        if (!h) {
-            std::fprintf(stderr, "libbciqr: no base kernel library loaded and none beside the plugin: %s\n", dlerror());
-            return x;
+        path += file;
+    }
+    void* h = dlopen(path.c_str(), RTLD_NOW | RTLD_NOLOAD);
+    if (!h && loaded.empty()) h = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);   // not loaded by the engine: only a test setup gets here
+    if (!h) return x;
+    x.embed_lookup_iqr = (RadLaunchFn)dlsym(h, "r4d_rad_embed_lookup_iqr");
+    x.layout_iqr_embed = (RadLayoutFn)dlsym(h, "r4d_rad_layout_iqr_embed");
+    x.relayout_iqr_embed = (RadRelayoutFn)dlsym(h, "r4d_rad_relayout_iqr_embed");
+    x.shape_embed_lookup = (RadShapeFn)dlsym(h, "r4d_shape_embed_lookup");
+    return x;
+}
+
+struct Bases {
+    Lib r4d, r3;
+    bool ok = false;
+};
+
+/* The base libraries. A failed resolution is not kept: the next call tries again (the hooks are called only after every plugin
+ * is loaded, so it normally succeeds the first time). */
+const Bases& bases() {
+    static std::mutex m;
+    static Bases cached;
+    std::lock_guard<std::mutex> lock(m);
+    if (cached.ok) return cached;
+    Found f;
+    dl_iterate_phdr(find_loaded, &f);
+    Bases b;
+    b.r4d = open_lib(f.r4d, "libr4d.so");
+    b.r3 = open_lib(f.r3, "libr3.so");
+    b.ok = b.r4d.hooks() || b.r3.hooks();
+    if (!b.ok) {
+        static bool told = false;
+        if (!told) {
+            told = true;
+            std::fprintf(stderr, "libbciqr: no base kernel library (libr4d.so or libr3.so) with the embed_lookup_iqr hooks is loaded\n");
         }
-        x.embed_lookup_iqr = (RadLaunchFn)dlsym(h, "r4d_rad_embed_lookup_iqr");
-        x.layout_iqr_embed = (RadLayoutFn)dlsym(h, "r4d_rad_layout_iqr_embed");
-        x.relayout_iqr_embed = (RadRelayoutFn)dlsym(h, "r4d_rad_relayout_iqr_embed");
-        x.shape_embed_lookup = (RadShapeFn)dlsym(h, "r4d_shape_embed_lookup");
-        x.ok = x.layout_iqr_embed && x.relayout_iqr_embed && x.shape_embed_lookup;
-        if (!x.ok) std::fprintf(stderr, "libbciqr: the base library does not export the embed_lookup_iqr hooks this plugin needs\n");
-        return x;
-    }();
-    return r;
+        static Bases failed;
+        failed = b;
+        return failed;
+    }
+    cached = b;
+    return cached;
+}
+
+/* The layout, relayout and shape hooks are host code of r4d_iqr_layout.cpp and r4d_shapes.cpp, the same in both libraries. */
+const Lib& hook_lib() {
+    const Bases& b = bases();
+    return b.r4d.hooks() ? b.r4d : b.r3;
+}
+
+/* The base's launch for the card this call runs on: libr4d's for an RDNA4 card, libr3's for an RDNA3 one (the other library's
+ * device code would not run there). */
+RadLaunchFn base_launch() {
+    int dev = 0;
+    if (hipGetDevice(&dev) != hipSuccess) return nullptr;
+    static std::mutex m;
+    static std::map<int, bool> rdna4;
+    bool is4;
+    {
+        std::lock_guard<std::mutex> lock(m);
+        auto it = rdna4.find(dev);
+        if (it == rdna4.end()) {
+            hipDeviceProp_t p;
+            if (hipGetDeviceProperties(&p, dev) != hipSuccess) return nullptr;
+            it = rdna4.emplace(dev, std::strncmp(p.gcnArchName, "gfx12", 5) == 0).first;
+        }
+        is4 = it->second;
+    }
+    const Bases& b = bases();
+    return is4 ? b.r4d.embed_lookup_iqr : b.r3.embed_lookup_iqr;
 }
 
 int embed_launch(const RadArgs* a, RadStream s) {
     const int rc = bc_rad_embed_lookup_iqr(a, s);
     if (rc != RAD_E_UNSUPPORTED) return rc;
-    return base().embed_lookup_iqr ? base().embed_lookup_iqr(a, s) : RAD_E_UNSUPPORTED;   // a form the owned kernel declines
+    const RadLaunchFn fallback = base_launch();   // a form the owned kernel declines
+    return fallback ? fallback(a, s) : RAD_E_UNSUPPORTED;
 }
 int layout_embed(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const RadTensor* pl, int n_pl,
                  RadLayout* out) {
     /* Without the base's hook the row cannot say what it reads: refuse (RAD_E_DTYPE is the loader's "not my encoding"), never
      * accept, or it would claim every embedding table of the op. */
-    return base().ok ? base().layout_iqr_embed(p, n_p, op, e, sel, pl, n_pl, out) : RAD_E_DTYPE;
+    const Lib& l = hook_lib();
+    return l.hooks() ? l.layout_iqr_embed(p, n_p, op, e, sel, pl, n_pl, out) : RAD_E_DTYPE;
 }
 int relayout_embed(const RadParam* p, int n_p, int op, const RadEncoding* e, const int* sel, const RadTensor* pl, int n_pl,
                    void* dst, int64_t dst_bytes) {
-    return base().ok ? base().relayout_iqr_embed(p, n_p, op, e, sel, pl, n_pl, dst, dst_bytes) : RAD_E_UNSUPPORTED;
+    const Lib& l = hook_lib();
+    return l.hooks() ? l.relayout_iqr_embed(p, n_p, op, e, sel, pl, n_pl, dst, dst_bytes) : RAD_E_UNSUPPORTED;
 }
 int shape_embed(const RadParam* p, int n_p, int op, RadOpdDesc* out) {
-    return base().ok ? base().shape_embed_lookup(p, n_p, op, out) : RAD_E_UNSUPPORTED;
+    const Lib& l = hook_lib();
+    return l.hooks() ? l.shape_embed_lookup(p, n_p, op, out) : RAD_E_UNSUPPORTED;
 }
 
 /* The base's embed_lookup_iqr constraints. */

@@ -21,4 +21,4 @@ rad_add_plugin(libbciqr kernels
 target_include_directories(libbciqr PRIVATE ${RADIANCE_SRC}/abi)
 # libr4d builds its device code at C++17: the owned copies of its units do the same (contraction is off for every plugin: rad_add_plugin).
 set_target_properties(libbciqr PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON)
-target_link_libraries(libbciqr PRIVATE ${CMAKE_DL_LIBS})
+target_link_libraries(libbciqr PRIVATE ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME})

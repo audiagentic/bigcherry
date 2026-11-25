@@ -79,6 +79,39 @@ class OriginDriftTests(unittest.TestCase):
         self.assertEqual(item["state"], "blocked")
         self.assertIn("renamed libr4d/r4d_unit.hip to libr4d/r4d_unit_renamed.hip", item["reason"])
 
+    def test_a_target_that_is_not_a_descendant_blocks_not_clean(self):
+        self.origins()
+        (self.work / "libr4d" / "r4d_unit.hip").write_text("// v2\n" * 40)
+        git(self.work, "commit", "-qam", "change")
+        newer = git(self.work, "rev-parse", "HEAD")
+        self.origins(**{"last-integrated": newer})
+        loaded = {"bc-test": SimpleNamespace(root=self.component)}
+        with mock.patch.object(pin_triage.components, "load_all", return_value=loaded):
+            (item,) = pin_triage.origin_drift("radiance", self.work / ".git", self.base, root=Path("/unused"))
+        self.assertEqual(item["state"], "blocked")
+        self.assertIn("not an ancestor", item["reason"])
+
+    def test_a_change_that_was_reverted_is_clean(self):
+        self.origins()
+        path = self.work / "libr4d" / "r4d_unit.hip"
+        path.write_text("// v2\n" * 40)
+        git(self.work, "commit", "-qam", "change")
+        path.write_text("// v1\n" * 40)
+        git(self.work, "commit", "-qam", "revert")
+        (item,) = self.drift()
+        self.assertEqual(item["state"], "clean")
+
+    def test_a_shallow_mirror_blocks(self):
+        self.origins()
+        loaded = {"bc-test": SimpleNamespace(root=self.component)}
+        real = pin_triage._git
+        def shallow(mirror, *args, **kw):
+            return "true\n" if args[:2] == ("rev-parse", "--is-shallow-repository") else real(mirror, *args, **kw)
+        with mock.patch.object(pin_triage.components, "load_all", return_value=loaded), mock.patch.object(pin_triage, "_git", shallow):
+            (item,) = pin_triage.origin_drift("radiance", self.work / ".git", git(self.work, "rev-parse", "HEAD"), root=Path("/unused"))
+        self.assertEqual(item["state"], "blocked")
+        self.assertIn("shallow", item["reason"])
+
     def test_a_missing_owned_source_or_field_blocks(self):
         self.origins(**{"owned-source": "nope.hip"})
         self.assertIn("owned source", self.drift()[0]["reason"])
