@@ -112,8 +112,10 @@ class AdapterTests(unittest.TestCase):
 
     def test_radiance_declares_libr3s_native_rewrite_check(self):
         context = ProjectContext.resolve(engine="radiance")
-        coupling, check = adapter("radiance").source_drift_checks(context, Path("/src"))
+        coupling, check, blocked, changed = adapter("radiance").source_drift_checks(context, Path("/src"))
         self.assertEqual(coupling.id, "component-coupling")
+        self.assertEqual([(blocked.id, blocked.failure_code), (changed.id, changed.failure_code)],
+                         [("owned-origins-blocked", "OWNED_ORIGIN_BLOCKED"), ("owned-origins-changed", "OWNED_ORIGIN_CHANGED")])
         self.assertEqual((check.id, check.failure_code), ("libr3-native-rewrite", "NATIVE_REWRITE_DRIFT"))
 
     def test_radiance_coupling_is_an_enforced_drift_check(self):
@@ -129,7 +131,7 @@ class AdapterTests(unittest.TestCase):
         source = _tmp(self)
         (source / "libr4d").mkdir()
         (source / "libr4d" / "r4d_moe.hip").write_text("not the real kernel\n", encoding="utf-8")
-        coupling, check = adapter("radiance").source_drift_checks(context, source)
+        coupling, check, *_ = adapter("radiance").source_drift_checks(context, source)
         failures = check.run()
         self.assertIn("libr3/native/r4d_moe.hip.rw", failures)
         self.assertIn("libr3/rewrites.txt", failures)

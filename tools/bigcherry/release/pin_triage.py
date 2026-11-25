@@ -256,7 +256,7 @@ def _drift(
             for check in checks:
                 # This archive includes libr4d only: coupling is checked with
                 # the full target ls-tree and ABI separately below.
-                if check.id == "component-coupling":
+                if check.id == "component-coupling" or check.id.startswith("owned-origins"):   # triage reports these itself
                     continue
                 for file, problems in check.run().items():
                     failures.setdefault(file, []).extend(problems)

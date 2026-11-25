@@ -271,6 +271,8 @@ REWRITE_RULES = "rewrites.txt"
 REWRITE_NATIVE = "native"
 REWRITE_SOURCE = "libr4d"
 NATIVE_REWRITE_DRIFT = "NATIVE_REWRITE_DRIFT"
+ORIGIN_BLOCKED = "OWNED_ORIGIN_BLOCKED"
+ORIGIN_CHANGED = "OWNED_ORIGIN_CHANGED"
 RewriteRunner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
 
 
@@ -322,6 +324,20 @@ def source_drift_checks(context: ProjectContext, source_dir: Path, runner: Rewri
             ))
         }
 
+    def origins(state: str) -> Callable[[], dict[str, list[str]]]:
+        def run() -> dict[str, list[str]]:
+            from ..release import pin_triage
+
+            try:
+                target = subprocess.run(["git", "-C", str(source_dir), "rev-parse", "HEAD"], capture_output=True, text=True,
+                                        check=True).stdout.strip()
+                found = pin_triage.origin_drift(context.engine, context.upstream_repo, target)
+            except (OSError, subprocess.CalledProcessError, pin_triage.PinTriageError) as exc:
+                raise BumpCheckError(f"owned-unit origins: cannot read the upstream history: {exc}") from exc
+            return {f"{item['component']}/{item['unit']}": [item["reason"], *item["commits"]]
+                    for item in found if item["state"] == state}
+        return run
+
     checks = [DriftCheck(
         "component-coupling", "COMPONENT_COUPLING_DRIFT",
         "update owned [coupling] declarations and the consumer for this upstream pin, then rerun pin-bump",
@@ -338,6 +354,18 @@ def source_drift_checks(context: ProjectContext, source_dir: Path, runner: Rewri
             f"{name}-native-rewrite", NATIVE_REWRITE_DRIFT,
             f"re-port the failing blocks in engines/{context.engine}/components/{name} (rewrites.txt, native/*.rw) to the bumped "
             f"{REWRITE_SOURCE} sources, or run `python {component.root / REWRITE_SCRIPT} --check ...` to list them again", run))
+    checks.extend((DriftCheck(
+        "owned-origins-blocked", ORIGIN_BLOCKED,
+        "an owned unit's origin cannot be checked or has gone (missing commit, wrong path, rename or removal, target not a descendant): "
+        "repair its entry in the component's origins.toml or port the unit to upstream's new name, then rerun the bump",
+        origins("blocked"),
+    ), DriftCheck(
+        "owned-origins-changed", ORIGIN_CHANGED,
+        "upstream changed an owned unit (or the extracted header): review the listed commits against the owned source (a three-way merge "
+        "for a whole unit, a structural review for an extracted family), re-prove it with the unit harness, then set last-integrated in "
+        "origins.toml to the target commit by hand; the bump never advances it",
+        origins("candidate"),
+    )))
     return tuple(checks)
 
 
