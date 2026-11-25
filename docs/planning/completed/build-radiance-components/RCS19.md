@@ -2,7 +2,7 @@
 id: RCS19
 order: 0
 plan: build-radiance-components
-state: pending
+state: completed
 created-at: '2026-11-25T00:40:42.311181+00:00'
 breadth: ''
 skill: intermediate
@@ -69,6 +69,8 @@ Review (2026-11-25): the existing rewrite checker accepts an optional group when
 
 2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. #1546 libr3 patched-source freshness merged but libr2 CMakeLists.txt:28–36 calls the shared r3_rewrite.py and only watches rewrites.txt, units.txt and one native rule; a patched source/header, rewriter change or new native rule can leave stale generated code in existing directories. libr3 also omits explicit configure dependency on r3_rewrite.py and exclude.txt; native rule glob does not track added/removed files. Fix actual input lists in both existing CMake paths, including upstream unit listing and shared generator/declaration inputs if not already tracked. Use normal CMake dependencies (CONFIGURE_DEPENDS for changing glob membership where necessary); r3_rewrite.py already avoids rewriting unchanged files and removes stale source outputs, retain it. One small incremental test/real affected-unit build proves changed header/rule regenerates and unchanged generated files do not rebuild; cover libr2 path too, no digest watcher or new generator. Actual pin-bump rewrite check remains on pristine source: integrate the existing compose gate after exact selected patch materialization, reuse checked tree. Do not run syntax-only and real compile twice for the same changed unit when real compile covers both host/device branches; syntax-only useful as cheap early diagnostic. BU03 owns separate warm/cold discrepancy.
 
+2026-11-25 closed. Gates: patch-compose-check with gates 1 (anchors on the patched source), 2a (syntax-only host and device, gfx1100 and gfx1201), 2b, 3 (#1552); per-patch unit ownership, the shared-unit record and the naming lint (#1580); the pin-bump compile phase runs gates 1 and 2a before components-build, stopping with NATIVE_REWRITE_DRIFT or COMPOSITION_COMPILE_FAILED, and a missing compiler stops, never passes (#1584); patch-author and bump-radiance skills carry the gates. Exact-identity binding to resume records was not built (no fingerprinting machinery, owner direction): git commit ids and plain comparisons only.
+
 ## Change Log
 
 - 2026-11-25T00:40:42.311181+00:00 (created-by): Created by lead
@@ -85,3 +87,5 @@ Review (2026-11-25): the existing rewrite checker accepts an optional group when
 - 2026-11-25T02:39:54.073606+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T02:52:41.601297+00:00 (updated-by): Updated: section:steps, section:validation
 - 2026-11-25T05:20:55.808306+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:14:15.155854+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T09:14:28.045520+00:00 (state-transition): State: pending → completed
