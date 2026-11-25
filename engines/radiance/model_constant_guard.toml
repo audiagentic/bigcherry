@@ -372,3 +372,9 @@ path = "engines/radiance/patches/rad0054_attn_prefill_fp8/patch.py"
 anchor = "REQUIRE_EQ(fleet::parse(\"models:\\n  main:\\n    model: unused.rad\\n\""
 category = "B"
 reason = "The patched config fixture uses a placeholder model to check parser behavior."
+
+[[allow]]
+path = "tools/lab/radiance/unit_families.toml"
+anchor = "shapes = [[5376, 2560], [5120, 2304], [6144, 5120], [5120, 6656]]"
+category = "B"
+reason = "lab harness input: the trunk shapes a unit family is checked on, not an execution path of the product"
