@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.20.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.19.0...bc-radiance-2020.20.0) (2026-11-25)
+
+
+### New and changed
+
+* **rsc02:** managed native entry patch rad0070 and engine admission document (A) ([#1635](https://github.com/audiagentic/bigcherry/issues/1635)) ([2570ff8](https://github.com/audiagentic/bigcherry/commit/2570ff8c17ab76fec3d40a16464c615f08c5c4aa))
+
 ## [2020.19.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.18.0...bc-radiance-2020.19.0) (2026-11-25)
 
 
