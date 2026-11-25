@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.75.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.74.0...bc-platform-1.75.0) (2026-11-25)
+
+
+### New and changed
+
+* **platform:** add independent AI power profile screen ([#1627](https://github.com/audiagentic/bigcherry/issues/1627)) ([ca5f35a](https://github.com/audiagentic/bigcherry/commit/ca5f35ad9b18687a4f6886765bd1a51710ef8bdf))
+
 ## [1.74.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.73.0...bc-platform-1.74.0) (2026-11-25)
 
 
