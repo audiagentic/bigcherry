@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.76.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.75.0...bc-platform-1.76.0) (2026-11-25)
+
+
+### New and changed
+
+* **platform:** complete independent AI power-screen workflow ([#1629](https://github.com/audiagentic/bigcherry/issues/1629)) ([1c11499](https://github.com/audiagentic/bigcherry/commit/1c11499d08b9e75ceab7b2e068f486edd754ba5f))
+* **platform:** screen observed GPU profiles under checked batched load ([#1636](https://github.com/audiagentic/bigcherry/issues/1636)) ([980babb](https://github.com/audiagentic/bigcherry/commit/980babbb190aaa8785e780d472653dbf606375a0))
+* **pwr08:** typed S10 plan to power admission, effective settings in calibration key ([#1632](https://github.com/audiagentic/bigcherry/issues/1632)) ([453bdae](https://github.com/audiagentic/bigcherry/commit/453bdae50c05bcd8e5e0d03827e338cb970fed83))
+
+
+### Fixes
+
+* **platform:** use managed run records for GPU AI screening ([#1634](https://github.com/audiagentic/bigcherry/issues/1634)) ([8c22c8e](https://github.com/audiagentic/bigcherry/commit/8c22c8eab7837ce2f8f38845581c074f0b066cda))
+
 ## [1.75.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.74.0...bc-platform-1.75.0) (2026-11-25)
 
 
