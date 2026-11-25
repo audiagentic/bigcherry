@@ -444,8 +444,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     auto power = std::make_shared<ss::ManifestPower>(
         hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply, config_name);
     ss::Session session;
-    session.power_hook.begin_manifest = [power](const fs::path& path, bc::serving::v2::PlanUse use) {
-        return power->begin(path, use);
+    session.power_hook.begin_manifest = [power](const fs::path&, const bc::serving::v2::Manifest& plan, bc::serving::v2::PlanUse use) {
+        return power->begin(plan, use);
     };
     session.power_hook.verify_serving = [power](const fs::path& path) { return power->verify_serving(path); };
     session.power_hook.gfxoff_window = [power](bool idle) {

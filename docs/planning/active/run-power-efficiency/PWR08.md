@@ -79,6 +79,8 @@ docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25):
 
 2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. Current pin is sufficient: use existing owner-selected BDFs and direct typed PowerPlan before native measure/final helpers and Engine. No coupling to upcoming Fleet telemetry/NUMA/queue settings. Restore qualified min-cap foreground first using existing PWR10 shared run, retain existing supported clock/voltage and explicit apply/lease/restore; verify settings once and before final, no reapply on measurement convergence. No speculative power or queue tuning.
 
+2026-11-26 S1-S4 (card-free, no new store). S1 role key per arch (#1619). S2 one profile file, selected by x-bigcherry.power.profile (#1622). S3 (#1630): apply is accepted for a BDF when a durable controller receipt (<work-root>/power/receipts) of an earlier apply of exactly those settings on the same kernel/amdgpu/board identity string read back exactly and restored exactly; workload is evidence only; probe is the transaction's own Hardware::inspect read; site per-BDF overrides from <work-root>/power-site.yaml via the engine YAML parser. First qualifying apply is the lab run `--allow-power-apply --qualify-power` under the verified gpu lease (waives only the receipt match; probe range and gfx1100 pairing still apply) - PWR10 runs it for the min cap. S4: the S10 output (typed manifest) goes straight to ManifestPower/SessionPower (no file reload, digest only a receipt record); apply once before measuring (duplicate admission refused, final serving manifest must carry the same effective settings); calibration key power_profile = profile name, or profile@digest of the effective per-BDF settings when the plan applies.
+
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
@@ -128,3 +130,4 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - RV4675
 - 2026-11-25T05:41:53.148203+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:53:58.285137+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T23:16:37.482050+00:00 (updated-by): Updated: section:notes

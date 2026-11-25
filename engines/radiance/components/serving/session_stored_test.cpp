@@ -166,7 +166,7 @@ struct Case {
         // Real owner hooks: read the same strict manifest, make admission durable in the session record, then allow
         // the GPU child gate.
         session.power_hook.begin_manifest = [this, refuse_power](const fs::path& m,
-                                                                 v2::PlanUse use) -> v2::Status {
+                                                                 const v2::Manifest&, v2::PlanUse use) -> v2::Status {
             std::ofstream(trace, std::ios::app) << "begin\n";
             const auto checked = v2::load_manifest(m, use);
             if (!checked)

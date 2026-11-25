@@ -1641,7 +1641,7 @@ void session_engine_plan(Fixture& t) {
             }
             reaped.push_back(pid);
         };
-        admission_hooks.admit_power = [&](const fs::path& manifest_path, bc::serving::v2::PlanUse) {
+        admission_hooks.admit_power = [&](const fs::path& manifest_path, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse) {
             power_admitted = true;
             ++power_admit_calls;
             std::ifstream manifest_file(manifest_path, std::ios::binary);
@@ -1749,7 +1749,7 @@ void session_engine_plan(Fixture& t) {
             assert(kind == ss::ChildKind::native_config_inspector);
             ++replay_inspections;
         };
-        stored_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse use) {
+        stored_hooks.admit_power = [&](const fs::path&, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse use) {
             assert(use == bc::serving::v2::PlanUse::serving && replay_inspections > replay_admissions);
             ++replay_admissions;
             return bc::serving::v2::Status{};
@@ -1949,7 +1949,7 @@ void session_engine_plan(Fixture& t) {
         };
         bool serving_power_verified = false;
         bool cleared_children = false;
-        owner.power_hook.begin_manifest = [&](const fs::path& path, bc::serving::v2::PlanUse use) {
+        owner.power_hook.begin_manifest = [&](const fs::path& path, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse use) {
             assert(use == (fresh.stored_manifest.empty() ? bc::serving::v2::PlanUse::measuring
                                                         : bc::serving::v2::PlanUse::serving));
             assert(bc::serving::v2::load_manifest(path, use));
@@ -2110,7 +2110,7 @@ void session_engine_plan(Fixture& t) {
             }
         };
         bool drift_power_admitted = false;
-        drift_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+        drift_hooks.admit_power = [&](const fs::path&, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse) {
             drift_power_admitted = true;
             return bc::serving::v2::Status{};
         };
@@ -2252,7 +2252,7 @@ void helper_vram_owner_graph(Fixture& t) {
                                           : ss::replay_stored_manifest(in, dir, hooks);
     };
     std::vector<bc::serving::v2::PlanUse> admissions;
-    owner.power_hook.begin_manifest = [&](const fs::path& manifest, bc::serving::v2::PlanUse use) {
+    owner.power_hook.begin_manifest = [&](const fs::path& manifest, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse use) {
         assert(bc::serving::v2::load_manifest(manifest, use));
         admissions.push_back(use);
         if (use == bc::serving::v2::PlanUse::measuring)
@@ -2658,6 +2658,23 @@ void power_profile_selection() {
     site_refused(site_offset, "sclk_offset_mhz");
     Json site_no_evidence = site; site_no_evidence["devices"]["0000:03:00.0"].erase("evidence");
     site_refused(site_no_evidence, "0000:03:00.0");
+    // the calibration key sees what the cards run under: a name for observe, the effective per-BDF settings for apply
+    Json spec = {{"facts", {{"gpus", Json::array({{{"bdf", "0000:03:00.0"}, {"arch", "gfx1100"}, {"vram", {{"total_mib", 24560}}}}})}}},
+                 {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}}}},
+                                {"helpers", Json::array()}, {"helper_common", Json::object()}}},
+                 {"plan", {{"engine_memory", {{"model_identity", "m"}}},
+                           {"power", {{"mode", "observe"}, {"devices", Json::array()}}}}},
+                 {"intent", {{"layout", "l"}, {"service", {{"objective", "balanced"}}}, {"power", {{"profile", "cap"}}}}},
+                 {"handoff", {{"telemetry", {{"period_s", 1}}},
+                              {"transport", {{"max_rows", 1}, {"small_rows", 1}, {"gemv_large_rows", 1}, {"skip_owned", true}}},
+                              {"kernels", {{"moe_down_tile", 1}}}}}};
+    assert(bc::serving::policy_calibration_inputs(spec).at("power_profile") == "cap");
+    spec["plan"]["power"] = {{"mode", "apply"}, {"devices", Json::array({{{"role", "engine"}, {"bdf", "0000:03:00.0"},
+                                                                         {"settings", {{"power_cap_w", 200}}}}})}};
+    const std::string cap200 = bc::serving::policy_calibration_inputs(spec).at("power_profile");
+    spec["plan"]["power"]["devices"][0]["settings"]["power_cap_w"] = 190;
+    const std::string cap190 = bc::serving::policy_calibration_inputs(spec).at("power_profile");
+    assert(cap200.rfind("cap@", 0) == 0 && cap200 != cap190 && cap200 != "cap");
     // --qualify-power is a lab apply: refused on its own, before any config is read
     const auto qualify_alone = run_bc_serve({"serve", "any", "--run-dir", "/tmp/qualify-alone", "--qualify-power"});
     assert(qualify_alone.exit_code != 0 && qualify_alone.output.find("--allow-power-apply") != std::string::npos);

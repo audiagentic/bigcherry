@@ -1370,7 +1370,7 @@ void manifest_writer_before_durable_admission() {
         const fs::path provisional = run / "provisional-v2.json";
         std::ofstream(provisional) << "{}";
         const auto result =
-            hooks.admit_power.invoke("session.test.admit", provisional, bc::serving::v2::PlanUse::serving);
+            hooks.admit_power.invoke("session.test.admit", provisional, bc::serving::v2::Manifest{}, bc::serving::v2::PlanUse::serving);
         if (!result)
             throw ss::PlanFailed(result.error().message);
         if (result.value())
@@ -1378,7 +1378,7 @@ void manifest_writer_before_durable_admission() {
         std::ofstream(trace, std::ios::app) << "admitted" << '\n';
         return prior.require("session.test.plan", run, hooks);
     };
-    c.session.power_hook.begin_manifest = [trace](const fs::path&,
+    c.session.power_hook.begin_manifest = [trace](const fs::path&, const bc::serving::v2::Manifest&,
                                                   bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
         std::ofstream(trace, std::ios::app) << "apply" << '\n';
         return std::nullopt;
@@ -1523,7 +1523,7 @@ void native_config_inspector_before_admission() {
         const fs::path provisional = run / "native-provisional-v2.json";
         std::ofstream(provisional) << "{}";
         const auto admission = hooks.admit_power.invoke("native-inspector.test.admit", provisional,
-                                                        bc::serving::v2::PlanUse::serving);
+                                                        bc::serving::v2::Manifest{}, bc::serving::v2::PlanUse::serving);
         if (!admission)
             throw ss::PlanFailed(admission.error().message);
         if (admission.value())
@@ -1531,7 +1531,7 @@ void native_config_inspector_before_admission() {
         std::ofstream(trace, std::ios::app) << "admitted\n";
         return prior.require("native-inspector.test.base-plan", run, hooks);
     };
-    c.session.power_hook.begin_manifest = [trace](const fs::path&,
+    c.session.power_hook.begin_manifest = [trace](const fs::path&, const bc::serving::v2::Manifest&,
                                                   bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
         std::ofstream(trace, std::ios::app) << "power\n";
         return std::nullopt;
@@ -1593,7 +1593,7 @@ void native_config_inspector_invalid_report_refused() {
             throw ss::PlanFailed("inspector refusal gate did not fire");
             return ss::EngineStart{};
         };
-        c.session.power_hook.begin_manifest = [](const fs::path&,
+        c.session.power_hook.begin_manifest = [](const fs::path&, const bc::serving::v2::Manifest&,
                                                  bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
             assert(false && "power admission ran after an invalid native inspector report");
             return std::nullopt;
@@ -1685,7 +1685,7 @@ void premeasurement_manifest_hook_integration() {
             const fs::path provisional = run / "provisional-v2.json";
             std::ofstream(provisional) << "{\"premeasured\":true}";
             const auto admission = hooks.admit_power.invoke("integration.admit_power", provisional,
-                                                            bc::serving::v2::PlanUse::measuring);
+                                                            bc::serving::v2::Manifest{}, bc::serving::v2::PlanUse::measuring);
             if (!admission)
                 throw ss::PlanFailed(admission.error().message);
             if (admission.value() && stage != "ignored_begin_error")
@@ -1693,7 +1693,7 @@ void premeasurement_manifest_hook_integration() {
             return previous.require("integration.base_plan", run, hooks);
         };
         c.session.power_hook.begin_manifest =
-            [stage, log](const fs::path&, bc::serving::v2::PlanUse use) -> bc::serving::v2::Status {
+            [stage, log](const fs::path&, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse use) -> bc::serving::v2::Status {
             assert(use == bc::serving::v2::PlanUse::measuring);
             log("begin");
             if (stage == "begin_error" || stage == "ignored_begin_error")
@@ -1781,7 +1781,7 @@ int test_main(int argc, char** argv) {
         const int port = std::stoi(argv[3]);
         const fs::path host = argv[4];
         const Json behaviour = Json::parse(argv[5]);
-        s.power_hook.begin_manifest = [](const fs::path&, bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
+        s.power_hook.begin_manifest = [](const fs::path&, const bc::serving::v2::Manifest&, bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
             return std::nullopt;
         };
         s.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status { return std::nullopt; };

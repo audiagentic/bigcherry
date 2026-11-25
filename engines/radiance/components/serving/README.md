@@ -57,7 +57,10 @@ The qualification is the controller's own durable receipt (`<work-root>/power/re
 BDF when an earlier apply of exactly that setting on the same kernel, amdgpu version and board (the receipt's plain
 `identity` string, compared by equality) read back exactly and restored exactly; the receipt's workload is evidence only.
 The first such apply is the lab run `--allow-power-apply --qualify-power` (same lease; it waives only the receipt match,
-never the probed range or the gfx1100 pairing rule). The capability probe is the transaction's own read of the card.
+never the probed range or the gfx1100 pairing rule). The capability probe is the transaction's own read of the card. The S10 output (the typed manifest) goes straight to the
+power transaction; power is admitted once, before any measuring child, and the final serving manifest must carry the same
+effective settings. The calibration key's `power_profile` is the profile name, or `name@digest` of the effective per-BDF
+settings when the plan applies.
 This host's per-BDF settings come from `<work-root>/power-site.yaml` (`schema: 1`, `devices: {BDF: {settings, evidence}}`,
 read through the engine's YAML parser) and replace the profile's settings for that card only.
 No unit test calls the real Linux write interface: power tests use injected

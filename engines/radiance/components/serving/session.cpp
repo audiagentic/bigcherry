@@ -1239,13 +1239,13 @@ class Owner {
             };
             hooks.ended = [this](pid_t pid) { untrack(pid); };
             if (s_.power_hook.begin_manifest) {
-                hooks.admit_power = [this](const fs::path& manifest, v2::PlanUse use) -> v2::Status {
+                hooks.admit_power = [this](const fs::path& manifest, const v2::Manifest& typed, v2::PlanUse use) -> v2::Status {
                     if (power_attempted_)
                         return v2::make_error(v2::ConfigErrorCode::invalid_state, "session.power",
                                               "duplicate manifest power admission");
                     power_attempted_ = true; // restore even after a failed/partial begin
                     const auto result =
-                        s_.power_hook.begin_manifest.invoke("session.power.begin_manifest", manifest, use);
+                        s_.power_hook.begin_manifest.invoke("session.power.begin_manifest", manifest, typed, use);
                     if (!result)
                         return result.error();
                     if (result.value())
@@ -3486,7 +3486,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             throw PlanFailed("native resources: " + refusal->message);
         if (round == 0)
             require_callback(hooks.admit_power.invoke("session.hooks.admit_power", measuring_execution,
-                                                       v2::PlanUse::measuring),
+                                                       verified.parsed, v2::PlanUse::measuring),
                              "native v3 pre-measure power admission");
 
         const fs::path attempt_dir = fs::absolute(run_dir / "measurement-attempts" / attempt_id);
@@ -4043,7 +4043,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     // Replay starts no writer or measuring child. The owner admits power
     // durably before the serving engine can be forked.
     require_callback(hooks.admit_power.invoke("session.hooks.admit_power", out.pinned_manifest->path(),
-                                              v2::PlanUse::serving),
+                                              accepted, v2::PlanUse::serving),
                      "stored manifest power admission");
     return out;
 }
