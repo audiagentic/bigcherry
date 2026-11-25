@@ -23,6 +23,7 @@ from ..patch import patchset
 from ..patch import rebase as patch_rebase
 from ..patch import registry as patch_registry
 from ..patch import runtime_profiles
+from ..patch import unit_ownership
 from ..patch import selection as patch_selection
 from ..release import records as releases
 from ..source.workspace import UpstreamRepository, WorkspaceError
@@ -367,6 +368,8 @@ def cmd_patch_lint(args: Namespace) -> int:
             check_summaries=False,
         )
         lint_report = patch_gates.evaluate_repository_lint_gates(engine)
+        if (paths.REPO_ROOT / "engines" / engine / "patches" / "unit-sharing.toml").is_file():
+            problems.extend(f"{engine}: {problem}" for problem in unit_ownership.problems(engine))
         problems.extend(f"{engine}: {problem}" for problem in engine_problems)
         problems.extend(f"{engine}: {problem}" for problem in lint_report.problems)
         grandfathered.extend(f"{engine}:{patch_id}" for patch_id in lint_report.grandfathered)
