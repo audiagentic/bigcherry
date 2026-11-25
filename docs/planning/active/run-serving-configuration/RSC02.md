@@ -103,6 +103,8 @@ S15 evidence source: docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md and
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native main offline predicate only KLD/calib/diagnose/debug_graph, not local plan-only. Explicit smallest managed measure operation at same native Engine::plan/preweight boundary, native --config online Fleet; prove actual hook before reservations/allocations/weights, no second allocator/front or synthetic argv. Raw snapshot path/root relative semantics and native reload guard tested. Candidate changes Fleet queue cleanup, host fill and loader copy drain; stop/reap all children and preserve staging lifetime before restore. Existing owner guards/FD lifetime sufficient; no extra tamper scheme.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Extract session.cpp recheck_native_host_room from full manifest and retain actual live cgroup/pin/MemAvailable, helper residency, rank/checkpoint checks before native weight load. Native --config preserves authored server.port; readiness must bind actual owner/child identity and port, not another process answering /health. Existing session.json/control socket supplies actual run identity to MEN20/21, no registry. Migrate actual helper/measure/final/offline quality paths, writer child, stored reader and active callers; keep evidence-only read commands with no launch authority. WSL08 detached apply independently gated.
+
 ## Status 2026-11-19 (after S15 and S16)
 
 - Done: `bc-serve serve|start|stop|status|explain` is the only start path. S13 switched serving to manifest v2 and deleted v1 (#891); S15 hardware acceptance passed (`docs/evidence/2026-11-19-rsc02-s15-acceptance/`: dense `qwen27b-tp3-int8` equal projection and greedy hash, helper cohort equal hash, `flashnext-4gpu` 538 requests with 0 errors); S16 deleted the bash launcher, `lib/plan-check.sh`, `lib/sdk-check.sh`, the Python serving supervisor and the installer (#1131). Steps 1-6 above are met.
@@ -216,3 +218,5 @@ retirement. Those remain steps 3, 4, S15 and S16 respectively.
 - 2026-11-25T02:07:22.923091+00:00 (updated-by): Updated: section:notes
 - RV4638
 - 2026-11-25T02:43:21.540163+00:00 (updated-by): Updated: section:notes
+- RV4655
+- 2026-11-25T03:25:42.416856+00:00 (updated-by): Updated: section:notes
