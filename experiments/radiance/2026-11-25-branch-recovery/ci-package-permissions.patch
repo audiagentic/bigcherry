@@ -1,0 +1,95 @@
+diff --git a/.github/workflows/radiance-build-image.yml b/.github/workflows/radiance-build-image.yml
+index e1b45b07c..6e031a052 100644
+--- a/.github/workflows/radiance-build-image.yml
++++ b/.github/workflows/radiance-build-image.yml
+@@ -19,11 +19,13 @@ on:
+ 
+ permissions:
+   contents: read
+-  packages: write
+ 
+ jobs:
+   image:
+     runs-on: ubuntu-24.04
++    permissions:
++      contents: read
++      packages: write   # pushes the build image to GHCR
+     outputs:
+       image: ${{ steps.tag.outputs.image }}
+     steps:
+diff --git a/.github/workflows/radiance-build.yml b/.github/workflows/radiance-build.yml
+index b46ed1cdb..d2a37fbc6 100644
+--- a/.github/workflows/radiance-build.yml
++++ b/.github/workflows/radiance-build.yml
+@@ -85,7 +85,6 @@ on:
+ 
+ permissions:
+   contents: read
+-  packages: write
+ 
+ concurrency:
+   # called from pr-ci.yml for pull requests: that caller already serializes per PR, so key on the caller run
+@@ -99,10 +98,16 @@ env:
+ jobs:
+   image:
+     uses: ./.github/workflows/radiance-build-image.yml
++    permissions:
++      contents: read
++      packages: write   # the called workflow pushes the build image
+ 
+   build:
+     needs: image
+     runs-on: ubuntu-24.04
++    permissions:
++      contents: read
++      packages: read    # only pulls the build image
+     timeout-minutes: 150
+     steps:
+       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+diff --git a/.github/workflows/radiance-release-bundle.yml b/.github/workflows/radiance-release-bundle.yml
+index c237229c4..d277c5dc2 100644
+--- a/.github/workflows/radiance-release-bundle.yml
++++ b/.github/workflows/radiance-release-bundle.yml
+@@ -26,10 +26,8 @@ on:
+         type: string
+         required: true
+ 
+-# the build workflow it calls pushes its image to ghcr, so the caller must allow packages: write
+ permissions:
+   contents: read
+-  packages: write
+ 
+ concurrency:
+   group: radiance-release-bundle-${{ github.event.release.tag_name || inputs.tag }}
+@@ -86,6 +84,10 @@ jobs:
+     needs: plan
+     if: needs.plan.outputs.reuse == ''
+     uses: ./.github/workflows/radiance-build.yml
++    # the build workflow it calls pushes its image to ghcr, so this caller job must allow packages: write
++    permissions:
++      contents: read
++      packages: write
+     with:
+       build_lane: ${{ needs.plan.outputs.lane }}
+       source_ref: ${{ needs.plan.outputs.tag }}
+diff --git a/tools/tests/ci/test_workflow_pins.py b/tools/tests/ci/test_workflow_pins.py
+index 9fc489689..077ad41ef 100644
+--- a/tools/tests/ci/test_workflow_pins.py
++++ b/tools/tests/ci/test_workflow_pins.py
+@@ -30,6 +30,16 @@ class WorkflowPinTests(unittest.TestCase):
+                 self.assertRegex(text, r"(?m)^permissions:\n  [a-z-]+: (read|write|none)", "no top-level permissions block")
+                 self.assertNotIn("write-all", text)
+ 
++    def test_workflow_level_permissions_are_read_only_outside_the_allow_list(self):
++        # A write grant belongs to the job that needs it; release-please opens and updates release PRs for its one job.
++        allowed = {"release-please.yml"}
++        for workflow in WORKFLOWS:
++            block = re.search(r"(?m)^permissions:\n((?:  .*\n)+)", workflow.read_text(encoding="utf-8"))
++            with self.subTest(workflow=workflow.name):
++                self.assertIsNotNone(block)
++                if workflow.name not in allowed:
++                    self.assertNotIn("write", block.group(1))
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

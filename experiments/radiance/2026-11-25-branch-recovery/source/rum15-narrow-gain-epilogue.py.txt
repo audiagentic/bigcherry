@@ -1,0 +1,30 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-factor-epilogue-both-source/libr4d/r4d_gemm_fp8a8.hip")
+s=p.read_text()
+before="""                        for (uint32_t t = 0; t < 8; ++t)
+                            wsr[t] = (float)code[t] * bscale(s_rg[
+                                wave * 16u + (lane >> 4) * 8u + t]);"""
+after="""                        for (uint32_t t = 0; t < 8; ++t)
+                            wsr[t] = (float)code[t];"""
+assert s.count(before)==1,s.count(before)
+s=s.replace(before,after)
+before="""            /* The bias of each of this lane's eight weight rows (zero past N). */
+            f8v ov = out[j];
+            if constexpr (BIAS) {"""
+after="""            /* The bias of each of this lane's eight weight rows (zero past N). */
+            f8v ov = out[j];
+            if constexpr (I8 && SB == 256u) {
+                // RUM15 experiment: BF16 row gain is invariant across groups,
+                // so apply once in F32 at the output, after accumulating the
+                // U8-group coefficient products in F32. No BF16 fold.
+                // This reassociates operations; validate against exact CPU
+                // reference and checkpoint captures before selecting.
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    ov[t] *= bscale(s_rg[wave * 16u + acc_row(lane, t)]);
+            }
+            if constexpr (BIAS) {"""
+assert s.count(before)==1,s.count(before)
+s=s.replace(before,after)
+p.write_text(s)
+print("Move narrow-group invariant BF16 row gain to F32 output epilogue, same kernel/no new ABI",flush=True)

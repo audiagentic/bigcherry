@@ -1,0 +1,51 @@
+from pathlib import Path
+p=Path("SCRATCH/rum15-factor-epilogue-source/libr4d/r4d_gemm_8a8_prefill.h")
+s=p.read_text()
+before="""        } else if constexpr (I8 && SB == 256u) {
+            const uint16_t* gains = (const uint16_t*)
+                ((const uint8_t*)Sw + (size_t)N * nkb);
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const uint32_t rbase = (wt0 + i) * 16u + (lane >> 4) * 8u;
+                const uint8_t* src = ((const uint8_t*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    w32[i * 8u + t] = (float)src[t] * bscale(gains[rbase + t]);
+            }
+        } else if constexpr (I8) {"""
+after="""        } else if constexpr (I8 && SB == 256u) {
+            // RUM15 experiment: row gain is constant over K groups and can
+            // be factored out to the final F32 epilogue. Still no BF16 fold.
+            // Validate the changed accumulation order against original
+            // libref oracle before considering this transformation.
+#pragma unroll
+            for (uint32_t i = 0; i < kPTW; ++i) {
+                const uint8_t* src = ((const uint8_t*)Sw) +
+                    ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u;
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    w32[i * 8u + t] = (float)src[t];
+            }
+        } else if constexpr (I8) {"""
+assert s.count(before)==1,s.count(before)
+s=s.replace(before,after)
+before="""                if constexpr (ROWF)
+#pragma unroll
+                    for (uint32_t t = 0; t < 8; ++t) v[t] *= Rs[n + t];
+                /* Packed in whole registers (bf16x2_rne, f32_to_bf16's bits). */"""
+after="""                if constexpr (ROWF)
+#pragma unroll
+                    for (uint32_t t = 0; t < 8; ++t) v[t] *= Rs[n + t];
+                if constexpr (I8 && SB == 256u) {
+                    const uint16_t* gains = (const uint16_t*)
+                        ((const uint8_t*)Sw + (size_t)N * nkb);
+#pragma unroll
+                    for (uint32_t t = 0; t < 8; ++t)
+                        v[t] *= bscale(gains[n + t]);
+                }
+                /* Packed in whole registers (bf16x2_rne, f32_to_bf16's bits). */"""
+assert s.count(before)==1,s.count(before)
+s=s.replace(before,after)
+p.write_text(s)
+print("Factor row gain applied only once at F32 epilogue; no precision narrowing, changed accumulation order requires oracle",flush=True)

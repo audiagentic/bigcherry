@@ -355,6 +355,14 @@ Never promote lifecycle state as part of implementation.
 
 Never edit the shared vendor tree merely to retest a patch; use isolated/test paths owned by the tooling.
 
+Kernel units and names (radiance, RCS19)
+
+A patch that edits a kernel translation unit (libr4d/<unit>.hip) lists it in patch.toml as units = ["r4d_<unit>"]; the list must equal the units its edits touch (patch-lint fails otherwise).
+
+A unit that another patch or the libr3 rewrite (components/libr3/native/<unit>.hip.rw) also edits must be recorded, with the reason, in engines/radiance/patches/unit-sharing.toml. Whether the regions overlap is gate 1's check: run bigcherry --engine radiance patch-compose-check --patch <id> before shipping.
+
+A type, constant, macro or function your edit introduces in libr4d/ ends in _<arch>_<patch-id> (for example IqrFusedPre_gfx12_rad0065); a libr3 rewrite's names end in _gfx11_r3. Names the engine needs from upstream keep their spelling. Do not add to naming-exceptions.toml: it lists names that predate the rule.
+
 Handoff rules
 
 To VERIFY provide:

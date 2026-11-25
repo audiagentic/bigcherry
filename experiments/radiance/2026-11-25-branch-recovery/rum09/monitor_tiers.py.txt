@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+import json, time, urllib.request
+from pathlib import Path
+out=Path("SCRATCH/rum09-warm-decode/tier-samples.jsonl")
+url="http://127.0.0.1:18410/sessions"
+for i in range(745):
+    try:
+        with urllib.request.urlopen(url, timeout=10) as r:
+            j=json.load(r)
+        record={"time":time.time(),"sample":i,"sessions":j.get("sessions",[]),"pool":j.get("pool"),"blocks_sum_overlapping":j.get("blocks_sum_overlapping"),"moved":j.get("moved"),"stall":j.get("stall"),"linear":j.get("linear"),"occupancy":j.get("occupancy"),"prefix_hit_rate":j.get("prefix_hit_rate")}
+        with out.open("a") as f: f.write(json.dumps(record, separators=(",",":"))+"\n")
+    except Exception:
+        pass
+    time.sleep(2)

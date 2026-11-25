@@ -1,0 +1,312 @@
+diff --git a/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/README.md b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/README.md
+new file mode 100644
+index 000000000..dc300c701
+--- /dev/null
++++ b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/README.md
+@@ -0,0 +1,43 @@
++# rad0055_qwen35_plain_mxfp4
++
++**Status:** validated (host-only source checks; hardware qualification pending)
++**Plan item:** RUM06
++
++## Failure and comparison
++
++In the Radiance 2.2 Qwen3.8-27B TP2 smoke, both ranks refused the fused delta-net `ssm_inz` weight:
++`arch/common/rad_block_gdn_fp8.h:266` calls `LinearFP8::declare`, and
++`arch/common/rad_fp8.h:1354-1355` calls `linear_retired`, whose
++`linear_is_mxfp4(e)` branch at line 1179 returns `"MXFP4"`. The resulting
++`linear_refuse_retired` returns `RAD_E_UNSUPPORTED` at line 1194.
++It happens before the q|k|v|z 4-part row split (or any gfx1100 kernel dispatch).
++The wht6 TP wire is therefore unrelated to this refusal.
++
++v1.17.0 has no `linear_retired` check. The same weight was admitted through
++`LinearFP8::declare`'s OCP-MXFP4 `mxfp4a8` branch (v1.17
++`arch/common/rad_fp8.h:1506-...`). The branch is still present in 2.2,
++and the `DenseFP8` drafter already exempts plain MXFP4 at its
++`if (known && !mx)` check.
++
++## Fix
++
++Remove **only** plain OCP-MXFP4 from the 2.2 retirement classifier; all other
++format retirements remain intact (M2XFP4, rotated variants, block-scaled FP8).
++The 2.2 `LinearFP8` OCP-MXFP4 path, `RowParts::set(...,16,...)`,
++`RAD_SHARD_ROW`, and the rad0019 `span_parts` ownership machinery remain
++unchanged. The fix is format-based, not model/head-count/rank-specific, and
++does not add a fallback or a second kernel path.
++
++Both `qwen27b-tp3` and `qwen27b-tp3-capacity` use the same MXFP4
++checkpoint as `qwen27b-2xtx` and therefore share this refusal.
++The `qwen27b-tp3-int8` family (including -556, -long, -bf16 and
++-bf16i8 variants) also passes through `GdnFP8::declare`, but uses
++the distinct retained w8a8 weight branch, not the MXFP4 retirement.
++
++## Verification scope
++
++The RUM06 patch test applies this patch to the *already composed*, frozen
++2.2 source, reapplies it byte-identically, verifies MXFP4 admission while
++retaining every other retirement, and detects a drifted anchor. The libr3 native
++rewrite check uses the frozen 2.2 `libr4d` source. These are host-only
++compatibility tests, not claims of runtime activation, KLD, or TP3 parity.
+diff --git a/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/SUMMARY.md b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/SUMMARY.md
+new file mode 100644
+index 000000000..1ce240de7
+--- /dev/null
++++ b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/SUMMARY.md
+@@ -0,0 +1,21 @@
++# rad0055_qwen35_plain_mxfp4
++
++**Status:** validated
++**Plan item:** RUM06
++
++Scope: Restore plain MXFP4 admission; host-only verification completed, hardware admission pending.
++
++## Summary
++
++Restore only plain MXFP4 from the 2.2 retired-weight classifier, reusing
++rad0019's existing q|k|v|z row-part and uneven tensor-parallel span behavior.
++Retain all other explicit format refusals.
++
++## Outcome
++
++Exact frozen-composition patch replay and libr3 native rewrite pass.
++No GPU runtime, KLD or throughput claim is made.
++
++## Detail
++
++[Patch implementation](patch.py) and [validation notes](README.md).
+diff --git a/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/patch.py b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/patch.py
+new file mode 100644
+index 000000000..b5410b2f2
+--- /dev/null
++++ b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/patch.py
+@@ -0,0 +1,40 @@
++"""RUM06: restore the original plain OCP-MXFP4 weight path on Radiance 2.2.
++
++The 2.2 retirement classifier rejects MXFP4 before LinearFP8::declare can reach its
++still-present MXFP4 GEMM, including GDN's q|k|v|z row-sharded in-projection.
++Leave M2XFP4, rotated MXFP4, ParoQuant and block-FP8 retirements intact.
++The existing VTP14 row-part and uneven-span rules remain authoritative.
++"""
++from __future__ import annotations
++
++import re
++
++from bigcherry.patcher import Edit, FilePatch
++
++_BEFORE = '''    if (linear_is_m2xfp4(e))      return "M2XFP4";
++    if (linear_is_mxfp4(e))       return "MXFP4";
++    const RadEncPlane* sc = rad_enc_plane(&e, "scale");'''
++
++_AFTER = '''    if (linear_is_m2xfp4(e))      return "M2XFP4";
++    /* BC_RUM06_RETAIN_PLAIN_MXFP4: plain OCP-MXFP4 has an existing LinearFP8
++     * GEMM and per-part row shard (rad0019). Keep the other retired formats
++     * refused; no change to rotations, layouts or TP ownership. */
++    const RadEncPlane* sc = rad_enc_plane(&e, "scale");'''
++
++PATCH = FilePatch(
++    path="arch/common/rad_fp8.h",
++    language="none",
++    description="Restore only plain MXFP4 admission for Qwen35's existing linears",
++    edits=(
++        Edit(
++            id="rum06-retain-plain-mxfp4",
++            anchor=re.escape(_BEFORE),
++            mode="replace",
++            text=_AFTER,
++            guard=re.escape("BC_RUM06_RETAIN_PLAIN_MXFP4"),
++            expect_matches=1,
++            max_span_lines=4,
++            rationale="ABI44 still declares plain MXFP4 in LinearFP8/DenseFP8; v1.17 TP2 used it",
++        ),
++    ),
++)
+diff --git a/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/patch.toml b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/patch.toml
+new file mode 100644
+index 000000000..fb9d71c0c
+--- /dev/null
++++ b/engines/radiance/patches/rad0055_qwen35_plain_mxfp4/patch.toml
+@@ -0,0 +1,11 @@
++schema = 1
++id = "rad0055_qwen35_plain_mxfp4"
++order = 55
++state = "validated"
++kind = "enhancement"
++origin = "local"
++backend = "agnostic"
++plan-ids = ["RUM06"]
++requires = ["rad0019_vtp14_n2_tp_ownership_fp8", "rad0054_attn_prefill_fp8"]
++conflicts = []
++tags = ["tensor-parallel", "quantization"]
+diff --git a/engines/radiance/recipes.toml b/engines/radiance/recipes.toml
+index ee1159e6b..2bde580d9 100644
+--- a/engines/radiance/recipes.toml
++++ b/engines/radiance/recipes.toml
+@@ -42,6 +42,7 @@ patches = [
+   "rad0052_b16_kv_geometries",
+   "rad0053_v4_kv_layouts",
+   "rad0054_attn_prefill_fp8",
++  "rad0055_qwen35_plain_mxfp4",
+ ]
+ 
+ # Host build compatibility. Radiance 2.2 includes the FFmpeg 6 write callback support upstream.
+diff --git a/tools/tests/patch/test_rum06_qwen27b_mxfp4.py b/tools/tests/patch/test_rum06_qwen27b_mxfp4.py
+new file mode 100644
+index 000000000..17dd0f4a5
+--- /dev/null
++++ b/tools/tests/patch/test_rum06_qwen27b_mxfp4.py
+@@ -0,0 +1,155 @@
++"""RUM06: hardware-free regression for original 2.2 MXFP4 declare refusal."""
++from __future__ import annotations
++
++import os
++import shutil
++import subprocess
++import sys
++import tempfile
++import tomllib
++import unittest
++from pathlib import Path
++
++ROOT = Path(__file__).resolve().parents[3]
++sys.path.insert(0, str(ROOT / "tools"))
++sys.path.insert(0, str(Path(__file__).resolve().parent))
++from _vtp_promotion_support import (
++    assert_focal_guards_unique,
++    assert_promoted_recipe,
++    load_patch_files,
++)
++from bigcherry.patcher import apply_all
++
++NAME = "rad0055_qwen35_plain_mxfp4"
++WEIGHT = "arch/common/rad_fp8.h"
++
++
++def retired_function(source: str) -> str:
++    start = source.index("inline const char* linear_retired(")
++    return source[start:source.index("/* The refusal of a weight stored", start)]
++
++
++def classifier_result(source: str, fmt: int) -> str:
++    """Build the original or restored classifier body with synthetic encodings."""
++    compiler = shutil.which("g++") or shutil.which("clang++")
++    if compiler is None:
++        raise unittest.SkipTest("no host C++ compiler")
++    mocks = r'''
++#include <cstring>
++#include <cstdio>
++struct RadEncPlane { int dtype = 0; int block[2] = {0, 0}; };
++struct RadEncoding {
++    int fmt = 0;
++    int n_planes = 2;
++    int transform[1] = {0};
++    RadEncPlane plane[2] = {};
++};
++enum { RAD_F8E4M3 = 1, RAD_BF16 = 2, RAD_F32 = 3, RAD_FP8_BLOCK = 128 };
++bool linear_is_paro_m2xfp4(const RadEncoding& e) { return e.fmt == 2; }
++bool linear_is_paro_mxfp4(const RadEncoding& e) { return e.fmt == 3; }
++bool linear_is_givens(const RadEncoding& e) { return e.fmt == 4; }
++bool linear_is_m2xfp4(const RadEncoding& e) { return e.fmt == 5; }
++bool linear_is_mxfp4(const RadEncoding& e) { return e.fmt == 1; }
++bool rad_enc_is(const RadEncoding* e, const char* name) {
++    return e->fmt == 6 && std::strcmp(name, "affine") == 0;
++}
++const RadEncPlane* rad_enc_plane(const RadEncoding* e, const char* name) {
++    return std::strcmp(name, "scale") == 0 ? &e->plane[1] : nullptr;
++}
++'''
++    main = r'''
++int main() {
++    RadEncoding e;
++    e.fmt = FMT;
++    e.plane[0].dtype = RAD_F8E4M3;
++    e.plane[1].dtype = RAD_BF16;
++    e.plane[1].block[0] = e.plane[1].block[1] = RAD_FP8_BLOCK;
++    const char* rejected = linear_retired(e);
++    std::puts(rejected ? rejected : "ADMITTED");
++}
++'''.replace("FMT", str(fmt))
++    with tempfile.TemporaryDirectory(dir=ROOT) as d:
++        src, exe = Path(d) / "classifier.cpp", Path(d) / "classifier"
++        src.write_text(mocks + retired_function(source) + main)
++        built = subprocess.run([compiler, "-std=c++17", "-O0", str(src), "-o", str(exe)],
++                               check=False, capture_output=True, text=True)
++        if built.returncode:
++            raise AssertionError(built.stderr)
++        return subprocess.check_output([str(exe)], text=True).strip()
++
++
++class RUM06MXFP4Tests(unittest.TestCase):
++    def test_package_and_order(self):
++        assert_promoted_recipe(self, NAME)
++        assert_focal_guards_unique(self, NAME)
++        patches = load_patch_files(NAME)
++        self.assertEqual([p.path for p in patches], [WEIGHT])
++        self.assertEqual(len(patches[0].edits), 1)
++
++    def test_v117_kept_mxfp4_without_retirement(self):
++        repo = os.environ.get("RADIANCE_GIT_DIR")
++        if not repo:
++            self.skipTest("set RADIANCE_GIT_DIR to the upstream Radiance repo")
++        path = subprocess.run(["git", "-C", repo, "show", "v1.17.0:" + WEIGHT],
++                              capture_output=True, text=True, check=True).stdout
++        self.assertNotIn("linear_retired", path)
++        self.assertIn("mx = known && (linear_is_mxfp4(enc) || paro_mx);", path)
++        self.assertIn('m2x ? "m2xfp4" : "mxfp4a8"', path)
++
++    def test_frozen_composed_source_apply_replay_and_classifier(self):
++        source = os.environ.get("RADIANCE_COMPOSED_SRC")
++        if not source:
++            self.skipTest("set RADIANCE_COMPOSED_SRC to the frozen, already composed 2.2 source")
++        original = (Path(source) / WEIGHT).read_text()
++        self.assertEqual(classifier_result(original, 1), "MXFP4")
++        with tempfile.TemporaryDirectory() as d:
++            dest = Path(d) / WEIGHT
++            dest.parent.mkdir(parents=True)
++            dest.write_text(original)
++            first = apply_all(load_patch_files(NAME), Path(d))
++            self.assertTrue(all(r.ok for r in first), first)
++            self.assertEqual([e.status for r in first for e in r.results], ["applied"])
++            patched = dest.read_text()
++            replay = apply_all(load_patch_files(NAME), Path(d))
++            self.assertTrue(all(r.ok for r in replay), replay)
++            self.assertEqual([e.status for r in replay for e in r.results], ["already-applied"])
++            self.assertEqual(dest.read_text(), patched)
++        old_fun, new_fun = retired_function(original), retired_function(patched)
++        self.assertIn('if (linear_is_mxfp4(e))       return "MXFP4";', old_fun)
++        self.assertNotIn('if (linear_is_mxfp4(e))       return "MXFP4";', new_fun)
++        self.assertIn("BC_RUM06_RETAIN_PLAIN_MXFP4", new_fun)
++        self.assertIn('mx = known && (linear_is_mxfp4(enc) || paro_mx);', patched)
++        self.assertIn('rp.set(row_parts, 16, 1, base, m2x ? "M2XFP4 tiles" : "MXFP4 tiles")', patched)
++        self.assertIn("BC_VTP14_N2F_SPAN_PARTS_WREF", patched)
++        self.assertEqual(classifier_result(patched, 1), "ADMITTED")
++        for fmt, label in [(2, "ParoQuant M2XFP4"), (3, "ParoQuant MXFP4"),
++                           (4, "ParoQuant"), (5, "M2XFP4"), (6, "block fp8")]:
++            self.assertEqual(classifier_result(patched, fmt), label)
++
++    def test_changed_anchor_fails_closed(self):
++        patches = load_patch_files(NAME)
++        with tempfile.TemporaryDirectory() as d:
++            dest = Path(d) / WEIGHT
++            dest.parent.mkdir(parents=True)
++            fragment = '    if (linear_is_m2xfp4(e))      return "M2XFP4";\n'
++            fragment += '    if (linear_is_mxfp4(e))       return "changed";\n'
++            fragment += '    const RadEncPlane* sc = rad_enc_plane(&e, "scale");'
++            dest.write_text(fragment)
++            res = apply_all(patches, Path(d))
++            self.assertFalse(all(r.ok for r in res), res)
++            self.assertEqual(dest.read_text(), fragment)
++
++    def test_mxfp4_config_variants_share_container(self):
++        with (ROOT / "engines/radiance/configs/qwen27b.toml").open("rb") as f:
++            configurations = tomllib.load(f)["config"]
++        names = ["qwen27b-2xtx", "qwen27b-tp3"]
++        containers = [configurations[n]["model"] for n in names]
++        self.assertEqual(containers[0], containers[1])
++        self.assertEqual(configurations["qwen27b-tp3-capacity"]["base"], "qwen27b-tp3")
++        self.assertIn("mxfp4", containers[0])
++        self.assertIn("w8a8", configurations["qwen27b-tp3-int8"]["model"])
++        self.assertEqual(configurations["qwen27b-tp3-int8-556"]["base"], "qwen27b-tp3-int8")
++
++
++if __name__ == "__main__":
++    unittest.main()

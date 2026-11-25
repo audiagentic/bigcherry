@@ -1,0 +1,377 @@
+diff --git a/.github/workflows/core-offline-validation.yml b/.github/workflows/core-offline-validation.yml
+index ae086e6df..29deb4253 100644
+--- a/.github/workflows/core-offline-validation.yml
++++ b/.github/workflows/core-offline-validation.yml
+@@ -43,8 +43,8 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 25
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+         with:
+           python-version: '3.12'
+       - name: Test dependencies
+diff --git a/.github/workflows/forbidden-terms.yml b/.github/workflows/forbidden-terms.yml
+index dca83549b..159517583 100644
+--- a/.github/workflows/forbidden-terms.yml
++++ b/.github/workflows/forbidden-terms.yml
+@@ -21,7 +21,7 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           fetch-depth: 0
+ 
+diff --git a/.github/workflows/jobs-service-validation.yml b/.github/workflows/jobs-service-validation.yml
+index aab946f73..0712f2879 100644
+--- a/.github/workflows/jobs-service-validation.yml
++++ b/.github/workflows/jobs-service-validation.yml
+@@ -35,8 +35,8 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 10
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+         with:
+           python-version: '3.12'
+       - name: Compile implementation
+diff --git a/.github/workflows/line-endings.yml b/.github/workflows/line-endings.yml
+index 04984b697..160035d03 100644
+--- a/.github/workflows/line-endings.yml
++++ b/.github/workflows/line-endings.yml
+@@ -15,6 +15,6 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 5
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+       - name: Reject indexed CRLF text files
+         run: python -m unittest tools.tests.core.test_line_endings -v
+diff --git a/.github/workflows/patch-compile-validation.yml b/.github/workflows/patch-compile-validation.yml
+index e4c9c11cf..91029c780 100644
+--- a/.github/workflows/patch-compile-validation.yml
++++ b/.github/workflows/patch-compile-validation.yml
+@@ -32,10 +32,10 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 25
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           fetch-depth: 0
+-      - uses: actions/setup-python@v5
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+         with:
+           python-version: '3.12'
+ 
+diff --git a/.github/workflows/patch-offline-validation.yml b/.github/workflows/patch-offline-validation.yml
+index 5157db064..3063def8f 100644
+--- a/.github/workflows/patch-offline-validation.yml
++++ b/.github/workflows/patch-offline-validation.yml
+@@ -65,11 +65,11 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 60  # a full 77-selection audit takes 25 to 40 minutes
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           fetch-depth: 0
+ 
+-      - uses: actions/setup-python@v5
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+         with:
+           python-version: '3.12'
+ 
+@@ -201,7 +201,7 @@ jobs:
+ 
+       - name: Preserve validation summary
+         if: always()
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+         with:
+           name: patch-offline-check-${{ github.run_id }}
+           if-no-files-found: warn
+diff --git a/.github/workflows/pr-ci.yml b/.github/workflows/pr-ci.yml
+index a61d64087..3e99253d6 100644
+--- a/.github/workflows/pr-ci.yml
++++ b/.github/workflows/pr-ci.yml
+@@ -28,7 +28,7 @@ jobs:
+       rcd: ${{ steps.rcd.outputs.run }}
+       radiance: ${{ steps.radiance.outputs.run }}
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           fetch-depth: 0
+       - id: core
+diff --git a/.github/workflows/pr-title.yml b/.github/workflows/pr-title.yml
+index beac4f673..e4a9f1c10 100644
+--- a/.github/workflows/pr-title.yml
++++ b/.github/workflows/pr-title.yml
+@@ -12,7 +12,7 @@ jobs:
+   conventional-title:
+     runs-on: ubuntu-24.04
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+ 
+       # A squash merge puts the title and description on main as the commit message; runs on every edit.
+       # The head branch name stays on GitHub with the pull request, so it is scanned like the text.
+diff --git a/.github/workflows/radiance-build-image.yml b/.github/workflows/radiance-build-image.yml
+index 15fff058b..e1b45b07c 100644
+--- a/.github/workflows/radiance-build-image.yml
++++ b/.github/workflows/radiance-build-image.yml
+@@ -27,7 +27,7 @@ jobs:
+     outputs:
+       image: ${{ steps.tag.outputs.image }}
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+ 
+       - name: Image tag from the Dockerfile
+         id: tag
+diff --git a/.github/workflows/radiance-build.yml b/.github/workflows/radiance-build.yml
+index 1deafacdd..b46ed1cdb 100644
+--- a/.github/workflows/radiance-build.yml
++++ b/.github/workflows/radiance-build.yml
+@@ -105,7 +105,7 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 150
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: ${{ inputs.source_ref }}
+           fetch-depth: 0
+@@ -121,7 +121,7 @@ jobs:
+       # prior cache (restore-keys) since a slightly stale clone still makes the fetch below cheap; main re-saves it
+       # (even on build failure) so the cache stays current.
+       - name: Restore the upstream radiance clone
+-        uses: actions/cache/restore@v4
++        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+         with:
+           path: work/upstream
+           key: radiance-upstream-${{ github.run_id }}
+@@ -132,7 +132,7 @@ jobs:
+       # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
+       # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
+       - name: Restore ccache
+-        uses: actions/cache/restore@v4
++        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+         with:
+           path: work/.ccache
+           key: radiance-ccache-${{ github.run_id }}
+@@ -203,14 +203,14 @@ jobs:
+       # run restores them and never adds its own copy, which is what filled the repository's cache budget.
+       - name: Save ccache (main only)
+         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+-        uses: actions/cache/save@v4
++        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+         with:
+           path: work/.ccache
+           key: radiance-ccache-${{ github.run_id }}
+ 
+       - name: Save the upstream radiance clone (main only)
+         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+-        uses: actions/cache/save@v4
++        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+         with:
+           path: work/upstream
+           key: radiance-upstream-${{ github.run_id }}
+@@ -222,7 +222,7 @@ jobs:
+       # the tag's source trees from /src and the lane build under /src/work. Checked out after the build so the build never sees it.
+       - name: Fetch the packaging tooling
+         if: inputs.bundle_tag != ''
+-        uses: actions/checkout@v4
++        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: main
+           fetch-depth: 0  # final gate reads refs/tags/<selected engine tag>
+@@ -256,7 +256,7 @@ jobs:
+ 
+       - name: Hand on the runtime bundle
+         if: inputs.bundle_tag != ''
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+         with:
+           name: radiance-release-bundle
+           path: |
+@@ -282,7 +282,7 @@ jobs:
+ 
+       - name: Publish verified main ccache
+         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+         with:
+           name: radiance-ccache-main
+           path: work/ci-ccache-artifact/*
+@@ -292,7 +292,7 @@ jobs:
+ 
+       - name: Component test logs
+         if: failure()
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+         with:
+           name: component-test-logs
+           path: |
+diff --git a/.github/workflows/radiance-release-bundle.yml b/.github/workflows/radiance-release-bundle.yml
+index fa1f90637..c237229c4 100644
+--- a/.github/workflows/radiance-release-bundle.yml
++++ b/.github/workflows/radiance-release-bundle.yml
+@@ -55,12 +55,12 @@ jobs:
+           printf '%s' "$TAG" | grep -Eq '^bc-radiance-[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::not a bc-radiance release tag: $TAG" >&2; exit 1; }
+       # The source being bundled is the tag; the tooling that decides reuse is this workflow's own commit (an older tag does
+       # not have the release-bundle command).
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: ${{ github.event.release.tag_name || inputs.tag }}
+           fetch-depth: 0
+           path: src
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: main
+           path: tooling
+@@ -98,11 +98,11 @@ jobs:
+     permissions:
+       contents: write
+     steps:
+-      - uses: actions/download-artifact@v4
++      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+         with:
+           name: radiance-release-bundle
+           path: bundle
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: main
+           path: tooling
+@@ -132,7 +132,7 @@ jobs:
+     permissions:
+       contents: write
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: main
+           path: tooling
+@@ -173,7 +173,7 @@ jobs:
+     permissions:
+       contents: write
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+       - name: Prune old bundles
+         env:
+           GH_TOKEN: ${{ github.token }}
+diff --git a/.github/workflows/rcd-slurm-validation.yml b/.github/workflows/rcd-slurm-validation.yml
+index 3a2b41781..96540e6e1 100644
+--- a/.github/workflows/rcd-slurm-validation.yml
++++ b/.github/workflows/rcd-slurm-validation.yml
+@@ -38,8 +38,8 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 15
+     steps:
+-      - uses: actions/checkout@v4
+-      - uses: actions/setup-python@v5
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
++      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+         with:
+           python-version: '3.12'
+       - name: Compile RCD validation tools
+@@ -74,7 +74,7 @@ jobs:
+     runs-on: ubuntu-24.04
+     timeout-minutes: 20
+     steps:
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+       - name: Install and exercise Slurm/MUNGE + BigCherry integration
+         run: bash tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh
+       - name: Collect privileged Slurm diagnostics
+@@ -97,7 +97,7 @@ jobs:
+           sudo chown -R "$(id -u):$(id -g)" "$out"
+       - name: Preserve Slurm diagnostics
+         if: always()
+-        uses: actions/upload-artifact@v4
++        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+         with:
+           name: rcd-slurm-diagnostics-${{ github.run_id }}
+           if-no-files-found: ignore
+diff --git a/.github/workflows/release-please.yml b/.github/workflows/release-please.yml
+index 612f8b39b..ccb615a1b 100644
+--- a/.github/workflows/release-please.yml
++++ b/.github/workflows/release-please.yml
+@@ -55,14 +55,14 @@ jobs:
+     runs-on: ubuntu-latest
+     steps:
+       - id: release
+-        uses: googleapis/release-please-action@v4
++        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
+         with:
+           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+           config-file: release-please-config.json
+           manifest-file: .release-please-manifest.json
+ 
+       - if: ${{ steps.release.outputs.releases_created == 'true' }}
+-        uses: actions/checkout@v4
++        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           fetch-depth: 0
+           # The readable-tag steps below `git push` a tag that points at an older release commit, and that history
+@@ -138,7 +138,7 @@ jobs:
+ 
+       # The generated notes quote old commit subjects that the forbidden-terms scan rejects; rewrite those lines in the open
+       # release PRs (rules: .github/release-line-rewrites.toml) so their checks can pass. Runs after release-please on every push.
+-      - uses: actions/checkout@v4
++      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+         with:
+           ref: main
+           path: rewrite-src
+diff --git a/tools/tests/ci/test_workflow_pins.py b/tools/tests/ci/test_workflow_pins.py
+new file mode 100644
+index 000000000..9fc489689
+--- /dev/null
++++ b/tools/tests/ci/test_workflow_pins.py
+@@ -0,0 +1,35 @@
++"""Every third-party action in a workflow is pinned to a full commit SHA with its version in a comment, and every workflow
++names its token permissions."""
++import re
++import unittest
++
++from bigcherry.core import paths
++
++WORKFLOWS = sorted((paths.REPO_ROOT / ".github/workflows").glob("*.yml"))
++USES = re.compile(r"^\s*(?:-\s*)?uses:\s*(\S+)(.*)$")
++
++
++class WorkflowPinTests(unittest.TestCase):
++    def test_every_external_action_is_a_full_sha_with_a_version_comment(self):
++        seen = 0
++        for workflow in WORKFLOWS:
++            for number, line in enumerate(workflow.read_text(encoding="utf-8").splitlines(), 1):
++                match = USES.match(line)
++                if not match or match.group(1).startswith("./"):
++                    continue
++                seen += 1
++                with self.subTest(workflow=workflow.name, line=number):
++                    self.assertRegex(match.group(1), r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$", line.strip())
++                    self.assertRegex(match.group(2), r"#\s*v\d+\.\d+\.\d+", "the pinned version belongs in a comment")
++        self.assertGreater(seen, 20)
++
++    def test_every_workflow_declares_permissions(self):
++        for workflow in WORKFLOWS:
++            with self.subTest(workflow=workflow.name):
++                text = workflow.read_text(encoding="utf-8")
++                self.assertRegex(text, r"(?m)^permissions:\n  [a-z-]+: (read|write|none)", "no top-level permissions block")
++                self.assertNotIn("write-all", text)
++
++
++if __name__ == "__main__":
++    unittest.main()

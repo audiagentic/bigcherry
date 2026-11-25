@@ -1,0 +1,52 @@
+"""Isolated graft of exactly ONE changed gfx1100 HIP object onto proven native libr3.
+No installed plugin or CMake source tree edits. Reuses BigCherry r3_rewrite output.
+"""
+from pathlib import Path
+import shlex,subprocess,hashlib
+build=Path("SCRATCH/rum15-factor-r3-v2-build")
+rewrite=Path("SCRATCH/rum15-factor-kpar-r3-rewritten")
+root=Path("SCRATCH/rum15-factor-r3-kpar")
+(root/"units").mkdir(parents=True,exist_ok=True)
+(root/"kernels").mkdir(parents=True,exist_ok=True)
+wrapper=root/"units/r4d_gemm_fp8a8.hip"
+wrapper.write_text('#include "r3_compat.h"\n#include "'+str(rewrite/"r4d_gemm_fp8a8.hip")+'"\n')
+obj=root/"r4d_gemm_fp8a8.hip.o"
+cmd=subprocess.run(["ninja","-C",str(build),"-t","commands",
+                    "CMakeFiles/libr3.dir/units/r4d_gemm_fp8a8.hip.o"],
+                   capture_output=True,text=True,check=True).stdout.strip().splitlines()
+assert len(cmd)==1
+args=shlex.split(cmd[0])
+for i,a in enumerate(args):
+    if a=="-o":args[i+1]=str(obj)
+    elif a=="-MF":args[i+1]=str(obj)+".d"
+    elif a=="-MT":args[i+1]=str(obj)
+    elif a=="-I"+str(build/"r4d-src"):
+        args[i]="-I"+str(rewrite)
+    elif a==str(build/"units/r4d_gemm_fp8a8.hip"):
+        args[i]=str(wrapper)
+assert args[-1]==str(wrapper)
+print("RUM15 compile one new gfx1100 K-parallel exact-F32 HIP object",flush=True)
+p=subprocess.run(args,cwd=build,capture_output=True,text=True)
+if p.returncode:
+    print("COMPILE FAILURE",p.stdout[-4000:],p.stderr[-7000:],flush=True)
+    raise SystemExit(p.returncode)
+print("OBJ",obj.stat().st_size,flush=True)
+lines=subprocess.run(["ninja","-C",str(build),"-t","commands","libr3"],
+                     capture_output=True,text=True,check=True).stdout.strip().splitlines()
+link=lines[-1]
+assert link.startswith(": && ") and link.endswith(" && :"),link[:140]
+parts=shlex.split(link[5:-5])
+count=0
+so=root/"kernels/libr3.so"
+for i,a in enumerate(parts):
+    if a=="-o":parts[i+1]=str(so)
+    elif a.endswith("CMakeFiles/libr3.dir/units/r4d_gemm_fp8a8.hip.o"):
+        parts[i]=str(obj);count+=1
+assert count==1,count
+print("RUM15 linking changed ONE Kpar object with rest of proven gfx1100 plugin",flush=True)
+p=subprocess.run(parts,cwd=build,capture_output=True,text=True)
+if p.returncode:
+    print("LINK FAILURE",p.stdout[-2000:],p.stderr[-8000:],flush=True)
+    raise SystemExit(p.returncode)
+print("RUM15 gfx1100 OPTIMIZED PLUGIN",so,so.stat().st_size,
+      hashlib.sha256(so.read_bytes()).hexdigest(),flush=True)

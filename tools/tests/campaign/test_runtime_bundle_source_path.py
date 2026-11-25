@@ -79,12 +79,14 @@ class BuildRuntimeTests(unittest.TestCase):
                     if src == str(declared["libr3"].root):
                         self.assertIn("-DR3_ONLY=", cmd)
                     _cache(tree, Path(src))
-                    for output in comp.outputs if src == str(comp.root) else ():
-                        (tree / Path(output).name).write_text("x", encoding="utf-8")
                     for other_name, other in declared.items():
                         if other.root == Path(src):
                             for output in other.outputs:
-                                (tree / Path(output).name).write_text("x", encoding="utf-8")
+                                target = (tree / "radiance_home" / output
+                                          if output.startswith("kernels/") or other_name == "ngram-helper"
+                                          else tree / output)
+                                target.parent.mkdir(parents=True, exist_ok=True)
+                                target.write_text("x", encoding="utf-8")
 
             platform = campaign_config.Platform(name="p", targets=(), options=(), stack="s", sdk=None, sdk_root=None)
             with mock.patch.object(rb, "rocm_configure_options", return_value={}):
@@ -99,7 +101,7 @@ class BuildRuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root, build = Path(tmp) / "src", Path(tmp) / "build"
             declared = components.load_all(paths.REPO_ROOT, "radiance")
-            name, comp = sorted(declared.items())[0]
+            name, comp = "ngram-helper", declared["ngram-helper"]
             platform = campaign_config.Platform(name="p", targets=(), options=(), stack="s", sdk=None, sdk_root=None)
 
             def runner(cmd: list[str], cwd: Path) -> None:
@@ -107,13 +109,23 @@ class BuildRuntimeTests(unittest.TestCase):
                     tree = Path(cmd[cmd.index("-B") + 1])
                     _cache(tree, Path(cmd[2]))
                     for output in comp.outputs:
-                        (tree / Path(output).name).write_text("current")
-                    stale = tree / "stale"
-                    stale.mkdir()
-                    (stale / Path(comp.outputs[0]).name).write_text("old")
+                        target = tree / "radiance_home" / output
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text("current")
+                    # Old ngram CMake emitted this unqualified basename before
+                    # copying it. It must not be selected over the real output.
+                    (tree / "libr3_ngram_helper.so").write_text("old")
+                    if ambiguous:
+                        target = tree / comp.outputs[0]
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_text("conflicting")
 
+            ambiguous = False
             with mock.patch.object(rb.components, "load_all", return_value={name: comp}), \
                     mock.patch.object(rb, "rocm_configure_options", return_value={}):
+                rb.build_runtime("radiance", source_root=root, build_dir=build, platform=platform, runner=runner)
+                self.assertEqual("current", (build / "radiance_home" / comp.outputs[1]).read_text())
+                ambiguous = True
                 with self.assertRaisesRegex(rb.RuntimeBundleError, "ambiguous outputs"):
                     rb.build_runtime("radiance", source_root=root, build_dir=build, platform=platform, runner=runner)
 

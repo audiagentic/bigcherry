@@ -296,6 +296,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-25 implementation: runtime_bundle rejects duplicate declared component destinations and ambiguous basename matches instead of picking first sorted match. Uses existing declared outputs and build dirs; still single-match discovery, no new output registry. Existing mock-runtime test proves duplicate and ambiguous refusal. Production R3_ONLY reset and temporary release-only ccache bypass as BU03. 41 selected tests passed; full hosted CI and actual release remain unverified.
 
+PR #1574 first hosted integrated build reached ngram-helper packaging then rejected its intentional root-level library plus POST_BUILD runtime copy. Corrected the helper CMake target to emit directly under RAD_PLUGIN_OUT/helpers and select only the existing runtime-home or explicit component-relative output locations, not recursive basenames; duplicate declared destinations and two valid candidate locations still refuse. 75 offline tests passed including updated bump-gate fixtures and an old helper basename fixture. Actual ROCm CMake configuration generated direct helper and host plugin link targets. Full corrected CI required before merge.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -332,3 +334,4 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-25T04:30:56.056571+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:21:19.232802+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:33:01.183505+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T08:40:51.708103+00:00 (updated-by): Updated: section:notes

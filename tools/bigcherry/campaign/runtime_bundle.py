@@ -122,7 +122,11 @@ def build_runtime(
                 *(f"-D{key}={value}" for key, value in sorted(options.items()))], source_root)
         runner(["cmake", "--build", str(component_build), "-j"], source_root)
         for output in component.outputs:
-            produced = sorted(path for path in component_build.rglob(Path(output).name) if path.is_file())
+            # rad_add_plugin emits into the component's runtime home; the
+            # serving and worker executables emit into bin/ or helpers/.
+            # Ignore unrelated/stale basenames elsewhere in the build tree.
+            produced = [path for path in (component_build / layout.runtime_home / output,
+                                          component_build / output) if path.is_file()]
             if not produced:
                 raise RuntimeBundleError(f"component {name} did not produce {output}")
             if len(produced) != 1:

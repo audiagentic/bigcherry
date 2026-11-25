@@ -75,6 +75,10 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite. Keep existing voltage/clock/cap capability; use existing qualification and actual settings/readback, not extra security machinery. Paired undervolt research and any default promotion remain separate.
 
+docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25): main.cpp constructs ManifestPower and session.cpp:1213–1307 admits power through Hooks.admit_power before any measuring child, including carried plan path. Keep lifecycle ordering and power_transaction implementation. Replace ManifestPower::begin(path,use)/verify_serving(path) and writer-derived power with existing typed PowerPlan selected once from YAML/actual BDFs; verify same effective settings on final launch, no reapply on host-pool convergence/cache hit. Fix stock-only s10_inputs.cpp and role-keyed mixed TP resolver in this extraction, not by extending manifest. Use real probe/qualification and exact readback, retain allow-power-apply and verified lease/children-exit; preflight inspector is device-free. One shared min-cap test with PWR10, no new power framework.
+
+2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. Current pin is sufficient: use existing owner-selected BDFs and direct typed PowerPlan before native measure/final helpers and Engine. No coupling to upcoming Fleet telemetry/NUMA/queue settings. Restore qualified min-cap foreground first using existing PWR10 shared run, retain existing supported clock/voltage and explicit apply/lease/restore; verify settings once and before final, no reapply on measurement convergence. No speculative power or queue tuning.
+
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
@@ -121,3 +125,6 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - RV4662
 - 2026-11-25T03:28:39.913911+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T04:30:48.155358+00:00 (updated-by): Updated: section:validation, section:notes
+- RV4675
+- 2026-11-25T05:41:53.148203+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:53:58.285137+00:00 (updated-by): Updated: section:notes
