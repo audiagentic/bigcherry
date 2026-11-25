@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.74.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.73.0...bc-platform-1.74.0) (2026-11-25)
+
+
+### New and changed
+
+* **serving:** x-bigcherry.power.profile selects a profile of one power-profiles.yaml; --power-profile is removed ([#1622](https://github.com/audiagentic/bigcherry/issues/1622)) ([ef36976](https://github.com/audiagentic/bigcherry/commit/ef369769d6ff160421246fed18605d9b091976e4))
+
 ## [1.73.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.72.0...bc-platform-1.73.0) (2026-11-25)
 
 
