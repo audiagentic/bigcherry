@@ -49,7 +49,7 @@ C-state residency and package power recorded; any setting change has an A/B with
 
 ## Acceptance Criteria
 
-
+Current native CPU affinity and EPP/idle residency verified, phase energy and throughput; one-variable authorized host experiments with original-state restoration and no quality/build/inference regression. No implicit CPU writes from GPU lease.
 
 ## Notes
 
@@ -63,6 +63,8 @@ Depends on PWR01 for the baseline; most useful after RAD25.
 
 RECONCILED 2026-11-10 (gateway audit): the automatic efficiency-core placement of the helpers' small-lane threads is DELIVERED and measured (PR #448: ~30 W lower CPU package power at unchanged speed; component description ~77 -> 42 W decode, 83 -> 52 W prefill; moe-remote worker_cpu.h, helper_common.cpu.affinity = auto). The experiment-register line saying there is no result conflates it with the whole-process pinning experiment. Still open here: intel_pstate EPP/governor (this host: powersave + balance_performance, the engine's startup report flags the governor), C-state residency, and the remaining CPU busy waits. Engine-side E-core avoidance (runs/rad49-engine-pcores) showed no consistent speed gain and is unshipped.
 
+2026-11-25: keep delivered helper small-lane E-core placement #448; measure actual native affinity and remaining CPU EPP/package residency/RAPL under matched idle/decode/prefill. Extend research to supported package power limits PL1/PL2 and build energy if host owner authorizes; host-wide controller/lease separate from GPU policy. RAD25/26 own busy-wait implementation. CPU remains observe-only in GPU transaction.
+
 ## Change Log
 
 - 2026-10-27T02:15:48.543469+00:00 (created-by): Created by agent
@@ -70,3 +72,8 @@ RECONCILED 2026-11-10 (gateway audit): the automatic efficiency-core placement o
 - 2026-10-27T11:53:12.335444+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T06:15:53.149502+00:00 (updated-by): Updated: section:notes
 - 2026-11-10T13:13:11.280087+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4583
+- 2026-11-25T01:05:40.857271+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

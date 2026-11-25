@@ -59,6 +59,8 @@ Owner-run (root). Evidence: $BC_WORK_ROOT/runs/r9700-idle/result.txt; GPT R9700 
 
 **2026-11-14 check requested.** With the gfxoff kernel, measure first-kernel latency of a gfx12 compute queue after 0.1 / 0.5 / 1 / 2 / 5 ms idle while a second queue of the same process is busy (the TP3 pipelined prefill's shape), against the stock kernel, before the kernel is treated as latency-neutral for serving (see HL02 step 7).
 
+2026-11-25: measured GFX12 GFXOFF gain 20.6->15 W is historical, not board deep idle proof. Current read-only snapshot active D0 with runtime_usage=0 on four cards, cause unknown. Keep R9700 GFXOFF/firmware/BACO causal investigation here, cross-reference BHK01 protected kernel recovery, latency and long-running gates; all-device platform idle separate. No force ASPM, firmware or kernel changes without maintenance approval. Owner disabled ASPM after suspected issues. Native diagnostics remain advisory.
+
 ## Update 2026-11-10 (owner brief: R9700 idle power next investigation)
 
 **Root cause (upstream, found after the 2026-11-02 firmware plan).** The 3% phantom activity and +4 W are not a firmware defect that MES 0x8b cures. The in-tree amdgpu driver disables GFXOFF whenever a user-mode compute queue exists on GFX12 (`amdgpu_amdkfd_set_compute_idle`, the `IP_VERSION_MAJ(GC_HWIP)==12` clause, added by 2affe2bbc997 as a workaround for an OpenCL test failure), and `hipStreamCreate` leaves a queue resident, so the graphics block never powers down while a HIP process holds the card. AMD fixed it in `6a1dbb006056` "drm/amdgpu: re-enable GFXOFF for compute on GFX12" (author date 2026-10-21, committed 2026-10-27, one hunk in `drivers/gpu/drm/amd/amdgpu/amdgpu_amdkfd.c` removing the `== 12` clause; no `Cc: stable`). Upstream measurement on gfx1200: VDDGFX 695 mV -> 35 mV, load 2% -> 0%, about -2 W. Upstream report ROCm/TheRock#9245 (open, "fix submitted"): MES 0x8b, 0x93 and kernels 7.3.0-rc3/rc6 (drm-tip 2026-10-06) did NOT remove the 3%; only the driver change does. This corrects FINDINGS ("reported fixed in MES 0x8b").
@@ -123,3 +125,8 @@ Live shell launcher hook: `tools/lab/radiance/launch-flashnext-best.sh` captures
 
 `runs/pwr-sclk` changed **only the two XTX SCLK/offset controls**; the R9700 engine and 6900 XT tail were not tuned, capped or undervolted. Their observed `pwr-phases@1` watts may vary with workload despite unchanged controls. The R9700's existing GFXOFF idle-kernel finding is **independent** of these XTX savings and must not be included as an XTX profile or an energy-attribution claim. The R9700 `pwr-phases` stock decode/prefill medians were 193/212 W (other stock repeats 202/202 and 201/203 W); some XTX sweep prefill readings were as high as 229 W, without any R9700 power modification. Next R9700 experiment is a **separate owner-leased** cap sweep at/near its **reported minimum 210 W**, after fresh per-BDF capability/readback, phase-separated decode and prefill speed/J-token/identity gates and restoration. It is **not validated** here. Details: `docs/reference/power-tuning-evidence-2026-11.md` “XTX SCLK × VDDGFX sweep”.
 - 2026-11-14T06:59:50.980490+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4584
+- 2026-11-25T01:06:10.693840+00:00 (updated-by): Updated: section:notes

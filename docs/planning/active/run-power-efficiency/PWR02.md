@@ -49,7 +49,7 @@ Curves recorded; any adopted cap has an A/B showing the accepted speed cost and 
 
 ## Acceptance Criteria
 
-
+Current dense and relevant MoE workloads measured separately with pinned build/layout and matched phase controls. Per-board Pareto frontier of actual energy/token, throughput, latency, peak, thermal and quality; repeat and soak before promotion; stable output and exact restore. Negative results remain. No automatic historical undervolt; no dynamic phase control until separate quiescent design. PWR10 candidate evidence referenced, not duplicated.
 
 ## Notes
 
@@ -65,6 +65,8 @@ Reversible host setting; needs explicit hardware authorisation and sudo. Owner r
 
 RECONCILED 2026-11-10 (gateway audit): DONE: the XTX sweeps and one 40-minute soak at -125 mV (53 decode responses with matching text, no amdgpu faults or resets): ~24 W per XTX saved in decode with no measured throughput penalty; the XTX minimum board cap sits above the workload's draw (the cap is ineffective); a 2,500 MHz clock limit cut two-XTX power by ~120 W for a 2-3% speed loss (a trade, not free). Evidence caveats: J/token came from summed median watts and throughput, not synchronised energy integration; the October 27 figure included the CPU package (~590 W decode) and the October 29 one was GPU-only (~498 W): not comparable. STILL OPEN: per-card qualification (each XTX and the R9700 separately; -125 mV is evidence for the tested cards only, not a default), the R9700 sweep, quality/identity gates per operating point, named profiles (PWR04).
 
+2026-11-25 update: historical MoE cap-ineffective claim is workload-specific. Dense TP3 2020.11.4 now binds XTX 272 W cap (PWR10). The R9700 300/250/210/300 W discovery sweep is recorded in docs/reference/power-tuning-evidence-2026-11.md; prefill watts 223/215/205/218 with nearly unchanged speed, not independent production qualification. November uncapped -125 failed, paired SCLK/UV discovery saved power; retain UV research and existing control. PWR10 owns immediate min-cap/clock qualification; PWR02 owns broader per-board efficiency frontier (MCLK, R9700 offset once backend exists, gfx1030 real role, paired clock/voltage/cap, profile/DPM only after reversible backend). Reuse PWR01 phase energy and PWR07 sensors, no duplicate runs. No VBIOS/firmware limit bypass.
+
 ## Change Log
 
 - 2026-10-27T02:15:44.041717+00:00 (created-by): Created by agent
@@ -79,7 +81,6 @@ RECONCILED 2026-11-10 (gateway audit): DONE: the XTX sweeps and one 40-minute so
 The 2026-10-27 notes recommending -125 mV as calibrated describe **historical** RX 7900 XTX evidence, not a presently valid setting. In `runs/xtx-undervolt-ab/`, 2026-11-11 current Radiance 1.17.0, 7.0.13-gfxoff, four-GPU/MTP3 **C1/D1/D2/C2** sustained ABBA found ~190–191 W stock vs ~192–196 W at -125 mV per XTX, decode 325–326 tok/s in both; **no power saving**. Short ABBA A1/B1/B2/A2 agreed. Stress suggests boost converted voltage headroom to +243 MHz and +16 W, not a lower board watt reading. The October XTX cap minimum was 272 W and decode/prefill drew 154–198 W; **the October cards were not board-power-capped**. A cap sweep is conditional on a measured near-cap serving phase.
 
 **Rank and dependencies (all unvalidated for the current build):** 0) instrumented, phase-isolated stock baseline (both decode modes, 8K prefill, idle; current build; cap/thermal/DPM/SCLK/voltage readback); 1) reversible 2900/2800/2700 MHz OD_SCLK max candidates, 0 mV, one arm/lease; 2) the *same* speed-safe SCLK with -125 mV vs SCLK alone; 3) cap 290/280/272 W only if current min/max, real cap readback and near-cap prefill justify; 4) DPM/performance-level read-only diagnostic (write path lacks PowerTransaction support); 5) per-phase static comparison before any dynamic switching design. SCLK values and combinations are candidate arms, **not approved production settings**. Each needs current-build ABBA with separate decode and prefill no-regression + integrated J/token gates. Exact low-level knobs, lease pattern and pass/fail are in `docs/reference/power-tuning-evidence-2026-11.md`, “Forensic XTX October-to-November reconciliation”. No power profile should auto-select a historic offset.
-
 
 ## Lead addendum: stock-power shift first, October-harness recheck before cap/clock sweeps (2026-11-11)
 
@@ -98,3 +99,8 @@ At 2700 MHz, comparing SCLK-only with the same SCLK plus -125 mV: per-XTX decode
 For an *illustrative* whole-layout **GPU-only** J/token proxy, `pwr-phases` summed per-BDF median decode W / same-run decode tok/s and separately prefill W / same-run prefill tok/s: stock repeats 6.838/0.233, 6.002/0.250, 5.900/0.252 (decode/prefill); SCLK 2700 only 5.568/0.208; 2700/-125 5.048/0.191. These are **not integrated joules**, lack CPU energy and must never be used with 44K-doc or six-stream speed measured in another benchmark. The saturating XTX-03 CSV confirms that without an SCLK cap, -125 mV raised clock by ~247 MHz and power by 16 W; a clock cap allowed a voltage reduction. **Offset alone remains withdrawn.** The new `xtx-cap2700-uv125` name is candidate-only; 40-minute soak, output identity, host amdgpu log check, per-device stable ABBA and safe restore remain **pending**.
 
 Next: evaluate XTX OD_MCLK within its reported 97–1250 MHz supported range (per-BDF re-probe; memory-bound decode), and observe then test pp_power_profile_mode BOOTUP_DEFAULT/COMPUTE/POWER_SAVING only with rollback coverage. R9700 210 W minimum-cap trial is still separate, not executed by this XTX sweep. No new XTX/R9700/6900 XT setting is production-validated.
+
+## Reviews
+
+- RV4581
+- 2026-11-25T01:04:39.069746+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

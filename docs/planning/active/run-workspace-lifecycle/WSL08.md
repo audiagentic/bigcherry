@@ -51,11 +51,13 @@ agent-lease status lists launcher-started servers as leased for the run; a secon
 
 No GPU process started by the launcher is ever reported outside a lease, and no other agent can acquire the lease while one runs.
 
+Power-specific cases: detached start cannot inherit a short-lived wrapper lease and later mutate; two owners contend, owner killed while children exist, expiry while serving, restore only after independently verified exit with authorized recovery; stale journal blocks new writes. Foreground stop/restore before lease release remains intact. Cross-link RSC02/PWR08.
+
 ## Notes
 
 Source: gateway prior-work audit 2026-11-10 (missing item 1) and power review (defect 1). Related PWR04, RHP18.
 
-
+2026-11-25 native power recovery dependency: RSC02 owns verified child-exit restoration, this item owns detached start lease lifetime, expiry and crash ownership. Foreground bc-serve serve in verified lease is first supported hardware apply path. Do not enable detached power application until lease persists through owner/children, verified stop/restore, and expiry/kill recovery with new mutation fenced; no promise SIGKILL auto restore without real proof.
 
 ## Status 2026-11-19
 
@@ -65,3 +67,8 @@ The launcher that detached serving processes is retired (S16 #1131); `bc-serve s
 
 - 2026-11-10T13:12:48.345318+00:00 (created-by): Created by agent
 - 2026-11-19T07:38:29.670825+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4585
+- 2026-11-25T01:06:41.047513+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

@@ -195,7 +195,7 @@ Target-version coordination (RV4225, November 18): RUM04 owns migration to upstr
 
 Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPLEMENTATION-HANDOFF.md. Separate stable selected topology scope from fresh room checks. Keep streaming hashing and operation-scoped reuse in separate slices, with a generation mutation refusal test. Review the stable projection and digest version before changing the reader/writer.
 
-
+2026-11-25 power recovery: the historical TOML model/variant design above is superseded by RUM04 and docs/design/radiance-native-config-x-bigcherry.md. Keep one native YAML per deployment; machine facts/power/calibration stay in existing site/profile authority. PWR08 owns power resolution and effective cache identity, RSC02 native lifecycle. Do not add a new authored manifest, model catalogue or native engine option mirror.
 
 ## Status 2026-11-19
 
@@ -214,3 +214,5 @@ Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml`
 - 2026-11-18T03:40:48.591484+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:37:15.960699+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:37:55.296359+00:00 (state-transition): State: pending → in_progress
+- RV4587
+- 2026-11-25T01:09:27.855214+00:00 (updated-by): Updated: section:notes
