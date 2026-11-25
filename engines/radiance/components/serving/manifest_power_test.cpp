@@ -103,6 +103,13 @@ class Telemetry final : public ps::Sensor {
         return window;
     }
 };
+// The S10 output as the owner has it: strictly read once, then handed to power as a typed value.
+v2::Manifest typed(const fs::path& path) {
+    const auto loaded = v2::load_manifest(path, v2::PlanUse::serving);
+    if (!loaded)
+        throw std::runtime_error("fixture manifest refused: " + v2::render_human("fixture", loaded.error()));
+    return loaded.value();
+}
 } // namespace
 
 int main() {
@@ -113,7 +120,7 @@ int main() {
         ps::DiskRecords records(t.root / "journals", t.root / "receipts");
         ss::ManifestPower bridge(hardware, records, sensor, [] { return false; }, false);
         const fs::path original = fs::path(BC_CONTRACT_V2_DOCS_DIR) / "example.flashnext-4gpu.json";
-        const auto admission = bridge.begin(original, v2::PlanUse::serving);
+        const auto admission = bridge.begin(typed(original), v2::PlanUse::serving);
         expect(!admission, "valid strict-v2 manifest with stock observe must admit without a GPU lease");
         expect(hardware.reads == 4 && hardware.writes == 0,
                "observe inspects all four ordered engine/helper BDFs without hardware writes");
@@ -126,7 +133,7 @@ int main() {
         // RED P0-2: a second owner execution of the same original bytes
         // must not overwrite the first execution's durable power receipt.
         ss::ManifestPower replay(hardware, records, sensor, [] { return false; }, false);
-        expect(!replay.begin(original, v2::PlanUse::serving),
+        expect(!replay.begin(typed(original), v2::PlanUse::serving),
                "second owner must admit identical immutable bytes");
         expect(!replay.verify_serving(original), "second owner has the same authenticated power policy");
         expect(!replay.finish(), "second owner finish");
@@ -135,7 +142,7 @@ int main() {
             if (entry.is_regular_file())
                 ++receipts;
         expect(receipts == 2U, "two observe owner executions require separate durable receipts");
-        expect(bridge.begin(original, v2::PlanUse::serving).has_value(),
+        expect(bridge.begin(typed(original), v2::PlanUse::serving).has_value(),
                "power admission must never be repeated for a run");
         // P0-2: the same strict authenticated apply manifest must admit
         // successive owner executions with distinct durable journal/receipt
@@ -163,7 +170,7 @@ int main() {
         std::string first_apply_id;
         {
             ss::ManifestPower apply(hardware, records, sensor, [] { return true; }, true);
-            const auto status = apply.begin(apply_path, v2::PlanUse::serving);
+            const auto status = apply.begin(typed(apply_path), v2::PlanUse::serving);
             if (status)
                 throw std::runtime_error("injected real apply refused: " + v2::render_human("apply", *status));
             const auto& applied = apply.execution();
@@ -181,14 +188,14 @@ int main() {
         expect(unresolved && unresolved.value().size() == 1,
                "real apply crash must leave exactly one recoverable journal");
         ss::ManifestPower blocked(hardware, records, sensor, [] { return true; }, true);
-        expect(blocked.begin(apply_path, v2::PlanUse::serving).has_value(),
+        expect(blocked.begin(typed(apply_path), v2::PlanUse::serving).has_value(),
                "fresh owner must refuse while earlier apply journal is unresolved");
         expect(!ps::recover(
                    unresolved.value().at(0), hardware, records, [] { return true; }, [] { return true; }),
                "real typed crash recovery must restore the prior controls");
         expect(hardware.board_cap == 100000000, "crashed apply's original board cap must be restored");
         ss::ManifestPower apply_replay(hardware, records, sensor, [] { return true; }, true);
-        const auto again = apply_replay.begin(apply_path, v2::PlanUse::serving);
+        const auto again = apply_replay.begin(typed(apply_path), v2::PlanUse::serving);
         if (again)
             throw std::runtime_error("second apply after recovery refused: " +
                                      v2::render_human("apply-replay", *again));

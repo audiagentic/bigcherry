@@ -319,7 +319,7 @@ inline NativeSessionPlan native_helper_session_inputs(const fs::path& host, cons
 inline serving::session::Hooks standalone_plan_hooks() {
     serving::session::Hooks hooks;
     hooks.wait = [](std::chrono::milliseconds) { return true; };
-    hooks.admit_power = [](const fs::path&, serving::v2::PlanUse) { return serving::v2::Status{}; };
+    hooks.admit_power = [](const fs::path&, const serving::v2::Manifest&, serving::v2::PlanUse) { return serving::v2::Status{}; };
     hooks.selected_segment = [](const std::string&) {};
     return hooks;
 }

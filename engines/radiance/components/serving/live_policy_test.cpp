@@ -355,7 +355,7 @@ static void derive_says_why() {
     sv::MeasuredPlan measured;
     measured.key_inputs = Json{{"engine_build", "x"}, {"layout", "flashnext-4gpu"}};
     const Json policy_spec = {
-        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'a')}}}}},
+        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'a')}}}, {"power", {{"mode", "observe"}, {"devices", Json::array()}}}}},
         {"intent", {{"layout", "flashnext-4gpu"},
                     {"service", {{"objective", "balanced"}}}, {"power", {{"profile", "stock"}}}}},
         {"facts", {{"gpus", Json::array({

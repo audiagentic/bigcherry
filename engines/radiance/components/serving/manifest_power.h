@@ -22,7 +22,8 @@ class ManifestPower final {
   public:
     ManifestPower(power::Hardware& hardware, power::Records& records, power::Sensor& sensor,
                   power::SessionPower::Predicate lease, bool allow_apply, std::string workload = {});
-    v2::Status begin(const std::filesystem::path& manifest, v2::PlanUse use);
+    // `plan` is the S10 output (a strictly read, typed manifest); its digest is a record in the receipt, not an input.
+    v2::Status begin(const v2::Manifest& plan, v2::PlanUse use);
     v2::Status verify_serving(const std::filesystem::path& manifest);
     v2::Status capture(power::WindowPhase phase);
     void children_verified() noexcept;
