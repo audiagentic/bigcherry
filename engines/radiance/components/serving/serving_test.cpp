@@ -2537,6 +2537,63 @@ void helper_vram_owner_graph(Fixture& t) {
         throw std::runtime_error("native measured-writer stop failed to clean up: " + interrupted_record.dump());
 }
 
+
+// RSC05: the resolver's card selection is by architecture in group order, engine and helpers never share a card, a
+// missing card is refused naming its architecture, and the child visibility follows the selected order.
+void card_selection(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const auto bdfs_of = [](const Json& cards) { return cards.get<std::vector<std::string>>(); };
+    const auto arch_of = [&](const std::string& bdf) {
+        for (const auto& g : t.facts.at("gpus"))
+            if (g.at("bdf") == bdf) return g.at("arch").get<std::string>();
+        return std::string();
+    };
+    auto opts = t.standard();
+    bc::serving::fixture::use(opts, "qwen27b-tp3");
+    const auto forward = tresolve(opts, t.facts);
+    const auto engine = bdfs_of(forward.values.at("layout").at("engine_cards"));
+    assert(engine.size() == 3 && arch_of(engine[0]) == "gfx1100" && arch_of(engine[1]) == "gfx1100" &&
+           arch_of(engine[2]) == "gfx1201" && engine[0] != engine[1]);
+    // The rank groups reversed: the card of the other architecture is rank 0, the two boards of one architecture keep
+    // their inventory order.
+    auto reversed = opts;
+    std::reverse(reversed.inspected->x.ranks.begin(), reversed.inspected->x.ranks.end());
+    const auto back = bdfs_of(tresolve(reversed, t.facts).values.at("layout").at("engine_cards"));
+    assert(back.size() == 3 && back[0] == engine[2] && back[1] == engine[0] && back[2] == engine[1]);
+    const auto visible = ss::engine_visibility("/runtime", back, t.facts);
+    std::string rocr;
+    for (size_t i = 0; i < back.size(); ++i)
+        for (const auto& g : t.facts.at("gpus"))
+            if (g.at("bdf") == back[i]) rocr += (i ? "," : "") + std::to_string(g.at("hip_ordinal").get<int64_t>());
+    assert(visible.at("ROCR_VISIBLE_DEVICES") == rocr && visible.at("HIP_VISIBLE_DEVICES") == "0,1,2");
+    assert(visible.at("ROCR_VISIBLE_DEVICES") != ss::engine_visibility("/runtime", engine, t.facts).at("ROCR_VISIBLE_DEVICES"));
+    // A card that is not in the inventory (it vanished after selection) is refused, naming it.
+    Json without = t.facts;
+    Json kept = Json::array();
+    for (const auto& g : t.facts.at("gpus"))
+        if (g.at("bdf") != engine[2]) kept.push_back(g);
+    without["gpus"] = kept;
+    try {
+        (void)ss::engine_visibility("/runtime", engine, without);
+        assert(false && "a vanished card was accepted");
+    } catch (const bc::serving::session::PlanFailed& e) {
+        assert(std::string(e.what()).find(engine[2]) != std::string::npos);
+    }
+    // An inventory without the gfx1201 card refuses the layout, naming the architecture and the counts.
+    try {
+        (void)tresolve(opts, without);
+        assert(false && "a layout with a missing card resolved");
+    } catch (const std::runtime_error& e) {
+        assert(std::string(e.what()).find("layout: missing gfx1201 card(s): need 1, found 0") != std::string::npos);
+    }
+    // Engine and helpers are disjoint.
+    auto helpers = t.standard();
+    const auto with_helpers = tresolve(helpers, t.facts);
+    const auto hel = with_helpers.values.at("layout");
+    for (const auto& h : hel.value("helper_cards", Json::array()))
+        for (const auto& e : hel.at("engine_cards")) assert(h != e);
+}
+
 int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
@@ -2552,6 +2609,7 @@ int main(int argc, char** argv) {
         detection(t);
         detection_limits(t);
         unknown_keys(t);
+        card_selection(t);
         type_range_required(t);
         precedence_and_caps(t);
         provenance_hash_and_parity(t);

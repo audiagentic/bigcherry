@@ -323,6 +323,9 @@ NativeWriterInput read_native_writer_input(int fd);
  * root. `native_environment` supplies the same explicit configuration environment selected for the later child;
  * it is never inferred from a mutable authored path. A supplied root fd is borrowed from the planner and checked
  * against the recorded path before and after the child. The inspector is owner-tracked and reaped before return. */
+// The one ordered BDF -> child visibility mapping of an engine: ROCR_VISIBLE_DEVICES lists each rank's HIP ordinal in
+// rank order, HIP_VISIBLE_DEVICES is 0..n-1. A BDF absent from the inventory is refused naming it.
+Env engine_visibility(const std::filesystem::path& home, const std::vector<std::string>& cards, const Json& facts);
 NativeConfigInspection inspect_native_config(const std::filesystem::path& engine,
                                              const NativeConfigSnapshot& snapshot,
                                              const Env& complete_environment, const Hooks& hooks = {},

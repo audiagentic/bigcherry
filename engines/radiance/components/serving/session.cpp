@@ -2994,7 +2994,7 @@ static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
                                                       fs::absolute(sys_root));
 }
 
-static Env engine_visibility(const fs::path& home, const std::vector<std::string>& cards, const Json& facts) {
+Env engine_visibility(const fs::path& home, const std::vector<std::string>& cards, const Json& facts) {
     std::string rocr, hip;
     for (size_t i = 0; i < cards.size(); ++i) {
         const auto& inventory = facts.at("gpus");
@@ -3228,22 +3228,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     }
 
     // Rank order is the resolver's card order; the process sees its cards as HIP devices 0..n-1.
-    std::string rocr, hip;
     const Json& cards = v.at("layout").at("engine_cards");
-    for (size_t i = 0; i < cards.size(); ++i) {
-        const Json* gpu = nullptr;
-        for (const Json& g : facts.at("gpus"))
-            if (g.at("bdf") == cards[i])
-                gpu = &g;
-        if (gpu == nullptr)
-            throw PlanFailed("serve: engine card " + cards[i].get<std::string>() + " is not in the inventory");
-        rocr += (i != 0 ? "," : "") + std::to_string(gpu->at("hip_ordinal").get<int64_t>());
-        hip += (i != 0 ? "," : "") + std::to_string(i);
-    }
+    const Env visibility = engine_visibility(home, cards.get<std::vector<std::string>>(), facts);
     EngineStart out;
     out.port = int(v.at("engine").at("port").get<int64_t>());
-    out.runtime = {
-        {"RADIANCE_HOME", home.string()}, {"ROCR_VISIBLE_DEVICES", rocr}, {"HIP_VISIBLE_DEVICES", hip}};
+    out.runtime = visibility;
     out.summary = {{"config", name},
                    {"source", layouts.at("source").value(name, "")},
                    {"model", v.at("engine").at("model")},
