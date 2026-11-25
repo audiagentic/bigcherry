@@ -280,6 +280,8 @@ Progress (2026-11-17): phase 1 merged in #1016 with engine-scoped binary payload
 
 Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replaces the pair design of #1019): one Python-free engine asset of binaries and data, start-up through bc-serve, tag-bound digest trust, current and previous release kept, gate table mapping each remaining Python or shell behaviour to its RSC02 step. Rewrite lanes for RSC02 step 2 (helpers and resource derivation) and step 4 (power transaction) are in review in C++ (a rewrite from requirements, the Python only a golden oracle); step 3, step 5 and the step 6 hardware A/B and retirement follow. Phase 2 build work is blocked until those merge.
 
+2026-11-25 power parity follow-up: verify installed native bundle can resolve authorized named power policy from existing host/site source and registry with same owner, no Python runtime or private BDF in release. Add card-free installed fresh/replay test and link actual leased nonstock apply/restore evidence from PWR10/RSC02. Existing generated v3 contract and native YAML remain unchanged, no separate config format.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -302,3 +304,5 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 - 2026-11-22T10:47:57.333866+00:00 (updated-by): Updated: section:detailed_solution
 - RV4553
 - 2026-11-22T12:18:04.798791+00:00 (updated-by): Updated: section:detailed_solution
+- RV4586
+- 2026-11-25T01:07:16.136319+00:00 (updated-by): Updated: section:notes

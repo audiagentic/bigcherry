@@ -69,6 +69,8 @@ All items in Validation; RSC01-RSC10 and PWR06-PWR09 states updated from code ev
 
 **Transferred RSC10 acceptance (independent gate):** RSC11 S5/S11 measured host ledger margin recovery: obtain engine_bringup.cpp host-room refusal via stable structured exit with MemAvailable, needed-to-allocate, headroom and shortfall, never parse an error string or retry after partial weight load. Before first engine weight load, have only the native session owner write a new manifest whose calibration cache provenance raises host_ledger_margin.mib by observed needed-minus-available, preserve the source plan key and all non-resource fields (only resources.host.checkpoint_slots, spec.calibration and manifest digest can differ), retry once, then fail with both figures if still rejected. Record actual available/needed/spare and measured shortfall against the plan-cache entry; use a window max to refit both upward/downward, retain only labeled seed floor for unseen layout. Acceptance: card-free fake refused/success and double refusal tests; hardware deliberately zero-margin first refusal and one successful measured retry followed by three 6-stream soaks; margin in force visible in spec.calibration with seed/cache identity and evidence. A successful bc-serve startup without this refusal/retry receipt is not completion. Keep RSC03 as the separate budget-sizing component; do not create second launcher, cache or handwritten margin.
 
+S17 close-out must explicitly map former launcher power feature (#895) and PWR04/PWR09 residual obligations (#1386, #1400) to verified native tests and actual nonstock receipts: selection, exact BDF settings, authorization, pre-measure apply, measured/replay equality, rollback/stop/restore and crash/expiry boundary. Retain RHP12 four-pair cohorts and release acceptance; initial S15 stock/greedy evidence does not qualify nonstock. Review former launcher flags/config inheritance, affinity, canary, diagnostics, cache and cleanup for other feature parity; file concrete discrepancies under existing owners, not speculative rewrites. Cross-reference completed RUM04/RUM09/RUM12 without reopening the native migration.
+
 ## Notes
 
 **Unpublished P1 prototype disposition (2026-11-13):** The original local `rad0014_plan_memory_v2_inputs` sidecar commit `006b7ce14` is preserved at GitHub `archive/rsc11-s13-p1-engine-native-20261113` and is **superseded, not merged**. Current `rad0011` already emits the authoritative post-rank-split rank-demand JSON consumed by native P1; the old three-field sidecar lacks `claimable_bytes` and `evidence` and has a different schema. No production or GPU testing is claimed for `rad0014`. See [unpublished branch reconciliation](../../../evidence/2026-11-13-unpublished-branch-reconciliation/README.md). Retain the active RSC11 S11/S13 admission and hardware gates.
@@ -77,6 +79,8 @@ All items in Validation; RSC01-RSC10 and PWR06-PWR09 states updated from code ev
 Lanes: engine (S1,S5), resolver/contract (S7,S8,S10; S9), power (S3,S4,S12), python serving/tooling (S2,S6,S11,S14), integration lead (S0,S13,S15,S16,S17). Supersedes the piecemeal RSC02/RSC04 sequencing.
 
 CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RSC04,RSC09,RSC10 These are uncompleted acceptance requirements, not new release/quality passes. Historical source plans remain available as superseded records. Keep legacy and blocked/no-route behavior fail closed; do not add parallel native control planes or tools.
+
+2026-11-25 S17 reconciliation: stock-only native S10 input and mixed-TP role-map restriction remain despite S13/S15/S16 and subsequent YAML migration. PWR08 owns restoration; RSC02 owns native transaction and transferred PWR09 acceptance; PWR07 observations, WSL08 detached lease, PWR10 real profile qualification, RSP01 installed release. No repeat manifest cutover or new format.
 
 ## Status 2026-11-19
 
@@ -159,3 +163,5 @@ runs remain lead-owned.
 - 2026-11-22T03:32:52.501052+00:00 (updated-by): Updated: section:notes
 - RV4510
 - 2026-11-22T10:35:22.894292+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- RV4579
+- 2026-11-25T01:03:40.126592+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

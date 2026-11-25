@@ -1,0 +1,38 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261125_011101_plan-native-power-recovery-and_3964",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR03.md",
+    "docs/planning/active/run-power-efficiency/PWR08.md",
+    "docs/planning/active/run-power-efficiency/PWR02.md",
+    "docs/planning/active/run-power-efficiency/PWR07.md",
+    "docs/planning/active/run-power-efficiency/PWR10.md",
+    "docs/planning/active/run-power-efficiency/PWR11.md",
+    "docs/planning/active/run-power-efficiency/PWR01.md",
+    "docs/planning/active/run-power-efficiency/PWR06.md",
+    "docs/planning/active/run-serving-configuration/RSC11.md",
+    "docs/planning/active/run-serving-configuration/RSC12.md",
+    "docs/planning/active/run-serving-configuration/RSC02.md",
+    "docs/planning/active/build-release-split/RSP01.md",
+    "docs/planning/active/run-workspace-lifecycle/WSL08.md"
+  ],
+  "plan-item-ids": [
+    "PWR01",
+    "PWR02",
+    "PWR03",
+    "PWR06",
+    "PWR07",
+    "PWR08",
+    "PWR10",
+    "PWR11",
+    "RSC02",
+    "RSC11",
+    "RSC12",
+    "WSL08",
+    "RSP01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reconcile native power policy resolution and lifecycle acceptance with existing plan ownership, preserve YAML and the existing contract, add separate host idle study. No runtime activation.",
+  "timestamp-utc": "2026-11-25T01:11:01.526146Z",
+  "user-summary-candidate": "Plan native power recovery and efficiency qualification"
+}

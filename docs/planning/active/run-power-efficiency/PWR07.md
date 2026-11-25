@@ -54,11 +54,15 @@ A start never fails because a power feature is absent; every run records its obs
 
 **Transferred PWR04 acceptance (independent gate):** Carry original PWR04 startup-host observability contract under the existing portable power probe/receipt: warn, do not fail, when optional configured power state differs from observed state or when the CPU package RAPL/energy read rule is unavailable; distinguish missing capability, unreadable sensor, permission and intentional observe-only. Every start still records source/BDF/CPU observations; no power writes in observe-only or unsupported-host paths and no false success from ambiguous cap=0. Use PWR07's existing read-only probe and receipt, never a second host check or implicit power apply.
 
+Native probe/receipt follow-up: use selected BDF and verified amdgpu hwmon name, exact units and current/min/max/default; 0/missing/unreadable/inconsistent cap is invalid, never a restore target or silently replaced by factory cap. Refuse mutations where original state cannot be safely restored. Distinguish unsupported, permission, invalid and unavailable observations; warn on optional missing RAPL/host mismatch, record actual readback, no fabricated stock. Record requested/admitted/effective/restore settings, firmware/kernel/driver, phase markers, actual clock/voltage and sensor identity; pair AMD-SMI and BDF hwmon in qualification, integrate energy with PWR01. Fake malformed/zero/ambiguous cap tests, read-only host smoke and actual native receipt validation. Probe and backend support for gfx1201 SCLK offset must be independently reviewed with RSC02 before enabling it; retain voltage/absolute SCLK/MCLK/cap controls.
+
 ## Notes
 
 Plan: gateway request req_main_8ad977841284 (power slice 1). Brief: runs/rad49-gpt-review/followups/POWER-PORTABILITY-PLAN-BRIEF.md. Parent PWR04.
 
 CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement is now owned here. PWR07 is the already deployed read-only CPU/GPU capability and receipt owner, and PWR04 explicitly delegates probe and warning work to it. Neither this transfer nor previous observational power results satisfy live device, rollback or v2 migration acceptance.
+
+2026-11-25 audit: native C++ transaction/probe and diagnostic hooks exist; normal receipts are stock/observe. Both XTXs have reported 0 W caps in historic receipts although later direct sysfs reads were 303 W. Root cause not established. session.cpp already labels zero_cap_suspect in one path; power_linux.cpp cap.current and power_records.cpp need independent audit. R9700 SCLK offset has no native reversible backend. PWR08 consumes typed fresh capability; RSC02 owns writes/restore.
 
 ## Change Log
 
@@ -96,3 +100,5 @@ For a **validating** `xtx-cap2700-uv125` profile, bind per-BDF selected OD max, 
 
 - RV4545
 - 2026-11-22T11:42:13.063598+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4577
+- 2026-11-25T01:02:37.422892+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
