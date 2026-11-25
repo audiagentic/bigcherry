@@ -25,6 +25,8 @@ Managed patches and native rewrites both transform the same upstream kernel text
 
 Design: docs/design/radiance-kernel-composition.md section 4 (S1 to S5).
 
+Integration: tools/bigcherry/patch/compose_check.py existing materializer/production_ids/gate1 and compile gates reused by release/pin_bump.py and engine_adapters/radiance_bump.py. Move authoritative rewrite gate to exact selected patched tree after coverage/materialization, before costly compile; pristine triage advisory only for transformed sources, retain pristine ABI/coupling checks. Exact target/source/experiment/patch order and digest, each supported composition, patch-created sources and missing/unselected package distinguished. Use compiler depfiles/canonical compile commands and actual host/device macros/includes/arch; changed indirect/generated headers and upstream-only changes invalidate dependents; unknown widens compile set. Follow RCS15 supported gfx11/gfx1030 providers, not forced gfx12 compilation. Gate1 ownership/alternative, Gate2 real host/device, Gate3 link/export/row selection and Gate4 correctness/resource/replay distinct. Structured pass/fail/skipped/unverified/not-applicable, required skipped cannot count as pass.
+
 ## Code Samples & Guidance
 
 
@@ -49,6 +51,8 @@ Small. Risk: the gate needs the bc patches applied first to avoid false failures
 
 Every managed patch set applies to the pinned source, every required anchor resolves under its declared variant, and every transformation has ownership and dependency metadata. Compile and link checks reject invalid declarations, duplicate definitions and symbol conflicts for both architectures before a lane build. No family is qualified until the affected and dependent kernels pass their correctness and resource gates.
 
+Actual pin-bump path (not only manual CLI) stops at correct composition before expensive lane on known collision, vanished/duplicate anchor, overlap/alternative failure; patch-created file succeeds only for exact selected composition. Host/device/default/duplicate symbol fixture, changed indirect/generated header and stale CMake input regenerate, missing compiler/incomplete closure not clean, actual link/export and family qualification. Bind exact selection+source+gate identities to MEN16 resume; no parallel materialization if exact tree proof allows reuse. Existing RCS19 gate obligations retained.
+
 ## Notes
 
 Stage 0 of the native RDNA3 migration brief (additive gfx12 body, distinct identifiers) is the same work.
@@ -57,6 +61,8 @@ Stage 0 of the native RDNA3 migration brief (additive gfx12 body, distinct ident
 
 Review (2026-11-25): the existing rewrite checker accepts an optional group when at least one block matches; exactly-one-of-pair and region-overlap checks are new tooling, not the existing check run earlier. Whole-file ownership is exclusive (a file owned by an overlay is edited by no patch or rewrite); region ownership applies only to unowned files. Assignment: bigcherry-2 builds gate 2a (syntax-only host and device passes for the affected units on both architectures, fixtures: duplicate type, repeated template default argument, device-only definition clash, and the undisguised gfx1201 collision) and gate 2b (real compile); the lead builds gate 1, the ownership records and the freshness dependency.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Current pin-bump.run_phase_drift calls radiance_bump.source_drift_checks/rewrite_drift on pristine upstream, not necessarily compiled composition. In-flight node/compose-check 28d5a315f and node/rcs19-freshness 5344042687 already implement first slices; check merge status, reuse; no duplicate checker. Observed compose checker uses local textual include walk and Report.ok excludes skipped; complete actual coverage and explicit gate states.
+
 ## Change Log
 
 - 2026-11-25T00:40:42.311181+00:00 (created-by): Created by lead
@@ -64,3 +70,8 @@ Review (2026-11-25): the existing rewrite checker accepts an optional group when
 - 2026-11-25T00:42:02.400302+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T00:52:35.276328+00:00 (updated-by): Updated: section:title, section:steps, section:validation, section:acceptance_criteria
 - 2026-11-25T01:08:36.372161+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4605
+- 2026-11-25T02:04:12.989071+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria

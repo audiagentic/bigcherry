@@ -11,7 +11,7 @@ priority: P1
 work: M
 ---
 
-# Faster, less fragile engine bumps
+# Faster, less fragile engine bumps: composition, native launch and overlay integration order
 
 ## Description
 
@@ -31,7 +31,7 @@ The radiance 1.9.0 bump (2026-10-20) took about an hour, but measured compile ti
 
 ## Detailed Solution & Technical Design
 
-
+Order A–H (one programme checklist, no new plan item): A exact candidate and current-pin self-triage, RCS23 origin/row/dependency and native interface impact; B MEN16/PA49 declare/pull/audit and pristine coupling; C RCS19 exact recipe patch materialization then authoritative rewrite/ownership checks; D RCS19/20/21 affected host/device compile and link/export, actual transitive closure or conservative full set; E MEN16 canonical lane build/reuse plus RSC01/02/05/06 and RSP01 matched native parser, all YAMLs and model/row roster; F MEN15 native CPU smoke and separate card-free owner tests; G MEN17 exact candidate acceptance, RSC11 lifecycle, RCS23 affected-overlay gates and PWR10 qualified power restoration; H reaudit, bound evidence, explicit upstream adoption disposition and RSP01 deliberate release. Existing pin-bump phases and adapter interface are sole orchestrator; exact phase names may be adapted to existing state machine. RCS15 provider decision gates large gfx11 overlay changes, not early gate work. RSC11 S18 native launch and PWR08 converge in one cutover, no interim manifest power producer. RCS19 gate integration, MEN15/16/17 binding and RSC11 can run in parallel; no separate programme. Nightly read-only exact-ref triage with changed dependency/row/native boundary report, no repin or qualification.
 
 ## Code Samples & Guidance
 
@@ -55,7 +55,7 @@ The next radiance bump records per-phase times; target under 15 minutes end to e
 
 ## Acceptance Criteria
 
-
+Retain all earlier speed and correctness gates; prove exact staged order, no required skipped/unverified proof accepted, phase result identities and invalidation, same selected recipe and candidate build. Record per-phase timing, compiler hits, affected/full-fallback unit counts, duplicate build avoidance and human reconciliation time; compare at least two real candidate bumps through RCS23, including resume/rollback and qualified release receipt. Earlier under-15-minute target is for clean software path, not GPU queue/qualification guarantee. Report actual timings, no claim from card-free alone. Cross-engine unchanged; no new driver.
 
 ## Notes
 
@@ -69,8 +69,15 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 CORRECTION 2026-11-04: the earlier note that MEN19 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing 1.9.0 timing and compiler-cache goals retained as historical evidence; not a measured current result. RCS19 branches node/compose-check (28d5a315f) and node/rcs19-freshness (5344042687) are already in flight; reuse, do not commission again. RCS20 family targets partially delivered. Native launch design #1550 and overlay design #1553 are merged design decisions, not yet runtime qualification.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
 - 2026-11-04T03:47:59.755603+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:51.868013+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4603
+- 2026-11-25T02:03:09.382626+00:00 (updated-by): Updated: section:title, section:notes, section:detailed_solution, section:acceptance_criteria

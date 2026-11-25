@@ -55,6 +55,8 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Replaces old RSC01 TOML/schema/manifest authoring steps; original inventory and parity requirements retained.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Add candidate offline roster/semantic gate before GPU using matched native parser, all shipped YAMLs, strict BC extension/site/profile schema, defaults/variant/explicit vs derived facts, model encoding and scale-group/rank/KV constraints and actual plugin row support. Native fields remain native authority; no replacement handwritten option registry. Missing model/retired encoding explicit blocker, no legacy kernel resurrection. RSC11 binds gate to bump candidate.
+
 ## Change Log
 
 - 2026-11-02T00:52:58.694609+00:00 (created-by): Created by agent
@@ -76,8 +78,10 @@ Source: GPT configuration assessment 2026-11-02 (gateway request req_main_fa1c9e
 - 2026-11-02T05:09:24.836486+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T12:12:43.760997+00:00 (updated-by): Updated: section:ledger-events
 - RV4589
+- RV4610
 
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
 Reconciliation: the C++ resolver, generated contract, strict reader, writer and explain path exist (serving/main.cpp, manifest_writer.cpp, contract/README.md); the item is implemented in core and open on acceptance (Python command migration, release-path equivalence, obsolete configuration surfaces). Do not read the pending state as 'no resolver': do not build a second one. The v1 contract is closed; power profiles (PWR08) and any other added field need bigcherry/v2, so batch them (RSC09 literals, RSC10).
 - 2026-11-25T01:36:01.665422+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-25T02:06:52.897578+00:00 (updated-by): Updated: section:notes

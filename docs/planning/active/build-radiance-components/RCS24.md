@@ -53,7 +53,14 @@ No document describes behaviour the code no longer has, no test asserts removed 
 
 Created 2026-11-25 from the design review pass. Related: RCS19 to RCS23.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Coordinate single docs update with RSC11 S18: PIN_BUMP.md, BUMP_COUPLING.md, bump-radiance skill, PATCH_AUTHORING/patch-author, engine/component docs and CLI help must reflect actual exact composition, origin and native launch gates after they land. Do not change operational v3 instructions ahead of code; remove obsolete option-registry/manifest launch, old cache/reader tests only at cutover. Existing GC cleanup #1547 already merged; check current status before duplicating. Update test inventory and wording when code lands, keep historical evidence.
+
 ## Change Log
 
 - 2026-11-25T01:02:59.740271+00:00 (created-by): Created by lead
 - 2026-11-25T01:03:17.409050+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+
+## Reviews
+
+- RV4609
+- 2026-11-25T02:06:19.631770+00:00 (updated-by): Updated: section:notes

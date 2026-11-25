@@ -25,6 +25,8 @@ Take ownership of the kernels we have rewritten heavily (the IQR GEMM, prefill, 
 
 Design: docs/design/radiance-kernel-composition.md section 11 (overlay model), section 12 (naming).
 
+pin_triage.py reports exact current/target SHA, verified base commit/blob/ancestry, origin classification, compiler dependency closure, shadowed row schema/layout/priority/init/fini/chaining/collective semantics, candidate adoption. Extracted family structural review, not text merge. Unknown/rename/split/missing history/incomplete closure not clean; widen required compile set. pin-bump/MEN16 binds origin/owned-source/selection/gate proof to existing resume. Advance integrated only after affected row/resource/byte/replay and exact candidate release qualification; examined separate, stopped bump does not advance. Verify selected overlay/base provider and precedence from native YAML and actual loader, no silent fallback. Upstream-adopted patch archive unchanged with evidence, overlay removal proves base-only equivalence and remaining local changes absent. Two real bumps and twelve-transition historical replay remain.
+
 ## Code Samples & Guidance
 
 
@@ -49,11 +51,15 @@ Large. Main risks: semantic drift through shared headers and the row table (incl
 
 The IQR families are owned overlay plugins with an origin manifest, retired patches and rewrites for the shadowed units, one source for gfx11 and gfx12, and an automated, transactional upstream check at each pin bump; no clean text merge is accepted without the gates; the base libraries and the engine are unchanged.
 
+Current RCS23 fixtures plus actual pin-triage/pin-bump integration and resume invalidation for changed origin/owned source/indirect header/row priority, wrong candidate and unverified/skipped gate. Evidence distinguishes candidate/no change/blocked/unverified; provider identity in installed bundle and native YAML. Qualification and rollback use existing release workflow; no automatic upstream merge or promotion.
+
 ## Notes
 
 Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); sequenced in parallel with the RCS15 baseline, which decides whether a native gfx11 provider replaces the generated tree for the unowned units. Review by GPT only (code returned as text).
 
 Revised after a design review (2026-11-25): the first version proposed whole-file substitution inside upstream's units; the loader's existing multi-library hierarchy makes overlays simpler and reversible. Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); the large gfx11 migration is gated on RCS15. GPT is review only on this work.
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing origin-manifest plan is build provenance only, never serving launch. Reuse the existing pin-triage/pin-bump state/selection and RCS19 compose checks; no second acceptance transaction. Branch baseline c7d791540 (#1553 overlay design); RCS15 still gates large gfx11 provider work.
 
 ## Change Log
 
@@ -61,3 +67,8 @@ Revised after a design review (2026-11-25): the first version proposed whole-fil
 - 2026-11-25T00:54:59.083112+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:58:03.939770+00:00 (updated-by): Updated: section:steps
 - 2026-11-25T01:08:26.587516+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+
+## Reviews
+
+- RV4608
+- 2026-11-25T02:05:49.620407+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria

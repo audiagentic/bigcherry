@@ -57,9 +57,16 @@ The row contract, not the translation unit, is the unit of runtime composition (
 
 Design review (2026-11-25): the engine's loader already composes several kernel libraries by hierarchy and supports override plugins (libbcgfx12 is one), so family plugins use that mechanism: RCS23's overlays are the first family plugins. What this item adds is the sealed manifest, complete callback ownership per family, stable row identities across libraries, the composition identity and the lifecycle policy; the base libraries keep their names. The row contract, not the translation unit, is the unit of runtime composition. Per-family rollback is deferred until compatibility and cache invalidation are proven.
 
+2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 define shared gate order. Retain RCS15 decision and RCS23 overlay-first path; no base-library split or replacement loader solely to satisfy bump checks. Sealed release/plugin composition metadata is build and release identity, not an executable serving manifest; native YAML remains the launch authority and selects the hierarchy. RSP01 verifies actual installed providers, versioned callback/row/device contracts and priority, RCS19 checks link/export, RCS23 owns origin/adoption qualification, MEN16 binds identity to resume. Prove no fallback and no unload during live work; no duplicate family build system.
+
 ## Change Log
 
 - 2026-11-25T00:40:56.481749+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:36.975982+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:52:49.430011+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-25T01:08:31.536022+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4621
+- 2026-11-25T02:12:55.849120+00:00 (updated-by): Updated: section:notes

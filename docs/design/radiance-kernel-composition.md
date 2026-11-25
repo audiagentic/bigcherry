@@ -1,5 +1,7 @@
 # Composable Radiance kernel builds
 
+> **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
+
 Status: design, 2026-11-25. Plan items: RCS19 to RCS24 (build-radiance-components), supplementing RCS15 to RCS18 (native RDNA3 provider migration). Nothing here is implemented yet except where marked.
 
 ## 0. Terms (one meaning each)

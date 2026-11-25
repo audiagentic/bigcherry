@@ -1,5 +1,7 @@
 # Radiance: retire the launch manifest, complete native YAML execution
 
+> **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
+
 Status: owner direction / implementation design, 2026-11-25. Supersedes the **launch-transport** decision in [RUM04's YAML design](radiance-native-config-x-bigcherry.md) and the manifest-specific implementation instructions in the active RSC/PWR plans. Does not rewrite historical evidence or change completed pin qualification. Governing owner: RSC11 (one cutover); RSC01/RSC02/RSC03/RSC05/RSC06 and PWR07/PWR08/PWR10 own their respective implementations. No new serving programme. Source audit baseline: BigCherry b0bf406bf (#1544), Radiance 2.2.0 pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa in engines/radiance/recipes.toml (upstream ABI43, local ABI44). All vendor changes are managed enhancement/patch packages against the pinned upstream, or owned BigCherry components. We cannot modify the upstream repository. No upstream merge, older-version backport, dual launcher or compatibility shim is required or assumed.
 
 ## 1. Decision and non-negotiable end state

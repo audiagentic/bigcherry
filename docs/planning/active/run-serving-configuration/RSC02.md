@@ -99,6 +99,8 @@ configs first (owner order 2026-11-14).
 
 S15 evidence source: docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md and completed RSC04 caller inventory at 9549aa603; S14 lifecycle adapter must actually exercise both owners, not direct engine benchmarking. Historical pre-S18 text remains in Git at b0bf406bf.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Native cutover must update serving/component.toml coupling flags, old expected-manifest and option-registry, test targets and managed patch requires; not relax lint. Declare exact native load/Config, Fleet preload/front/readiness/drain, pre-weight plan, ordered BDF seams, actual signatures/lifetime/ownership and fail-closed fixtures. Use component_coupling.py plus compiled/semantic tests; source file existence is insufficient. Existing C++ owner and measured resource/cache admission preserved. MEN15 standalone CPU smoke and separate fake owner tests; MEN17 actual candidate lifecycle.
+
 ## Status 2026-11-19 (after S15 and S16)
 
 - Done: `bc-serve serve|start|stop|status|explain` is the only start path. S13 switched serving to manifest v2 and deleted v1 (#891); S15 hardware acceptance passed (`docs/evidence/2026-11-19-rsc02-s15-acceptance/`: dense `qwen27b-tp3-int8` equal projection and greedy hash, helper cohort equal hash, `flashnext-4gpu` 538 requests with 0 errors); S16 deleted the bash launcher, `lib/plan-check.sh`, `lib/sdk-check.sh`, the Python serving supervisor and the installer (#1131). Steps 1-6 above are met.
@@ -208,3 +210,5 @@ retirement. Those remain steps 3, 4, S15 and S16 respectively.
 - RV4590
 - 2026-11-25T01:36:31.503595+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:notes
 - 2026-11-25T01:43:57.649464+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria, section:notes
+- RV4611
+- 2026-11-25T02:07:22.923091+00:00 (updated-by): Updated: section:notes
