@@ -24,11 +24,12 @@ def replace(name: str, old: str, new: str, *, guard: str | None = None) -> Edit:
     )
 
 
-FUSED_TILE = """// One-band IQR prefill: each of eight waves decodes one 16-row unit.
+FUSED_TILE = """#ifndef R3_TARGETS   // libr4d (gfx12) only: libr3 compiles with R3_TARGETS defined and has its own gfx11 tile
+// One-band IQR prefill: each of eight waves decodes one 16-row unit.
 // The transpose is local to that wave; a block-wide barrier publishes the
 // native fragment bytes for all consumers, without a global decoded plane.
 template <class F>
-struct IqrFusedPre {
+struct IqrFused12Pre {
     Ctx c;
     uint8_t* tr;
 
@@ -76,7 +77,7 @@ struct IqrFusedPre {
 // Compile-time certificate is solely the supported form and the tile geometry;
 // the band-count check is at dispatch. Other forms retain the plane route.
 template <class F>
-struct IqrFusedCertificate {
+struct IqrFused12Certificate {
     static constexpr uint32_t lds = kPrefillLds + 2u * kPBM * sizeof(float)
                                   + kPWaves * kTrBytes + Dec<F>::kTab;
     static constexpr bool geometry = kPWaves == kPWW * kPTW &&
@@ -92,7 +93,7 @@ struct IqrFusedCertificate {
 
 template <class F>
 __global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
-void iqr_fused_prefill_kernel(Ctx c, const uint8_t* __restrict__ A,
+void iqr_fused12_prefill_kernel(Ctx c, const uint8_t* __restrict__ A,
                               const float* __restrict__ Sa,
                               const uint16_t* __restrict__ Sw,
                               uint16_t* __restrict__ C,
@@ -104,19 +105,20 @@ void iqr_fused_prefill_kernel(Ctx c, const uint8_t* __restrict__ A,
     c.tab = s_tab;
     D::stage(s_tab, c, threadIdx.x, kPWaves * kWave);
     __syncthreads();
-    const IqrFusedPre<F> pre{c, s_tr};
+    const IqrFused12Pre<F> pre{c, s_tr};
     if constexpr (F::SC == kRowF32) {
         constexpr Form f{F::KIND, F::B, F::LV, F::L, F::LRB, F::SC, 0};
         const uint8_t* const sb = c.S;
-        gemm_8a8_prefill_body<true, 32, IqrFusedPre<F>, true, kBlock, true>(
+        gemm_8a8_prefill_body<true, 32, IqrFused12Pre<F>, true, kBlock, true>(
             A, Sa, nullptr, Sw, C, M, K, N, a_ld, sa_ld, c.nkb, pre,
             (const float*)sb, (const float*)(sb + cf_off(f, N, K)));
     } else {
         static_assert(F::SC == kBf16 && F::LRB == 0u);
-        gemm_8a8_prefill_body<true, 0, IqrFusedPre<F>, false, kBlock, true>(
+        gemm_8a8_prefill_body<true, 0, IqrFused12Pre<F>, false, kBlock, true>(
             A, Sa, nullptr, Sw, C, M, K, N, a_ld, sa_ld, c.nkb, pre);
     }
 }
+#endif  // R3_TARGETS
 
 """
 
@@ -125,11 +127,12 @@ __global__ __launch_bounds__(kPWaves * kWave) R4D_WAVES(6)
 void iqr_prefill_kernel"""
 
 LAUNCH_ANCHOR = """    unsigned int* const ctl = r4d_8a8_split_ctr(stream, g.y->data);"""
-FUSED_LAUNCH = """    if constexpr (IqrFusedCertificate<F>::verified) {
+FUSED_LAUNCH = """#ifndef R3_TARGETS
+    if constexpr (IqrFused12Certificate<F>::verified) {
         const uint32_t bands = (uint32_t)((g.M + kPBM - 1u) / kPBM);
         if (bands == 1u) {
             const Ctx c = ctx_of(g);
-            const int rc = R4D_EMIT(stream, (iqr_fused_prefill_kernel<F>),
+            const int rc = R4D_EMIT(stream, (iqr_fused12_prefill_kernel<F>),
                 dim3(bands, (uint32_t)(g.N / kPBN), 1), dim3(kPWaves * kWave), 0,
                 c, (const uint8_t*)g.a->data, (const float*)g.as->data,
                 (const uint16_t*)g.bs->data, (uint16_t*)g.y->data,
@@ -139,6 +142,7 @@ FUSED_LAUNCH = """    if constexpr (IqrFusedCertificate<F>::verified) {
                 ? RAD_OK : R4D_NO(RAD_E_DEVICE);
         }
     }
+#endif  // R3_TARGETS
 """
 
 PATCHES = (
@@ -206,13 +210,13 @@ PATCHES = (
                 "rad0065-native-fused-tile",
                 FORM_ANCHOR,
                 FUSED_TILE + FORM_ANCHOR,
-                guard="struct IqrFusedPre {",
+                guard="struct IqrFused12Pre {",
             ),
             replace(
                 "rad0065-one-band-dispatch",
                 LAUNCH_ANCHOR,
                 FUSED_LAUNCH + LAUNCH_ANCHOR,
-                guard="if constexpr (IqrFusedCertificate<F>::verified)",
+                guard="if constexpr (IqrFused12Certificate<F>::verified)",
             ),
         ),
     ),
