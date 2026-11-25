@@ -46,6 +46,11 @@ if(NOT rewrite_rc EQUAL 0)
   message(FATAL_ERROR "libr3: r3_rewrite.py failed: ${rewrite_err}")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt)
+# The copy above is made from the (patched) upstream sources, so a change to any of them must regenerate it: without
+# these dependencies an existing build directory would keep the copy made from the old text.
+file(GLOB r4d_inputs ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_SRC}/libr4d/*.h ${RADIANCE_SRC}/libr4d/*.cpp
+     ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${r4d_inputs})
 
 # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`.
 file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[A-Za-z0-9_]+\\|")
