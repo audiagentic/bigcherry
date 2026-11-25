@@ -15,7 +15,7 @@ outputs = ["kernels/libr3.so"]
 # R3_NATIVE is ON: native/*.rw (against the pinned radiance source) replace the kernels' own lines with native gfx11 forms.
 # A block that no longer matches libr4d fails configure by design; R3_NATIVE=OFF builds every kernel through r3_compat.h only.
 [build]
-configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON" }
+configure = { RADIANCE_SRC = "{engine_source}", R3_TARGETS = "{targets}", R3_NATIVE = "ON", R3_ONLY = "" }
 
 # Only variables still read directly by the component are catalogued below.
 # Serving kernel switches (attention, MoE f16/ahalf, GEMV and DEC11) are typed

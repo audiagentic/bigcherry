@@ -63,6 +63,7 @@ BUILD_INPUTS = (
     "tools/bigcherry/bin/bc-ccache",
     "tools/bigcherry/campaign/resolution.py",
     "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/bigcherry/campaign/ccache_paths.py",
     "tools/bigcherry/core/artifacts.py",
     "tools/bigcherry/core/component_coupling.py",
     "tools/bigcherry/core/components.py",

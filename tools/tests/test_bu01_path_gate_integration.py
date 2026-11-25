@@ -95,7 +95,8 @@ class ChangedPathsIntegration(unittest.TestCase):
         for name in ("tools/bigcherry/__main__.py", "tools/bigcherry/cli/build.py",
                      "tools/bigcherry/source/workspace.py", "tools/bigcherry/patch/apply.py",
                      "tools/bigcherry/patch/gates.py", "tools/bigcherry/release/pin_status.py",
-                     "config/recipes.toml", "config/release.toml", "tools/lab/radiance/ci_ccache.py"):
+                     "config/recipes.toml", "config/release.toml", "tools/lab/radiance/ci_ccache.py",
+                     "tools/bigcherry/bin/bc-ccache"):
             self.assertEqual(self.check({name: name}), "run=true", name)
 
     def test_push_paths_match_the_pr_check(self):
