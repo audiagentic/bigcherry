@@ -19,7 +19,7 @@ RUM04 delivered one native YAML per deployment with x-bigcherry, variant-of/diff
 
 ## Steps
 
-Use existing 16 deployment YAMLs and native parser/closed extension; validate variant-of/differs against resolved native and BC values, no cross-file inheritance engine. Authored site/profile policy YAML belongs to RSC01/PWR08; lab arms edit one targeted YAML field. Named start always resolves current sealed YAML; RSC02/RSC03 own measured cache and fresh admission. Preserve exact execution evidence separately (WSL01/MRC06). Update actual config/list/explain/release/campaign consumers, no second model catalogue.
+Enumerate current supported deployment YAMLs and native parser/closed extension; validate variant-of/differs against resolved native and BC values, no cross-file inheritance engine. Authored site/profile policy YAML belongs to RSC01/PWR08; lab arms edit one targeted YAML field. Named start always resolves current sealed YAML; RSC02/RSC03 own measured cache and fresh admission. Preserve exact execution evidence separately (WSL01/MRC06). Update actual config/list/explain/release/campaign consumers, no second model catalogue.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +39,7 @@ docs/design/radiance-native-yaml-launch.md sections 2 and 6; docs/design/radianc
 
 ## Validation
 
-Card-free strict YAML and variant-of/differs refusals, duplicate/unknown/wrong level/missing variant, explain provenance, measured-cache identity changes, semantic projection of all 16 deployment YAMLs. Named start revalidates YAML and live room; old manifest launch refused. Hardware dense and helper native starts preserve equivalent effective settings and output/quality under RSC11/RHP12. No legacy catalogue or translator.
+Card-free strict YAML and variant-of/differs refusals, duplicate/unknown/wrong level/missing variant, explain provenance, measured-cache identity changes, semantic projection of all currently supported deployment YAMLs. Named start revalidates YAML and live room; old manifest launch refused. Hardware dense and helper native starts preserve equivalent effective settings and output/quality under RSC11/RHP12. No legacy catalogue or translator.
 
 ## Effort & Risk
 
@@ -56,7 +56,7 @@ Architecture standards: config over code (no model or layout named in code), one
 
 ## Acceptance Criteria
 
-Every shipped variant is one native YAML; variant changes explicit and checked, native/BC fields unique, no legacy catalogue or override path. Semantic equivalence across all 16 configs, explain provenance, named cache compatibility and fresh admission; run evidence not executable. RSC11/RSP01 installed gate.
+Every shipped variant is one native YAML; variant changes explicit and checked, native/BC fields unique, no legacy catalogue or override path. Semantic equivalence across all current supported configs, explain provenance, named cache compatibility and fresh admission; run evidence not executable. RSC11/RSP01 installed gate.
 
 ## Notes
 
@@ -90,6 +90,8 @@ Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPL
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Historical TOML example and stored-manifest replay design are displaced by RUM04 and S18; do not restore. Keep unique semantic projection, static key, fresh-live admission and run receipt tests from original plan. RUM12 fast named measurement reuse preserved.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Current directory has 18 native YAMLs including two IQ6R variants; preserve historical 16 RUM04 evidence but dynamically derive supported model/variant roster and installed assets. No fixed count, no duplicate catalogue; compare semantic projections and native defaults per exact candidate, including newly introduced native memory keys where supported.
+
 ## Status 2026-11-19
 
 Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml` with named variants, strict loader, `bc-serve explain`, and stored manifests (a start of an unchanged config replays the stored manifest; policy-on replay fixed in #1177). Step 6 (retire `server-args` and `[layout.NAME.settings]`, the layout files) depends on RSC04's leftovers. Open review RV4230 (reuse the verified Radiance bundle identity within a named start) stays open. Note for operators: the replay key hashes every operator `--set`, so any differing `--set` plans afresh instead of replaying.
@@ -112,3 +114,6 @@ Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml`
 - RV4594
 - 2026-11-25T01:38:33.802309+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:notes, section:acceptance_criteria
 - 2026-11-25T01:44:11.707235+00:00 (updated-by): Updated: section:validation
+- RV4643
+- 2026-11-25T02:45:59.323354+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T02:53:19.130276+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria

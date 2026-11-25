@@ -11,7 +11,7 @@ priority: P1
 work: L
 ---
 
-# Move required RDNA3 compute deltas into upstream libr3d
+# Retain qualified native RDNA3 rows; own required compute deltas as overlays
 
 ## Description
 
@@ -19,7 +19,7 @@ work: L
 
 ## Steps
 
-After RCS15, retain native rows where schema, geometry, storage and behavior match. Add only required gaps at upstream row and HIP unit seams, one family per patch. Start with dense kernels, then attention/KV and selected Flash-Next math. Prefer local patches against libr3d that can be proposed upstream; reuse its tuning axes and launch shims.
+After RCS15 native-provider decision by actual row/format, use stock libr3d where measured support/equivalence exists; do not modify upstream repository or backport candidate rows to old pin. Missing or optimized local compute rows are owned overlays under RCS23 and RCS21 traits, using native plugin interface. RCS16 owns inventory/retention and exact gap requirements, RCS23 implementation of overlay families; only narrow managed native source patches for necessary interface/semantic seams, not duplicate compute implementation. Begin supported int8 and packed IQR source comparison, then local u6/u7, group256 and special attention/KV and FlashNext forms. Retain qualified local base where native lacks closure or regresses. RCS17/18 own mixed integration and conditional release retirement.
 
 ## Detailed Solution & Technical Design
 
@@ -49,13 +49,22 @@ One native reference comparison and shape-refusal case per changed path, same fi
 
 Selected gfx1100 model paths run with native rows plus explicit minimal deltas. No hidden stock/libref fallback and no wholesale generated rewrite.
 
+Every required model path has actual selected native or explicitly owned overlay row, tested layout, schema, shape/format and numerical/perf evidence; unsupported native routes retain qualified provider with explicit disposition. No unapproved CPU/reference fallback, no whole-library fork or duplicate implementation under RCS16/RCS23.
+
 ## Notes
 
 Execution detail and source matrix: docs/reviews/radiance-native-libr3d/ASSESSMENT.md. Do not infer support from patch applicability or an upstream row name.
 
 At b8bca788 native h128 attention does not cover local Flash-Next h256/GQA6, and the actual Q27 INT8 fixture uses i8a8h rather than plain w8a8. Inspect selected rows, matrix operand packing, KV bytes and reachable reference gaps before designing each port. Preserve local higher-M and split-store behavior only where required.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Original instruction to port every delta into upstream libr3d is superseded by overlay-first design #1553. New upstream native int8/IQR rows are adoption candidates, not replacements by name; preserve existing local wins and independent RUM15 precision issue.
+
 ## Change Log
 
 - 2026-11-18T08:41:37.901602+00:00 (created-by): Created by agent
 - 2026-11-18T08:49:08.981231+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4628
+- 2026-11-25T02:38:20.324015+00:00 (updated-by): Updated: section:title, section:steps, section:notes, section:acceptance_criteria
