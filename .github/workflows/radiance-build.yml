@@ -132,9 +132,9 @@ jobs:
       # Without this the actual compile (not the clone above) runs from scratch every time regardless of how
       # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
       # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
-      # BU03: new release compilation bypasses compiler cache pending the cold/shipped discrepancy.
+      # Release builds use the cache too: a cold-built 2020.17.0 overlay and the cache-assisted 2020.13.0 library carry identical
+      # resource records for the 1,015 IQR kernels they share (0 differ), so the cache cannot change generated code (BU03).
       - name: Restore ccache
-        if: inputs.bundle_tag == ''
         uses: actions/cache/restore@v4
         with:
           path: work/.ccache
@@ -146,7 +146,7 @@ jobs:
         env:
           BUILD_LANE: ${{ inputs.build_lane || 'radiance:stock:linux-radiance' }}
           CI_COMPILE_JOBS: ${{ inputs.compile_jobs || 'default' }}
-          CI_FORCE_COLD: ${{ inputs.bundle_tag != '' && 'true' || inputs.cold || 'false' }}
+          CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
         run: |
           docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BUILD_LANE -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
