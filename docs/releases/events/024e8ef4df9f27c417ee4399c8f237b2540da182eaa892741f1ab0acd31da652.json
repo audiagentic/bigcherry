@@ -1,0 +1,26 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261125_052151_keep-radiance-builds-correct-a_5590",
+  "files": [
+    "docs/planning/active/build-radiance-components/RCS20.md",
+    "docs/planning/active/build-radiance-components/RCS19.md",
+    "docs/planning/active/build-radiance-components/RCS25.md",
+    "docs/planning/active/run-multi-engine/MEN24.md",
+    "docs/planning/active/build-ci-speed/BU01.md",
+    "docs/planning/active/build-ci-speed/BU03.md",
+    "docs/planning/active/build-release-split/RSP01.md"
+  ],
+  "plan-item-ids": [
+    "BU03",
+    "BU01",
+    "RCS19",
+    "RCS20",
+    "RCS25",
+    "RSP01",
+    "MEN24"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Focus existing build plans on cold/cache resource discrepancy, generated source freshness, canonical family targets and one qualified release build. No new infrastructure or duplicate gates.",
+  "timestamp-utc": "2026-11-25T05:21:51.942711Z",
+  "user-summary-candidate": "Keep Radiance builds correct and lean"
+}
