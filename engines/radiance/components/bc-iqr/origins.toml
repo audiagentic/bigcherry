@@ -13,3 +13,15 @@ base-rows = ["embed_lookup_iqr"]
 overlay-rows = ["bc_embed_lookup_iqr"]
 architectures = ["gfx1100", "gfx1201"]
 absorbed-rewrites = ["engines/radiance/components/libr3/native-shelved/r4d_iqr_embed.hip.rw"]
+
+[[unit]]
+name = "r4d_logits_vocab"
+upstream-path = "libr4d/r4d_logits_vocab.hip"
+owned-source = "bc_iqr_vocab.hip"
+base-commit = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+last-integrated = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+strategy = "whole-unit"
+base-rows = ["logits_gemm_vocab_iqr"]
+overlay-rows = ["bc_logits_gemm_vocab_iqr"]
+architectures = ["gfx1100", "gfx1201"]
+absorbed-rewrites = ["engines/radiance/components/libr3/native-shelved/r4d_logits_vocab.hip.rw"]

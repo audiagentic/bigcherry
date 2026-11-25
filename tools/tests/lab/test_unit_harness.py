@@ -39,7 +39,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([uh.classify(r, 0.04) for r in (0.5, 1.0, 1.1)], ["win", "same", "regress"])
 
     def test_selftest_edit_needs_both_anchors_once(self):
-        text = (uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR)
+        text = (uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
         self.assertIn("UNITHASH", edited)
         self.assertIn("UH_HASH_CASES", edited)

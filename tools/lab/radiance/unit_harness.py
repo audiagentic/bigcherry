@@ -233,6 +233,47 @@ EMBED_CASES_BLOCK = ('        if (const char* uh_e = std::getenv("UH_EMBED_CASES
                      '                }\n')
 
 
+VOCAB_ANCHOR = ("    std::vector<float> y((size_t)(M * V));\n"
+                "    st_memcpy(y.data(), d_y, y.size() * 4, hipMemcpyDeviceToHost);\n")
+VOCAB_PRINT = ('    {\n'
+               '        uint64_t uh = 1469598103934665603ull;\n'
+               '        for (float v : y) { uint32_t u; std::memcpy(&u, &v, 4); uh ^= u; uh *= 1099511628211ull; }\n'
+               '        std::printf("UNITHASH %s %016llx\\n", nm, (unsigned long long)uh);\n'
+               '        {   /* a plain bf16 table is not an IQR weight: the row must refuse it as the base does */\n'
+               '            Planes pp; pp.enc = rad_enc_plain(RAD_BF16); pp.size(256, 256);\n'
+               '            std::vector<uint8_t> po; RadLayout pl2{};\n'
+               '            const int prc = stored(r, gp, 1, pp, { "codes" }, &po, &pl2);\n'
+               '            std::printf("UNITLAYOUT plain_bf16 rc=%d\\n", prc);\n'
+               '        }\n'
+               '        if (const char* it = std::getenv("UH_TIME_ITERS")) {\n'
+               '            const int n = std::atoi(it);\n'
+               '            const size_t fb = 256ull << 20;\n'
+               '            void* flush = dalloc(fb);\n'
+               '            hipEvent_t e0, e1;\n'
+               '            (void)hipEventCreate(&e0); (void)hipEventCreate(&e1);\n'
+               '            std::vector<float> us;\n'
+               '            for (int i = 0; i < n + 1 && flush; ++i) {\n'
+               '                (void)hipMemset(flush, i, fb); (void)hipDeviceSynchronize();\n'
+               '                (void)hipEventRecord(e0);\n'
+               '                const int rc2 = r->launch(&a, (RadStream) nullptr);\n'
+               '                (void)hipEventRecord(e1); (void)hipEventSynchronize(e1);\n'
+               '                float ms = 0; (void)hipEventElapsedTime(&ms, e0, e1);\n'
+               '                if (rc2 == RAD_OK && i) us.push_back(ms * 1000.0f);\n'
+               '            }\n'
+               '            if (!us.empty()) { std::sort(us.begin(), us.end()); std::printf("UNITTIME %s %.2f\\n", nm, us[us.size() / 2]); }\n'
+               '        }\n'
+               '    }\n')
+VOCAB_CASES_ANCHOR = "        vocab_head_case(pl, { { 5, 1024 } }, 8, 5120, 0);\n"
+VOCAB_CASES_BLOCK = ('        if (const char* uh_v = std::getenv("UH_VOCAB_CASES"))\n'
+                     '            for (const char* q = uh_v; *q;) {\n'
+                     '                long long um = 0, uk = 0, ur = 0; int used = 0;\n'
+                     '                if (std::sscanf(q, "%lld:%lld:%lld%n", &um, &uk, &ur, &used) < 3) break;\n'
+                     '                vocab_head_case(pl, { { 4, ur } }, um, uk, 0);\n'
+                     '                q += used;\n'
+                     '                if (*q == \',\') ++q;\n'
+                     '            }\n')
+
+
 def inject_selftest(text: str) -> str:
     if text.count(SYM_ANCHOR) != 1:
         raise HarnessError("the selftest changed: the dlsym check is not found exactly once")
@@ -243,12 +284,14 @@ def inject_selftest(text: str) -> str:
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(HASH_ANCHOR, HASH_ANCHOR.splitlines(keepends=True)[0] + HASH_PRINT + HASH_ANCHOR.splitlines(keepends=True)[1], 1)
     text = text.replace(CASES_ANCHOR, CASES_ANCHOR + CASES_BLOCK, 1)
-    for anchor in (FIND_ANCHOR, EMBED_ANCHOR, EMBED_CASES_ANCHOR):
+    for anchor in (FIND_ANCHOR, EMBED_ANCHOR, EMBED_CASES_ANCHOR, VOCAB_ANCHOR, VOCAB_CASES_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError(f"the selftest changed: the harness's edit anchor is not found exactly once ({anchor.splitlines()[0].strip()!r})")
     text = text.replace(FIND_ANCHOR, FIND_ANCHOR + FIND_PREFIX, 1)
     text = text.replace(EMBED_ANCHOR, EMBED_ANCHOR + EMBED_PRINT, 1)
-    return text.replace(EMBED_CASES_ANCHOR, EMBED_CASES_ANCHOR + EMBED_CASES_BLOCK, 1)
+    text = text.replace(EMBED_CASES_ANCHOR, EMBED_CASES_ANCHOR + EMBED_CASES_BLOCK, 1)
+    text = text.replace(VOCAB_ANCHOR, VOCAB_ANCHOR + VOCAB_PRINT, 1)
+    return text.replace(VOCAB_CASES_ANCHOR, VOCAB_CASES_ANCHOR + VOCAB_CASES_BLOCK, 1)
 
 
 def run(argv: list[str], log: Path, *, env: dict | None = None, cwd: Path | None = None) -> None:
@@ -685,7 +728,7 @@ def stage_overlay_measure(out: Path, rounds: int = 4) -> dict:
     arch = state["arch"]
     device = device_index(arch)
     binary, cand_plugin, ref_plugin = Path(state["selftest"]), Path(state["plugin"]), Path(state["reference_plugin"])
-    env_base = {"UH_EMBED_CASES": ov["cases"], "UH_TIME_ITERS": "31"}
+    env_base = {ov.get("cases-env", "UH_EMBED_CASES"): ov["cases"], "UH_TIME_ITERS": "31"}
     arms = {"ref": (ref_plugin, {}), "cand": (cand_plugin, {"UH_ROW_PREFIX": ov["row-prefix"]})}
     texts: dict[str, list[str]] = {"ref": [], "cand": []}
     for r in range(rounds):
