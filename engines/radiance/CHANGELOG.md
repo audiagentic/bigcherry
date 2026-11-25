@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.13.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.12.0...bc-radiance-2020.13.0) (2026-11-25)
+
+
+### New and changed
+
+* **lab:** unit harness (RCS25): build one unit family, check resources, hashes and replay against the shipped library ([#1565](https://github.com/audiagentic/bigcherry/issues/1565)) ([24afc89](https://github.com/audiagentic/bigcherry/commit/24afc89ff30e54e2df3a4b271080ec59d08b6a6d))
+
 ## [2020.12.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.5...bc-radiance-2020.12.0) (2026-11-25)
 
 
