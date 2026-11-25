@@ -18,6 +18,7 @@ from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.core.paths import REPO_ROOT
 from bigcherry.experiment import contract as experiment_contract
 from bigcherry.experiment.attestation import ExecutionIdentity
+from bigcherry.hardware.power_receipt import write_json_atomic
 from bigcherry.patch.activation import (
     ActivationEvidence,
     verdict,
