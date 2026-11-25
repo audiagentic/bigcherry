@@ -87,6 +87,11 @@ NativeConfigSnapshot NativeConfigSnapshot::from_sealed_fd(int fd) {
     return from_manifest(parsed.value());
 }
 
+NativeConfigSnapshot NativeConfigSnapshot::from_raw_fd(int fd) {
+    return NativeConfigSnapshot(v2::read_sealed_document(fd, "native YAML descriptor"), current_resolution_root(),
+                                std::nullopt);
+}
+
 nlohmann::json NativeConfigSnapshot::manifest_field() const {
     return {{"yaml_utf8", yaml_}, {"sha256", sha256_}, {"resolution_root", resolution_root_}};
 }

@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -224,10 +225,23 @@ int main() {
     const std::string inspected_yaml = "server: {host: 127.0.0.1, port: 8123}\ncards: [2, 0]\nmodels:\n"
                                        "  tiny:\n    model: tiny.rad\n    mixed-step-target-ms: 17\n";
     const Json inspected_field = config_field(inspected_yaml);
-    const int sealed_fd = sealed_memfd(inspected_field.dump());
-    const auto received = NativeConfigSnapshot::from_sealed_fd(sealed_fd);
+    // The JSON-envelope form: the manifest writer's handoff only; it dies with manifest_field (RSC02/RSC03).
+    const int envelope_fd = sealed_memfd(inspected_field.dump());
+    const auto received = NativeConfigSnapshot::from_sealed_fd(envelope_fd);
+    ::close(envelope_fd);
     check(received.manifest_field() == inspected_field,
           "shared sealed-fd receiver changed native snapshot bytes or identity");
+    // The inspector's form: the authored YAML bytes themselves, the root being the process's own working directory.
+    const int sealed_fd = sealed_memfd(inspected_yaml);
+    const auto raw = NativeConfigSnapshot::from_raw_fd(sealed_fd);
+    check(raw.yaml_utf8() == inspected_yaml && raw.sha256() == inspected_field.at("sha256").get<std::string>() &&
+              raw.resolution_root() == execution_root.string(),
+          "raw-YAML receiver changed the bytes, their digest or the execution root");
+    {   // The sealed descriptor is also readable by path (what a child's `--config /proc/self/fd/N` opens): same bytes.
+        std::ifstream by_path("/proc/self/fd/" + std::to_string(sealed_fd), std::ios::binary);
+        const std::string text((std::istreambuf_iterator<char>(by_path)), std::istreambuf_iterator<char>());
+        check(text == inspected_yaml, "the sealed YAML descriptor is not readable by its /proc/self/fd path");
+    }
     const std::string fd_text = std::to_string(sealed_fd);
     char command[] = "radiance";
     char inspect[] = "--bc-inspect-native-config";
@@ -261,7 +275,7 @@ int main() {
 
     const int unsealed_fd = ::memfd_create("bc-native-config-unsealed-test", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     check(unsealed_fd >= 0, "cannot create unsealed-config fixture");
-    const std::string unsealed_bytes = inspected_field.dump();
+    const std::string unsealed_bytes = inspected_yaml;
     check(::write(unsealed_fd, unsealed_bytes.data(), unsealed_bytes.size()) ==
               static_cast<ssize_t>(unsealed_bytes.size()),
           "cannot write unsealed-config fixture");
@@ -275,32 +289,15 @@ int main() {
     check(unsealed_result && *unsealed_result == 2 && errors.str().find("fully sealed memfd") != std::string::npos,
           "native inspect accepted an unsealed descriptor");
 
-    Json wrong_root = inspected_field;
-    wrong_root["resolution_root"] = "/tmp";
-    const int wrong_root_fd = sealed_memfd(wrong_root.dump());
-    const std::string wrong_root_text = std::to_string(wrong_root_fd);
-    char* wrong_root_argv[] = {command, inspect, const_cast<char*>(wrong_root_text.c_str()), nullptr};
+    const int bad_text_fd = sealed_memfd(inspected_yaml + std::string("#\xff", 2));
+    const std::string bad_text = std::to_string(bad_text_fd);
+    char* bad_text_argv[] = {command, inspect, const_cast<char*>(bad_text.c_str()), nullptr};
     errors.str("");
     old_err = std::cerr.rdbuf(errors.rdbuf());
-    const auto wrong_root_result = bc::serving::inspect_native_fleet_config_command(3, wrong_root_argv);
+    const auto bad_text_result = bc::serving::inspect_native_fleet_config_command(3, bad_text_argv);
     std::cerr.rdbuf(old_err);
-    ::close(wrong_root_fd);
-    check(wrong_root_result && *wrong_root_result == 2 &&
-              errors.str().find("resolution_root differs") != std::string::npos,
-          "native inspect accepted a changed execution root");
-
-    Json wrong_digest = inspected_field;
-    wrong_digest["yaml_utf8"] = inspected_yaml + "# changed\n";
-    const int wrong_digest_fd = sealed_memfd(wrong_digest.dump());
-    const std::string wrong_digest_text = std::to_string(wrong_digest_fd);
-    char* wrong_digest_argv[] = {command, inspect, const_cast<char*>(wrong_digest_text.c_str()), nullptr};
-    errors.str("");
-    old_err = std::cerr.rdbuf(errors.rdbuf());
-    const auto wrong_digest_result = bc::serving::inspect_native_fleet_config_command(3, wrong_digest_argv);
-    std::cerr.rdbuf(old_err);
-    ::close(wrong_digest_fd);
-    check(wrong_digest_result && *wrong_digest_result == 2 &&
-              errors.str().find("SHA-256 mismatch") != std::string::npos,
-          "native inspect accepted a changed YAML digest");
+    ::close(bad_text_fd);
+    check(bad_text_result && *bad_text_result == 2 && errors.str().find("UTF-8") != std::string::npos,
+          "native inspect accepted a YAML that is not UTF-8 text");
 #endif
 }

@@ -302,8 +302,6 @@ struct NativeConfigInspection {
     std::uint32_t abi_version = 0;
     std::string model;
     std::string radiance_home;
-    std::optional<std::string> radiance_home_source;
-    std::optional<std::string> kernels_source;
     std::string listener_host;
     int tp = 0;
     std::optional<std::string> tp_wire;
