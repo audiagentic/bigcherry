@@ -51,6 +51,8 @@ Per-device, per-phase table recorded on the model page and in the research recor
 
 **Transferred PWR05 acceptance (independent gate):** PWR05 four-card baseline acceptance: retain actual measured flashnext-4gpu loaded idle after one warm-up/60 seconds: gfx1100 XTX helpers 5-6 W each, gfx1030 tail 6 W, gfx1201 engine 20 W (~17 W pre-process), engine 1.1% CPU across 48 threads and helpers 0%. This is historical one-run evidence, not a current-pin or multi-repeat guarantee. Verify current same-build/driver/BDF, idle all devices and per-thread CPU under a lease, explain any >15 W GPU or >2% CPU consumer with queue/ASPM wait evidence; PWR06 alone owns the GFX12 R9700 GFXOFF/driver/kernel causal mitigation, no second driver patch. Measure both GPU board sensors and CPU RAPL for matched single-stream decode, long prefill, 42K and 8-session phases, with explicit sensor identity/cadence/phase boundaries, output identity and W/J per token; do not merge cross-date single-stream and 6-stream numbers or infer J/token from one sample. Any root-only ASPM/power mode change is a separate owner-authorised experiment, not a default.
 
+Time-aligned sensor samples and actual tokens, integrate W*dt per phase; RAPL counter wrap and missing/unavailable explicit; report GPU, CPU+GPU and wall energy separately; no double count. Current dense and MoE baselines, replicated controls and dispersion, immutable run refs and receipts. Preserve previous transferred acceptance.
+
 ## Notes
 
 Measurement only, no speed risk. RX 6900 XT runs an unrelated service; record it but out of scope for tuning.
@@ -58,6 +60,8 @@ Measurement only, no speed risk. RX 6900 XT runs an unrelated service; record it
 2026-10-27: host change on the build/bench host (owner-approved, test machine): udev rule /etc/udev/rules.d/99-rapl-energy-read.rules makes /sys/class/powercap/intel-rapl*/energy_uj readable by the video group (read-only), so CPU package power is measured without root. The start-up host check should warn when it is missing (owner rule: check the host and warn). Harness tools/lab/radiance/pwr01-baseline.sh (branch feat/pwr01-power-baseline): every inventory GPU via amd-smi + RAPL package power per phase, J/token for decode/prefill.
 
 CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained under this established owner; no hardware changes or runtime activation are implied.
+
+2026-11-25 add dense TP3 2020.11.4 and current-build stock/controlled phases to baseline. Old four-GPU MoE results are separate cohorts. Owner trial power windows mix decode/prefill; do not divide by one phase throughput to infer energy. Measure per BDF, CPU RAPL and wall meter if available; phase markers, cache/warmup/thermal conditions, actual settings and sensor identity. Record unloaded, HIP-resident, loaded idle and post-request idle without intrusive polling, all cards including unused 6900 (observation only). PWR10 references this protocol.
 
 ## Change Log
 
@@ -68,3 +72,5 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 - RV4549
 - 2026-11-22T11:48:53.486970+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4582
+- 2026-11-25T01:05:11.696313+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
