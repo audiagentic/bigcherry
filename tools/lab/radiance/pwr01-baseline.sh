@@ -36,9 +36,13 @@ BC_SERVE="$B/radiance_home/bin/bc-serve"
 [ -x "$BC_SERVE" ] || { echo "PWR01: native bc-serve missing from $B" >&2; exit 2; }
 [ -n "${BC_MODEL_ROOT:-}" ] || { echo "PWR01: BC_MODEL_ROOT is required" >&2; exit 2; }
 NATIVE_RUN="$OUT/session"
+# The arm's own YAML carries the port and the power profile (x-bigcherry.power.profile): a managed start takes no --set and
+# no profile flag.
+mkdir -p "$OUT"
+python3 tools/lab/radiance/arm_yaml.py --base "$B/configs/flashnext-4gpu.yaml" --out "$OUT/native-input.yaml" \
+  --set server.port=36080 --set "x-bigcherry.power.profile=${PWR01_POWER_PROFILE:-performance}" || exit 2
 NATIVE_ARGS=(--run-dir "$NATIVE_RUN" --engine-binary "$B/bin/radiance" --model-root "$BC_MODEL_ROOT"
-             --set 'engine.port=36080'
-             --power-profile "${PWR01_POWER_PROFILE:-performance}" --allow-power-apply)
+             --native-config "$OUT/native-input.yaml" --allow-power-apply)
 # Native power application requires the operator's lease and per-card
 # qualification; unlike the legacy implicit mode, it cannot silently apply
 # device settings without a durable receipt and restore proof.

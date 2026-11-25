@@ -610,6 +610,7 @@ NativeWriterOutcome write_native_manifest(const NativeWriterRequest& request) {
     NativeWriterOutcome outcome;
     v2::WriterInputs s10;
     s10.power_profile = request.power_profile;
+    s10.power_rules = request.power_rules;
     s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
     s10.calibration_records = request.calibration_records;
     Options opts = request.options;

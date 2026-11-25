@@ -32,6 +32,11 @@ foreach(bc_data archs)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../${bc_data}.toml")
 endforeach()
 
+# power-profiles.yaml is compiled in: the named power profiles bc-serve resolves with (read through the engine's YAML parser).
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../power-profiles.yaml" bc_power_profiles_seed)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/power_profiles_seed.inc" "R\"bcpp(${bc_power_profiles_seed})bcpp\"\n")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../power-profiles.yaml")
+
 # helper_profile.toml is compiled in: the helper_common values bc-serve writes into the serving manifest.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml" bc_helper_profile_seed)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"

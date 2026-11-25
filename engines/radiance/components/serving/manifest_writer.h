@@ -75,7 +75,8 @@ struct NativeWriterRequest {
     std::string expected_plan_key;        // frozen by the owner; empty only for the CLI's cache-less unmeasured draft
     std::string expected_owner_attempt;   // measured only: the plan cache entry must be owned by this attempt
     std::filesystem::path plan_cache;     // measured only
-    std::string power_profile;
+    std::string power_profile;            // x-bigcherry.power.profile of the config
+    v2::S10PowerProfile power_rules;      // that profile's rules from the profile file (empty for stock)
     nlohmann::json calibration_records = nlohmann::json::array();   // P2 records for S10
     std::string manifest_name;            // names the manifest in the P1 record's run id
     std::string producer_sha256;          // SHA-256 of the executable that writes it

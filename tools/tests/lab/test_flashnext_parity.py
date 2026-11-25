@@ -433,9 +433,15 @@ class RunRecordsTests(unittest.TestCase):
             )
             self.assertEqual(snapshot["capture_phase"], "owner_start")
             self.assertEqual(snapshot["facts"]["kernel_release"]["value"], "fixture")
+            # the profile this launch asked for is read from the launch's own arm YAML (absent key: stock)
+            (launch / "native-input.yaml").write_text("cards: [0]\nx-bigcherry:\n  schema: 1\n", encoding="utf-8")
+            self.assertEqual(fp.requested_power_profile(launch / "native-input.yaml"), "stock")
+            (launch / "native-input.yaml").write_text(
+                "x-bigcherry:\n  power: {profile: efficient}\n", encoding="utf-8")
+            self.assertEqual(fp.requested_power_profile(launch / "native-input.yaml"), "efficient")
+            (launch / "native-input.yaml").write_text("cards: [0]\n", encoding="utf-8")
             self.assertEqual(fp.main([
-                "capture-provenance", "--heat", str(self.heat),
-                "--power-profile", "stock", str(launch), "--",
+                "capture-provenance", "--heat", str(self.heat), str(launch), "--",
                 "bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450",
             ]), 0)
             output = StringIO()

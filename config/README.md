@@ -8,8 +8,6 @@ Shared contracts retained here:
 - `environment.example.toml` — a template for host-local SDK and work-root
   settings, never host secrets or installed artifacts.
 - `release.toml` — multi-engine release lines and the shared release ledger.
-- `power-profiles.toml` — named host power intents; observation by default,
-  with explicit per-device qualification for changes.
 - `jobs/` and `slurm/` — shared job execution and scheduler templates.
 - `forbidden-terms-allow.txt` — centrally reviewed hygiene allowlist.
 

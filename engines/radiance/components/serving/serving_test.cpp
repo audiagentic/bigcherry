@@ -1403,7 +1403,7 @@ void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     const std::vector<std::string> measured_args = {
         "--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
         std::string(64, '0'), "--expected-owner-attempt", "native-test-attempt", "--plan-cache", "missing-cache",
-        "--engine-binary", "/missing/radiance", "--power-profile", "stock", "--configs", configs_dir.string(),
+        "--engine-binary", "/missing/radiance", "--configs", configs_dir.string(),
         "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
         "--set", "layout.name=\"qwen27b-tp3\""};
     const auto measured_key = run_bc_serve(measured_args);
@@ -2589,6 +2589,56 @@ void card_selection(Fixture& t) {
         for (const auto& e : hel.at("engine_cards")) assert(h != e);
 }
 
+
+// PWR08 S2: x-bigcherry.power.profile selects a profile of the one profile file; the file's JSON is decoded strictly.
+void power_profile_selection() {
+    namespace v2 = bc::serving::v2;
+    Json section = {{"schema", 1}, {"description", "d"}, {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 1}}})}};
+    assert(bc::serving::decode_x_bigcherry(section).power_profile() == "stock");
+    section["power"] = {{"profile", "efficient"}};
+    assert(bc::serving::decode_x_bigcherry(section).power_profile() == "efficient");
+    section["power"] = {{"profile", "efficient"}, {"mode", "apply"}};
+    try { (void)bc::serving::decode_x_bigcherry(section); assert(false && "an unknown power key was accepted"); }
+    catch (const std::invalid_argument& e) { assert(std::string(e.what()).find("x-bigcherry.power.mode") != std::string::npos); }
+
+    const Json good = {{"schema", 1},
+                       {"profiles", {{"stock", {{"default_mode", "observe"}}},
+                                     {"cap", {{"default_mode", "observe"},
+                                              {"rules", Json::array({{{"role", "engine"}, {"arch", "gfx1201"},
+                                                                      {"evidence", "docs/x.md"},
+                                                                      {"settings", {{"power_cap_w", 200}}}}})}}}}}};
+    const auto loaded = v2::decode_power_profiles(good);
+    assert(loaded && loaded.value().size() == 2 && loaded.value().at("cap").rules.size() == 1 &&
+           loaded.value().at("cap").rules[0].settings.power_cap_w == 200);
+    const auto refused = [&](Json doc, const char* field) {
+        const auto r = v2::decode_power_profiles(doc);
+        assert(!r && r.error().path.find(field) != std::string::npos);
+    };
+    Json unknown = good; unknown["profiles"]["cap"]["surprise"] = 1;
+    refused(unknown, "surprise");
+    Json applies = good; applies["profiles"]["cap"]["default_mode"] = "apply";
+    refused(applies, "default_mode");
+    Json stock_rules = good;
+    stock_rules["profiles"]["stock"]["rules"] = good.at("profiles").at("cap").at("rules");
+    refused(stock_rules, "stock");
+    Json bad_role = good; bad_role["profiles"]["cap"]["rules"][0]["role"] = "gpu0";
+    refused(bad_role, "role");
+    Json host_evidence = good; host_evidence["profiles"]["cap"]["rules"][0]["evidence"] = "/abs/run.txt";
+    refused(host_evidence, "evidence");
+    Json float_setting = good; float_setting["profiles"]["cap"]["rules"][0]["settings"]["power_cap_w"] = 200.5;
+    refused(float_setting, "power_cap_w");
+    Json no_stock = good; no_stock["profiles"].erase("stock");
+    refused(no_stock, "stock");
+    // the selection names a profile of the file, or stock; anything else is refused naming the file
+    namespace ss = bc::serving::session;
+    assert(ss::selected_power_rules(loaded.value(), "stock").rules.empty());
+    assert(ss::selected_power_rules(loaded.value(), "cap").rules.size() == 1);
+    try { (void)ss::selected_power_rules(loaded.value(), "nope"); assert(false && "an unknown profile was accepted"); }
+    catch (const ss::PlanFailed& e) { assert(std::string(e.what()).find("power-profiles.yaml") != std::string::npos); }
+    // the compiled-in file is the shipped one: its stock profile exists (the engine decodes the rest in CI's inspector)
+    assert(v2::embedded_power_profiles_yaml().find("stock:") != std::string::npos);
+}
+
 int main(int argc, char** argv) {
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
@@ -2605,6 +2655,7 @@ int main(int argc, char** argv) {
         detection_limits(t);
         unknown_keys(t);
         card_selection(t);
+        power_profile_selection();
         type_range_required(t);
         precedence_and_caps(t);
         provenance_hash_and_parity(t);

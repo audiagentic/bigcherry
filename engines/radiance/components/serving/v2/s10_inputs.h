@@ -6,6 +6,7 @@
 #include "serving.h"
 
 #include <nlohmann/json.hpp>
+#include <map>
 #include <string>
 
 namespace bc::serving::v2 {
@@ -13,9 +14,18 @@ namespace bc::serving::v2 {
 struct WriterInputs {
   nlohmann::json p1_record;           // bc_serve_v2_measured_inputs; null for the measuring start's manifest
   nlohmann::json calibration_records; // array of P2 store records (calibration_store.py); may be empty
-  std::string power_profile;          // the named profile; "stock" observes
+  std::string power_profile;          // the named profile (x-bigcherry.power.profile); "stock" observes
+  S10PowerProfile power_rules;        // that profile's rules from the loaded profile file; empty for stock
   int64_t now_unix_s = 0;
 };
+
+// The named power profiles of the one profile file (engines/radiance/power-profiles.yaml), as the engine's YAML parser
+// converted them to JSON: exactly {schema: 1, profiles: {NAME: {default_mode, rules}}}, strictly decoded. Every profile
+// observes by default; stock exists and has no rules.
+using PowerProfiles = std::map<std::string, S10PowerProfile>;
+Result<PowerProfiles> decode_power_profiles(const nlohmann::json &document);
+// The profile file compiled into bc-serve (the text the engine converts).
+const std::string &embedded_power_profiles_yaml();
 
 // `draft` is the decoded manifest with its owner map; `resolved` is what it was resolved from.
 Result<S10Inputs> s10_inputs(const Manifest &draft, const bc::serving::Resolved &resolved,

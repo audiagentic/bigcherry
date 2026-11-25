@@ -1,0 +1,38 @@
+# PWR08: named intent, never a command to write power controls. The one profile file: bc-serve compiles it in (like
+# archs.toml) and reads it through the engine's YAML parser; tools/bigcherry/hardware/power_profiles.py reads the same file.
+# A serving config selects a profile with x-bigcherry.power.profile (stock when absent).
+# All profiles default to observe. Explicit operator apply plus per-device qualification is required by the resolver and
+# the PowerTransaction. No physical BDF or host-specific calibration may be committed here.
+schema: 1
+profiles:
+  stock:
+    default_mode: observe
+  efficient:
+    default_mode: observe
+  quiet:
+    default_mode: observe
+  performance:
+    default_mode: observe
+  xtx-soak-candidate:
+    default_mode: observe
+    # Only locally measured extended test: two XTX helper devices, not all gfx1100.
+    # This is a CANDIDATE RULE, never an automatic write. The S10 resolver must require evidence for the exact
+    # card/build/driver in an explicit apply plan.
+    rules:
+      - role: "helper*"
+        arch: gfx1100
+        evidence: "${BC_WORK_ROOT}/runs/pwr01-baseline-10272216/summary.txt"
+        settings: {vddgfx_offset_mv: -125}
+  # November 2026 power sweep candidate: XTX only. Observe by default. Neither the sweep nor this rule grants per-BDF
+  # apply qualification. An explicit apply requires fresh PWR07 probes and independent matching evidence.
+  xtx-sclk2700-uv125:
+    default_mode: observe
+    rules:
+      - role: engine
+        arch: gfx1100
+        evidence: docs/reference/power-tuning-evidence-2026-11.md
+        settings: {sclk_max_mhz: 2700, vddgfx_offset_mv: -125}
+      - role: "helper*"
+        arch: gfx1100
+        evidence: docs/reference/power-tuning-evidence-2026-11.md
+        settings: {sclk_max_mhz: 2700, vddgfx_offset_mv: -125}
