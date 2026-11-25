@@ -45,3 +45,32 @@ Against the start of the series (different sessions, so indicative): IQ8R six an
 ## Not covered
 
 KLD and top-1 per release (last measured at 2020.9.2 for IQR and 2020.8.7 for IQ8R); flashnext parity for 2020.12.0 (the last compared release is 2020.11.3); releases before 2020.8.0, which used a different harness and engine pin.
+
+## Decode throughput (tokens per second), derived
+
+Decode tokens per second here is tokens per step divided by ms per step, both as the engine reports them for the pair (all streams together). It is the engine's own "engine decode tok/s" in the 8.0 to 8.1 note. Some notes report an "aggregate tok/s" that is lower (it spans the whole request); that figure is not used here. Tokens per step depends on draft acceptance and the prompts, so this is noisier than ms per step, and it must be compared within a pair only.
+
+IQ8R, three cards (`qwen27b-tp3`):
+
+| Pair (A to B) | Streams | A: tok/step, ms, tok/s | B: tok/step, ms, tok/s | Change in tok/s |
+|---|---|---|---|---|
+| 8.0 to 8.1 | 6 | 14.5, 43.79, 331 | 15.3, 36.69, 417 | +26% |
+| 8.0 to 8.1 | 8 | 18.4, 48.21, 382 | 18.3, 37.67, 486 | +27% |
+| 8.1 to 8.2 | 6 | 16.41, 39.37, 417 | 16.73, 35.79, 467 | +12% |
+| 8.1 to 8.2 | 8 | 18.36, 39.06, 470 | 18.13, 36.44, 498 | +6% |
+| 8.2 to 8.3 | 6 | 13.77, 31.87, 432 | 14.56, 28.74, 507 | +17% |
+| 8.2 to 8.3 | 8 | 18.25, 36.27, 503 | 18.32, 32.17, 569 | +13% |
+| 8.4 to 8.5 | 6 | 16.1, 30.30, 531 | 16.2, 30.22, 536 | +1% (noise) |
+| 8.4 to 8.5 | 8 | 18.1, 31.68, 571 | 18.3, 31.76, 576 | +1% (noise) |
+
+The 8.3 to 8.4 and 8.5 to 8.6 notes do not report tokens per step; their ms per step differences are inside the noise floor, so no throughput change is claimed.
+
+IQR-V4, three cards (`qwen27b-tp3-iq6r`), one stream 2.93 tokens per step, six streams 13.6 to 13.8, eight streams 16.8 to 17.3 (2020.11 series, acceptance 0.95 at one stream):
+
+| Release | 1 stream tok/s | 6 streams tok/s | 8 streams tok/s |
+|---|---|---|---|
+| 2020.9.2 (21.6 / 29.9 / 33.0 ms) | about 136 | about 455 | about 520 |
+| 2020.11.4 (21.5 / 29.9 / 33.0 ms) | about 136 | about 455 | about 515 |
+| 2020.12.0 (21.47 / 30.27 / 33.21 ms) | about 136 | about 450 | about 510 |
+
+IQ8R now (2020.12.0, 20.25 / 28.88 / 32.03 ms, six streams 14.1 to 15.4 tokens per step as the 12.0 comparison arms showed): about 145 at one stream (acceptance not reported, assumed close to IQR's), 490 to 530 at six streams. Eight-stream tokens per step were not reported for 12.0, so no eight-stream figure is given.
