@@ -147,7 +147,7 @@ if(BUILD_TESTING)
   add_test(NAME bc_calibration_watch_test COMMAND bc_calibration_watch_test)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
-  add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp)
+  add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp sha256.cpp)
   target_link_libraries(bc_fake_engine PRIVATE bc_json_dependency radiance::abi)
   target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
   add_dependencies(bc_release_install_test bc-serve bc-release bc_fake_engine)

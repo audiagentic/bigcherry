@@ -156,7 +156,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
     constexpr const char* command = "--bc-inspect-native-config";
     if (argc < 2 || argv[1] == nullptr || std::strcmp(argv[1], command) != 0) return std::nullopt;
     if (argc != 3 || argv[2] == nullptr) {
-        std::cerr << "radiance: " << command << " requires one inherited sealed descriptor\n";
+        std::cerr << "radiance: " << command << " requires one inherited sealed descriptor holding the raw YAML\n";
         return 2;
     }
 
@@ -168,14 +168,9 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
         if (error != std::errc{} || ptr != end || fd < 3)
             throw std::invalid_argument("descriptor must be an integer greater than 2");
 
-        NativeFleetConfig managed = NativeFleetConfig::replay(NativeConfigSnapshot::from_sealed_fd(fd));
+        NativeFleetConfig managed = NativeFleetConfig::replay(NativeConfigSnapshot::from_raw_fd(fd));
         const auto& fleet = managed.fleet();
         const auto& cfg = fleet.models.front().cfg;
-        auto source = [&](const char* key) -> nlohmann::json {
-            const auto it = cfg.given.find(key);
-            return it == cfg.given.end() ? nlohmann::json(nullptr) : nlohmann::json(it->second);
-        };
-
         auto stated = [&](const char* key, const std::string& value) -> nlohmann::json {
             return cfg.given.contains(key) ? nlohmann::json(value) : nlohmann::json(nullptr);
         };
@@ -187,9 +182,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
             {"engine", {{"abi_version", RAD_ABI_VERSION},
                          {"model", cfg.model},
                          {"radiance_home", cfg.radiance_home},
-                         {"radiance_home_source", source("--radiance-home")},
                          {"kernels", cfg.kernel_hierarchy},
-                         {"kernels_source", source("--kernels")},
                          {"listener", {{"host", cfg.host}, {"port", cfg.port}}},
                          {"tp", cfg.tp},
                          {"tp_wire", stated("--tp-wire", cfg.tp_wire_exact ? "exact" : "wht6")},

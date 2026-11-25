@@ -71,9 +71,10 @@ struct Config {
 };
 // The representable engine settings reported by the matched native parser.
 struct NativeEngineSettings {
-    uint32_t port, max_context, max_sequences, max_batched_tokens, checkpoint_interval, speculative_tokens;
+    uint32_t port, max_context, max_sequences, max_batched_tokens, checkpoint_interval;
+    std::optional<uint32_t> speculative_tokens;   // unset: native "auto" depth, the engine decides
     std::vector<std::string> kernels;
-    std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;
+    std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;   // rope_scaling empty: model-defined
     bool prefix_cache;
     std::optional<uint32_t> prefill_interleave;
     // The tuning options the YAML states (resolver key tuning.NAME, strings except pipelined_prefill_min_rows, an
