@@ -26,7 +26,8 @@ case "$1" in
     run=; while [ $# -gt 0 ]; do [ "$1" = --run-dir ] && run=$2; shift; done
     mkdir -p "$run"
     printf '{"owner_pid": %s, "state": "running", "processes": [{"role": "engine", "pid": 4001}, {"role": "helper0", "pid": 4002}, {"role": "other", "pid": 4003}]}' "$$" > "$run/session.json"
-    until [ -e "$run/stop" ]; do sleep 0.05; done
+    # bounded: a test path that never stops the fake owner must not leave it polling forever
+    n=0; until [ -e "$run/stop" ] || [ $((n+=1)) -gt 1200 ]; do sleep 0.05; done
     exit "${FAKE_OWNER_RC:-0}" ;;
   status) cat "$3/session.json" ;;
   stop) touch "$3/stop"; exit "${FAKE_STOP_RC:-0}" ;;
