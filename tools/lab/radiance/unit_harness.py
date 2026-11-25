@@ -145,7 +145,9 @@ rad_hip_rule_fixes()
 def write_prefix(tree: Path, arch: str, prefix: Path) -> None:
     config = prefix / "lib" / "cmake" / "radiance"
     config.mkdir(parents=True, exist_ok=True)
-    rocm = os.environ.get("ROCM_PATH") or "/opt/rocm"
+    rocm = os.environ.get("ROCM_PATH")
+    if not rocm:
+        raise HarnessError("ROCM_PATH is not set (the SDK of the host's rocm-sdks)")
     text = PREFIX_CONFIG.replace("@TREE@", str(tree)).replace("@ARCH@", arch).replace("@ROCM@", rocm)
     (config / "radiance-config.cmake").write_text(text, encoding="utf-8")
 
