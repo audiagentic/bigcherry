@@ -1,5 +1,5 @@
 # Names the patches' libr4d edits and the libr3 rewrites introduce that predate the naming rule (a type, constant, macro or
-# function ends in _<arch>_<layer>: _gfx12_rad0065 for a patch, _gfx11_r3 for a libr3 rewrite). One entry per name; a new name
+# function carries a layer suffix, see naming-rules.toml). One entry per name; a new name
 # fails the lint, so nothing is added here without a reason.
 
 [[exception]]
@@ -9,32 +9,12 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0012_helper_kernel_config"
-name = "BcR4dHelperConfig"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0012_helper_kernel_config"
 name = "BC_R4D_HELPER_CONFIG_IMPLEMENTATION"
 reason = "predates the naming rule"
 
 [[exception]]
-layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
-name = "OwnerFn"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
-name = "R4D_TRY"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
-name = "Rendezvous"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
-name = "SlotFn"
+layer = "patch:rad0012_helper_kernel_config"
+name = "BcR4dHelperConfig"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -64,12 +44,27 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
+name = "R4D_TRY"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
 name = "RankCleanupBridge"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
+name = "Rendezvous"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0017_vtp14_n3_shared_rendezvous"
 name = "kWakeBytes"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0023_ar_timeline"
+name = "ArtlRing"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -85,11 +80,6 @@ reason = "predates the naming rule"
 [[exception]]
 layer = "patch:rad0023_ar_timeline"
 name = "R4D_ARTL_WORDS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0023_ar_timeline"
-name = "ArtlRing"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -118,18 +108,8 @@ name = "r4d_ts_push_assemble"
 reason = "predates the naming rule"
 
 [[exception]]
-layer = "patch:rad0042_kv_b16_selftest"
-name = "Row"
-reason = "predates the naming rule"
-
-[[exception]]
 layer = "patch:rad0045_expert_route_replay"
-name = "NW"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0045_expert_route_replay"
-name = "__launch_bounds__"
+name = "router_topk_replay_kernel"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -139,12 +119,17 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0049_qwen4exp_e4m3_kv"
-name = "G8_BYTE_ENTRIES"
+name = "BC_KV_CHAIN"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0049_qwen4exp_e4m3_kv"
-name = "STREAMED"
+name = "BC_KV_DECLS"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0049_qwen4exp_e4m3_kv"
+name = "BC_KV_ROWS"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -174,17 +159,7 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0049_qwen4exp_e4m3_kv"
-name = "BC_KV_CHAIN"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0049_qwen4exp_e4m3_kv"
-name = "BC_KV_DECLS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0049_qwen4exp_e4m3_kv"
-name = "BC_KV_ROWS"
+name = "G8_BYTE_ENTRIES"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -194,7 +169,32 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0051_b16_kv_kernels"
+name = "BC_B16_QSA_BASE"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "BC_B16_QSA_CONSTRAINTS"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "BC_B16_QSA_ROWS"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "R4DGateQuant"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
 name = "R4D_KV_BYTES"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "R4D_QB"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -204,7 +204,27 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0051_b16_kv_kernels"
-name = "group"
+name = "kGqGroup"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "kv_store_b16_kernel"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "r4d_attn_decode_body"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "r4d_attn_decode_kernel"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "patch:rad0051_b16_kv_kernels"
+name = "r4d_attn_prefill_kernel"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -224,386 +244,6 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0051_b16_kv_kernels"
-name = "row16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "value16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "value_scale16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "Format"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "__launch_bounds__"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "hd"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "row"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "scale"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "value"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "BLOCK_Q"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "BTS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "CTG"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "DG"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "DOT2"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "F16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "FOLDQ"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "GPREV"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "I8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "K6"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KB"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KBF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KEL"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KI"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KITEMS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KLATE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KPASS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KREGS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KSOFF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KSTR"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KSTR8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KWIDE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "LDSB"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "MSKIP"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "MT"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "NB"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "NKS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "NP4"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "NTHR"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "NTR"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "OLDV4"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "PF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "PGROW"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "PSHIFT"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "PV8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "QK8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "R4D_QB"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "ROWB"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "ROWS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "SGB"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "SPLIT"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "U4"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "V4"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VBOFF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VG"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VI8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VISOFF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VOFF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VREGS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSOFF"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSTAGE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSTR"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSTR8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "ksc8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KLDS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KRAW"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "KVREP"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "PF16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "QLD"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "R4DGateQuant"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "TREE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "V8"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSK"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSKN"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "VSKX"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "kGqGroup"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "r4d_attn_decode_body"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
 name = "r4d_gq_clamp"
 reason = "predates the naming rule"
 
@@ -614,22 +254,7 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0051_b16_kv_kernels"
-name = "raw"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "BC_B16_QSA_BASE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "BC_B16_QSA_CONSTRAINTS"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0051_b16_kv_kernels"
-name = "BC_B16_QSA_ROWS"
+name = "r4dchain_attn_decode"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -639,47 +264,17 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0053_v4_kv_layouts"
-name = "PackedV4"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0053_v4_kv_layouts"
 name = "Format"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0053_v4_kv_layouts"
-name = "K6"
+name = "PackedV4"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "patch:rad0053_v4_kv_layouts"
-name = "__launch_bounds__"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0053_v4_kv_layouts"
-name = "row"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0053_v4_kv_layouts"
-name = "voff"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0053_v4_kv_layouts"
-name = "vsoff"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0054_attn_prefill_fp8"
-name = "dtype"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0054_attn_prefill_fp8"
-name = "row"
+name = "kv_store_fp8v4_kernel"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -688,68 +283,13 @@ name = "BC_H256_PREFILL_FP8"
 reason = "predates the naming rule"
 
 [[exception]]
-layer = "patch:rad0061_iq8r_f32_scale"
-name = "words"
+layer = "rewrite:libr3"
+name = "O_R3NATIVE"
 reason = "predates the naming rule"
 
 [[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "D"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "IqrFused12Certificate"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "IqrFused12Pre"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "begin"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "bf16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "end"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "geometry"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "lds"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "load"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "prepare"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "rowf"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "patch:rad0065_iqr_fused_gfx1201"
-name = "verified"
+layer = "rewrite:libr3"
+name = "R3ArPipeRun"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -764,22 +304,7 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "R3_ACC_ONCE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "R3N"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "NITEM"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "VE"
+name = "R3ArWireRun"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -789,22 +314,17 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
+name = "R3N"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "rewrite:libr3"
 name = "R3X"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "O_R3NATIVE"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "kNativeAcc"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "part11"
+name = "R3_ACC_ONCE"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -819,22 +339,12 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "kLiveRegs"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "kRingRegs"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "kVgprFilePerSimd"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
 name = "kIqrTokenTile"
+reason = "predates the naming rule"
+
+[[exception]]
+layer = "rewrite:libr3"
+name = "kLiveRegs"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -844,72 +354,12 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "D"
+name = "kNativeAcc"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "IqrFusedCertificate"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "IqrFusedPre"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "__launch_bounds__"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "begin"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "bf16"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "end"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "geometry"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "lds"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "load"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "prepare"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "rowf"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "verified"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "kWaveShuffles"
+name = "kRingRegs"
 reason = "predates the naming rule"
 
 [[exception]]
@@ -919,25 +369,10 @@ reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "R3MxPfShape"
+name = "kVgprFilePerSimd"
 reason = "predates the naming rule"
 
 [[exception]]
 layer = "rewrite:libr3"
-name = "G"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "K"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "R3ArPipeRun"
-reason = "predates the naming rule"
-
-[[exception]]
-layer = "rewrite:libr3"
-name = "R3ArWireRun"
+name = "kWaveShuffles"
 reason = "predates the naming rule"

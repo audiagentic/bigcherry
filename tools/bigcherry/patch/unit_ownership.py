@@ -7,9 +7,11 @@ Two checks, both offline and static (no source checkout, no compile):
   owns the unit of the same name. A unit edited by more than one layer is listed by :func:`shared_units`; each must be
   recorded, with the reason, in ``unit-sharing.toml`` beside the patches, so a new overlap is a decision and not an accident.
   Region overlap inside a shared unit is gate 1's job (compose_check).
-* **Naming.** A type, constant, macro or function a patch edit (in the device sources under ``libr4d/``) or a native
-  rewrite introduces ends in ``_<arch>_<layer>``: ``_gfx12_rad0065`` for a patch (its own id), ``_gfx11_r3`` for a libr3
-  rewrite. Names that predate the rule are recorded one by one in ``naming-exceptions.toml``; a new one fails.
+* **Naming.** A type, constant, macro or function declared at the top level of the text a patch edit (in the device
+  sources under ``libr4d/``) or a native rewrite adds carries a layer suffix. The accepted suffix patterns are data
+  (``naming-rules.toml``): ``_<arch>_<patch-id>`` or, for code that builds for every architecture, ``_<patch-id>``
+  for a patch; ``_gfx11_r3`` for a libr3 rewrite. Names that predate the rule are recorded one by one in
+  ``naming-exceptions.toml``; a new one fails.
 """
 from __future__ import annotations
 
@@ -22,8 +24,8 @@ from ..core import paths
 UNIT_FILE = re.compile(r"^libr4d/([A-Za-z0-9_]+)\.hip$")
 SHARING_FILE = "unit-sharing.toml"
 EXCEPTIONS_FILE = "naming-exceptions.toml"
+RULES_FILE = "naming-rules.toml"
 REWRITE_LAYER = "rewrite:libr3"
-REWRITE_SUFFIX = re.compile(r"_gfx11_r3$")
 
 
 def _patches_root(engine: str) -> Path:
@@ -89,7 +91,6 @@ def _data(engine: str, name: str) -> dict:
 _STRUCT = re.compile(r"\b(?:struct|class|union|enum\s+class|enum)\s+([A-Za-z_]\w*)\s*(?:\{|:|;)")
 _USING = re.compile(r"\busing\s+([A-Za-z_]\w*)\s*=")
 _DEFINE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)", re.M)
-_ATTR_FUNC = re.compile(r"__(?:global|device|host)__[^;{()]*?\b([A-Za-z_]\w*)\s*\(")
 _CONSTEXPR = re.compile(r"\bconstexpr\b([^;{]*);")
 
 
@@ -113,10 +114,80 @@ def _declarators(statement: str) -> list[str]:
     return names
 
 
+def _blank(text: str) -> str:
+    """Comments, string and character literals replaced by spaces (same length), so braces and names inside them are not read."""
+    return re.sub(r"//[^\n]*|/\*.*?\*/|\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'",
+                  lambda m: m.group(0) if m.group(0) == '"C"' else " " * len(m.group(0)), text, flags=re.S)
+
+
+#: ``namespace x {`` / ``namespace {`` / ``extern "C" {`` open a scope that does not scope the names inside it
+_TRANSPARENT = re.compile(r"\bnamespace\s*[A-Za-z_]\w*\s*\{|\bnamespace\s*\{|\bextern\s+\"C\"\s*\{")
+
+
+def _depths(text: str) -> list[int]:
+    """Brace depth at each character, where namespace and extern "C" braces do not count (so a name declared in a
+    namespace is a top-level name, and a member of a type or a local of a function is not)."""
+    transparent = {m.end() - 1 for m in _TRANSPARENT.finditer(text)}
+    depth, out, stack = 0, [], []
+    for i, ch in enumerate(text):
+        if ch == "}":
+            if stack and stack.pop():
+                pass
+            else:
+                depth -= 1
+        out.append(depth)
+        if ch == "{":
+            if i in transparent:
+                stack.append(True)
+            else:
+                stack.append(False)
+                depth += 1
+    return out
+
+
+_ATTR = re.compile(r"__(?:global|device|host)__\b")
+
+
+def _attributed_function_names(text: str, depth: list[int]) -> set[str]:
+    """The function declared by each ``__global__`` / ``__device__`` / ``__host__`` declaration at the top level: the
+    identifier before the last depth-0 parenthesis of the declaration (attribute calls such as __launch_bounds__(..) and
+    wave-count macros come earlier)."""
+    names = set()
+    for m in _ATTR.finditer(text):
+        if depth[m.start()] > 0:
+            continue
+        paren, last, i = 0, None, m.end()
+        while i < len(text):
+            ch = text[i]
+            if ch == "(":
+                if paren == 0:
+                    before = re.search(r"([A-Za-z_]\w*)\s*$", text[:i])
+                    last = before.group(1) if before else last
+                paren += 1
+            elif ch == ")":
+                paren -= 1
+            elif ch in "{;" and paren == 0:
+                break
+            i += 1
+        if last:
+            names.add(last)
+    return names
+
+
 def declared_names(text: str) -> set[str]:
-    names = set(_STRUCT.findall(text)) | set(_USING.findall(text)) | set(_DEFINE.findall(text)) | set(_ATTR_FUNC.findall(text))
-    for statement in _CONSTEXPR.findall(text):
-        names.update(_declarators(statement))
+    """Names declared at the top level of ``text`` (members of a type and locals of a function are scoped by it); macros are
+    read wherever they appear, since a macro has no C++ scope. Free functions without a HIP attribute are not read."""
+    text = _blank(text)
+    depth = _depths(text)
+    names: set[str] = set(_DEFINE.findall(text))
+    for pattern in (_STRUCT, _USING):
+        for m in pattern.finditer(text):
+            if depth[m.start()] <= 0:
+                names.add(m.group(1))
+    names |= _attributed_function_names(text, depth)
+    for m in _CONSTEXPR.finditer(text):
+        if depth[m.start()] <= 0:
+            names.update(_declarators(m.group(1)))
     keywords = {"if", "for", "while", "return", "sizeof", "static_assert"}
     return {n for n in names if n not in keywords}
 
@@ -150,15 +221,23 @@ def introduced(engine: str) -> list[tuple[str, str, str]]:
     return out
 
 
-def suffix_ok(layer: str, name: str) -> bool:
+def rules(engine: str) -> dict:
+    """The accepted suffix patterns per layer kind (``naming-rules.toml``): ``{arch}`` is gfx<digits>, ``{id}`` the patch id."""
+    return _data(engine, RULES_FILE)
+
+
+def suffix_ok(layer: str, name: str, rules_: dict) -> bool:
     if layer == REWRITE_LAYER:
-        return bool(REWRITE_SUFFIX.search(name))
+        patterns = rules_.get("rewrite", {}).get("suffixes", [])
+        return any(re.search(re.escape(p) + "$", name) for p in patterns)
     patch_id = layer.split(":", 1)[1].split("_", 1)[0]
-    return bool(re.search(rf"_gfx\d+_{patch_id}$", name))
+    patterns = rules_.get("patch", {}).get("suffixes", [])
+    return any(re.search(re.escape(p).replace(r"\{arch\}", r"gfx\d+").replace(r"\{id\}", re.escape(patch_id)) + "$", name)
+               for p in patterns)
 
 
 # ---------------------------------------------------------------------------------------------------- problems
-def compare(derived, declared, shared, sharing, introduced_names_, allowed) -> list[str]:
+def compare(derived, declared, shared, sharing, introduced_names_, allowed, rules_) -> list[str]:
     """The checks over plain data (the fixtures' entry point)."""
     out = []
     for patch_id in sorted(derived):
@@ -175,8 +254,8 @@ def compare(derived, declared, shared, sharing, introduced_names_, allowed) -> l
     seen = set()
     for layer, source, name in introduced_names_:
         seen.add((layer, name))
-        if not suffix_ok(layer, name) and (layer, name) not in allowed:
-            out.append(f"{layer}: {name} (introduced in {source}) lacks the _<arch>_<layer> suffix; rename it or record the "
+        if not suffix_ok(layer, name, rules_) and (layer, name) not in allowed:
+            out.append(f"{layer}: {name} (introduced in {source}) lacks a layer suffix (patches/naming-rules.toml); rename it or record the "
                        f"exception in patches/{EXCEPTIONS_FILE}")
     for layer, name in sorted(set(allowed) - seen):
         out.append(f"{EXCEPTIONS_FILE}: {layer} {name} is no longer introduced; remove the entry")
@@ -186,4 +265,4 @@ def compare(derived, declared, shared, sharing, introduced_names_, allowed) -> l
 def problems(engine: str) -> list[str]:
     allowed = {(e["layer"], e["name"]) for e in _data(engine, EXCEPTIONS_FILE).get("exception", [])}
     return compare(patch_units(engine), declared_units(engine), shared_units(engine),
-                   _data(engine, SHARING_FILE).get("unit", {}), introduced(engine), allowed)
+                   _data(engine, SHARING_FILE).get("unit", {}), introduced(engine), allowed, rules(engine))
