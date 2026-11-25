@@ -62,6 +62,8 @@ PR #1627 initial CI failed the existing tooling-boundary test rejecting direct p
 
 Completion extension based on merged #1627 ca5f35ad9. All remaining independent tooling implementation now present; production profile qualification remains explicitly open, not transferred by falsely marking acceptance passed. Hardware-change authorization is required for real candidate test. First CLI attempt failed missing PyYAML in system Python, then anonymous lease refused; platform Python and named task-acquired lease passed. PWR07/PWR08 and all other plans untouched. Earlier negative provider evidence retained.
 
+Output reconciliation: remove caller-selected --output; use existing WSL01 runs/capture/<run-id>, subkind gpu-ai-screen, plan PWR12, engine none, standard run.manifest.json and platform Receipt v1 <run-id>.power.json with producer-specific ai_screen observations. Existing capture/v1 harvest and retention; screen diagnostic only, never synthetic inference or calibration record. Reference by completed managed stock run ID and exact receipt digest, with typed run reference protecting retention. Same run ID for existing gpu-power transaction/journal; unverified recovery holds the run. Historical 15 JSON files archived byte-for-byte in capture run 20261125T231746Z-gpu-ai-screen-history-26493383ed00 and verified evidence-hold bundle; historical diagnostics cannot serve as stock references. 73 targeted tests pass, including managed lifecycle, linked stock, failed candidate and harvest. No engine, hardware, or other plan changes. Physical qualification remains open.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -69,3 +71,4 @@ Completion extension based on merged #1627 ca5f35ad9. All remaining independent 
 - 2026-11-25T22:50:51.480167+00:00 (updated-by): Updated: section:steps, section:files, section:notes
 - 2026-11-25T23:06:16.646122+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:files, section:validation, section:notes
 - 2026-11-25T23:06:41.278723+00:00 (state-transition): State: pending → in_progress
+- 2026-11-25T23:18:17.777002+00:00 (updated-by): Updated: section:notes

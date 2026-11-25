@@ -63,15 +63,13 @@ agent-lease acquire gpu --ttl 12m --est 5m --wait -- \
     --profile stock --stock-confirmed \
     --bdf "$GPU_BDF" --arch "$GPU_ARCH" --role "$GPU_ROLE" \
     --dtype fp16 --n 768 --seconds "$SCREEN_SECONDS" --pause-ms 0 2 \
-    --max-hotspot-c "$SAFE_HOTSPOT_C" \
-    --output "$BC_WORK_ROOT/ai-power-screen/stock.json"
+    --max-hotspot-c "$SAFE_HOTSPOT_C"
 ```
 
 For a candidate, invoke the same platform command **inside the existing
 authorized power transaction's lease and child-lifetime scope**, after the
 owner has applied and verified the candidate. Change only `--profile`,
-replace `--stock-confirmed` with `--reference <stock.json>`, and choose a
-new output file. The operator/transaction must keep the lease through probe
+replace `--stock-confirmed` with `--reference <stock-run-id>`. A new managed run is allocated automatically. The operator/transaction must keep the lease through probe
 exit and restore. Do not manually leave a candidate applied across leases.
 For independent temporary application, add `--apply-profile --confirm-idle`
 to the candidate command, only with explicit operator consent and no GPU users
@@ -103,7 +101,7 @@ where supported. No silent provider fallback or claim that a selected library
 exercises every instruction. For current-settings diagnostics without a
 factory assertion, use stock with `--observe-current` instead of
 `--stock-confirmed`; the output cannot be used as a stock candidate reference.
-The extended receipt is schema 2; re-record old schema-1 stock references.
+Use a managed stock run ID. Previous standalone JSON is historical diagnostic evidence only; re-record stock through the managed command.
 
 Include `memory` in `--dtype` with explicit even `--memory-mib` (total for two
 buffers) and `--headroom-mib` (at least 256 MiB). The probe checks live free
@@ -132,15 +130,36 @@ Use a named GPU lease and an environment carrying that same instance;
 an anonymous lease without AGENT_INSTANCE is correctly refused. Multiple requested types and burst
 gaps run in order, stopping at the first nonpass; a supported subset never
 silently passes an unsupported request. Choose `--seconds` per case and
-a lease longer than total cases plus setup/cleanup. Output files are separate
-evidence, not launch inputs, and must not be overwritten. Existing atomic
-power-receipt writing is reused. A supervisor may stop the screen at the
+a lease longer than total cases plus setup/cleanup. Evidence is not a serving launch input. The existing atomic power-receipt writer is reused. A supervisor may stop the screen at the
 explicit safe ceiling or a lower available driver-reported limit. Missing
 junction telemetry, failed identity, timeout, runtime error, numerical
 mismatch, lease loss, or an interrupted run does not pass. This is a
 polled guard, not a thermal control system. Hard driver hangs/SIGKILL cannot
 guarantee reaping: verify child exit and retain the existing owner recovery
 fence before any restore or new mutation.
+
+## Managed evidence and retention
+
+Every screen creates an existing WSL01 capture run at
+`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR12,
+engine none). The usual `run.manifest.json` records lifecycle, source and
+input digests, exit code, and a typed reference to the stock run for candidates.
+The single `<run-id>.power.json` uses the existing platform Receipt v1
+envelope: request, start/stop observations, transaction and ai_screen
+observations (including per-case diagnostics). There is no new top-level
+receipt schema or result store. The independent screen has no serving
+manifest; that binding is explicitly unavailable. The transaction uses
+the same run ID and existing gpu-power recovery directory, outside cleanup
+of the run itself. Unverified restoration is held from retention.
+
+Use `bigcherry run status <run-id>` and `bigcherry run harvest <run-id>`
+under the usual workspace rules. Existing capture/v1 harvest keeps the
+JSON evidence in evidence-hold; all screens are diagnostic-only, including
+passes, not synthetic inference metrics or calibration records. Candidate
+reference must be a completed managed stock run with passing coverage and
+explicit factory confirmation. Retain the typed run reference and digest
+of its exact receipt. The old arbitrary --output argument is removed.
+No engine runs or hardware settings are changed by this output alignment.
 
 ## Numerical and identity contract
 
