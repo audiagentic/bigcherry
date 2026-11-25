@@ -179,21 +179,19 @@ ManifestPower::ManifestPower(power::Hardware& hardware, power::Records& records,
     : hardware_(hardware), records_(records), sensor_(sensor), lease_(std::move(lease)),
       allow_apply_(allow_apply), workload_(std::move(workload)) {}
 
-v2::Status ManifestPower::begin(const std::filesystem::path& manifest, v2::PlanUse use) {
+v2::Status ManifestPower::begin(const v2::Manifest& manifest, v2::PlanUse use) {
     if (transaction_)
         return refusal("power was already bound to a session manifest");
-    const auto authenticated = v2::load_manifest(manifest, use);
-    if (!authenticated)
-        return authenticated.error();
-    const auto selected = selection(authenticated.value());
+    (void)use;
+    const auto selected = selection(manifest);
     if (!selected)
         return selected.error();
-    const auto plan = power::bind(authenticated.value(), selected.value());
+    const auto plan = power::bind(manifest, selected.value());
     if (!plan)
         return plan.error();
     if (plan.value().mode == power::Mode::apply && !allow_apply_)
         return refusal("hardware power apply requires explicit --allow-power-apply");
-    for (const auto& bdf : authenticated.value().spec.processes.engine.device.gpus) {
+    for (const auto& bdf : manifest.spec.processes.engine.device.gpus) {
         const auto pci = power::PciAddress::parse(bdf);
         if (!pci)
             return pci.error();
@@ -202,7 +200,7 @@ v2::Status ManifestPower::begin(const std::filesystem::path& manifest, v2::PlanU
     bound_ = plan.value();
     // Each owner execution owns exactly one durable power transaction and
     // receipt. The authenticated instance id names the immutable origin only.
-    execution_ = PowerExecution{"power-" + new_instance_id(), authenticated.value().metadata.instance_id};
+    execution_ = PowerExecution{"power-" + new_instance_id(), manifest.metadata.instance_id};
     transaction_ = std::make_unique<power::SessionPower>(plan.value(), execution_->run_id, hardware_, records_,
                                                          lease_, [this] { return verified_exit_; });
     transaction_->set_workload(workload_);

@@ -459,11 +459,21 @@ Json policy_calibration_inputs(const Json& spec) {
                     {"gemv_large_rows", transport.at("gemv_large_rows")},
                     {"skip_owned", transport.at("skip_owned")},
                     {"moe_down_tile", spec.at("handoff").at("kernels").at("moe_down_tile")}};
+    // What the cards actually run under: the profile name alone, unless the plan applies settings, in which case the
+    // effective per-BDF settings (the digest of the resolved device list, site overrides included) are part of the key.
+    std::string power = spec.at("intent").at("power").at("profile").get<std::string>();
+    const Json& planned = spec.at("plan").at("power");
+    if (planned.at("mode") == "apply") {
+        Json effective = Json::array();
+        for (const Json& device : planned.at("devices"))
+            effective.push_back({{"bdf", device.at("bdf")}, {"settings", device.at("settings")}});
+        power += "@" + sha256_hex(effective.dump());
+    }
     return {{"policy_key_version", 2},
             {"model", spec.at("plan").at("engine_memory").at("model_identity")},
             {"layout", spec.at("intent").at("layout")},
             {"objective", spec.at("intent").at("service").at("objective")},
-            {"power_profile", spec.at("intent").at("power").at("profile")},
+            {"power_profile", power},
             {"engine_cards", engines}, {"helper_cards", helpers},
             {"histogram_period_s", spec.at("handoff").at("telemetry").at("period_s")},
             {"helper_runtime", spec.at("processes").at("helper_common")},

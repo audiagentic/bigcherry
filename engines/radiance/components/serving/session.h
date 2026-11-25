@@ -191,7 +191,8 @@ struct Hooks {
     Callback<void(const std::string&)> selected_segment; // journal a unique helper segment before measuring
     // Exactly one manifest-authenticated power admission, after the writer
     // resolves selected cards but before any measuring/serving child starts.
-    Callback<v2::Status(const std::filesystem::path&, v2::PlanUse)> admit_power;
+    // The path names the pinned file for the session record; the typed manifest is the S10 output the power plan comes from.
+    Callback<v2::Status(const std::filesystem::path&, const v2::Manifest&, v2::PlanUse)> admit_power;
     // This host's power-site.yaml text for the native config inspector ("" = the host has none).
     std::string power_site_yaml;
     // One owner-recorded bound for verified measuring-helper teardown AND counter release.
@@ -223,7 +224,7 @@ struct PowerHook {
     Callback<v2::Status()> restore;
     // An alternative to apply for actual SessionPower: the planner supplies a
     // strictly authenticated manifest before starting its measuring children.
-    Callback<v2::Status(const std::filesystem::path&, v2::PlanUse)> begin_manifest;
+    Callback<v2::Status(const std::filesystem::path&, const v2::Manifest&, v2::PlanUse)> begin_manifest;
     Callback<v2::Status(const std::filesystem::path&)> verify_serving;
     Callback<v2::Status(bool)> gfxoff_window; // false: floor; true: loaded idle
     Callback<void()> verified_exit;           // the owner calls only after verified child exit
