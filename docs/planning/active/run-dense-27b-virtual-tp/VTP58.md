@@ -53,7 +53,10 @@ A candidate that is byte identical, resource clean and faster on every affected 
 
 Measured context: VTP56 notes. Kernel work follows the composition rules (RCS19 to RCS22): additive, suffixed names, anchor gate. GPT is review only on this work.
 
+2026-11-25: the freeze on kernel optimisation is lifted for this item (owner decision); there are no adversaries here, so identity and provenance machinery stays minimal. Approach: build the discrete harness first (RCS25) so each candidate is checked in minutes on one card, then prototype. Candidate that fits the register budget: a taller token tile with a smaller weight tile (for example 64 weight rows by 256 token rows, the same accumulator count as 128 by 128), which halves the decode redundancy at 129 to 256 rows and halves the number of decodes at 2048 (16 bands become 8); a decoded tile shared by two sequential token bands needs both accumulator sets live, which exceeds the 256 register cap. Checks: resource record, output hashes against the shipped build at 129 to 2049 rows including tails, cold and warm replay on both cards (R9700 with the window-agreement rule), then Gate E and the first-token rows at release. GPT reviews the design and returns any code as text.
+
 ## Change Log
 
 - 2026-11-25T00:42:24.671410+00:00 (created-by): Created by lead
 - 2026-11-25T00:42:47.934646+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-25T02:12:40.230589+00:00 (updated-by): Updated: section:notes

@@ -11,19 +11,19 @@ priority: P1
 work: L
 ---
 
-# Native serving power profiles: per-device resolution, qualification and replay
+# Owner-only YAML power profiles: per-device resolution, qualification and measured reuse
 
 ## Description
 
-Complete the missing native production power-profile resolver in the current serving architecture. Reuse the existing generated v3 PowerSettings contract and native Radiance YAML as the sole authored model configuration. Preserve the 2026-11-10 decision (#824/#825): named reusable profiles, host calibration by physical BDF, separate qualification and fresh capabilities, no cached measurement authorizing itself. The historical v1-to-v2 cutover has shipped and must not be repeated. The C++ owner applies the resolved settings via RSC02; PWR07 owns probe and receipts.
+Finish missing nonstock production policy in the no-launch-manifest architecture. Native deployment x-bigcherry names profile; one reusable profile YAML and site YAML own authored settings/physical overrides. Reuse existing PowerPlan/Tuning/SelectedGpu and S10 pure per-device math, not v3 launch schema. RSC02 applies via existing transaction, PWR07 owns probe/receipt, PWR10 qualifies minimum cap. No interim manifest-based implementation.
 
 ## Steps
 
-1. Connect existing named profile/site inputs to the C++ owner; seal one normalized policy snapshot. 2. Resolve concrete controls independently for each selected physical BDF, including mixed TP3; validate qualification and fresh capability. 3. Preserve existing contract, bind effective policy identity into cache and replay, and record provenance without duplicating native model options. 4. Exercise measuring, measured and stored starts with the same admitted policy; integrate RSC02 transaction and PWR07 receipts. 5. Qualify PWR10 minimum-cap profile, then other candidates through PWR02. Explicit promotion decision, no automatic historical offsets.
+Migrate config/power-profiles.toml and serving DevicePower/site inputs to single YAML authority with RSC01, migrate all readers, retire --power-profile override in favor of YAML selector. Resolve each selected BDF independently with actual capability and matching trusted qualification; preserve voltage/clock/memory/cap controls and reversible gfx1201 offset only after backend gate. Bind effective policy to owner session and performance/calibration/cache identity, fresh admission for named starts. RSC02 applies before measure and all GPU children, restores exact original under lease. PWR10 first qualified cap-only profile, paired clock/UV and broader PWR02 later; no default activation without decision.
 
 ## Detailed Solution & Technical Design
 
-Native recovery (supersedes obsolete cutover instructions): (1) Inspect existing --site/--power-profile sources and installed bundle; reuse config/power-profiles.toml and the existing per-BDF host policy semantics, with one explicit source authority and deterministic rule/override precedence. Confirm native launch selector support rather than assume a YAML key; if required review only a minimal typed profile-name reference in existing x-bigcherry extension. Do not duplicate native model fields. (2) Thread a sealed, typed policy snapshot through WriterInputs, s10_inputs and the native owner measuring/measured writers and stored replay. Use the existing C++ LinuxHardware probe and trusted qualification records, not a parallel Python runtime resolver. Resolve each selected physical BDF independently, preserving TP rank/helper order, including two gfx1100 and one gfx1201 with distinct settings. Resolve min-cap selector against fresh capabilities to concrete integer W. Keep the existing v3 PowerSettings fields and reader; preserve compatible profile digest semantics, bind effective settings/source and qualification identity in owner cache/receipts where possible; do not silently change wire digest meaning. Stop for design review if the current wire contract truly cannot express it. (3) Exact per-device qualification includes model/build, kernel/driver/firmware, topology, workload, actual settings, output/quality and phase energy evidence. Compare identities, not mere nonempty strings. Stock absent selection observes; explicit nonstock apply requires qualification, --allow-power-apply and verified owner lease; no silent fallback. Research-only arms may use existing fenced transaction under explicit authorization without claiming production qualification. (4) Bind effective policy across measurement, final plan and replay; invalidate performance calibration when settings change under same name; memory-plan reuse only with fresh admission and compatibility. Delegate application/restore to existing RSC02 transaction; do not expand engine hardware controls. Explicit operator decision required before any default-on policy.
+docs/design/radiance-native-yaml-launch.md sections 2, 5 and 6. Extract existing S10 power resolution from Manifest and fix role-keyed mixed TP rejection. Return typed power::PowerPlan directly to SessionPower; no manifest-digest authorization, no new launch format. Exact per-BDF/profile/driver/kernel/firmware/model/build/topology/workload/actual settings qualification; stock observe default; apply intent plus explicit allow and verified AGENT_INSTANCE lease. Qualification evidence not YAML boolean. Same admitted plan for measurement/final, named cache reuse revalidates current effective policy; changed same-name settings invalidate relevant performance identity. PWR07 positive cap/original/readback and per-board support. Preserve PWR04/05 transferred gates; historical offsets not automatically applied. CPU observe-only until host controller. Lab research fenced and separate from production promotion.
 
 ## Code Samples & Guidance
 
@@ -31,11 +31,11 @@ Native recovery (supersedes obsolete cutover instructions): (1) Inspect existing
 
 ## Files
 
-engines/radiance/components/serving/{main.cpp,session.cpp,session.h,manifest_writer.cpp,stored_manifest_cache.cpp,stored_manifest.cpp,v2/s10_inputs.h,v2/s10_inputs.cpp,v2/s10_resolver.h,v2/s10_resolver.cpp,v2/p1_producer.cpp}; config/power-profiles.toml; tools/bigcherry/hardware/power_profiles.py (reference parser); existing host/site input; docs/design/radiance-native-config-x-bigcherry.md; docs/reference/engines/radiance/SERVING_MANIFEST.md. Contract/serving.toml is existing authority, not a new schema task.
+engines/radiance/components/serving/{main.cpp,session.cpp,session.h,xbigcherry.cpp,serving.cpp,v2/s10_inputs.*,v2/s10_resolver.*,manifest_power.*,power_transaction.*,power_linux.*,power_records.*,plan_cache.*}; config/power-profiles.toml -> YAML replacement; tools/bigcherry/hardware/power_profiles.py and core/environment.py DevicePower readers; existing site policy, configs, design docs and tests. No new launch schema/contract.
 
 ## Validation
 
-Card-free: the same resolved power plan appears in unmeasured and measured manifests; changing the profile file after manifest generation changes nothing that is applied; unknown/duplicate roles and missing BDFs fail resolution; observation mode has an explicit empty settings map per role; registry fingerprints regenerate and CI generator-diff passes; all consumers reject v1 and accept v2 (no translator).
+Strict YAML rules, same-arch distinct BDF and mixed TP, unknown/duplicate/unsupported/wrong qualification, zero cap, changed source after sealing, same effective plan through measurement/final, named cache changed settings, observe no writes. Card-free owner/transaction tests, actual PWR10 leased native YAML apply/restore, output/quality/performance/energy gates.
 
 ## Effort & Risk
 
@@ -43,7 +43,7 @@ Card-free: the same resolved power plan appears in unmeasured and measured manif
 
 ## Standards
 
-No new manifest, manifest version, parallel model configuration, launcher or supervisor. Existing v3 contract unchanged; no repeat cutover, no legacy fallback. Native YAML authority retained. Any indispensable wire change requires separate design review.
+No launching manifest, no duplicate YAML/TOML registry, no shim or legacy backport, no new supervisor/engine hardware writer. Run capture output only. Native YAML authority, explicit authorization and exact restore.
 
 ## Acceptance Criteria
 
@@ -52,6 +52,8 @@ No new manifest, manifest version, parallel model configuration, launcher or sup
 **Transferred PWR05 acceptance (independent gate):** PWR05 default-selection acceptance: any proposed flashnext-4gpu default power profile must be a named PWR08 v2 intent and qualified PWR07/PWR09 receipt-bound controller action; a generic launcher --gpu-power flag is not a substitute. The old PWR05 claim that -125 mV saved ~24 W per XTX is superseded by the later same-current-build negative comparison (190-191 W stock vs 192-196 W UV at ~325-326 decode tok/s), so do not activate -125 mV or claim efficiency. Requalify each XTX card and R9700 separately, hold model/compiled binaries/MTP/KV/layout/concurrency/driver/firmware constant, require phased 42K+8-session power and performance ABBA, identical output/quality, readback of real effective clocks/voltage and capability/restore success with integrated GPU+CPU joules/token, no regressions beyond measured CI. Only a newly demonstrated speed-safe/quality-safe energy win and an explicit per-role/BDF selection permit default-on; otherwise keep observe-only stock and record the negative no-promotion verdict. PWR02 owns power-cap sweeps; PWR06 owns gfx1201 kernel idle; PWR07/PWR09 own probe and transaction. No code defaults or second profile registry.
 
 Native recovery gate: strict production nonstock profile source; mixed TP3 and two same-arch devices with different settings; no unknown/duplicate BDF/role or unsupported controls; apply with qualification matching actual identities and fresh probe, observe has no writes; gfx1100 offset requires paired clock ceiling; changing source/setting under same profile name invalidates stale effective policy and performance calibration; same sealed policy on fresh measurement and measured/replay start. Existing v3 schema unchanged, native YAML unchanged for native options, installed runtime Python-free. Explicit nonstock native foreground serve/stop under lease verifies exact apply and restore in RSC02/PWR10; historical settings not automatically activated. Card-free parser/resolver/session/cache/contract tests plus real native receipts, output and performance gates. Preserve all preceding acceptance until satisfied.
+
+Native YAML selected profile resolves exact independent per-BDF settings, trusted qualification matches actual identities, no stale/unsupported writes, observe no writes, paired gfx1100 SCLK/voltage safety; same sealed effective policy through measurement/final, named cache revalidates. Existing C++ owner alone applies and restores exact original; real native --config launch with min cap under verified lease and output/performance proof, no old manifest input. All transferred PWR04/PWR05 gates above remain semantic requirements; provenance now typed owner/receipt, not launch schema.
 
 ## Notes
 
@@ -62,6 +64,12 @@ CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement 
 CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained under this established owner; no hardware changes or runtime activation are implied.
 
 2026-11-25 native recovery audit: the current generated bigcherry/v3 envelope already carries all five controls; native Radiance YAML remains the single authored model config. #891 left v2/s10_inputs.cpp:82–86 stock-only/observe, #895 supplied lease-held automatic settings in the old launcher, #1131 retired that launcher before nonstock resolution was connected; #1167 did not cause the original gap. Recent native serving receipts show stock/observe and empty per-device settings. s10_resolver.cpp power() also rejects differing settings on mixed-architecture TP engine ranks via a role-keyed map. PWR09 is superseded by the native owner (#1400); RSC02 now owns remaining transaction acceptance, WSL08 owns detached lease lifetime. Keep the historical evidence and old plan sections as provenance, not instructions to repeat the v2 migration. The historical 2900 MHz/-75 mV host selection and 2700/-125 discovery are not current qualifications. PWR10 is the first deployment candidate; PWR02 owns wider sweeps. No new manifest/version or duplicate model schema, no revived launcher.
+
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Supersedes #1544-specific v3 contract-preservation and writer/replay implementation instructions. The stock-only and mixed TP findings, historical negative uncapped UV, exact qualification, PWR07 telemetry and RSC02 recovery remain. No new power plan owner.
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Effective per-device power and qualification identity binds candidate runtime acceptance, performance/calibration keys and named measurement compatibility; do not invalidate unrelated compile cache. Prior profile evidence not silently accepted on changed context; stock no-write every bump, required nonstock profile fresh compatible qualification or explicit refusal, no fallback. Owner-only typed plan from YAML; PWR10/RSC11 exact candidate real restore evidence. Do not repeat every historical sweep or introduce manifest producer.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native memory/queue changes affect performance and measured room, not power authority. Owner-only YAML profile and native PowerPlan independent of manifest/Fleet; no new hashes, retain existing receipt and actual build/profile/board compatibility. Required profile requalifies if context changed or refuses; stock no writes. No universal nonstock sweep on routine bump.
 
 ## Change Log
 
@@ -100,3 +108,9 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - RV4576
 - 2026-11-25T01:01:53.754975+00:00 (updated-by): Updated: section:title, section:notes, section:detailed_solution, section:files, section:acceptance_criteria
 - 2026-11-25T01:10:09.371431+00:00 (updated-by): Updated: section:description, section:steps, section:standards
+- RV4595
+- 2026-11-25T01:39:04.091027+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
+- RV4615
+- 2026-11-25T02:09:24.099602+00:00 (updated-by): Updated: section:notes
+- RV4646
+- 2026-11-25T02:47:36.773505+00:00 (updated-by): Updated: section:notes

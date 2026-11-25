@@ -86,18 +86,21 @@
 @@ end
 
 # Single-band IQR: replace weight loads only; keep native WMMA, fold and stores.
-@@ find 1
+# The managed patch rad0065 makes the same edits to the shared source for the gfx12 build (libr4d). A libr3 build that
+# applies that patch finds none of these five anchors (each is "or 0" and the group is all-or-none); a build without the
+# patch gets the edits from here. Either way the body has the same Fused parameter, so the gfx11 tile below is unchanged.
+@@ find 1 or 0
 template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock>
 @@ replace
 template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
 @@ end
-@@ find 1
+@@ find 1 or 0
     const uint8_t* const wsrc = W + (size_t)wt0 * ksuper * kTileBytes + lane * kLaneBytes;
 @@ replace
     const uint8_t* wsrc = nullptr;
     if constexpr (!Fused) wsrc = W + (size_t)wt0 * ksuper * kTileBytes + lane * kLaneBytes;
 @@ end
-@@ find 1
+@@ find 1 or 0
 #pragma unroll
     for (uint32_t i = 0; i < kPTW; ++i)
         w0[i] = stage8_load(wsrc + (size_t)i * ksuper * kTileBytes, true);
@@ -108,7 +111,7 @@ template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, b
         w0[i] = stage8_load(wsrc + (size_t)i * ksuper * kTileBytes, true);
     }
 @@ end
-@@ find 1
+@@ find 1 or 0
 #pragma unroll
         for (uint32_t i = 0; i < kPTW; ++i)
             nxt[i] = stage8_load(wsrc + ((size_t)i * ksuper + c1 / kSuperK) * kTileBytes, true);
@@ -123,12 +126,22 @@ template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, b
             nxt[i] = stage8_load(wsrc + ((size_t)i * ksuper + c1 / kSuperK) * kTileBytes, true);
         }
 @@ end
-@@ find 1
+@@ find 1 or 0
     for (uint32_t kb = 0; kb < nkb; ++kb) {
+        // The weight's scales for this block, read ahead of the two tiles that hide them: one bf16
 @@ replace
     for (uint32_t kb = 0; kb < nkb; ++kb) {
         if constexpr (Fused) {
             static_assert(I8 && SB == kBlock && kTPB == 2);
             pre.prepare(n0, kb);
         }
+        // The weight's scales for this block, read ahead of the two tiles that hide them: one bf16
+@@ end
+
+# The pair of the five blocks above: the text the patch leaves. It rewrites nothing; it only has to occur when the others do not,
+# so that a source with neither form (an upstream change) still fails the check.
+@@ find 1 or 0
+template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
+@@ replace
+template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
 @@ end

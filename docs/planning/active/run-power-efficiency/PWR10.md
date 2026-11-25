@@ -51,11 +51,19 @@ Minimum-cap profile selectable per launch with measured watts and speed, caps re
 
 First deployable slice: native foreground launch and replay select qualified minimum-cap profile, independently resolve each participant, apply before model load/measurement, verify readbacks, leave unused GPU unchanged, stop/reap/restore original caps under lease. Repeat trial with phase-separated energy and stable identity, three runs per arm or more; 1.1% decode loss is not zero, require lead-approved non-regression/tolerance and quality before promotion. Preserve evidence if negative. Qualify clock/voltage combinations only with matched controls, independent per-card output/quality, thermal soak and recovery; no default-on without explicit decision. Do not require this research to block a qualified cap-only deployment.
 
+Native YAML selected qualified cap-only profile applies before measurement/model load, independently resolves device minimum and exact readbacks, unused devices unchanged, exact restore before lease release. Named cache reuse must revalidate current policy and never launch from run manifest. Preserve previous repeated/phase-integrated, quality, tolerance and thermal/UV evidence gates; no default-on without explicit decision.
+
 ## Notes
 
 Historical note (superseded by the clarification below): the then-active voltage offset was 0 mV, and the withdrawn undervolt was not to be re-added. The withdrawal applies to the unqualified automatic setting, not the supported voltage control or matched-clock research.
 
 2026-11-25 correction: previous note withdrawing undervolt refers to unqualified historical settings, especially uncapped -125 mV which increased power; it does not remove supported voltage control or prohibit qualified matched-clock research. The native production resolver is stock-only and mixed TP per-role resolution rejects differing arch settings; PWR08/RSC02 own this prerequisite, PWR07 probes. Preserve single native YAML and existing v3 contract. No automatic promotion of historical 2900/-75 or 2700/-125. Owner trial: stock/min/stock decode 126.1/124.7/126.0; prefill 2492/2511/2494; active GPU mean sums 786/735/829 W; 72.5 W midpoint saving, 1.1% decode cost, 43 W stock drift. One run/arm, mixed windows, not integrated phase energy. Caps restored per owner. Raw samples and identity not independently recovered.
+
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. #1544 trial and qualification plan retained, but first deployable minimum-cap profile uses YAML selector and owner-only typed PowerPlan, not manifest. Native --config real foreground serve/stop and named measurement reuse, no --manifest input. Do not implement intermediate manifest-based nonstock serving. Preserve repeated controls, per-board clock/UV research, quality and exact restore.
+
+2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 gate order. Qualification receipts link exact candidate pin/build/bundle, native YAML, selected BDFs, kernel/driver/firmware, actual admitted controls and workload. MEN17/RSC11 use required candidate-compatible profile evidence (stock no-write for every bump; nonstock only where required/qualified), do not repeat every historical sweep. Actual native owner applies before measure/load and restores exact prior state after children exit; no implicit stock fallback on requested apply. If context changes and evidence no longer qualifies, refuse and requalify. Keep repeated min-cap and paired voltage/clock/quality gates and no default promotion.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Preserve current discovery trial as separate cohort. First qualified native cap profile test on exact approved target and actual YAML/BDF, native reserve/queue changes can alter workload and power. Stock no-write every bump; nonstock only for intended required profile with compatible evidence or explicit refusal. No default activation, no replay all historical sweeps, exact child exit+restore under lease.
 
 ## Change Log
 
@@ -67,3 +75,9 @@ Historical note (superseded by the clarification below): the then-active voltage
 - RV4580
 - 2026-11-25T01:04:09.048902+00:00 (updated-by): Updated: section:title, priority='P1', work='M', section:notes, section:detailed_solution, section:acceptance_criteria
 - 2026-11-25T01:10:22.073565+00:00 (updated-by): Updated: section:steps, section:notes
+- RV4597
+- 2026-11-25T01:40:03.796527+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4624
+- 2026-11-25T02:14:26.375451+00:00 (updated-by): Updated: section:notes
+- RV4647
+- 2026-11-25T02:48:07.107725+00:00 (updated-by): Updated: section:notes

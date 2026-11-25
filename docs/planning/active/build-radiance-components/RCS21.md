@@ -55,8 +55,26 @@ Depends on RCS19 (anchor gate, naming). Evidence for each neutral change: the fu
 
 Review (2026-11-25): the traits layer must resolve at compile time and inline (no runtime trait object, no conversion through a common accumulator layout); the fused tile is neutral algorithm and policy with architecture-specific data motion; keep the qualified certificate (computed trellis forms, L=16 and the one L=15, scale classes, single band) rather than a broader traits-derived rule; launch bounds, wave count and shared memory placement stay part of the qualified design.
 
+Review (2026-11-25): upstream-shaped patches that come out of an owned overlay are export artifacts for submission, not a second production transformation layer: the overlay stays the production source until upstream adopts the change (change-level adoption, RCS23).
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Keep traits seam narrow and architecture-neutral where valid. Declare actual upstream include closure, row/ABI assumptions and test shared-traits changes across affected arch/pass/provider under RCS19/RCS23. No broad new traits/compat layer solely for bump tooling; upstream adoption is local retirement after equivalence, no upstream contribution assumption.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native libr3d int8 wave-matrix layout/group-rounding and scalar packed IQR added on candidate; do not force same operand traits where layout/storage differs. Derive shared math only where actual arithmetic and storage allow, use native base for covered rows, local overlay for required deltas. Keep native upstream layout and ABI, no general compatibility shim or backport.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native libr3d int8 wave-matrix layout/group-rounding and scalar packed IQR added on candidate; do not force same operand traits where layout/storage differs. Derive shared math only where actual arithmetic and storage allow, use native base for covered rows, local overlay for required deltas. Keep native upstream layout and ABI, no general compatibility shim or backport.
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
 - 2026-11-25T00:41:32.230236+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:52:44.694931+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-25T01:08:41.319466+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4607
+- 2026-11-25T02:05:13.382985+00:00 (updated-by): Updated: section:notes
+- RV4632
+- 2026-11-25T02:40:25.241991+00:00 (updated-by): Updated: section:notes
+- RV4633
+- 2026-11-25T02:40:46.557497+00:00 (updated-by): Updated: section:notes

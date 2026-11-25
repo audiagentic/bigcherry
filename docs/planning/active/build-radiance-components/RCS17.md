@@ -55,7 +55,14 @@ Execution detail and source matrix: docs/reviews/radiance-native-libr3d/ASSESSME
 
 The helper loader dlopens one DSO and requires BC configurator and down-tile pin exports before row selection/relayout. Extract or replace that contract in the existing helper owner before changing archs.toml. Native libr3d has no equivalent collective rows; validate the shared group and per-rank loader eligibility separately.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. New upstream row storage/layout and same ABI integer with changed fields make mixed rank tests essential. Validate actual per-rank provider/encoding/layout, native rad_plugin_abi_version AND rad_plugin_abi_layout, ordered BDF/local ordinal and exact collective/chaining semantics, helper disjointness; reversed XTX/R9700 and gfx1030 helper where used. Reuse native loader and RUM06/13 transport, no new protocol. No old plugin mixed with candidate ABI.
+
 ## Change Log
 
 - 2026-11-18T08:41:50.662737+00:00 (created-by): Created by agent
 - 2026-11-18T08:49:16.767766+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4629
+- 2026-11-25T02:38:51.092289+00:00 (updated-by): Updated: section:notes

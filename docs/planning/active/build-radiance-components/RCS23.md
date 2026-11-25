@@ -11,19 +11,21 @@ work: L
 priority: P1
 ---
 
-# Owned kernel units: take source ownership of the heavily rewritten IQR family with a manifest and an upstream drift check
+# Owned kernels as overlay plugins (libbc-<family>-<arch>.so) with an origin manifest and an upstream acceptance transaction
 
 ## Description
 
-For the libr4d units we already rewrite heavily (the IQR GEMM unit: 440 lines of rewrites over 1,343 upstream lines; the prefill header 134 over 309; the vocabulary head 121 over 536; the embedding gather about 57 over 142; 19 of 48 patch packages touch libr4d) patches and rewrites layered on one text no longer pay off. Take source ownership of those units, split by kernel family and written against the traits seam, while upstream keeps everything else; manage upstream change with a manifest and a drift check. Not a fork of libr4d: about 5 of about 170 files, measured upstream churn on them about three commits a week (14 commits in 12 releases over 30 days; the row-table file, 29 commits, is never owned).
+Take ownership of the kernels we have rewritten heavily (the IQR GEMM, prefill, head and embedding units) without forking libr4d and without substituting source units inside upstream's build. The engine's loader already composes kernel libraries by hierarchy (the libbcgfx12 plugin uses it), so owned families are built as overlay plugins placed first in the hierarchy; upstream's libraries stay what upstream builds. Measured upstream churn on the first shadowed files: 14 commits in 12 releases over 30 days (the row-table file, 29 commits, changes what an unchanged kernel means and is the main exposure).
 
 ## Steps
 
-0. Naming (one coordinated change first): `bc` marks what we own. Owned units become bc_<family>_<kernel> sources (manifest maps each to the upstream unit slot it replaces), introduced symbols carry a bc_ prefix (engine row-table names keep their upstream spelling), the providers are built as libbcr3.so (gfx11) and libbcr4d.so (gfx12) and later libbc-<family>-<arch>.so, the identity string and artifact identity carry a provider tag and the manifest digest; no aliases for the old names. Touch: archs.toml plugin field, component outputs, the registry's plugin name, the hard-coded libr4d.so search in the libbcgfx12 plugin, the helper plugin default and override, the serving plugin field, the release asset inventory and bc-release verify. Verify first that the upstream engine loader takes the plugin path from configuration (no core change) by starting both architectures, and that the previous release restores with its old names. 1. Inventory: per libr4d unit, the share of lines we rewrite or patch, the patches touching it, and upstream commits per unit per release. 2. Manifest (owned units: file, upstream base commit and blob, family, last upstream commit merged) and the drift check: per owned unit an empty upstream diff advances the base, a non-empty one tries a three-way merge (clean: branch plus gates; conflict: plan item with both diffs); include closure reports a changed upstream header included by an owned unit; run it over the last twelve releases and check it reproduces the measured churn. 3. Take ownership of one family first (the fused tile and the embedding gather: small, recent): split into per-kernel files on the traits seam, retire their patches and rewrites, byte identical and resource equal to the shipped build. 4. The remaining IQR units. 5. Exit rule: when upstream adopts a change the drift check shows equality and the unit leaves the set, local patch archived unchanged. 6. The build takes owned units from our repository and the rest from the pinned source.
+0. Baseline: per-architecture snapshot of build units, row catalogues, callback dependencies and selected behaviour (gfx1030 exclusions included). 1. Inventory: per libr4d unit, the share of lines we rewrite or patch, the patches touching it, and upstream commits per unit per release. 2. Manifest and tooling: overlay families with upstream origins (path, base commit, last integrated commit), build slots and rows overridden, architectures, absorbed patches and rewrites, integration strategy per origin (whole-unit: three-way merge applies; extracted-family: structural review); provenance verifier; dry-run merge; include closure from the compiler's dependency output; row-contract snapshot of the shadowed rows between pins; fixtures: unchanged file, changed file, missing base commit or wrong origin path, non-ancestor target, rename, split, moved header, changed indirect header, changed row priority, unchanged kernel under a changed layout contract, clean text merge failing qualification, upstream adoption. 3. Replay the twelve release transitions one by one; every one classified, no unexplained clean result. 4. First overlay: the embedding gather (row and export equivalence, byte identity, resource parity, cold and warm no regression, removing the overlay restores the base behaviour). 5. Second overlay: the fused tile on the traits seam, both architectures. 6. The large IQR GEMM, prefill and head families after the RCS15 decision, so the migration is not done twice. 7. Two real pin bumps through the new process with verified resume and rollback. 8. Naming: sources bc_<family>_<kernel>, introduced symbols bc_ prefix (op names and row identities keep their upstream spelling), plugins libbc-<family>-<arch>.so with a provider name, version and upstream release; the base libraries keep their names; serving hierarchy, release asset inventory and bc-release verify updated; no engine change expected (its loader takes the hierarchy from configuration). 9. Bump acceptance as a transaction: verify provenance; classify origins (no change, candidate, blocked, unverified); include closure; row-contract snapshot; composition gates 1 to 3 then discrete qualification per overlay using RCS25; advance the integrated revision only after qualification (examined revision recorded at triage); resume compares the recorded git revisions, selections and gate results; rerun when uncertain. 10. Adoption: change-level (retire a change upstream took, after verifying equivalence) and unit-level exit (only when every retained change is gone).
 
 ## Detailed Solution & Technical Design
 
-Design: docs/design/radiance-kernel-composition.md section 11.
+Design: docs/design/radiance-kernel-composition.md section 11 (overlay model), section 12 (naming).
+
+pin_triage.py reports exact current/target SHA, base commit exists and is ancestor of target; compare origin paths and git source changes, origin classification, compiler dependency closure, shadowed row schema/layout/priority/init/fini/chaining/collective semantics, candidate adoption. Extracted family structural review, not text merge. Unknown/rename/split/missing history/incomplete closure not clean; widen required compile set. pin-bump/MEN16 compares recorded git commits, source selection and actual gate results in existing resume; rerun on changes or uncertainty, no additional digests. Advance integrated only after affected row/resource/byte/replay using RCS25 and exact candidate release qualification; examined separate, stopped bump does not advance. Verify selected overlay/base provider and precedence from native YAML and actual loader, no silent fallback. Upstream-adopted patch archive unchanged with evidence, overlay removal proves base-only equivalence and remaining local changes absent. Two real bumps and twelve-transition historical replay remain.
 
 ## Code Samples & Guidance
 
@@ -35,11 +37,11 @@ engines/radiance (owned unit sources, manifest, drift tool), engines/radiance/co
 
 ## Validation
 
-Drift check over the last twelve releases matches the measured churn; each owned family: resource records equal, byte identity at every affected shape, cold and warm replay no regression against the shipped build, gates 1 to 4 (RCS19) pass for both architectures; a pin bump with an upstream change to an owned file produces the merge branch or the plan item automatically.
+Fixtures above fail closed with the expected classification; the twelve-transition replay reproduces the measured churn with every transition classified; each overlay: row and export equivalence against the base, resource records, byte identity at every affected shape, cold and warm replay no regression, removal restores base behaviour; gates 1 to 3 (RCS19) pass for both architectures.
 
 ## Effort & Risk
 
-Large. Risks: merge burden (bounded by the measured churn, automated), silent drift (manifest base commit and per-bump report), upstream ABI change (include closure plus gates 2 and 3), a first decomposition that changes bytes (staged one family at a time, each byte identical).
+Large. Main risks: semantic drift through shared headers and the row table (include closure and row-contract snapshot), upstream restructuring (fail closed on rename, split, ambiguity), a false or stale base (verified provenance, examined versus integrated revision), an overlay row that silently loses to a base row or duplicates one (hierarchy tests, row-catalogue comparison).
 
 ## Standards
 
@@ -47,14 +49,35 @@ Large. Risks: merge burden (bounded by the measured churn, automated), silent dr
 
 ## Acceptance Criteria
 
-The IQR family is owned source with a manifest, retired patches and rewrites, one source for gfx11 and gfx12, and an automated drift check at each pin bump; engine-facing library names and loader contract unchanged.
+The IQR families are owned overlay plugins with an origin manifest, retired patches and rewrites for the shadowed units, one source for gfx11 and gfx12, and an automated, transactional upstream check at each pin bump; no clean text merge is accepted without the gates; the base libraries and the engine are unchanged.
+
+Current RCS23 fixtures plus actual pin-triage/pin-bump integration and resume invalidation for changed origin/owned source/indirect header/row priority, wrong candidate and unverified/skipped gate. Evidence distinguishes candidate/no change/blocked/unverified; provider identity in installed bundle and native YAML. Qualification and rollback use existing release workflow; no automatic upstream merge or promotion.
+
+Native plugin exports and actual provider+row selection per arch/domain/encoding; compare native schema and layout/relayout/unrelayout including supported vs refused forms. Test base alone versus overlay, intended overlap allowed, unexpected fallback or shadow fails. Advance integrated revision only after discrete and required release gates; no automatic adoption or backport.
 
 ## Notes
 
 Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); sequenced in parallel with the RCS15 baseline, which decides whether a native gfx11 provider replaces the generated tree for the unowned units. Review by GPT only (code returned as text).
+
+Revised after a design review (2026-11-25): the first version proposed whole-file substitution inside upstream's units; the loader's existing multi-library hierarchy makes overlays simpler and reversible. Depends on RCS19 (gates, ownership records) and RCS21 (traits seam); the large gfx11 migration is gated on RCS15. GPT is review only on this work.
+
+2026-11-25 simplification (owner: no adversaries, test discretely): provenance means git commit ids and plain comparisons; no digest binding of the manifest or owned sources, no composite identity hashes, no resume-binding to digests. The base commit check is `the commit exists and is an ancestor of the target`. Overlay identity is a name, a version string and the upstream release it was built against. The row-contract comparison stays as a test between the base and overlay rows. Per-overlay checks use the discrete harness (RCS25), not the full plugin.
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing origin-manifest plan is build provenance only, never serving launch. Reuse the existing pin-triage/pin-bump state/selection and RCS19 compose checks; no second acceptance transaction. Review baseline c7d791540; #1557 simplification and RCS25 discrete harness take precedence. RCS15 still gates large gfx11 provider work.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. New candidate rows/headers, head scalar and opt-in WMMA rows require per-change adoption screen; native IQR private layout is different and scalar; no automatic u6/u7 or group256 adoption. Compare actual model logical tensors through each provider own relayout, exact row selection and row contracts; preserve native ABI/layout fingerprint already required by upstream, no additional digest. Reuse existing RCS25 discrete qualification before release. Footprint 37/40 intersection is triage only; inspect actual source and indirect include closure.
 
 ## Change Log
 
 - 2026-11-25T00:54:41.130343+00:00 (created-by): Created by lead
 - 2026-11-25T00:54:59.083112+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
 - 2026-11-25T00:58:03.939770+00:00 (updated-by): Updated: section:steps
+- 2026-11-25T01:08:26.587516+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:effort_risk, section:acceptance_criteria, section:notes
+- 2026-11-25T02:12:45.058840+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4608
+- 2026-11-25T02:05:49.620407+00:00 (updated-by): Updated: section:notes, section:detailed_solution, section:acceptance_criteria
+- RV4635
+- 2026-11-25T02:41:48.148300+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

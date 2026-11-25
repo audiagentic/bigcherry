@@ -74,6 +74,8 @@ Budget arithmetic tests (host, pin cap, cgroup, n-gram, KV tier, checkpoints, ex
 
 No fixed memory values in the default launch path; the retained-session cohort matches fresh-server step time within the RHP12 gate; explain shows why each budget has its size.
 
+Native YAML measurement and serving use same measured resource/ownership facts; no full manifest required for plan derivation, cache or child launch. Verify structured live-room refusal before weights, bounded remeasurement/retry and measured provenance, same native plan and actual bytes, exact ordered BDF, per-rank units, queue/host/cgroup/pin/VRAM reservations, helper RSS and no uncovered expert. Cache fresh admission and compatible carry, no replay of stale settings. Preserve existing RHP12 cohort and no fixed resource constants.
+
 ## Notes
 
 Depends on RSC01/RSC02; feeds RHP13 (runtime) and RCS10 (derived settings). Runtime reclaim between finished-session KV and expert residency stays RHP13.
@@ -151,6 +153,12 @@ v1 contract decisions affecting RSC03 (lead, 2026-11-02; v1 slice 1 design appro
 - ServingInputV1 has one `constraints` namespace holding site-only, tighten-only caps (max) and floors (min). This replaces today's hard_caps and hard_floors tables.
 - The engine binary is not an input: bc-serve resolves it relative to its own installed location (radiance_home/../bin/radiance), covered by the package identity. The plan cache directory is derived from the work root in site config (<work-root>/plan-cache). Neither is a CLI flag in v1, so today's `bc-serve --plan-memory --plan-cache DIR --engine-binary PATH` flags (and wiring list item 1's Options.plan_cache / --engine-binary) are replaced at the v1 cutover.
 
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Existing RSC03 remains sole resource planner. Extract reusable measured plan, P1/rank-demand, S8 admission and runtime guards from Manifest dependency; same arithmetic and owner map, no new allocator. rad0011 check expected typed plan at actual pre-weight native Engine boundary; bind derived pool/prefix/headroom/checkpoint and ordered BDF before Fleet reservation/Engine construction; verify per-rank vs aggregate MiB, native queue reserve/staging and helper RSS. Preserve RUM12 measured fast reuse, no stored launch input. RSC11 transferred RSC10 bounded margin refit remains, RSC14 owns independent host race. Old --manifest/--write-manifest examples are historical.
+
+2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 gate order. Candidate admission uses existing typed planner and native pre-weight check. Reuse measured data across pins only under explicit semantic compatibility of actual native defaults, ordered devices, resource geometry, selected providers, host/VRAM/queue reservations and fresh live room; record carried-from evidence. Changed power settings invalidate performance calibration, not unrelated memory arithmetic. Wrong candidate or resource identity refuses or triggers bounded remeasurement; RSC14 host-race gate remains separate. No executable manifest, no second cache/planner.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate 5e0cd1e2 per-card TP budget maps cfg.devices[rank], least(free - max(per-card headroom, host reserve)) common split, expert_tiered spare room; explicit claims separate. 4865bd6b queue-reserve 1–24 default8, 80e094b3 pinned NUMA, a8c8066d mlock. Reconcile at actual native Fleet reservation and Engine::plan; native authority, avoid double subtract reserve/queue bytes or copied old scalar planner. Test actual queue opening, memlock/cgroup and host budgets, unequal ranks/reversed order/explicit claim/exact fit, helper reservation and bounded remeasurement. Cache carry only native semantic compatibility+fresh room. Keep RSC14 race gate.
+
 ## Status 2026-11-19
 
 The derived start-up resource plan is in production use (C++ RAD/BDF ledger: `resources: derived host pool N MiB, host KV N MiB`, then the measuring start re-measures the pool, for example 1033 -> 2247 MiB on flashnext-4gpu). Observed today: the engine's own host admission is the last word (n-gram table 47.68 GiB needs about 74.8 GiB available including the 4.59 GiB headroom; a start with 74.1 GiB available was refused), so a start right after another heavy process can fail for memory the ledger cannot see; consider reporting MemAvailable at the ledger step. The policy-calibration key no longer includes the host pool or helper budgets (#1169), so a re-measured pool does not orphan a calibration record.
@@ -198,3 +206,9 @@ The shipped `engines/radiance/layouts.toml` now omits all literal helper `budget
 
 - RV4554
 - 2026-11-22T12:18:29.092969+00:00 (updated-by): Updated: section:detailed_solution
+- RV4591
+- 2026-11-25T01:37:00.647185+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4622
+- 2026-11-25T02:13:25.537739+00:00 (updated-by): Updated: section:notes
+- RV4639
+- 2026-11-25T02:43:57.354274+00:00 (updated-by): Updated: section:notes

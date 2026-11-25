@@ -46,7 +46,11 @@ void negative() {
     assert(!C01Slice::rows(4096, 1025, 1024, 128, 3).valid(3072, 4096, group));
     assert(!C01Slice::rows(4096, 1024, 513, 128, 3).valid(1539, 4096, group));
     assert(!C01Slice::rows(4096, 1024, 1024, 0, 3).valid(3072, 4096, group));
-    assert(!C01Slice::rows(4096, 1024, 1024, 128, 1).valid(1024, 4096, group));
+    // One, two or three fused banks are valid (the FFN's single bank since #1407); none or four are not.
+    assert(C01Slice::rows(4096, 1024, 1024, 128, 1).valid(1024, 4096, group));
+    assert(!C01Slice::rows(4096, 1024, 1024, 128, 1).valid(2048, 4096, group));   // n_out is banks x width
+    assert(!C01Slice::rows(4096, 1024, 1024, 128, 0).valid(0, 4096, group));
+    assert(!C01Slice::rows(4096, 1024, 1024, 128, 4).valid(4096, 4096, group));
     assert(!C01Slice::rows(4096, 4090, 1024, 128, 3).valid(3072, 4096, group));
     assert(!C01Slice::columns(2048, 640, 640).valid(7, 640, group));
     assert(!C01Slice::columns(2048, 512, 256).valid(7, 512, group));

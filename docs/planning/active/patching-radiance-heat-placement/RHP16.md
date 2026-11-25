@@ -82,6 +82,8 @@ RESULTS 2026-11-10 (fresh calibration through the supported path after #801/#802
 
 2026-11-22 RHP22 numerical disposition, **FAIL for the four-GPU forced-churn p99 gate**: historical 8,240-row same-reference duplicate-control p99 0.7036 static vs 0.9377 forced (+0.2341 vs maximum +0.2000), control repeat bit-identical, not random error. Churn completed before scoring, so a warmed ordinary policy final map and actual mid-scoring transitions remain unqualified. RHP16 retains the ONE live-policy calibration/numerical owner: reuse existing scorer and serving owner-map to freeze the *measured* settled map at the same ABI/model/layout, take matched static/frozen KL and top-1, and consume RHP06/RHP20 live-move quality and format receipts. Do not add an independent RHP22 scorer or consider quality acceptance/prod promotion without passing gates. Historical ON state is not a waiver, no runtime action in this docs disposition. Source: docs/evidence/2026-11-22-rhp22-quality-disposition/README.md
 
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Preserve current live policy/calibration math and experiment gates. Migrate actual manifest-bound worker settings/calibration ingest to same YAML and existing typed facts/record evidence with RSC06/RSC02; no new placement policy/allocator, no claim of new live-swap qualification.
+
 ## Status 2026-11-19 (live policy works natively on flashnext-4gpu)
 
 - **Historical result only (2026-11-19):** the now-removed native `serve --calibration-run` entrypoint then produced calibration records. The record key is the narrow policy-calibration key v2 (#1169): model, layout, objective, engine and helper GPU identities, helper roles/formats/kernels, histogram period, power profile, helper execution settings and remote service geometry; it excludes engine build, host pool, helper VRAM budgets, memory-plan identity and engine flags, so a rebuild or pin bump no longer orphans a record. New records keep `calibration_inputs`, `source_plan_key` and `source_engine_build` as provenance; legacy hash-only records are refused (recalibrate once). That historical calibration start filed its record under the key production looked up (a store-key bug that made native calibration unusable was fixed in the same PR).
@@ -638,3 +640,8 @@ Merge: off by default (no record in the production store). Enabling waits on the
 - 2026-11-10T10:37:23.306277+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:36:09.423133+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T07:14:57.646075+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4601
+- 2026-11-25T01:42:12.278267+00:00 (updated-by): Updated: section:notes

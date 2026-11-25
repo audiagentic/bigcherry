@@ -11,33 +11,19 @@ priority: P0
 work: L
 ---
 
-# RSC11: serving completion programme (RSC01-RSC10 + PWR06-PWR09, one v2 cutover)
+# Serving completion programme: native YAML launch, admission and manifest retirement
 
 ## Description
 
-Source: GPT completion programme review 2026-11-10 (req_main_ac35b2590055), audited on origin/main 448cae58a; reviewed and adopted by bigcherry-1. Owner directive: complete RSC01-RSC10 and fold in PWR06-PWR09 as one programme. Not a rewrite: the C++ resolver (bc-serve), manifest-only engine/helper starts (#633 #651 #759), generated contract, strict reader, memory ledger and the PWR07 probes are retained.
+One existing programme owns the remaining serving acceptance and native launch migration. RUM04 completed authored YAML and native option parsing but deliberately retained v3 launch. Owner now requires no executable manifest input. Retain C++ owner, native parser, resource and helper planners, power transaction and evidence; migrate directly to pinned Radiance --config and native Fleet through managed local enhancements only. S17 historical outstanding gates and S18 native cutover are both required. No new RUM migration programme.
 
 ## Steps
 
-See the slice list in the Description (S0-S17); each slice is a small PR with the gate stated there.
-
-### S15/S16 proof boundary — card-free preparation (2026-11-18)
-
-[The S15 A/B runbook](../../../reference/engines/radiance/RSC02_S15_ACCEPTANCE.md)
-specifies same build/model/ordered devices, RSC12 semantic execution
-projection, strict byte-bound manifest snapshots and actual process argv/env
-receipts for `qwen27b-tp3-int8` (dense) and `flashnext-4gpu` (helper).
-The real `bc_s15_dry_run_test` is card-free and **not** an S15 pass. The
-maintained balanced `ab-benchmark` schedule must be run with a vetted
-serving-owner lifecycle adapter (S14 receipt dependency); its existing direct
-engine server path is not parity evidence. Hardware, power/VRAM/room,
-retained-session/RHP12 and clean shutdown gates remain pending. Until they
-and RSP01 release acceptance pass, S16 deletion is blocked. Do not set
-either gate to complete based on a fake run.
+S0-S16 are historical completed/incomplete slices recorded below, not work to repeat. S17: reconcile residual RSC04/09/10 and PWR04/09 acceptance with existing owners and actual evidence; retain RHP12, RSC13/14, WSL08 and RSP01 independent gates. S18-A: exact pin/caller and field inventory, RSC01/RSC12 YAML contract and red tests. S18-B: RSC05 selection, RSC03 typed measured admission and cache, RSC06 helper settings/transport, PWR07/08 owner-only power policy. S18-C: RSC02 native --config raw immutable YAML, native Fleet and offline path, narrow typed facts; same cutover retires engine/helper/owner manifest launch and writer/cache input, migrates all active callers and patch dependencies. S18-D: RSP01 installed release, stock all supported configs, same-build dense/helper parity and actual qualified nonstock apply/restore (PWR10); record evidence and delete retired code, no compatibility release. All code slices in one coordinated integration branch until sole new route qualified.
 
 ## Detailed Solution & Technical Design
 
-Retain the C++ resolver, strict reader, memory ledger and probes; finish integration and the single v2 cutover.
+docs/design/radiance-native-yaml-launch.md is the complete implementation design and audit. Native YAML launch is not a v4 manifest. Retain only actual derived per-consumer runtime facts across process boundary, with existing typed domain interfaces and sealed descriptors/transport where needed; capture output can reuse v3 evidence only. Native Fleet::run and stock front replace the parallel managed front; preserve single-model admission and no reload/park/shared cards. No upstream edits; all changes managed packages/owned code. RUM10 deprecated, RUM14/15 and RCS kernel migration separate.
 
 ## Code Samples & Guidance
 
@@ -49,7 +35,7 @@ Retain the C++ resolver, strict reader, memory ledger and probes; finish integra
 
 ## Validation
 
-Programme complete when a freshly installed release can: select a model, layout, serving policy and named power profile through `bigcherry serve`; generate one strictly validated v2 manifest with per-role hardware assignments and provenance; start engine and helpers from it with no R3_* configuration reads; measure and admit the memory plan with at most one bounded refit; apply the manifest power plan transactionally or observe without writes; serve, pass the canary and guards and write a receipt linked to the manifest; shut down with verified power restoration before the lease is released; pass the supported-layout RHP12 cohorts; and no serving, benchmark or release-install caller depends on the Bash launcher.
+Card-free actual argv/FD/root/identity, strict YAML/variant/site/profile, mixed TP power, resource/refit and helper/transport failure fixtures; exact pinned patch compose/anchor/build/installed tests. Capture absent/deleted/changed cannot affect launch, zero executable --manifest callers and no full Manifest reader linked to engine/helper. Native stock and managed native single-model/measurement/quality paths, all currently supported installed configs (enumerated from the candidate roster) start/canary/stop; same-build dense/helper and existing RHP12 four clean ABBA pairs, real min-cap native apply before measure and exact restore, no default promotion. Preserve every S17 transferred acceptance, including actual bounded host-margin retry and three six-stream soaks; no new manifest to refit. No claim from card-free alone.
 
 ## Effort & Risk
 
@@ -57,19 +43,25 @@ Risks in priority order: partial/repeated manifest migrations; internal R3_* rea
 
 ## Standards
 
-No legacy / no backward compatibility: v2 replaces v1; no translators or aliases.
+No launch manifest, compatibility reader, shim, legacy flag/env, backport, duplicate schema, scheduler or allocator. One native config entry, one owner; prior matched release is rollback. Managed patches against pinned source and owned enhancements only. Evidence record output is not a launch contract.
 
 ## Acceptance Criteria
 
 All items in Validation; RSC01-RSC10 and PWR06-PWR09 states updated from code evidence at S17.
 
-**Transferred RSC04 acceptance (independent gate):** RSC11 S15/S16 runtime-surface retirement gate: maintain an exact inventory of active direct/indirect callers, shell/Python launcher entrypoints, lib/plan-check.sh and lib/sdk-check.sh, positional flags, obsolete aliases and native replacements. Require C++ bc-serve serve/start production path with real strict v2 loader, resolver, measurement/guards, fake engine/helper CI and native config semantics; no shim. Preserve the RSC04 rule that S16 deletion and aliases may occur only after *same-build* S15 dense+helper semantic-projection hardware A/B, >=4 clean RHP12 ABBA pairs per layout and RSP01 release asset/installer acceptance, never from card-free dry runs or historical release claims alone. Verify post-deletion git grep zero executable callers (historical evidence references exempt), active configs/start/stop/manifest/health/canary, restoration and power status; Python-free installed release path, bounded tests, sanitizer/clang and patch lint where changed. If existing #1131 deletion and S15 evidence are complete, close only after explicitly mapping each named gate and receipt; otherwise keep S17 outstanding. No duplicate native supervisor/launcher code.
+**Transferred RSC04 acceptance (independent gate):** RSC11 S15/S16 runtime-surface retirement gate: maintain an exact inventory of active direct/indirect callers, shell/Python launcher entrypoints, lib/plan-check.sh and lib/sdk-check.sh, positional flags, obsolete aliases and native replacements. Require C++ bc-serve serve/start production path with strict native YAML and BC extension loader, resolver, measurement/guards, fake engine/helper CI and native config semantics; no shim. Preserve the RSC04 rule that S16 deletion and aliases may occur only after *same-build* S15 dense+helper semantic-projection hardware A/B, >=4 clean RHP12 ABBA pairs per layout and RSP01 release asset/installer acceptance, never from card-free dry runs or historical release claims alone. Verify post-deletion git grep zero executable callers (historical evidence references exempt), active configs/start/stop/health/canary and evidence output, restoration and power status; Python-free installed release path, bounded tests, sanitizer/clang and patch lint where changed. If existing #1131 deletion and S15 evidence are complete, close only after explicitly mapping each named gate and receipt; otherwise keep S17 outstanding. No duplicate native supervisor/launcher code.
 
-**Transferred RSC09 acceptance (independent gate):** RSC11 S8 handoff-literal provenance gate: for transport max_rows=4096, small_rows=8, gemv_large_rows=32, skip_owned=true and kernels moe_down_tile=1 (historical v1 handoff values), find current active manifest fields, ownership, real A/B or derivation rule and classify each as derived from live layout/model/shape or a calibration record with evidence and confidence. Refuse unsupported default/profile origin, no silent hand-picked launch constants. Verify current v2 named config writer, resolver and release manifest with parity tests and source-backed hardware A/B for any changed behavior; ensure any interim plan-cache identity includes owner map/helper settings/row-limit inputs or records explicit no-change rationale. Remove old shell launcher literals only where active surfaces are already retired by RSC11 S16/RSP01; do not resurrect the Bash profile, old spelling or a second calibration table. Preserve no-regression gate and the RSC09 requirement that manifest entries carry derivation or calibrated provenance, not a misleading generic profile origin.
+**Transferred RSC09 acceptance (independent gate):** RSC11 S8 handoff-literal provenance gate: for transport max_rows=4096, small_rows=8, gemv_large_rows=32, skip_owned=true and kernels moe_down_tile=1 (historical v1 handoff values), find current effective YAML/typed derived settings, ownership, real A/B or derivation rule and classify each as derived from live layout/model/shape or a calibration record with evidence and confidence. Refuse unsupported default/profile origin, no silent hand-picked launch constants. Verify current native YAML resolver and installed native execution with parity tests and source-backed hardware A/B for any changed behavior; ensure any interim plan-cache identity includes owner map/helper settings/row-limit inputs or records explicit no-change rationale. Remove old shell launcher literals only where active surfaces are already retired by RSC11 S16/RSP01; do not resurrect the Bash profile, old spelling or a second calibration table. Preserve no-regression gate and the RSC09 requirement that effective settings and receipts carry derivation or calibrated provenance, not a misleading generic profile origin.
 
-**Transferred RSC10 acceptance (independent gate):** RSC11 S5/S11 measured host ledger margin recovery: obtain engine_bringup.cpp host-room refusal via stable structured exit with MemAvailable, needed-to-allocate, headroom and shortfall, never parse an error string or retry after partial weight load. Before first engine weight load, have only the native session owner write a new manifest whose calibration cache provenance raises host_ledger_margin.mib by observed needed-minus-available, preserve the source plan key and all non-resource fields (only resources.host.checkpoint_slots, spec.calibration and manifest digest can differ), retry once, then fail with both figures if still rejected. Record actual available/needed/spare and measured shortfall against the plan-cache entry; use a window max to refit both upward/downward, retain only labeled seed floor for unseen layout. Acceptance: card-free fake refused/success and double refusal tests; hardware deliberately zero-margin first refusal and one successful measured retry followed by three 6-stream soaks; margin in force visible in spec.calibration with seed/cache identity and evidence. A successful bc-serve startup without this refusal/retry receipt is not completion. Keep RSC03 as the separate budget-sizing component; do not create second launcher, cache or handwritten margin.
+**Transferred RSC10 acceptance (independent gate):** RSC11 S5/S11 measured host ledger margin recovery: obtain engine_bringup.cpp host-room refusal via stable structured exit with MemAvailable, needed-to-allocate, headroom and shortfall, never parse an error string or retry after partial weight load. Before first engine weight load, have only the native session owner update the typed resource admission whose calibration cache provenance raises host_ledger_margin.mib by observed needed-minus-available, preserve the source plan key and all non-resource fields (only the derived checkpoint slots, calibration and associated admission identity may differ), retry once, then fail with both figures if still rejected. Record actual available/needed/spare and measured shortfall against the plan-cache entry; use a window max to refit both upward/downward, retain only labeled seed floor for unseen layout. Acceptance: card-free fake refused/success and double refusal tests; hardware deliberately zero-margin first refusal and one successful measured retry followed by three 6-stream soaks; margin in force visible in the effective resource receipt with seed/cache identity and evidence. A successful bc-serve startup without this refusal/retry receipt is not completion. Keep RSC03 as the separate budget-sizing component; do not create second launcher, cache or handwritten margin.
 
 S17 close-out must explicitly map former launcher power feature (#895) and PWR04/PWR09 residual obligations (#1386, #1400) to verified native tests and actual nonstock receipts: selection, exact BDF settings, authorization, pre-measure apply, measured/replay equality, rollback/stop/restore and crash/expiry boundary. Retain RHP12 four-pair cohorts and release acceptance; initial S15 stock/greedy evidence does not qualify nonstock. Review former launcher flags/config inheritance, affinity, canary, diagnostics, cache and cleanup for other feature parity; file concrete discrepancies under existing owners, not speculative rewrites. Cross-reference completed RUM04/RUM09/RUM12 without reopening the native migration.
+
+S18 independent gate: actual owner/engine/helper online, measurement, quality, experiments and named cache reuse start from native YAML only, no --manifest input, no writer serialization dependency, no generic renamed envelope; old input rejected. Existing native Fleet and front used with narrow managed hooks, unsupported managed modes refuse. Complete semantic caller inventory and deletion evidence, native power and resource/transport gates, installed release and prior S17 outstanding gates. No close until real receipts and owner review.
+
+Native launch migration acceptance must run through existing engine-adapter pin-bump/accept workflow against one exact candidate pin/build/bundle (including declared helper lane); matched offline parser all YAML/model roster, native --config CPU smoke, card-free owner and compiled native seams, installed stock dense/helper/quality/cache/refit/lifecycle, qualified mixed TP power apply/restore. Retire manifest protocol flags/option registry/launch tests and all active callers only when replacement gates exist; output-only capture allowed. Require actual candidate proofs, no skipped required gates or inherited old build, retain all S17/S18 and RHP12 requirements.
+
+S18 enumerate all currently supported shipped YAMLs and actual support/refusal (18 at this audit, no fixed count), native parser plus actual model/row and memory admission, plan-only/quality, full native launch matrix and prior S17 gates. Routine release scope matches actual changed dependencies and required Gate E/MEN17; do not reuse old manifest-launch canary as native proof. Retain native ABI/layout check and explicit no manifest launch.
 
 ## Notes
 
@@ -81,6 +73,14 @@ Lanes: engine (S1,S5), resolver/contract (S7,S8,S10; S9), power (S3,S4,S12), pyt
 CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RSC04,RSC09,RSC10 These are uncompleted acceptance requirements, not new release/quality passes. Historical source plans remain available as superseded records. Keep legacy and blocked/no-route behavior fail closed; do not add parallel native control planes or tools.
 
 2026-11-25 S17 reconciliation: stock-only native S10 input and mixed-TP role-map restriction remain despite S13/S15/S16 and subsequent YAML migration. PWR08 owns restoration; RSC02 owns native transaction and transferred PWR09 acceptance; PWR07 observations, WSL08 detached lease, PWR10 real profile qualification, RSP01 installed release. No repeat manifest cutover or new format.
+
+2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. No new RUM16: RSC11 owns the cross-cutover and RSC01/02/03/05/06/12 and PWR07/08/10 own implementation. S17 older manifest-specific acceptance terms are mapped to typed runtime plan/receipt equivalents, never a demand to retain manifest launch. Do not reopen completed RUM04 or RUM09 wholesale.
+
+S15 prior proof source: docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md. Card-free fake owner is not hardware parity; actual maintained ABBA lifecycle adapter must exercise both launch paths, not a direct engine proxy. Historical plan at b0bf406bf preserves the earlier wording.
+
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. S18 and S17 acceptance consume MEN24 A–H order and MEN15/16/17 exact candidate gates; no second serving or upstream migration programme. RSC01/02/05/06 own native parser/Fleet/resource/helper seam tests and coupling declarations, PWR07/08/10 owner policy, RSP01 installed bundle. Coordinate RCS24 update of bump docs/skills on actual cutover.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. S18 full supported deployment roster now 18 at audit, dynamically enumerate exact candidate and installed configs; 16 historical RUM04 proof remains. Native --check parser only, separate actual row/format and memory inspection; explicit plan-only managed seam before weights, native Fleet reserve/headroom/NUMA semantics. Gate E current two layouts through 2020.11.5 is install/canary/stop only, not native launch/quality/power proof. S18 full native cutover matrix; later bump two existing Gate E plus affected configs/independent required cohorts, no repeated unrelated historical trials. RCS25 discrete before full build, native launch and power one coordinated cutover.
 
 ## Status 2026-11-19
 
@@ -165,3 +165,11 @@ runs remain lead-owned.
 - 2026-11-22T10:35:22.894292+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - RV4579
 - 2026-11-25T01:03:40.126592+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4588
+- 2026-11-25T01:35:31.897852+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:validation, section:standards, section:acceptance_criteria, section:notes
+- 2026-11-25T01:44:23.913317+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- RV4613
+- 2026-11-25T02:08:23.102972+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4642
+- 2026-11-25T02:45:29.138905+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T02:53:06.747780+00:00 (updated-by): Updated: section:validation

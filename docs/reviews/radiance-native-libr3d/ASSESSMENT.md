@@ -1,5 +1,8 @@
 # Extending Radiance's native RDNA3 kernel library
 
+> Status (2026-11-25): written against pin 1.17 and an earlier upstream snapshot; the production pin is now 2.2.0. Use it as an input to RCS15, not as current fact. Terms used here: **libr3d** is upstream's native RDNA3 kernel library; **libr3** is BigCherry's generated gfx11 build of upstream's units. Definitions and the plan map: `docs/design/radiance-kernel-composition.md` sections 0 and 8a.
+
+
 Use upstream `libr3d` as the gfx1100 compute provider. First run it unmodified against the served model bands. Extend its own units, row table and tests only for a missing call or a measured regression on a supported workload. The current production build cannot switch plugins today. Dense 27B needs attention, quantisation and transport that stock native rows do not cover. Flash-Next helpers depend on another calling and weight-layout contract. The [integration sequence](INTEGRATION.md) tracks these as separate changes.
 
 ## What was compared

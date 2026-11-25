@@ -9,7 +9,7 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 
 | Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v2.2.0** | **43 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v2.2.0** | **44 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
 **Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels
@@ -30,7 +30,7 @@ controls, adaptive AllReduce and selected AMD kernel fixes.
 [Patch catalogue](docs/reference/engines/llamacpp/PATCHES.md).
 
 Package counts include experimental, superseded and rejected work, not only
-patches selected for production. Radiance has 34 validated patches;
+patches selected for production. Radiance has 35 validated patches;
 llama.cpp has 70.
 
 ## Current-pin performance
