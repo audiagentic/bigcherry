@@ -326,23 +326,33 @@ def parse_notes(notes: str) -> dict[str, dict[str, int]]:
     return kernels
 
 
-def kernel_records(plugin: Path, arch: str) -> dict[str, dict[str, int]]:
-    records: dict[str, dict[str, int]] = {}
+def kernel_records(plugin: Path, arch: str) -> dict[str, list[dict[str, int]]]:
+    """Per kernel name, the records of every code object that carries it (units repeat names: an anonymous-namespace
+    template instantiated in several units is one name with several records)."""
+    records: dict[str, list[dict[str, int]]] = {}
     readobj = rocm_tool("llvm-readobj")
     with tempfile.TemporaryDirectory(prefix="uh-co-", dir=str(work_root() / "unit-harness")) as scratch:
         for index, blob in enumerate(embedded_objects(plugin, arch)):
             path = Path(scratch) / f"{index}.co"
             path.write_bytes(blob)
             notes = subprocess.run([readobj, "--notes", str(path)], capture_output=True, text=True, check=True).stdout
-            records.update(parse_notes(notes))
+            for name, values in parse_notes(notes).items():
+                records.setdefault(name, []).append(values)
+    for name in records:
+        records[name].sort(key=lambda v: tuple(v[k] for k in RESOURCE_KEYS))
     return records
 
 
 def diff_records(ref: dict, cand: dict, family: re.Pattern | None) -> dict:
-    """Kernels the candidate adds or changes against the reference, and the family's kernels it no longer has."""
+    """Kernels the candidate adds or changes against the reference, and the family's kernels it no longer has. A kernel
+    is changed when its records differ as a multiset (a name carried by several units is compared as a whole)."""
     added = sorted(k for k in cand if k not in ref)
-    changed = {k: {key: [ref[k][key], cand[k][key]] for key in RESOURCE_KEYS if ref[k][key] != cand[k][key]}
-               for k in sorted(cand) if k in ref and ref[k] != cand[k]}
+    changed = {}
+    for k in sorted(cand):
+        if k in ref and ref[k] != cand[k]:
+            changed[k] = {"ref": ref[k], "cand": cand[k]} if len(ref[k]) != len(cand[k]) else {
+                key: [[r[key] for r in ref[k]], [c[key] for c in cand[k]]]
+                for key in RESOURCE_KEYS if [r[key] for r in ref[k]] != [c[key] for c in cand[k]]}
     removed = sorted(k for k in ref if k not in cand and family is not None and family.search(k))
     return {"added": added, "changed": changed, "removed": removed,
             "unchanged": sum(1 for k in cand if k in ref and ref[k] == cand[k])}
@@ -352,13 +362,15 @@ def resource_summary(diff: dict, cand: dict) -> str:
     lines = [f"resources: {len(diff['added'])} added, {len(diff['changed'])} changed, {len(diff['removed'])} removed, "
              f"{diff['unchanged']} unchanged"]
     if diff["added"]:
-        vg = [cand[k]["vgpr_count"] for k in diff["added"]]
-        spills = sum(cand[k]["vgpr_spill_count"] + cand[k]["sgpr_spill_count"] for k in diff["added"])
-        private = sum(cand[k]["private_segment_fixed_size"] for k in diff["added"])
-        lds = sorted({cand[k]["group_segment_fixed_size"] for k in diff["added"]})
+        recs = [r for k in diff["added"] for r in cand[k]]
+        vg = [r["vgpr_count"] for r in recs]
+        spills = sum(r["vgpr_spill_count"] + r["sgpr_spill_count"] for r in recs)
+        private = sum(r["private_segment_fixed_size"] for r in recs)
+        lds = sorted({r["group_segment_fixed_size"] for r in recs})
         lines.append(f"  added kernels: VGPR {min(vg)}..{max(vg)}, spills {spills}, private bytes {private}, LDS {lds}")
     for kernel, delta in list(diff["changed"].items())[:20]:
-        lines.append(f"  CHANGED {kernel[:90]}: " + ", ".join(f"{k} {a}->{b}" for k, (a, b) in delta.items()))
+        lines.append(f"  CHANGED {kernel[:90]}: " + ", ".join(f"{k} {a}->{b}" for k, (a, b) in delta.items()
+                                                              if isinstance(b, list)))
     for kernel in diff["removed"][:20]:
         lines.append(f"  REMOVED {kernel[:100]}")
     return "\n".join(lines)

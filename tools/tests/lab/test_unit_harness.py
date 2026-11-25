@@ -15,13 +15,13 @@ REC = dict.fromkeys(uh.RESOURCE_KEYS, 0)
 
 class HarnessTests(unittest.TestCase):
     def test_resource_diff(self):
-        ref = {"a_iqr": {**REC, "vgpr_count": 100}, "b_iqr": dict(REC), "c_other": dict(REC)}
-        cand = {"a_iqr": {**REC, "vgpr_count": 101}, "new_iqr": dict(REC), "c_other": dict(REC)}
+        ref = {"a_iqr": [{**REC, "vgpr_count": 100}], "b_iqr": [dict(REC)], "c_other": [dict(REC), {**REC, "vgpr_count": 5}]}
+        cand = {"a_iqr": [{**REC, "vgpr_count": 101}], "new_iqr": [dict(REC)], "c_other": [dict(REC), {**REC, "vgpr_count": 5}]}
         import re
         diff = uh.diff_records(ref, cand, re.compile("iqr"))
         self.assertEqual(diff["added"], ["new_iqr"])
         self.assertEqual(diff["removed"], ["b_iqr"])
-        self.assertEqual(diff["changed"], {"a_iqr": {"vgpr_count": [100, 101]}})
+        self.assertEqual(diff["changed"], {"a_iqr": {"vgpr_count": [[100], [101]]}})
         self.assertEqual(diff["unchanged"], 1)
 
     def test_hash_comparison(self):
