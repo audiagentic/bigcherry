@@ -325,6 +325,7 @@ def test_needle_cli_publishes_instead_of_legacy_results_json(
     make_run(run)
     monkeypatch.setattr(module, "corpus", lambda: "original fixture documents")
     monkeypatch.setattr(module, "chars_per_token", lambda *args: 4.0)
+    monkeypatch.setattr("bigcherry.bench.served_model.served_model", lambda url: "served-test-model")
     monkeypatch.setattr(
         module,
         "case",
@@ -392,6 +393,7 @@ def test_image_cli_captures_exact_sent_pixels_and_refusal(tmp_path, monkeypatch)
         return 400, {"error": {"message": "media decoder disabled"}}, 0.2
 
     monkeypatch.setattr(module, "ask", fake_ask)
+    monkeypatch.setattr("bigcherry.bench.served_model.served_model", lambda url: "served-test-model")
     out = tmp_path / "image.json"
     with patch("bigcherry.core.host_facts.collect_host_facts", return_value=FAKE_HOST["facts"]):
         assert (

@@ -103,7 +103,8 @@ class WorkloadsTest(unittest.TestCase):
             def read(self):
                 return b'{"usage":{},"choices":[{"text":"x"}]}'
 
-        with patch.object(w.urllib.request, "urlopen", return_value=FakeResponse()), self.assertRaisesRegex(w.WorkloadError, "exact usage"):
+        with patch.object(w.urllib.request, "urlopen", return_value=FakeResponse()), patch.object(w, "served_model", return_value="m"), \
+                self.assertRaisesRegex(w.WorkloadError, "exact usage"):
             w.request("http://host", "hello", 1)
 
 

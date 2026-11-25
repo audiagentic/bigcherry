@@ -6,6 +6,7 @@
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
 #include "calibration_watch.h"
+#include "engine_admission.h"
 #include "manifest_writer.h"
 #include "v2/helper_settings.h"
 #include "plan_cache.h"
@@ -179,6 +180,27 @@ class PinnedManifest final {
 std::filesystem::path EngineStart::execution_manifest() const {
     return pinned_manifest ? pinned_manifest->path() : manifest;
 }
+
+namespace {
+// What an engine child is given instead of a manifest: the admitted raw YAML and the engine admission document (what the
+// owner derived, v2/engine_admission.h), both sealed and inherited. The manifest stays the owner's own record.
+struct EngineInputs {
+    std::shared_ptr<PinnedManifest> config, admission;
+};
+EngineInputs engine_inputs(const v2::Manifest& manifest, bool measuring,
+                           std::optional<EngineAdmission::Quality> quality = std::nullopt) {
+    const auto native = v2::native_config_view(manifest);
+    if (!native) throw PlanFailed("native engine start: the admitted manifest carries no native YAML snapshot");
+    const auto admission = engine_admission_from_manifest(manifest, measuring, std::move(quality));
+    if (!admission) throw PlanFailed(v2::render_human("native engine admission", admission.error()));
+    return {std::make_shared<PinnedManifest>(std::string(native->yaml_utf8)),
+            std::make_shared<PinnedManifest>(engine_admission_to_json(admission.value()).dump())};
+}
+std::vector<std::string> engine_argv(const fs::path& engine, const EngineInputs& inputs) {
+    return {engine.string(), "--config", inputs.config->path().string(), "--bc-admission-fd",
+            std::to_string(inputs.admission->descriptor())};
+}
+}  // namespace
 
 namespace {
 
@@ -798,11 +820,13 @@ Env child_environment(char** inherited, const Env& runtime) {
 Env current_child_environment(const Env& runtime) { return child_environment(environ, runtime); }
 
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
-            const Callback<void(pid_t)>& recorded, int inherited_manifest_fd, int working_directory_fd) {
+            const Callback<void(pid_t)>& recorded, int inherited_manifest_fd, int working_directory_fd,
+            const std::vector<int>& more_inherited_fds) {
     if (argv.empty() || argv[0].empty())
         throw std::runtime_error("spawn: an empty command");
     if ((inherited_manifest_fd >= 0 && inherited_manifest_fd < 3) ||
-        (working_directory_fd >= 0 && working_directory_fd < 3))
+        (working_directory_fd >= 0 && working_directory_fd < 3) ||
+        std::any_of(more_inherited_fds.begin(), more_inherited_fds.end(), [](int fd) { return fd < 3; }))
         throw std::runtime_error("spawn: inherited descriptors must be greater than 2");
     std::vector<std::string> envs;
     for (const auto& [k, v] : env) {
@@ -858,14 +882,15 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
             ::_exit(127);
         }
         cloexec_above_stderr();
-        if (inherited_manifest_fd >= 0) {
-            // The owner keeps every other descriptor close-on-exec. Only the
-            // sealed, authenticated manifest becomes readable by the strict
-            // engine/worker readers at /proc/self/fd/N after execve.
-            const int flags = ::fcntl(inherited_manifest_fd, F_GETFD);
+        // The owner keeps every other descriptor close-on-exec. Only the sealed documents named here (the manifest
+        // or settings, and for an engine its raw YAML and admission) are readable by the child at /proc/self/fd/N.
+        std::vector<int> inherit = more_inherited_fds;
+        if (inherited_manifest_fd >= 0) inherit.push_back(inherited_manifest_fd);
+        for (const int inherited : inherit) {
+            const int flags = ::fcntl(inherited, F_GETFD);
             const auto inherited_flags =
                 static_cast<int>(static_cast<unsigned int>(flags) & ~static_cast<unsigned int>(FD_CLOEXEC));
-            if (flags < 0 || ::fcntl(inherited_manifest_fd, F_SETFD, inherited_flags) != 0) {
+            if (flags < 0 || ::fcntl(inherited, F_SETFD, inherited_flags) != 0) {
                 const int e = errno;
                 (void)!::write(report[1], &e, sizeof e);
                 ::_exit(127);
@@ -1971,19 +1996,24 @@ class Owner {
         const fs::path execution_manifest = plan_.execution_manifest();
         const auto manifest = v2::load_manifest(execution_manifest, v2::PlanUse::serving);
         const auto& native_launch = plan_.native_launch;
-        if (!native_launch || !plan_.pinned_manifest || !manifest)
-            throw PlanFailed("native serving: missing admitted launch inputs or sealed manifest");
+        if (!native_launch || !plan_.pinned_manifest || !plan_.config || !plan_.admission || !manifest)
+            throw PlanFailed("native serving: missing admitted launch inputs, sealed manifest or sealed YAML");
         const auto native = v2::native_config_view(manifest.value());
         if (!native || argv.empty() || !fs::path(argv.front()).is_absolute() ||
-            argv != std::vector<std::string>{argv.front(), "--manifest", execution_manifest.string(),
-                                             "--role", "engine"})
-            throw PlanFailed("native serving: launch does not match the admitted engine manifest");
+            argv != std::vector<std::string>{argv.front(), "--config", plan_.config->path().string(),
+                                             "--bc-admission-fd", std::to_string(plan_.admission->descriptor())})
+            throw PlanFailed("native serving: launch does not match the admitted native YAML and admission");
         native_launch->root.require_matches(native->identity.resolution_root);
+        EngineInputs inputs{plan_.config, plan_.admission};
         if (quality) {
-            if (quality->record())
-                argv.insert(argv.end(), {"--kld-record", quality->reference.string(), "--kld-corpus", quality->corpus.string()});
-            else
-                argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
+            // A KL run: the same engine and YAML, its own admission naming the run's files.
+            EngineAdmission::Quality run;
+            run.record = quality->record();
+            run.reference = quality->reference.string();
+            run.corpus = quality->corpus.string();
+            run.output = quality->output.string();
+            inputs = engine_inputs(manifest.value(), false, std::move(run));
+            argv = engine_argv(argv.front(), inputs);
         } else if (manifest && manifest.value().spec.handoff &&
                    manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();
@@ -2002,7 +2032,7 @@ class Owner {
         return spawn(
             argv, native_launch->environment, log,
             [&](pid_t pid) { track("engine", pid, log, &argv); },
-            plan_.pinned_manifest->descriptor(), native_launch->root.descriptor());
+            inputs.config->descriptor(), native_launch->root.descriptor(), {inputs.admission->descriptor()});
     }
 
     std::optional<std::string> exited_child() {
@@ -3512,9 +3542,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         measured_helpers_mib = helper_resident_mib(group.pids);
         require_segment(handoff);
         launch.root.require_matches(snapshot.resolution_root());
+        const EngineInputs measuring_inputs = engine_inputs(verified.parsed, true);
+        std::vector<std::string> measuring_argv = engine_argv(absolute_engine, measuring_inputs);
+        measuring_argv.insert(measuring_argv.end(),
+                              {"--plan-memory", plan_path.string(), "--plan-memory-ranks", ranks_path.string()});
         const pid_t measuring_pid = spawn(
-            {absolute_engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
-             "--plan-memory", plan_path.string(), "--plan-memory-ranks", ranks_path.string()},
+            measuring_argv,
             launch.environment, measurement_log,
             [&](pid_t pid) {
                 if (hooks.started)
@@ -3522,7 +3555,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                           "native v3 measuring engine", pid, measurement_log),
                                      "native v3 measuring engine registration");
             },
-            verified.pinned->descriptor(), launch.root.descriptor());
+            measuring_inputs.config->descriptor(), launch.root.descriptor(), {measuring_inputs.admission->descriptor()});
         const int measuring_status = wait_measuring_engine(measuring_pid, group, hooks);
         if (!WIFEXITED(measuring_status) || WEXITSTATUS(measuring_status) != 0 ||
             !fs::is_regular_file(plan_path) || !fs::is_regular_file(ranks_path) ||
@@ -3710,7 +3743,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.manifest = measured_manifest;
         out.stored_sha256 = std::move(final_snapshot.sha256);
         out.pinned_manifest = std::move(final_snapshot.pinned);
-        out.argv = {absolute_engine.string(), "--manifest", out.execution_manifest().string(), "--role", "engine"};
+        {
+            const EngineInputs inputs = engine_inputs(final_snapshot.parsed, false);
+            out.config = inputs.config;
+            out.admission = inputs.admission;
+            out.argv = engine_argv(absolute_engine, inputs);
+        }
         out.helpers = helper_starts({processes, after_facts}, frozen_runtime_home, helper_binary,
                                     final_snapshot.parsed, false);
         out.native_helper_resident_mib = measured_helpers_mib;
@@ -3997,7 +4035,12 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     out.stored_sha256 = sha256_hex(bytes);
     out.pinned_manifest = std::move(pinned);
     out.port = int(accepted.spec.processes.engine.server.port);
-    out.argv = {engine.string(), "--manifest", out.pinned_manifest->path().string(), "--role", "engine"};
+    {
+        const EngineInputs inputs = engine_inputs(accepted, false);
+        out.config = inputs.config;
+        out.admission = inputs.admission;
+        out.argv = engine_argv(engine, inputs);
+    }
     std::string ordinals, hip_ordinals;
     for (size_t i = 0; i < accepted.spec.processes.engine.device.gpus.size(); ++i) {
         const std::string& bdf = accepted.spec.processes.engine.device.gpus[i];

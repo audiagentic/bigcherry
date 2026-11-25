@@ -19,6 +19,7 @@ import argparse
 import json
 import math
 import sys
+from pathlib import Path
 import urllib.request
 
 PROMPTS = [
@@ -95,12 +96,18 @@ def main(argv):
     c.add_argument("url")
     c.add_argument("out")
     c.add_argument("--max-tokens", type=int, default=256)
-    c.add_argument("--model", default="default")
+    c.add_argument("--model", default=None, help="the served model name (default: the first id of /v1/models)")
     d = sub.add_parser("compare")
     d.add_argument("a")
     d.add_argument("b")
     args = ap.parse_args(argv)
     if args.cmd == "capture":
+        tools = str(Path(__file__).resolve().parents[2])
+        if tools not in sys.path:
+            sys.path.insert(0, tools)
+        from bigcherry.bench.served_model import served_model
+
+        args.model = args.model or served_model(args.url)
         capture(args.url, args.out, args.max_tokens, args.model)
     else:
         compare(args.a, args.b)

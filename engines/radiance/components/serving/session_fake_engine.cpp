@@ -243,8 +243,67 @@ int main(int argc, char** argv) {
     const std::string manifest = arg_after(argc, argv, "--manifest");
     const std::string role = arg_after(argc, argv, "--role");
     const std::string settings_fd_text = arg_after(argc, argv, "--settings-fd");
+    const std::string config_path = arg_after(argc, argv, "--config");
+    const std::string admission_fd_text = arg_after(argc, argv, "--bc-admission-fd");
     json m = json::object();
-    if (!settings_fd_text.empty()) {
+    if (!config_path.empty()) {
+        // The native entry: the raw YAML at --config (an inherited sealed descriptor) and the owner's derived facts in the
+        // admission document at --bc-admission-fd. The port, context and n-gram placement are the native file's own
+        // values, which this fake cannot parse, so the test supplies them in the environment as it does for the inspector.
+        const auto sealed_text = [](const std::string& label, int fd) {
+            constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+            struct stat info {};
+            const int seals = fd < 3 ? -1 : ::fcntl(fd, F_GET_SEALS);
+            if (fd < 3 || seals < 0 || (seals & seals_required) != seals_required || ::fstat(fd, &info) != 0 ||
+                info.st_size <= 0) {
+                std::fprintf(stderr, "fake engine: %s is not an inherited sealed descriptor\n", label.c_str());
+                std::exit(9);
+            }
+            std::string bytes(static_cast<size_t>(info.st_size), '\0');
+            if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) std::exit(9);
+            return bytes;
+        };
+        int config_fd = -1;
+        if (config_path.rfind("/proc/self/fd/", 0) == 0) config_fd = std::atoi(config_path.c_str() + 14);
+        const std::string yaml = sealed_text("--config", config_fd);
+        const json admission = json::parse(sealed_text("--bc-admission-fd", std::atoi(admission_fd_text.c_str())), nullptr, false);
+        const char* expected_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
+        const char* expected_frozen = std::getenv("TEST_NATIVE_EXPECT_FROZEN");
+        const char* frozen = std::getenv("TEST_NATIVE_FROZEN");
+        const bool measuring = !arg_after(argc, argv, "--plan-memory").empty();
+        if (!admission.is_object() || admission.value("kind", std::string()) != "bigcherry.engine-admission/v1" ||
+            admission.value("measuring", false) != measuring || (expected_yaml && yaml != expected_yaml) ||
+            (expected_frozen && (!frozen || std::strcmp(frozen, expected_frozen) != 0))) {
+            std::fprintf(stderr, "fake engine: native YAML, admission, environment or role mismatch\n");
+            return 9;
+        }
+        const char* expected_root = std::getenv("TEST_NATIVE_EXPECT_ROOT");
+        if (expected_root && std::filesystem::current_path() != expected_root) {
+            std::fprintf(stderr, "fake engine: the execution root is not the admitted one\n");
+            return 9;
+        }
+        std::printf("fake engine: native v3 %s snapshot, root and environment verified\n", measuring ? "measuring" : "serving");
+        m["port"] = std::atoi(std::getenv("TEST_NATIVE_INSPECT_PORT") ? std::getenv("TEST_NATIVE_INSPECT_PORT") : "0");
+        m["engine_cards"] = admission.at("bdfs");
+        m["host_pool_mib"] = admission.at("host").at("pool_mib_per_rank");
+        if (const char* context = std::getenv("TEST_NATIVE_INSPECT_MAX_CONTEXT")) m["max_context"] = std::atoll(context);
+        if (const char* settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS")) {
+            const json native = json::parse(settings, nullptr, false);
+            if (native.is_object() && native.contains("ngram_placement")) m["ngram_placement"] = native.at("ngram_placement");
+        }
+        if (admission.at("settings").at("handoff") == true) m["shm"] = admission.at("settings").at("shm");
+        if (!measuring) {
+            if (const char* behaviour = std::getenv("TEST_FAKE_BEHAVIOUR")) {
+                const json given = json::parse(behaviour, nullptr, false);
+                if (!given.is_object()) {
+                    std::fprintf(stderr, "fake engine: TEST_FAKE_BEHAVIOUR is not a JSON object\n");
+                    return 9;
+                }
+                for (const auto& [key, value] : given.items())
+                    if (key != "port") m[key] = value;   // the port is the file's
+            }
+        }
+    } else if (!settings_fd_text.empty()) {
         // A helper started by the owner: its typed settings arrive as one sealed descriptor, never a manifest.
         const int fd = std::atoi(settings_fd_text.c_str());
         struct stat info {};
