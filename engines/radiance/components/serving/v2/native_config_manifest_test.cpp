@@ -6,7 +6,9 @@
 #include "jcs.h"
 #include "sha256.h"
 
+#include <algorithm>
 #include <chrono>
+#include <iostream>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -130,6 +132,36 @@ int main(int argc, char** argv) {
     measuring_inputs.profile.name = unmeasured.spec.intent.power.profile;
     const auto resolved_unmeasured = v3::resolve_s10(unmeasured, measuring_inputs);
     check(resolved_unmeasured.ok(), "S10 resolver rejected the selected generated v3 edition");
+    {   // mixed-architecture TP: ranks of one role on two card types resolve per architecture (they were refused)
+        v3::Manifest mixed = unmeasured;
+        mixed.spec.intent.power.profile = "mixed-test";
+        auto& gpus = mixed.spec.facts.gpus;
+        const std::string first_bdf = mixed.spec.processes.engine.device.gpus.front();
+        v3::GpuFact other = *std::find_if(gpus.begin(), gpus.end(), [&](const v3::GpuFact& g) { return g.bdf == first_bdf; });
+        other.bdf = "0000:ee:00.0";
+        other.arch = "gfx1201";
+        other.hip_ordinal = 90;
+        for (auto& g : gpus) if (g.bdf == first_bdf) g.arch = "gfx1100";
+        gpus.push_back(other);
+        mixed.spec.processes.engine.device.gpus.push_back(other.bdf);
+        mixed.spec.processes.engine.scheduler.tp = 2;
+        v3::S10Inputs inputs;
+        inputs.profile.name = "mixed-test";
+        v3::S10PowerRule xtx;
+        xtx.role = "engine"; xtx.arch = "gfx1100"; xtx.evidence = "fixture";
+        xtx.settings.vddgfx_offset_mv = -125; xtx.settings.sclk_max_mhz = 2700;
+        v3::S10PowerRule r9700;
+        r9700.role = "engine"; r9700.arch = "gfx1201"; r9700.evidence = "fixture";
+        r9700.settings.power_cap_w = 200;
+        inputs.profile.rules = {xtx, r9700};
+        const auto resolved = v3::resolve_s10(mixed, inputs);
+        if (!resolved) std::cerr << v3::render_human("mixed tp", resolved.error());
+        check(resolved.ok(), "S10 refused mixed-architecture TP ranks with architecture-specific settings");
+        // a stock plan keeps the digest it had: its roles are on one architecture or empty
+        v3::S10Inputs stock;
+        stock.profile.name = unmeasured.spec.intent.power.profile;
+        check(v3::resolve_s10(unmeasured, stock).ok(), "stock S10 resolution changed");
+    }
     v3::Manifest wrong_edition = unmeasured;
     wrong_edition.api_version = "bigcherry/v2";
     wrong_edition.metadata.contract_version = 2;
