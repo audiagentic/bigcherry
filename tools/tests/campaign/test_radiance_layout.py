@@ -1,46 +1,19 @@
 """RAD23: card types (archs.toml) and serving configs (the native YAML files, BIGCHERRY_CONFIGS) as data, resolved against a host's device inventory."""
-import os
 import re
 import tempfile
-from unittest import mock
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
 from bigcherry.core import paths
-from bigcherry.core.environment import Device
 from bigcherry.engine_adapters import radiance_layout as rl
 
 
-def host(*devices):
-    return SimpleNamespace(devices=tuple(devices))
-
-
-XTX2 = (Device(0, "gfx1100", "x", 24560), Device(1, "gfx1100", "x", 24560), Device(2, "gfx1201", "r", 32624))
-WITH_6900 = XTX2 + (Device(3, "gfx1030", "s", 16368),)
-
-
 class RepoDataTests(unittest.TestCase):
-    def test_the_shipped_files_load_and_every_layout_resolves_on_the_lab_host_shape(self):
+    def test_the_shipped_files_load(self):
         archs = rl.load_archs()
         self.assertEqual({"gfx1201", "gfx1100", "gfx1030"} <= set(archs), True)
-        # Every shipped layout resolves on the lab host's shape to what it declares: no layout is named here, so a new
-        # model, split or topology needs only its layout file.
-        inventory = host(*WITH_6900)
-        by_index = {d.index: d for d in inventory.devices}
-        layouts = rl.load_layouts()
-        self.assertTrue(layouts)
-        for name, lay in layouts.items():
-            with self.subTest(layout=name):
-                r = rl.resolve(name, inventory)
-                groups = lay["engine"] if isinstance(lay["engine"], list) else [lay["engine"]]
-                self.assertEqual(len(r.engine_indices), sum(g.get("count", 1) for g in groups))
-                # ranks follow the groups' order, each group's cards of its architecture
-                arches = [by_index[i].arch for i in r.engine_indices]
-                self.assertEqual(arches, [g["arch"] for g in groups for _ in range(g.get("count", 1))])
-                self.assertEqual(r.tp_wire, lay.get("tp-wire"))
-                self.assertEqual(bool(r.helpers), bool(lay.get("helper")))
-                self.assertFalse(set(r.engine_indices) & {h.index for h in r.helpers}, "a card plays one part")
+        self.assertTrue(rl.load_layouts())
 
     def test_the_versioned_native_representation_schema(self):
         schema = rl._wire_schema(None)
@@ -79,110 +52,21 @@ class BuildTargetsTests(unittest.TestCase):
                 self.assertNotRegex(line, r"HIP_ARCHITECTURES\s+gfx|GPU_TARGETS\s+gfx|R3MOE_TARGETS\s+\"gfx", line)
 
 
-class ResolveTests(unittest.TestCase):
-    def test_dense_two_rank_layout_and_shell_environment(self):
-        from bigcherry.cli.layout_cmds import _env_lines
-        from bigcherry.core.environment import Device
+class EnvLinesTests(unittest.TestCase):
+    """The shell assignments of a resolved layout (the cards themselves come from bc-serve's detection, not from here)."""
 
-        r = rl.resolve("qwen27b-2xtx", host(*WITH_6900))
-        self.assertEqual(r.engine_indices, (0, 1))
-        self.assertEqual(r.engine_arch, "gfx1100")
-        self.assertEqual(r.engine_plugin, "libr3.so")
-        self.assertEqual(r.model, "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad")
-        self.assertEqual(r.common_env, {})
-        self.assertEqual(r.helpers, ())
-        lines = "\n".join(_env_lines(r))
-        self.assertIn("LAYOUT_ENGINE_DEVICES=0,1", lines)
-        self.assertIn("LAYOUT_ENGINE_RANKS=2", lines)
-        self.assertIn("LAYOUT_HELPER_COUNT=0", lines)
-        self.assertIn("LAYOUT_TP_WIRE=wht6", lines)
-
-        moved = host(Device(6, "gfx1100", "x", 24560), Device(9, "gfx1100", "x", 24560))
-        self.assertEqual(rl.resolve("qwen27b-2xtx", moved).engine_indices, (6, 9))
-        with self.assertRaisesRegex(rl.LayoutError, "wants 2"):
-            rl.resolve("qwen27b-2xtx", host(Device(6, "gfx1100", "x", 24560)))
-        with self.assertRaisesRegex(rl.LayoutError, "budget overrides require"):
-            rl.resolve("qwen27b-2xtx", host(*XTX2), budgets={"gfx1100": 1000})
-
-    def test_a_tensor_parallel_engine_with_its_one_helper(self):
+    def test_engine_and_helper_assignments(self):
         from bigcherry.cli.layout_cmds import _env_lines
 
-        r = rl.resolve("flashnext-tp2xtx-r9700", host(*WITH_6900))
-        self.assertEqual((r.engine_indices, r.engine_arch, r.engine_plugin, r.tp_wire), ((0, 1), "gfx1100", "libr3.so", "exact"))
-        self.assertEqual([(h.index, h.arch.name, h.placement) for h in r.helpers], [(2, "gfx1201", "head")])
-        # no budget-mib in the layout: the whole card less its archs.toml reserve, from the inventory
-        self.assertEqual(r.helpers[0].budget_mib, 32624 - rl.load_archs()["gfx1201"].reserve_mib)
-        # a derived budget is bc-serve's (the card limit less the helper's own lanes and tables): no MIBS export, the limit flagged
-        self.assertTrue(r.helpers[0].budget_derived)
-        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "1", "R3_MOE_WORKER_ENGINE_RANKS": "2"})
+        archs = rl.load_archs()
+        helper = rl.HelperCard(2, archs["gfx1201"], 32624, 30000, "head", 1)
+        r = rl.Resolved("t", (0, 1), "gfx1100", "libr3.so", "m.rad", "exact", (), (helper,),
+                        {"R3_MOE_WORKER_COUNT": "1", "R3_MOE_WORKER_ENGINE_RANKS": "2"})
         lines = "\n".join(_env_lines(r))
         for want in ("LAYOUT_ENGINE_DEVICES=0,1", "LAYOUT_ENGINE_RANKS=2", "LAYOUT_TP_WIRE=exact", "LAYOUT_HELPER_COUNT=1"):
             self.assertIn(want, lines)
-        self.assertIn("TP ranks: 0,1 (gfx1100), wire exact; helper0: card 2 gfx1201", lines)
-        # a budget override still applies to the helper's architecture
-        self.assertEqual(rl.resolve("flashnext-tp2xtx-r9700", host(*WITH_6900), budgets={"gfx1201": 20480}).helpers[0].budget_mib, 20480)
-
-    def test_a_tensor_parallel_engine_with_two_helpers(self):
-        """RAD49: N helpers behind M ranks; the budgets are derived, the tail and the combine are the layout's."""
-        from bigcherry.cli.layout_cmds import _env_lines
-
-        r = rl.resolve("flashnext-tp2xtx", host(*WITH_6900))
-        archs = rl.load_archs()
-        self.assertEqual((r.engine_indices, r.engine_arch, r.tp_wire), ((0, 1), "gfx1100", "exact"))
-        self.assertEqual([(h.index, h.arch.name, h.placement, h.budget_mib) for h in r.helpers],
-                         [(2, "gfx1201", "head", 32624 - archs["gfx1201"].reserve_mib),
-                          (3, "gfx1030", "tail", 16368 - archs["gfx1030"].reserve_mib)])
-        self.assertTrue(all(h.budget_derived for h in r.helpers))
-        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "2", "R3_MOE_WORKER_ENGINE_RANKS": "2",
-                                        "R3_MOE_WORKER_PLACEMENT": "tail", "R3_MOE_WORKER_COMBINE": "1"})
-        self.assertEqual(r.helper_env(1)["R3_MOE_WORKER_INDEX"], "1")
-        self.assertEqual(r.helper_env(1)["ROCR_VISIBLE_DEVICES"], "3")
-        lines = "\n".join(_env_lines(r))
-        for want in ("LAYOUT_ENGINE_DEVICES=0,1", "LAYOUT_ENGINE_RANKS=2", "LAYOUT_TP_WIRE=exact", "LAYOUT_HELPER_COUNT=2"):
-            self.assertIn(want, lines)
-        # The runtime topology is validated by the native v26 count predicates.
+        self.assertEqual(r.helper_env(0)["ROCR_VISIBLE_DEVICES"], "2")
         self.assertIsNone(rl.topology_refusal(len(r.helpers), len(r.engine_indices)))
-
-    def test_two_xtx(self):
-        r = rl.resolve("flashnext-2xtx", host(*XTX2))
-        self.assertEqual([h.index for h in r.helpers], [0, 1])
-        self.assertEqual(r.common_env, {"R3_MOE_WORKER_COUNT": "2", "R3_MOE_WORKER_ENGINE_RANKS": "1"})
-        self.assertEqual(r.helper_env(1)["ROCR_VISIBLE_DEVICES"], "1")
-        self.assertEqual(r.helper_env(1)["R3_MOE_WORKER_INDEX"], "1")
-
-    def test_a_third_card_comes_from_the_inventory_not_the_code(self):
-        r = rl.resolve("flashnext-2xtx-rdna2-tail", host(*WITH_6900))
-        self.assertEqual([(h.index, h.arch.name, h.budget_mib, h.placement) for h in r.helpers],
-                         [(0, "gfx1100", 24560 - 1024, "head"), (1, "gfx1100", 24560 - 1024, "head"), (3, "gfx1030", 16368 - 1024, "tail")])
-        self.assertEqual(r.common_env["R3_MOE_WORKER_PLACEMENT"], "tail")
-        self.assertEqual(r.helper_env(2)["R3_MOE_WORKER_PLUGIN_FILE"], "libr2.so")
-        self.assertEqual(r.helper_env(2)["R3_MOE_WORKER_ROWS"], "1")
-        # the same layout on a host numbered differently
-        moved = (Device(5, "gfx1030", "s", 16368), Device(4, "gfx1100", "x", 24560), Device(7, "gfx1100", "x", 24560), Device(1, "gfx1201", "r", 32624))
-        r2 = rl.resolve("flashnext-2xtx-rdna2-tail", host(*sorted(moved, key=lambda d: d.index)))
-        self.assertEqual((r2.engine_index, [h.index for h in r2.helpers]), (1, [4, 7, 5]))
-
-    def test_no_card_for_a_group_is_refused_with_the_reason(self):
-        with self.assertRaisesRegex(rl.LayoutError, "no gfx1030 card"):
-            rl.resolve("flashnext-2xtx-rdna2-tail", host(*XTX2))
-        with self.assertRaisesRegex(rl.LayoutError, "no gfx1201 card"):
-            rl.resolve("flashnext-2xtx", host(Device(0, "gfx1100", "x", 24560)))
-
-    def test_a_budget_override_by_architecture_and_its_limit(self):
-        r = rl.resolve("flashnext-2xtx-rdna2-tail", host(*WITH_6900), budgets={"gfx1030": 4096})
-        self.assertEqual(r.helpers[-1].budget_mib, 4096)
-        self.assertNotIn("R3_MOE_WORKER_MIBS", r.common_env)
-        with self.assertRaisesRegex(rl.LayoutError, "exceeds 15344 MiB"):
-            rl.resolve("flashnext-2xtx-rdna2-tail", host(*WITH_6900), budgets={"gfx1030": 16000})
-        with self.assertRaisesRegex(rl.LayoutError, "no helper group uses"):
-            rl.resolve("flashnext-2xtx", host(*XTX2), budgets={"gfx1030": 1024})
-
-    def test_an_unknown_layout_and_an_undescribed_card_type(self):
-        with self.assertRaisesRegex(rl.LayoutError, "unknown layout"):
-            rl.resolve("nope", host(*XTX2))
-        odd = (Device(0, "gfx90a", "mi", 65536), Device(2, "gfx1201", "r", 32624))
-        with self.assertRaisesRegex(rl.LayoutError, "no gfx1100 card"):
-            rl.resolve("flashnext-2xtx", host(*odd))
 
 
 class FileRuleTests(unittest.TestCase):
@@ -221,13 +105,6 @@ rows-kernel = true
 reserve-mib = 1024
 roles = ["helper"]
 '''
-
-    def resolve(self, layouts, devices=WITH_6900):
-        layouts = layouts.replace("[layout.t]\n", '[layout.t]\nmodel = "m.rad"\n', 1)
-        root = self.roots(self.ARCHS, "schema = 1\n" + layouts)
-        return rl.resolve("t", host(*devices), repo_root=root)
-
-    HEAD = '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 1000\n'
 
     def test_the_mask_is_a_typed_v26_refusal(self):
         self.assertIsNone(rl.topology_refusal(8, 1, self.roots(self.ARCHS, "schema = 1\n")))
