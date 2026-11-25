@@ -59,6 +59,8 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Reuse one discrete harness for native libr3d, generated libr3 and owned overlay comparisons where supported, exact source/build/target. Native packed IQR private raw layout differs from local; build actual layout/relayout from same logical source or canonical inputs for each arm, never reuse incompatible packed bytes. Test omitted target row, wrong provider/layout, altered scale, untouched output sentinel, OOM/timeout/wrong card. Missing unrelated rows test-only; never production fallback. Timing adaptive windows bounded, inconclusive if not converged; preserve bit-identity for existing arithmetic changes. Full plugin and engine not prerequisite.
 
+2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. BU03 #1571 cold-build records now baseline for five plane-prefill IQR forms (shipped resources differed, measured replay and output neutral). Use existing cold exact-source reference and recorded output baseline; no full cold plugin build per discrete test, compile only affected unit with matched flags and actual layouts. Distinguish real performance/resource regression from baseline difference or compiler drift. No duplicate GPU run if same row/shape/source proof already recorded. Existing full plugin/engine gate at release stays.
+
 ## Change Log
 
 - 2026-11-25T02:12:11.908255+00:00 (created-by): Created by lead
@@ -70,3 +72,4 @@ Design: docs/design/radiance-kernel-composition.md section 4a. No tamper or dige
 - 2026-11-25T02:18:13.454037+00:00 (updated-by): Updated: section:notes
 - RV4636
 - 2026-11-25T02:42:19.951361+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-25T05:21:34.496954+00:00 (updated-by): Updated: section:notes

@@ -19,7 +19,7 @@ An earlier branch groups every upstream unit into eight families (core, gemm_qua
 
 ## Steps
 
-1. Refresh the branch against main. 2. Full libr3 build and the component tests. 3. Record cold and warm build time of one family against the full plugin, and report the include-graph closure per family (a changed shared header rebuilds which families). 4. Merge. The family targets are a development accelerator; they are not evidence that separate family libraries link (that is RCS22).
+#1545 merged the eight family targets and coverage test. Use those actual Ninja object targets for developer and affected compile checks, not a second compile graph. Measure one representative family versus full plugin cold/warm during next actual builds; record dependency fan-out from Ninja/compiler output. Full plugin link/component tests only at existing integrated gate. Empty or excluded family is not qualification. No extra split purely to create families.
 
 ## Detailed Solution & Technical Design
 
@@ -55,6 +55,8 @@ Design: docs/design/radiance-kernel-composition.md section 7.
 
 2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Existing #1545 family compile targets and subsequent in-flight work are the single compile target owner. Expose affected-family builds to RCS19 and MEN16, actual same CMake flags/arch/object graph, reuse full-lane objects only with exact identity; changed shared header or unknown dependency widens compile set. No separate build system or incomplete family treated as production plugin.
 
+2026-11-25 lean build sweep at 79c61a758. One existing CMake/Ninja build graph, one canonical matched release lane, existing tests and release records. No new cache, build system, manifest, hash scheme or generic framework. Reuse actual evidence; only test changed behavior and dependency closure. #1545 (0a03d2851) is on main. CMake family targets depend on canonical libr3 objects; no partial link or separate flags. Keep the coverage check; check actual requested unit coverage in partial builds, and use full target if shared inputs affect multiple families. Existing KERNEL_GROUPS.md and r3_groups_test.py suffice. Do not repeat delivered merge/build work; close only after remaining timing evidence.
+
 ## Change Log
 
 - 2026-11-25T00:40:47.022098+00:00 (created-by): Created by lead
@@ -65,3 +67,4 @@ Design: docs/design/radiance-kernel-composition.md section 7.
 
 - RV4606
 - 2026-11-25T02:04:43.391147+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T05:21:03.549626+00:00 (updated-by): Updated: section:steps, section:notes
