@@ -1,5 +1,42 @@
 # Changelog
 
+## [1.70.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.7...bc-platform-1.70.0) (2026-11-25)
+
+
+### New and changed
+
+* **lab:** gate-e.sh, the Gate E runner for a published radiance release ([#1525](https://github.com/audiagentic/bigcherry/issues/1525)) ([663ed52](https://github.com/audiagentic/bigcherry/commit/663ed5240dbb6ed096532829f03d8afee545c22c))
+* **lab:** unit harness (RCS25): build one unit family, check resources, hashes and replay against the shipped library ([#1565](https://github.com/audiagentic/bigcherry/issues/1565)) ([24afc89](https://github.com/audiagentic/bigcherry/commit/24afc89ff30e54e2df3a4b271080ec59d08b6a6d))
+* **patch:** kernel unit ownership in patch metadata, a shared-unit record, and a naming lint (RCS19) ([#1580](https://github.com/audiagentic/bigcherry/issues/1580)) ([04a043e](https://github.com/audiagentic/bigcherry/commit/04a043e415b23b87190e0d8c9025824125ff0951))
+* **patch:** patch-compose-check, the composition gates: native rewrite drift and a syntax or full compile of the touched units on gfx1100 and gfx1201 ([#1552](https://github.com/audiagentic/bigcherry/issues/1552)) ([c41676c](https://github.com/audiagentic/bigcherry/commit/c41676c90bf7e7d7682f1adb561e836d2feb3f89))
+* **patch:** promote rad0064_owned_weighted_head ([#1508](https://github.com/audiagentic/bigcherry/issues/1508)) ([abedaf2](https://github.com/audiagentic/bigcherry/commit/abedaf26550257ad04b7b01c38490d0421421850))
+* **patch:** promote rad0065_iqr_fused_gfx1201 ([#1554](https://github.com/audiagentic/bigcherry/issues/1554)) ([8a3950b](https://github.com/audiagentic/bigcherry/commit/8a3950bdac4e89bbda4198209a6ce3bacdc386ca))
+* **radiance:** cut the vocabulary head for any rank count (rad0063, untested package) ([#1497](https://github.com/audiagentic/bigcherry/issues/1497)) ([37da96c](https://github.com/audiagentic/bigcherry/commit/37da96c46395c892a17d62a51383b396b8256e65))
+* **radiance:** selectable IQR-V4 (6-bit) model configs for three cards and the long layout ([#1509](https://github.com/audiagentic/bigcherry/issues/1509)) ([771d897](https://github.com/audiagentic/bigcherry/commit/771d897484b94f15e4ccc1fd50c1ae44d7e4f2cc))
+* **release:** the pin-bump compile phase runs the composition gates (anchors on the patched source, syntax-only host and device compiles) before the lane build ([#1584](https://github.com/audiagentic/bigcherry/issues/1584)) ([78674f3](https://github.com/audiagentic/bigcherry/commit/78674f35f81ff83bc5ba9f1b991cdf68aad82b5c))
+
+
+### Fixes
+
+* **build:** the build cache GC reads bigcherry/v3 stored serving manifests ([#1524](https://github.com/audiagentic/bigcherry/issues/1524)) ([3c85503](https://github.com/audiagentic/bigcherry/commit/3c855033b5fb150b5a47e7149cdb728dd9b1993d))
+* **lab:** the Flash-Next 8-session step time is gated at the baseline's tokens per step; re-record the parity baseline ([#1536](https://github.com/audiagentic/bigcherry/issues/1536)) ([031e57d](https://github.com/audiagentic/bigcherry/commit/031e57dc6320a59bf204d153e3a18a9ec018c027))
+* **lab:** the unit harness builds with the lane's Release build type ([#1581](https://github.com/audiagentic/bigcherry/issues/1581)) ([441f4dd](https://github.com/audiagentic/bigcherry/commit/441f4dd2b99e75e65900ad239bccf028cdd1510a))
+* **patch:** the validation producer imports write_json_atomic again (lost in [#1395](https://github.com/audiagentic/bigcherry/issues/1395)); a test for undefined names ([#1542](https://github.com/audiagentic/bigcherry/issues/1542)) ([2fc6f03](https://github.com/audiagentic/bigcherry/commit/2fc6f03d5b4b525a9fa3be5e1b2ded6067203e19))
+* **radiance:** host-facts records drop the kernel builder's account and machine; forbidden-term email scan is linear on long lines ([#1517](https://github.com/audiagentic/bigcherry/issues/1517)) ([b987274](https://github.com/audiagentic/bigcherry/commit/b987274ea66ab7e249139a1d8acfdfea442cf5f6))
+* **retention:** build GC reclaims every old unused build; only a live process, an installed release, a lock or age keep one ([#1529](https://github.com/audiagentic/bigcherry/issues/1529)) ([3eea194](https://github.com/audiagentic/bigcherry/commit/3eea1946ef95fbff028d318bff251c7b2e195cb7))
+
+
+### Performance
+
+* **libr3:** fused single-band IQR prefill tile (65-128 rows, no global plane) ([#1530](https://github.com/audiagentic/bigcherry/issues/1530)) ([c2cb8c1](https://github.com/audiagentic/bigcherry/commit/c2cb8c17b81b618a158c2ae325ba9c09171798c2))
+* **libr3:** keep the IQR 16-row tile's integer sums native per scale group (IQR 1/6/8 streams -13/-19/-14%) ([#1505](https://github.com/audiagentic/bigcherry/issues/1505)) ([c681ba8](https://github.com/audiagentic/bigcherry/commit/c681ba8c41bf85a781778a3202c687ab87898e05))
+* **libr3:** keep the IQR wide tile's integer sums native per scale block (17-64 rows -80%) ([#1515](https://github.com/audiagentic/bigcherry/issues/1515)) ([bc04229](https://github.com/audiagentic/bigcherry/commit/bc042299e64fc7a9cbfdc5f8c48b7453617751d8))
+* **libr3:** keep the vocabulary head's integer sums native per scale block (IQR 6 streams -34%) ([#1501](https://github.com/audiagentic/bigcherry/issues/1501)) ([abcbb1f](https://github.com/audiagentic/bigcherry/commit/abcbb1f5eaf35f8b91119bad618250c71579ec13))
+* **libr3:** load the IQR 16-row tile's token and weight fragments natively (IQR -1.2..-4.0% ms/step) ([#1507](https://github.com/audiagentic/bigcherry/issues/1507)) ([7692621](https://github.com/audiagentic/bigcherry/commit/76926216cfc2a098324685a89b635bbf488ace8f))
+* **libr3:** native rewrites for the rotated IQR embedding gather, the NT4 vocabulary head and chained long 16-row tiles ([#1527](https://github.com/audiagentic/bigcherry/issues/1527)) ([bced315](https://github.com/audiagentic/bigcherry/commit/bced315cb24b0d1c5286dea7bbe71be64215e4be))
+* **radiance:** uneven ownership accepts a vocabulary-weighted head (rad0064) ([#1498](https://github.com/audiagentic/bigcherry/issues/1498)) ([f8c4e99](https://github.com/audiagentic/bigcherry/commit/f8c4e99ce0d57638af171093243a4cbae8dd99e3))
+* **radiance:** untested gfx1201 fused single-band IQR prefill patch (rad0065), de-conflicted from the libr3 rewrites ([#1538](https://github.com/audiagentic/bigcherry/issues/1538)) ([b0dafc7](https://github.com/audiagentic/bigcherry/commit/b0dafc7ae81bee64b1679cb1e4254d1f65a6ca3b))
+
 ## [1.69.7](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.69.6...bc-platform-1.69.7) (2026-11-24)
 
 
