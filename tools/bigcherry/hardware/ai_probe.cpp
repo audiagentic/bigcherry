@@ -4,6 +4,8 @@
 // https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15
 #include <hip/hip_runtime.h>
 #include <hipblaslt/hipblaslt.h>
+#include <rocblas/rocblas.h>
+#include <time.h>
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -17,7 +19,6 @@
 #include <vector>
 
 namespace {
-using Clock = std::chrono::steady_clock;
 struct Failure : std::runtime_error {
     int code;
     Failure(int c, const std::string& s) : std::runtime_error(s), code(c) {}
@@ -51,6 +52,30 @@ struct Handles {
         if (h) hipblasLtDestroy(h);
     }
 };
+void rb(rocblas_status e, const char* what) {
+    if (e == rocblas_status_not_implemented) throw Failure(3, std::string(what) + ": unsupported");
+    if (e != rocblas_status_success) throw Failure(4, std::string(what) + ": " + std::to_string(e));
+}
+#define RB(expr) rb((expr), #expr)
+struct RocHandle {
+    rocblas_handle h = nullptr;
+    ~RocHandle() { if (h) (void)rocblas_destroy_handle(h); }
+};
+rocblas_datatype roc_type(hipDataType t) {
+    switch (t) {
+    case HIP_R_16F: return rocblas_datatype_f16_r;
+    case HIP_R_16BF: return rocblas_datatype_bf16_r;
+    case HIP_R_32F: return rocblas_datatype_f32_r;
+    case HIP_R_8I: return rocblas_datatype_i8_r;
+    case HIP_R_32I: return rocblas_datatype_i32_r;
+    default: throw Failure(3, "dtype not supported by rocBLAS screen");
+    }
+}
+int64_t mono_ns() {
+    timespec ts{};
+    if (clock_gettime(CLOCK_MONOTONIC, &ts)) throw Failure(4, "monotonic clock unavailable");
+    return int64_t(ts.tv_sec)*1000000000 + ts.tv_nsec;
+}
 struct Format {
     hipDataType in, out, scale;
     hipblasComputeType_t compute;
@@ -119,6 +144,75 @@ struct Corpus {
         }
     }
 };
+// Address-dependent data covers all 32 bits, changes every pass, and makes
+// stale/cross-address data observable. Two buffers exercise independent VRAM.
+__host__ __device__ uint32_t memory_word(uint64_t i, uint32_t seed) {
+    uint32_t x = uint32_t(i) ^ uint32_t(i >> 32) ^ seed;
+    x ^= x >> 16; x *= 0x7feb352dU; x ^= x >> 15; x *= 0x846ca68bU; x ^= x >> 16;
+    return x;
+}
+__global__ void memory_transform(uint32_t* dst, const uint32_t* src, size_t words) {
+    for (size_t i = blockIdx.x * size_t(blockDim.x) + threadIdx.x;
+         i < words; i += size_t(blockDim.x) * gridDim.x)
+        dst[i] = ~src[i];
+}
+void memory_screen(const std::string& bdf, const std::string& arch, int hip_version,
+                   int driver_version, int mib, int headroom_mib, int seconds, int pause) {
+    size_t free = 0, total = 0;
+    HIP(hipMemGetInfo(&free, &total));
+    const size_t budget = size_t(mib) << 20, headroom = size_t(headroom_mib) << 20;
+    if (budget > free || free - budget < headroom)
+        throw Failure(3, "requested memory budget exceeds free VRAM minus reserved headroom");
+    const size_t bytes = budget / 2, words = bytes / sizeof(uint32_t);
+    Buffer a(bytes), b(bytes);
+    size_t free_after = 0, total_after = 0;
+    HIP(hipMemGetInfo(&free_after, &total_after));
+    if (free_after < headroom || total_after != total)
+        throw Failure(3, "memory headroom not preserved after allocation");
+    const size_t chunk = std::min(words, size_t(1) << 20);
+    std::vector<uint32_t> host(chunk);
+    std::cout << "{\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
+              << "\",\"dtype\":\"memory\",\"n\":" << mib
+              << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
+              << ",\"provider\":\"hip-memory\",\"library_version\":\"" << hip_version
+              << "\",\"workspace\":0,\"algorithm\":\"address-pattern-v1\",\"allocated_bytes\":" << budget
+              << ",\"free_before_bytes\":" << free << ",\"free_after_bytes\":" << free_after
+              << ",\"total_bytes\":" << total;
+    const int64_t start = mono_ns();
+    int64_t iterations = 0;
+    do {
+        uint32_t seed = uint32_t(iterations) * 0x9e3779b9U + 0x712db419U;
+        for (size_t off = 0; off < words; off += chunk) {
+            size_t len = std::min(chunk, words-off);
+            for (size_t i=0;i<len;++i) host[i] = memory_word(off+i, seed);
+            HIP(hipMemcpy(static_cast<uint32_t*>(a.p)+off, host.data(), len*sizeof(uint32_t), hipMemcpyHostToDevice));
+        }
+        HIP(hipMemcpy(b.p, a.p, bytes, hipMemcpyDeviceToDevice));
+        memory_transform<<<std::min<size_t>((words+255)/256, 4096), 256>>>(
+            static_cast<uint32_t*>(a.p), static_cast<const uint32_t*>(b.p), words);
+        HIP(hipGetLastError());
+        HIP(hipDeviceSynchronize());
+        for (size_t off=0; off<words; off+=chunk) {
+            size_t len = std::min(chunk, words-off);
+            for (int copy=0;copy<2;++copy) {
+                HIP(hipMemcpy(host.data(), static_cast<uint32_t*>(copy?a.p:b.p)+off,
+                              len*sizeof(uint32_t), hipMemcpyDeviceToHost));
+                for (size_t i=0;i<len;++i) {
+                    uint32_t want = memory_word(off+i, seed);
+                    if (copy) want = ~want;
+                    if (host[i] != want) throw Failure(2, "memory/transfer mismatch at word " + std::to_string(off+i));
+                }
+            }
+        }
+        ++iterations;
+        if (pause) std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+    } while (iterations < 2 || mono_ns()-start < int64_t(seconds)*1000000000);
+    int64_t end = mono_ns();
+    std::cout << ",\"iterations\":" << iterations << ",\"elapsed_s\":" << std::setprecision(9)
+              << double(end-start)/1e9 << ",\"start_ns\":" << start << ",\"end_ns\":" << end
+              << ",\"status\":\"pass\"}\n";
+}
+
 int parse_int(const char* s, int lo, int hi) {
     size_t used = 0;
     int v = std::stoi(s, &used);
@@ -150,10 +244,12 @@ int main(int argc, char** argv) {
             std::cout << "CPU oracle self-test passed\n";
             return 0;
         }
-        if (argc != 7) throw Failure(3, "usage: ai-probe BDF arch dtype N seconds pause-ms");
+        if (argc != 9) throw Failure(3, "usage: ai-probe BDF arch dtype N seconds pause-ms provider headroom-MiB");
         std::string bdf = argv[1], expected_arch = argv[2], dtype = argv[3];
-        Format f = format(dtype);
-        int n = parse_int(argv[4], 16, 2048);
+        std::string provider = argv[7];
+        int n = parse_int(argv[4], dtype == "memory" ? 2 : 16, dtype == "memory" ? 65536 : 2048);
+        if (dtype == "memory" && n % 2) throw Failure(3, "memory budget must be even MiB");
+        int headroom = parse_int(argv[8], 256, 65536);
         int seconds = parse_int(argv[5], 1, 3600);
         int pause = parse_int(argv[6], 0, 1000);
         int count = 0, dev = -1;
@@ -176,27 +272,54 @@ int main(int argc, char** argv) {
         if (arch != expected_arch) throw Failure(3, "architecture mismatch");
         int hip_version = 0, driver_version = 0;
         HIP(hipRuntimeGetVersion(&hip_version)); HIP(hipDriverGetVersion(&driver_version));
+        if (dtype == "memory") {
+            if (provider != "hip-memory") throw Failure(3, "memory requires hip-memory provider");
+            memory_screen(bdf, arch, hip_version, driver_version, n, headroom, seconds, pause);
+            return 0;
+        }
+        if (provider != "hipblaslt" && provider != "rocblas") throw Failure(3, "unknown provider");
+        Format f = format(dtype);
         Corpus c(n, dtype, f);
         Handles h;
-        LT(hipblasLtCreate(&h.h));
-        int lt_version = 0; LT(hipblasLtGetVersion(h.h, &lt_version));
-        auto setup = hipblasLtMatmulDescCreate(&h.desc, f.compute, f.scale);
-        if (setup == HIPBLAS_STATUS_NOT_SUPPORTED) throw Failure(3, "dtype not supported");
-        lt(setup, "create matmul descriptor");
-        LT(hipblasLtMatrixLayoutCreate(&h.in, f.in, n, n, n));
-        LT(hipblasLtMatrixLayoutCreate(&h.out, f.out, n, n, n));
-        LT(hipblasLtMatmulPreferenceCreate(&h.pref));
-        const size_t limit = 32ull << 20;
-        LT(hipblasLtMatmulPreferenceSetAttribute(h.pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &limit, sizeof(limit)));
+        RocHandle r;
+        std::string version, algorithm;
         hipblasLtMatmulHeuristicResult_t algo{};
-        int found = 0;
-        auto st = hipblasLtMatmulAlgoGetHeuristic(h.h, h.desc, h.in, h.in, h.out, h.out, h.pref, 1, &algo, &found);
-        if (st == HIPBLAS_STATUS_NOT_SUPPORTED || (st == HIPBLAS_STATUS_SUCCESS && !found))
-            throw Failure(3, "no supported algorithm");
-        lt(st, "get heuristic");
-        if (algo.state != HIPBLAS_STATUS_SUCCESS || algo.workspaceSize > limit)
-            throw Failure(3, "invalid heuristic");
-        Buffer a(c.a.size()), b(c.b.size()), out(c.expected.size()), ws(std::max(size_t(1), algo.workspaceSize));
+        size_t workspace = 0;
+        rocblas_datatype rin{}, rout{}, rcompute{};
+        if (provider == "hipblaslt") {
+            LT(hipblasLtCreate(&h.h));
+            int lt_version = 0; LT(hipblasLtGetVersion(h.h, &lt_version));
+            version = std::to_string(lt_version);
+            auto setup = hipblasLtMatmulDescCreate(&h.desc, f.compute, f.scale);
+            if (setup == HIPBLAS_STATUS_NOT_SUPPORTED) throw Failure(3, "dtype not supported");
+            lt(setup, "create matmul descriptor");
+            LT(hipblasLtMatrixLayoutCreate(&h.in, f.in, n, n, n));
+            LT(hipblasLtMatrixLayoutCreate(&h.out, f.out, n, n, n));
+            LT(hipblasLtMatmulPreferenceCreate(&h.pref));
+            const size_t limit = 32ull << 20;
+            LT(hipblasLtMatmulPreferenceSetAttribute(h.pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &limit, sizeof(limit)));
+            int found = 0;
+            auto st = hipblasLtMatmulAlgoGetHeuristic(h.h, h.desc, h.in, h.in, h.out, h.out, h.pref, 1, &algo, &found);
+            if (st == HIPBLAS_STATUS_NOT_SUPPORTED || (st == HIPBLAS_STATUS_SUCCESS && !found))
+                throw Failure(3, "no supported algorithm");
+            lt(st, "get heuristic");
+            if (algo.state != HIPBLAS_STATUS_SUCCESS || algo.workspaceSize > limit)
+                throw Failure(3, "invalid heuristic");
+            workspace = algo.workspaceSize;
+            const char* hex = "0123456789abcdef";
+            for (uint8_t v : algo.algo.data) { algorithm += hex[v >> 4]; algorithm += hex[v & 15]; }
+        } else {
+            rin = roc_type(f.in); rout = roc_type(f.out); rcompute = roc_type(f.scale);
+            RB(rocblas_create_handle(&r.h));
+            RB(rocblas_set_atomics_mode(r.h, rocblas_atomics_not_allowed));
+            char v[128]{};
+            RB(rocblas_get_version_string(v, sizeof(v)));
+            version = v;
+            // Stable public API: no beta solution enumeration; honestly record
+            // default dispatch, not an invented exact kernel identity.
+            algorithm = "rocblas-default-no-atomics";
+        }
+        Buffer a(c.a.size()), b(c.b.size()), out(c.expected.size()), ws(std::max(size_t(1), workspace));
         HIP(hipMemcpy(a.p, c.a.data(), c.a.size(), hipMemcpyHostToDevice));
         HIP(hipMemcpy(b.p, c.b.data(), c.b.size(), hipMemcpyHostToDevice));
         std::vector<uint8_t> actual(c.expected.size());
@@ -204,22 +327,24 @@ int main(int argc, char** argv) {
         int32_t ia = 1, ib = 0;
         const void* pa = dtype == "int8" ? static_cast<void*>(&ia) : static_cast<void*>(&alpha);
         const void* pb = dtype == "int8" ? static_cast<void*>(&ib) : static_cast<void*>(&beta);
-        // Print only stable, validated strings; algorithm bytes are opaque and
-        // compared only within the same library version and executable.
         std::cout << "{\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
                   << "\",\"dtype\":\"" << dtype << "\",\"n\":" << n
                   << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
-                  << ",\"hipblaslt\":" << lt_version << ",\"workspace\":" << algo.workspaceSize
-                  << ",\"algorithm\":\"";
-        for (uint8_t v : algo.algo.data) std::cout << std::hex << std::setw(2) << std::setfill('0') << unsigned(v);
-        std::cout << std::dec << "\"";
-        auto start = Clock::now();
+                  << ",\"provider\":\"" << provider << "\",\"library_version\":\"" << version
+                  << "\",\"workspace\":" << workspace << ",\"algorithm\":\"" << algorithm << "\"";
+        auto start = mono_ns();
         int64_t iterations = 0;
         do {
             // Poison D before every call: stale/no-write output cannot pass.
             HIP(hipMemset(out.p, 0xff, actual.size()));
-            LT(hipblasLtMatmul(h.h, h.desc, pa, a.p, h.in, b.p, h.in, pb,
-                              out.p, h.out, out.p, h.out, &algo.algo, ws.p, algo.workspaceSize, nullptr));
+            if (provider == "hipblaslt") {
+                LT(hipblasLtMatmul(h.h, h.desc, pa, a.p, h.in, b.p, h.in, pb,
+                                  out.p, h.out, out.p, h.out, &algo.algo, ws.p, workspace, nullptr));
+            } else {
+                RB(rocblas_gemm_ex(r.h, rocblas_operation_none, rocblas_operation_none,
+                                  n,n,n,pa,a.p,rin,n,b.p,rin,n,pb,out.p,rout,n,out.p,rout,n,
+                                  rcompute,rocblas_gemm_algo_standard,0,0));
+            }
             HIP(hipDeviceSynchronize());
             HIP(hipMemcpy(actual.data(), out.p, actual.size(), hipMemcpyDeviceToHost));
             if (actual != c.expected) {
@@ -244,9 +369,11 @@ int main(int argc, char** argv) {
             }
             ++iterations;
             if (pause) std::this_thread::sleep_for(std::chrono::milliseconds(pause));
-        } while (iterations < 2 || Clock::now() - start < std::chrono::seconds(seconds));
-        std::cout << ",\"iterations\":" << iterations << ",\"elapsed_s\":"
-                  << std::chrono::duration<double>(Clock::now() - start).count() << ",\"status\":\"pass\"}\n";
+        } while (iterations < 2 || mono_ns()-start < int64_t(seconds)*1000000000);
+        int64_t end = mono_ns();
+        std::cout << ",\"iterations\":" << iterations << ",\"elapsed_s\":" << std::setprecision(9)
+                  << double(end-start)/1e9 << ",\"start_ns\":" << start << ",\"end_ns\":" << end
+                  << ",\"status\":\"pass\"}\n";
         return 0;
     } catch (const Failure& e) {
         std::cerr << e.what() << '\n';

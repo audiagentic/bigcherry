@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261125_230647_complete-independent-ai-power_4139",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR12.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/reference/tooling/TOOLING.md",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py"
+  ],
+  "plan-item-ids": [
+    "PWR12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Extend independent PWR12 platform AI screen with explicit rocBLAS provider, bounded VRAM/transfer test, sampled thermal envelope, confirmed-stock reference validation and optional existing platform PowerTransaction application/restoration. Actual leased observe-only checks across gfx1030/1100/1201 and fake-sysfs transaction; no engine changes or hardware writes. Physical qualification remains open.",
+  "timestamp-utc": "2026-11-25T23:06:47.807133Z",
+  "user-summary-candidate": "Complete independent AI power-screen tooling with arithmetic, memory, heat and profile transaction"
+}

@@ -26,15 +26,19 @@ def args(tmp_path, **kwargs):
                      profile="stock", role="engine", arch="gfx1100", bdf=BDF,
                      stock_confirmed=True, reference=None, probe=binary,
                      dtype=["fp16"], n=768, seconds=1, pause_ms=[0, 2],
-                     setup_timeout=2, max_hotspot_c=85, output=tmp_path / "result.json")
+                     setup_timeout=2, max_hotspot_c=85, output=tmp_path / "result.json",
+                     provider="hipblaslt", memory_mib=None, headroom_mib=None,
+                     warmup_seconds=0, min_hotspot_c=None, max_memory_c=None,
+                     observe_current=False, apply_profile=False, confirm_idle=False)
     return Namespace(**(vars(base) | kwargs))
 
 
 def case(pause, algorithm="00"*16, status="pass"):
-    return {"dtype": "fp16", "n": 768, "pause_ms": pause, "requested_seconds": 1,
-            "status": status, "native": {"status": status, "bdf": BDF, "arch": "gfx1100",
-              "hip": 70200, "driver": 70200, "hipblaslt": 100202, "workspace": 0,
-              "algorithm": algorithm, "iterations": 2, "elapsed_s": 1.0}}
+    return {"dtype": "fp16", "n": 768, "pause_ms": pause, "requested_seconds": 1, "warmup_seconds": 0,
+            "status": status, "native": {"status": status, "bdf": BDF, "arch": "gfx1100", "dtype": "fp16", "n": 768,
+              "hip": 70200, "driver": 70200, "provider": "hipblaslt", "library_version": "100202", "workspace": 0,
+              "algorithm": algorithm, "iterations": 2, "elapsed_s": 1.0,
+              "start_ns": 1_000_000_000, "end_ns": 2_000_000_000}}
 
 
 def test_bdf_is_exact_and_stock_must_be_observable():
@@ -171,10 +175,14 @@ def test_native_result_must_have_real_coverage(tmp_path):
             return 0
     def popen(command, stdout, stderr):
         assert command[1:4] == [BDF, "gfx1100", "fp16"]
+        payload.update(start_ns=a.time.monotonic_ns(), end_ns=a.time.monotonic_ns()+1_000_000_000)
         stdout.write(json.dumps(payload).encode())
         stdout.flush()
         return Proc()
-    with patch.object(a.lease, "held_by_this_process", return_value=True), patch.object(a.subprocess, "Popen", side_effect=popen):
+    from itertools import count
+    ticks = count(start=1_000_000_000, step=1_000_000_000)
+    with patch.object(a.time, "monotonic_ns", side_effect=lambda: next(ticks)), \
+            patch.object(a.lease, "held_by_this_process", return_value=True), patch.object(a.subprocess, "Popen", side_effect=popen):
         result = a.run_case(ns.probe, BDF, "gfx1100", "fp16", 768, 1, 0, 2, sensor, 85000, tmp_path)
         assert result["status"] == "pass"
         payload["iterations"] = 1
@@ -214,3 +222,187 @@ def test_canonical_cli_is_separate_from_power_control():
     assert ns.func.__module__ == "bigcherry.cli.ai_probe_cmds"
     assert ns.profile == "stock"
     assert ns.stock_confirmed
+
+
+def test_hot_window_requires_continuous_bracket():
+    samples = [(i*250_000_000, 75000) for i in range(9)]
+    assert a.hot_window(samples, 1_900_000_000, 1, 74000)
+    assert not a.hot_window(samples[:-1], 1_900_000_000, 1, 74000)
+    assert not a.hot_window(samples[:2]+samples[-1:], 1_900_000_000, 1, 74000)
+    samples[5] = (samples[5][0], 73000)
+    assert not a.hot_window(samples, 1_900_000_000, 1, 74000)
+
+
+def test_optional_memory_sensor_has_own_limit(tmp_path):
+    assert a.thermal_sensor(tmp_path, None, labels=("mem", "memory"), required=False) == (None,None)
+    (tmp_path/"temp3_label").write_text("mem")
+    (tmp_path/"temp3_crit").write_text("90000")
+    assert a.thermal_sensor(tmp_path, 85, labels=("mem", "memory")) == (tmp_path/"temp3_input", 85000)
+    assert a.thermal_sensor(tmp_path, None, labels=("mem", "memory")) == (tmp_path/"temp3_input", 90000)
+
+
+def test_observed_current_is_not_factory_reference(tmp_path):
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(TUNED, tmp_path)), \
+            patch.object(a, "thermal_sensor", return_value=(tmp_path/"temp2_input", 85000)), \
+            patch.object(a, "run_case", side_effect=[case(0), case(2)]):
+        result = a.screen(args(tmp_path, stock_confirmed=False, observe_current=True))
+    assert result["status"] == "pass"
+    assert not result["request"]["stock_confirmed"]
+    assert result["request"]["observe_current"]
+    ref = tmp_path/"observed.json"
+    ref.write_text(json.dumps(result))
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(TUNED,tmp_path)), \
+            patch.object(a, "run_case") as run:
+        with pytest.raises(a.ScreenError, match="stock screen"):
+            a.screen(args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False, reference=ref))
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("outcome", ["pass", "mismatch", "unreaped", "restore_failed"])
+def test_apply_uses_existing_transaction_and_fences_restore(tmp_path, outcome):
+    ref = stock_reference(tmp_path)
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False, reference=ref,
+              apply_profile=True, confirm_idle=True)
+    (tmp_path/"temp2_input").write_text("50000")
+    state = [STOCK]
+    events = []
+    class Tx:
+        def __init__(self, run_id, journal_dir, lease_ok):
+            assert lease_ok()
+            assert journal_dir == tmp_path
+            self.run_id = run_id
+            self.journal_path = journal_dir/(run_id+".json")
+            self.touched = []
+            self.state = "new"
+        def prepare(self, requested, bdfs):
+            assert requested == {BDF: a.gpu_power.Setting(sclk_max_mhz=2700, vddgfx_offset_mv=-125)}
+            assert bdfs == [BDF]
+            events.append("prepare")
+            self.state = "prepared"
+        def apply(self):
+            events.append("apply")
+            self.touched = [BDF]
+            self.state = "applied"
+            state[0] = TUNED
+        def restore(self, *, processes_exited):
+            assert processes_exited
+            events.append("restore")
+            if outcome == "restore_failed":
+                self.state = "restore_failed"
+                return False
+            state[0] = STOCK
+            self.state = "restored"
+            return True
+    def run(*unused, **kw):
+        assert state[0] == TUNED
+        events.append("probe")
+        if outcome == "unreaped":
+            raise a.ScreenError("unreaped fixture", "unreaped")
+        return case(0 if events.count("probe") == 1 else 2, status="mismatch" if outcome == "mismatch" else "pass")
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"snapshot",side_effect=lambda bdf:(state[0],tmp_path)), \
+            patch.object(a,"thermal_sensor",return_value=(tmp_path/"temp2_input",85000)), \
+            patch.object(a,"PowerTransaction",Tx), patch.object(a,"run_case",side_effect=run):
+        result = a.screen(ns, journal_dir=tmp_path)
+    assert events[:3] == ["prepare","apply","probe"]
+    if outcome == "unreaped":
+        assert "restore" not in events
+        assert result["status"] == "restore_failed"
+        assert result["screen_status"] == "unreaped"
+    elif outcome == "restore_failed":
+        assert result["status"] == "restore_failed"
+        assert result["transaction"]["state"] == "restore_unverified"
+    else:
+        assert events[-1] == "restore"
+        assert result["status"] == outcome
+        assert result["transaction"]["state"] == "restored"
+        assert state[0] == STOCK
+    assert not result["production_qualified"]
+
+
+def test_apply_requires_stock_and_explicit_idle_confirmation(tmp_path):
+    ref = stock_reference(tmp_path)
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, apply_profile=True)
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError,match="confirm-idle"):
+            a.screen(ns, journal_dir=tmp_path)
+        ns.confirm_idle = True
+        with patch.object(a,"snapshot",return_value=(TUNED,tmp_path)):
+            with pytest.raises(a.ScreenError,match="differ from confirmed stock"):
+                a.screen(ns, journal_dir=tmp_path)
+    tx.assert_not_called()
+
+
+def test_real_transaction_integration_on_fake_sysfs(tmp_path):
+    from bigcherry.hardware.power_transaction import PowerTransaction
+    from tests.hardware.fixtures import power_sysfs as fx
+    from tests.hardware.test_power_transaction import FakeDriver
+
+    root = tmp_path/"root"
+    fx.gpu(root, BDF)
+    hw = root/"sys/bus/pci/devices"/BDF/"hwmon/hwmon8"
+    (hw/"power1_cap_default").write_text("303000000")
+    (hw/"temp2_label").write_text("junction")
+    (hw/"temp2_input").write_text("50000")
+    native_snapshot = a.snapshot
+    driver = FakeDriver(root)
+    original, _ = native_snapshot(BDF, sysfs_root=root)
+    def transaction(run_id, journal_dir, lease_ok):
+        return PowerTransaction(run_id, journal_dir, lease_ok=lease_ok, sysfs_root=root,
+                                fileops=driver, platform_name="linux")
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"snapshot",side_effect=lambda b:native_snapshot(b,sysfs_root=root)), \
+            patch.object(a,"PowerTransaction",side_effect=transaction), \
+            patch.object(a,"run_case",side_effect=[case(0),case(2)]):
+        ref = a.screen(args(tmp_path))
+        assert ref["status"] == "pass"
+    ref_path = tmp_path/"stock.json"
+    ref_path.write_text(json.dumps(ref))
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref_path, apply_profile=True, confirm_idle=True)
+    def checked_probe(*unused, **kw):
+        readback, _ = native_snapshot(BDF, sysfs_root=root)
+        assert readback["controls"]["sclk_max_mhz"] == 2700
+        assert readback["controls"]["vddgfx_offset_mv"] == -125
+        return case(0, status="mismatch")
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"snapshot",side_effect=lambda b:native_snapshot(b,sysfs_root=root)), \
+            patch.object(a,"PowerTransaction",side_effect=transaction), \
+            patch.object(a,"run_case",side_effect=checked_probe):
+        result = a.screen(ns, journal_dir=tmp_path/"journals")
+    assert result["status"] == "mismatch"
+    assert result["transaction"]["state"] == "restored"
+    journal = Path(result["transaction"]["journal"])
+    assert json.loads(journal.read_text())["state"] == "restored"
+    assert native_snapshot(BDF, sysfs_root=root)[0] == original
+    assert driver.log
+
+
+def test_memory_result_requires_budget_and_postallocation_headroom():
+    payload = case(0)["native"] | {
+        "dtype": "memory", "n": 128, "provider": "hip-memory",
+        "algorithm": "address-pattern-v1", "allocated_bytes": 128*2**20,
+        "free_before_bytes": 1024*2**20, "free_after_bytes": 896*2**20}
+    a.validate_native(payload, BDF, "gfx1100", "memory", 128, "hip-memory", 1, 2, 512)
+    with pytest.raises(a.ScreenError, match="headroom"):
+        a.validate_native(payload | {"free_after_bytes": 511*2**20},
+                          BDF, "gfx1100", "memory", 128, "hip-memory", 1, 2, 512)
+
+
+def test_invalid_stock_coverage_refuses_before_transaction(tmp_path):
+    ref = stock_reference(tmp_path)
+    doc = json.loads(ref.read_text())
+    doc["cases"][0]["native"]["iterations"] = 0
+    ref.write_text(json.dumps(doc))
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, apply_profile=True, confirm_idle=True)
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"snapshot",return_value=(STOCK,tmp_path)), \
+            patch.object(a,"PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError,match="coverage"):
+            a.screen(ns,journal_dir=tmp_path)
+    tx.assert_not_called()
