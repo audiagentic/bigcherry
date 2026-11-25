@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.71.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.70.1...bc-platform-1.71.0) (2026-11-25)
+
+
+### New and changed
+
+* **radiance:** bc-iqr overlay plugin with the embedding gather; pin-triage origin drift ([#1596](https://github.com/audiagentic/bigcherry/issues/1596)) ([ddfe31e](https://github.com/audiagentic/bigcherry/commit/ddfe31e6a106ac2deb8bf618921e9eb832927cb1))
+* **radiance:** the vocabulary head as the second owned IQR unit in bc-iqr ([#1599](https://github.com/audiagentic/bigcherry/issues/1599)) ([10f6fea](https://github.com/audiagentic/bigcherry/commit/10f6fea6b1db0db0f9932bc62d33f08c687c104c))
+
 ## [1.70.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.70.0...bc-platform-1.70.1) (2026-11-25)
 
 
