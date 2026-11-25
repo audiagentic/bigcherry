@@ -123,7 +123,32 @@ GPT is used for review only: design review of this document and of each step, an
 
 A kernel change is a self-contained patch or rewrite with declared units, suffixed names, evidence in its own folder and a passing anchor gate; it builds and gates on its own family; arch-neutral changes have a single source for both architectures; releases name their family versions; no silent provider fallback; and for each neutral change there is a documented decision to keep it local or offer it upstream.
 
-## 11. Open questions
+## 11. Owned units: managing upstream change (RCS23)
+
+The three layers above keep upstream's source as an untouched input and change it by patches and rewrites. For the families we have already rewritten heavily that stops paying off: the IQR GEMM unit carries 440 lines of rewrites over a 1,343-line upstream file, the prefill header 134 over 309, the vocabulary head 121 over 536, the embedding gather about 57 over 142; 19 of 48 patch packages touch libr4d. For those units we take ownership of the source and manage upstream change explicitly. We do not fork libr4d as a whole.
+
+**Measured upstream churn (12 releases, 20 October to 19 November 2026).** 309 upstream commits, 52 of them in libr4d. The files that would be owned changed in 14 commits in that month (the IQR GEMM unit 6, its decoder header 3, the prefill header 2, the vocabulary head 2, the embedding gather 1), about three a week. The row-table source file changed 29 times and is never owned. libr4d has about 170 files and 115 build units; we own about five. So the merge surface is small and bounded, and a unit we do not own costs nothing.
+
+**What owning means.**
+1. An owned unit is a plain source file in our repository, split by kernel family (GEMV, 16-row tile, wide tile, plane prefill, fused tile, head, embedding), written against the traits seam so one source builds for gfx12 and for gfx11.
+2. Its patches and rewrites are retired (single owner per line), except small patches that touch only unowned units.
+3. A manifest lists every owned unit: the file, the upstream commit and blob it was based on, the family, and the last upstream commit merged. The build takes owned units from our repository and every other unit from the pinned upstream source.
+
+**Tracking upstream (the drift check, run at every pin triage and bump).**
+- For each owned unit: diff the upstream change on that file between our recorded base and the new pin. Empty: advance the base automatically. Not empty: try a three-way merge of upstream's change into our file; a clean merge is applied on a branch and sent through the gates; a conflict becomes a plan item with the upstream diff and ours side by side.
+- Include closure: a changed upstream header included by an owned unit is reported even when the unit itself did not change (the row ABI and shared types are the usual cause). Compile and link gates 2 and 3 catch what the diff cannot.
+- Unowned units are unchanged from today: pinned, patched, rewritten, with gate 1.
+- Exit: when upstream adopts a change of ours, the drift check shows our file equal to upstream's and the unit leaves the owned set (any local patch is archived unchanged).
+- Entry: a unit joins when it carries several independent changes or a restructuring and the drift check shows it is mostly ours anyway. This is a policy judgement recorded in the manifest, not a numeric threshold.
+- Hot shared files (the row table) are never owned: changes there are absorbed through patches with gate 1 and ABI checks.
+
+**Library structure after this work.** The engine's loader contract stays: one library per architecture (libr4d for gfx12, libr3 for gfx11, libr2 for gfx1030). We do not rename or merge them in this phase; the names and files stay what the engine expects. What changes is where their source comes from: the owned families are one source tree built for both architectures (libr3 and libr4d each compile the same owned units with their traits), the unowned units still come from upstream, and the generated gfx11 tree shrinks to the unowned units and retires if a native gfx11 provider replaces it (RCS15). Splitting each library into loadable family plugins is the separate, later decision in section 6. So: separate per-architecture libraries remain as build outputs; we manage the source of the families we have changed, and upstream manages everything else.
+
+**Risks and answers.** The merge burden: bounded by the measured churn and automated by the drift check. Silent drift of an owned file from upstream behaviour: the manifest base commit and the per-bump drift report make every divergence explicit. Upstream ABI change: caught by the include closure and by gates 2 and 3, and by the row-contract identity if family plugins exist. A bad first decomposition: the split is staged one family at a time, each step byte identical and resource equal to the shipped build.
+
+**Staging.** (1) The inventory: for every libr4d unit, the share of lines we rewrite or patch and the number of patches that touch it, plus the upstream commit count per unit per release. (2) The manifest and the drift check, run against the last twelve releases to prove it reproduces the churn above. (3) Take ownership of one family (the fused tile and the embedding gather are small and recent), gated like any kernel change. (4) The remaining IQR units. (5) Review the set at each pin bump.
+
+## 12. Open questions
 
 - Which of the neutral patches the owner wants offered upstream, and when.
 - Whether `gemm_quant` is split before layer 3.
