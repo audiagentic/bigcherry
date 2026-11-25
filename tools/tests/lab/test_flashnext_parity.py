@@ -40,7 +40,7 @@ def eng(ms, acc=0.7, tps=2.5):
     return {"decode_ms_per_step": ms, "draft_acceptance": acc, "decode_tokens_per_step": tps}
 
 
-def write_launch(out: Path, i: int, scale: float, policy=True, committed=5):
+def write_launch(out: Path, i: int, scale: float, policy=True, committed=5, sess=None):
     """One launch whose times are the reference numbers times `scale` (rates divided by it)."""
     d = out / f"launch-{i}"
     d.mkdir(parents=True)
@@ -53,21 +53,22 @@ def write_launch(out: Path, i: int, scale: float, policy=True, committed=5):
     w("decode1.json", stream_record([([100.0], 900, eng(20.0 * scale, 0.70)), ([90.0], 900, eng(20.2 * scale, 0.72))]))
     w("decode6.json", stream_record([([100.0] * 6, 900, eng(30.0 * scale, 0.60)),
                                      ([100.0] * 6, 900, eng(30.0 * scale, 0.62))]))
-    w("sess8.json", stream_record([([3000.0 * scale] * 8, 13600, eng(40.0 * scale)),
-                                   ([500.0] * 8, 13600, eng(40.0 * scale))]))
+    sess_ms, sess_tps = sess if sess else (40.0 * scale, 2.5)
+    w("sess8.json", stream_record([([3000.0 * scale] * 8, 13600, eng(sess_ms, tps=sess_tps)),
+                                   ([500.0] * 8, 13600, eng(sess_ms, tps=sess_tps))]))
     for seed, (ms, ttft) in LONG.items():
         w(f"long-{seed}.json", stream_record([([ttft * scale], 256000, eng(ms * scale, 0.5)),
                                               ([1000.0], 256000, eng(ms * 1.01 * scale, 0.5))]))
     w("policy.json", {"found": True, "committed": committed, "bytes_moved": 1 << 20} if policy else {"found": False})
 
 
-def make_run(out: Path, scales, policy=True):
+def make_run(out: Path, scales, policy=True, sess=None):
     out.mkdir(parents=True, exist_ok=True)
     (out / "run.json").write_text(json.dumps({"schema": 1, "build": str(out.parent / "build"), "revision": "abc123", "workload": WORKLOAD,
                                               "radiance_pin": {"pinned": "v1.17.0", "pinned_version": "1.17.0"},
                                               "date": "2026-11-07T00:00:00+00:00"}))
     for i, s in enumerate(scales, 1):
-        write_launch(out, i, s, policy)
+        write_launch(out, i, s, policy, sess=sess[i - 1] if sess else None)
     return out
 
 
@@ -186,6 +187,7 @@ class LaunchMetricsTests(unittest.TestCase):
         self.assertAlmostEqual(m["decode6_ms_per_step"], 30.0 * 1.1)
         self.assertAlmostEqual(m["sess8_ttft_s"], 3.0 * 1.1)                     # the cold round only
         self.assertAlmostEqual(m["sess8_ms_per_step"], 40.0 * 1.1)
+        self.assertAlmostEqual(m["sess8_tokens_per_step"], 2.5)
         self.assertAlmostEqual(m["long7_prefill_tps"], 256000 / (120.0 * 1.1))    # cold round only
         self.assertAlmostEqual(m["long8_prefill_tps"], 256000 / (100.0 * 1.1))
         self.assertAlmostEqual(m["long7_ms_per_step"], 43.0 * 1.005 * 1.1)        # both reps of seed 7
@@ -272,9 +274,9 @@ class RunRecordsTests(unittest.TestCase):
             "e" * 64 + '"\nlayout = "flashnext-4gpu"\nobjective = "balanced"\n'
         )
 
-    def run_fixture(self, name, scales):
+    def run_fixture(self, name, scales, sess=None):
         out = self.root / name
-        make_run(out, scales)
+        make_run(out, scales, sess=sess)
         info = json.loads((out / "run.json").read_text())
         (out / "runtime-members.json").write_text(json.dumps({"bin/radiance": "e" * 64}))
         info["build"] = str(self.build)
@@ -606,6 +608,48 @@ class RunRecordsTests(unittest.TestCase):
         self.assertEqual(baseline["kind"], results.BASELINE_KIND)
         self.assertGreaterEqual(len({r["record"]["run_id"] for r in baseline["records"]}), 2)
         self.assertIn("decode.decode6_ms_per_step", baseline["metrics"])
+
+    def test_sess8_step_time_is_gated_at_the_baselines_tokens_per_step(self):
+        """The 8-session step lengthens with the tokens it accepts a step (more sessions decoding together); that is not
+        a regression, a slower step at the same acceptance is."""
+        from bigcherry.core import results
+
+        def line(tps, bump=1.0):                       # the build's step time: 30 ms plus 4 ms a token a step
+            return ((30.0 + 4.0 * tps) * bump + (0.03 if tps > 3.0 else -0.03), tps)
+
+        base = self.run_fixture("b8", [1.0] * 4, sess=[line(2.5), line(2.7), line(3.0), line(3.2)])
+        more = self.run_fixture("m8", [1.0] * 2, sess=[line(3.6), line(3.7)])             # +7% a step, same build
+        slower = self.run_fixture("s8", [1.0] * 2, sess=[line(2.8, 1.08), line(2.9, 1.08)])  # same acceptance, +8%
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            ids = {out: [fp.publish_launch_record(out, out / f"launch-{i}") for i in range(1, len(list(out.glob("launch-*"))) + 1)]
+                   for out in (base, more, slower)}
+            path = self.root / "sess8.json"
+            scope = ["--work-root", str(self.root), "--engine", "radiance", "--layout", "flashnext-4gpu",
+                     "--workload", "flashnext-parity"]
+            records = []
+            for r in ids[base]:
+                records += ["--record", r]
+            with redirect_stdout(StringIO()):
+                self.assertEqual(bigcherry_main(["results", "baseline", *scope, "--name", "s8", "--to", str(path)] + records), 0)
+            baseline = json.loads(path.read_text())
+            results.validate_baseline(baseline)
+            step = baseline["metrics"]["decode.sess8_ms_per_step"]
+            self.assertTrue(step["gated"])
+            self.assertEqual(step["covariate_fit"]["metric"], "decode.sess8_tokens_per_step")
+            self.assertAlmostEqual(step["covariate_fit"]["slope"], 4.0, delta=0.1)
+            outputs = {}
+            for name, run in (("more", more), ("slower", slower)):
+                buf = StringIO()
+                args = ["results", "compare", "--work-root", str(self.root), "--baseline", str(path)]
+                for r in ids[run]:
+                    args += ["--record", r]
+                with redirect_stdout(buf):
+                    rc = bigcherry_main(args)
+                outputs[name] = (rc, buf.getvalue())
+        row = lambda name: next(l for l in outputs[name][1].splitlines() if "sess8_ms_per_step" in l)
+        self.assertNotIn("REGRESSION", row("more"))
+        self.assertIn("REGRESSION", row("slower"))
+        self.assertEqual(outputs["slower"][0], 1)
 
     def test_results_refuse_a_path_only_baseline_and_a_single_launch(self):
         one = self.run_fixture("single-new", [1.0])

@@ -216,7 +216,10 @@ placement. No Python is invoked by the native serving runtime.
 over verified MRC01 run records. Records may include `session_id` for
 same-session A/B and `metric_specs` for each phase-qualified metric:
 `direction: higher|lower`, `gated: true|false`, optional `repeat_groups`
-(samples of the **same prompt**, not distinct prompts). Existing records without
+(samples of the **same prompt**, not distinct prompts) and optional `covariate` (another metric of the same record that the
+gated metric moves with; with four or more baseline launches the baseline fits the metric on it by least squares and a
+comparison reads each measured launch at the baseline's mean covariate, so a metric that follows how many sessions decode
+together is gated at equal concurrency, with the tolerance taken from the spread of the adjusted values). Existing records without
 these optional fields remain readable but cannot create a gated baseline.
 
 A baseline requires at least two distinct launch `run_id` values, identical
