@@ -139,11 +139,13 @@ def affected_units(tree: Path, touched: list[str]) -> list[str]:
 
 # ------------------------------------------------------------------------------------------------------ gates
 def compiler() -> Path | None:
-    for base in (os.environ.get("ROCM_PATH"), "/opt/rocm", "/opt/rocm-7.2.4"):
-        if base:
-            candidate = Path(base) / "lib" / "llvm" / "bin" / "clang++"
-            if candidate.is_file():
-                return candidate
+    # The SDK the environment names (ROCM_PATH, set by the build environment from the host's rocm-sdks), then the
+    # compiler on PATH; no unversioned default root.
+    base = os.environ.get("ROCM_PATH")
+    if base:
+        candidate = Path(base) / "lib" / "llvm" / "bin" / "clang++"
+        if candidate.is_file():
+            return candidate
     found = shutil.which("clang++")
     return Path(found) if found else None
 
