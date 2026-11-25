@@ -19,7 +19,7 @@ RUM04 delivered one native YAML per deployment with x-bigcherry, variant-of/diff
 
 ## Steps
 
-Enumerate current supported deployment YAMLs and native parser/closed extension; validate variant-of/differs against resolved native and BC values, no cross-file inheritance engine. Authored site/profile policy YAML belongs to RSC01/PWR08; lab arms edit one targeted YAML field. Named start always resolves current sealed YAML; RSC02/RSC03 own measured cache and fresh admission. Preserve exact execution evidence separately (WSL01/MRC06). Update actual config/list/explain/release/campaign consumers, no second model catalogue.
+Keep existing full-file named YAMLs, approved packer/installer lists, equality test and authored variant diff check (existing port exemption intentional). Preserve native authored server.port; lab arms use existing arm_yaml. Compare matched native effective values where migration changes interpretation. Named start resolves current YAML; RSC02/03 own measured cache and fresh admission. No inheritance engine, new catalogue or roster-generation project.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +39,7 @@ docs/design/radiance-native-yaml-launch.md sections 2 and 6; docs/design/radianc
 
 ## Validation
 
-Card-free strict YAML and variant-of/differs refusals, duplicate/unknown/wrong level/missing variant, explain provenance, measured-cache identity changes, semantic projection of all currently supported deployment YAMLs. Named start revalidates YAML and live room; old manifest launch refused. Hardware dense and helper native starts preserve equivalent effective settings and output/quality under RSC11/RHP12. No legacy catalogue or translator.
+Reuse existing roster/variant checks and native parser/extension tests; targeted semantic comparisons for changed settings, named cache and fresh admission under RSC11. Do not duplicate the installed GPU cohort or add variant/roster refactoring to cutover.
 
 ## Effort & Risk
 
@@ -56,7 +56,7 @@ Architecture standards: config over code (no model or layout named in code), one
 
 ## Acceptance Criteria
 
-Every shipped variant is one native YAML; variant changes explicit and checked, native/BC fields unique, no legacy catalogue or override path. Semantic equivalence across all current supported configs, explain provenance, named cache compatibility and fresh admission; run evidence not executable. RSC11/RSP01 installed gate.
+Named approved YAMLs and variant semantics preserved, native/BC settings unique, existing installation membership verified, no legacy catalogue or launch replay. Reuse RSC11 representative installed evidence. No mandatory new roster generator or exhaustive variant test suite.
 
 ## Notes
 
@@ -92,6 +92,10 @@ Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPL
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Current directory has 18 native YAMLs including two IQ6R variants; preserve historical 16 RUM04 evidence but dynamically derive supported model/variant roster and installed assets. No fixed count, no duplicate catalogue; compare semantic projections and native defaults per exact candidate, including newly introduced native memory keys where supported.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Current variant decoder checks syntax only; inspected_as_layout drops variant_of/differs; test_native_profiles.py compares authored Python leaves excluding server.port. Preserve authoring test, add native resolved semantic comparison using matched inspector and BC typed settings, missing/null/aliases/defaults/cycles/unknown parent/duplicates/removals. Explicit server.port differences for edited/new variants, update existing declarations and test in same S18 cutover. No inheritance engine. Current two release allowlists and generated presets must derive from one existing approved roster (not arbitrary archive glob); maintain strict membership and dynamic count, no second catalogue. Lab arms use existing arm_yaml and exact declared path changes, no runtime native Python parser.
+
+Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite.
+
 ## Status 2026-11-19
 
 Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml` with named variants, strict loader, `bc-serve explain`, and stored manifests (a start of an unchanged config replays the stored manifest; policy-on replay fixed in #1177). Step 6 (retire `server-args` and `[layout.NAME.settings]`, the layout files) depends on RSC04's leftovers. Open review RV4230 (reuse the verified Radiance bundle identity within a named start) stays open. Note for operators: the replay key hashes every operator `--set`, so any differing `--set` plans afresh instead of replaying.
@@ -117,3 +121,7 @@ Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml`
 - RV4643
 - 2026-11-25T02:45:59.323354+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T02:53:19.130276+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
+- RV4660
+- 2026-11-25T03:26:20.544488+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T03:34:12.454886+00:00 (updated-by): Updated: section:steps
+- 2026-11-25T04:30:25.792580+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes

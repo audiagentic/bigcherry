@@ -84,6 +84,8 @@ RESULTS 2026-11-10 (fresh calibration through the supported path after #801/#802
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Preserve current live policy/calibration math and experiment gates. Migrate actual manifest-bound worker settings/calibration ingest to same YAML and existing typed facts/record evidence with RSC06/RSC02; no new placement policy/allocator, no claim of new live-swap qualification.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. plan_cache.cpp policy_calibration_inputs intentionally omits build and keys power_profile name only. Existing calibration declaration calibration-kinds-v1.json/live_policy_ingest and live_policy.cpp must compare actual ordered physical controls/readback plus timing-sensitive provider/helper/runtime/transport scope, not profile label alone. Use existing key/eligibility and tests, no new store or hash scheme. Missing/incompatible measurement disables live policy or remeasures; do not invalidate unrelated memory plan or resurrect old manifest. calibration-ingest reads run evidence only; no launch authority. Keep MRC04 historical evidence unchanged.
+
 ## Status 2026-11-19 (live policy works natively on flashnext-4gpu)
 
 - **Historical result only (2026-11-19):** the now-removed native `serve --calibration-run` entrypoint then produced calibration records. The record key is the narrow policy-calibration key v2 (#1169): model, layout, objective, engine and helper GPU identities, helper roles/formats/kernels, histogram period, power profile, helper execution settings and remote service geometry; it excludes engine build, host pool, helper VRAM budgets, memory-plan identity and engine flags, so a rebuild or pin bump no longer orphans a record. New records keep `calibration_inputs`, `source_plan_key` and `source_engine_build` as provenance; legacy hash-only records are refused (recalibrate once). That historical calibration start filed its record under the key production looked up (a store-key bug that made native calibration unusable was fixed in the same PR).
@@ -645,3 +647,5 @@ Merge: off by default (no record in the production store). Enabling waits on the
 
 - RV4601
 - 2026-11-25T01:42:12.278267+00:00 (updated-by): Updated: section:notes
+- RV4664
+- 2026-11-25T03:29:43.377730+00:00 (updated-by): Updated: section:notes

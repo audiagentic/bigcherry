@@ -65,7 +65,7 @@ status = "diagnostic"
 summary = "selftest: compare compatibility and native MoE forms"
 
 [test]
-targets = ["r3_rewrite_check", "r3_helper_config_exports", "r3_moe_settings_test", "r3_e4m3_f16_test"]
+targets = ["r3_rewrite_check", "r3_helper_config_exports", "r3_moe_settings_test", "r3_e4m3_f16_test", "r3_groups_test"]
 
 # Names crossing the Radiance build/runtime boundary. The core coupling gate
 # checks literals and source inventory; RUM02-07 own the eventual migration.

@@ -1,0 +1,28 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261125_043113_keep-native-serving-migration_3082",
+  "files": [
+    "docs/planning/active/run-power-efficiency/PWR08.md",
+    "docs/planning/active/run-multi-engine/MEN24.md",
+    "docs/planning/active/run-multi-engine/MEN17.md",
+    "docs/planning/active/run-serving-configuration/RSC11.md",
+    "docs/planning/active/run-serving-configuration/RSC12.md",
+    "docs/planning/active/build-release-split/RSP01.md",
+    "docs/design/radiance-native-yaml-launch.md",
+    "docs/design/radiance-bump-integration.md",
+    "docs/design/radiance-integration-review-20261125.md",
+    "docs/design/radiance-serve-config-review-20261125.md"
+  ],
+  "plan-item-ids": [
+    "RSC11",
+    "RSC12",
+    "MEN24",
+    "MEN17",
+    "PWR08",
+    "RSP01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Narrow native YAML cutover to existing capabilities and representative affected-path qualification; retain safety and no-regression requirements, remove optional refactoring and repeated qualification from critical path.",
+  "timestamp-utc": "2026-11-25T04:31:13.276671Z",
+  "user-summary-candidate": "Keep native serving migration focused and lean"
+}
