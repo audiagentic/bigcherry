@@ -1,0 +1,19 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261125_021841_reuse-discrete-kernel-tests-in_2842",
+  "files": [
+    "docs/planning/active/build-radiance-components/RCS25.md",
+    "docs/design/radiance-bump-integration.md",
+    "docs/design/radiance-kernel-composition.md"
+  ],
+  "plan-item-ids": [
+    "RCS25",
+    "MEN24",
+    "RCS22",
+    "RCS23"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reconcile bump integration with concurrent RCS25 discrete test harness and simple git revision/plugin version provenance. Preserve existing build verification; no new composite digest machinery.",
+  "timestamp-utc": "2026-11-25T02:18:41.847268Z",
+  "user-summary-candidate": "Reuse discrete kernel tests in upstream bumps"
+}

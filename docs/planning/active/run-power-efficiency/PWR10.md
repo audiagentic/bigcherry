@@ -61,6 +61,10 @@ Historical note (superseded by the clarification below): the then-active voltage
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. #1544 trial and qualification plan retained, but first deployable minimum-cap profile uses YAML selector and owner-only typed PowerPlan, not manifest. Native --config real foreground serve/stop and named measurement reuse, no --manifest input. Do not implement intermediate manifest-based nonstock serving. Preserve repeated controls, per-board clock/UV research, quality and exact restore.
 
+2026-11-25 bump integration: docs/design/radiance-bump-integration.md and MEN24 gate order. Qualification receipts link exact candidate pin/build/bundle, native YAML, selected BDFs, kernel/driver/firmware, actual admitted controls and workload. MEN17/RSC11 use required candidate-compatible profile evidence (stock no-write for every bump; nonstock only where required/qualified), do not repeat every historical sweep. Actual native owner applies before measure/load and restores exact prior state after children exit; no implicit stock fallback on requested apply. If context changes and evidence no longer qualifies, refuse and requalify. Keep repeated min-cap and paired voltage/clock/quality gates and no default promotion.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Preserve current discovery trial as separate cohort. First qualified native cap profile test on exact approved target and actual YAML/BDF, native reserve/queue changes can alter workload and power. Stock no-write every bump; nonstock only for intended required profile with compatible evidence or explicit refusal. No default activation, no replay all historical sweeps, exact child exit+restore under lease.
+
 ## Change Log
 
 - 2026-11-25T00:42:29.487523+00:00 (created-by): Created by lead
@@ -73,3 +77,7 @@ Historical note (superseded by the clarification below): the then-active voltage
 - 2026-11-25T01:10:22.073565+00:00 (updated-by): Updated: section:steps, section:notes
 - RV4597
 - 2026-11-25T01:40:03.796527+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4624
+- 2026-11-25T02:14:26.375451+00:00 (updated-by): Updated: section:notes
+- RV4647
+- 2026-11-25T02:48:07.107725+00:00 (updated-by): Updated: section:notes

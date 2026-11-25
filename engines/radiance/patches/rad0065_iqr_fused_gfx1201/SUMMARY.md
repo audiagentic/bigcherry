@@ -1,6 +1,6 @@
 # rad0065 — native-WMMA single-band IQR prefill
 
-**Status:** untested
+**Status:** validated
 **Plan item:** none
 
 ## Summary

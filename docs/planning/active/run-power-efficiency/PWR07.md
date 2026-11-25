@@ -66,6 +66,10 @@ CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement 
 
 2026-11-25 owner direction: no launch manifest, all authored serving configuration YAML, no compatibility shims or legacy backports. docs/design/radiance-native-yaml-launch.md supersedes earlier manifest-launch instructions; completed RUM04/05/06/09/12 evidence is historical, not proof of the new launch path. Existing capture manifests may remain output-only. No new programme or second resolver. Probe/receipt implementation remains here. Typed owner PowerPlan uses native LinuxHardware/actual BDF, positive cap/original/readback and existing journal. Capture/receipt may link execution identity but cannot authorize power from manifest. Retain zero-cap correction and reversible gfx1201 offset proof; no second probe.
 
+2026-11-25 cross-programme bump review: docs/design/radiance-bump-integration.md is the shared implementation-order and compatibility specification; MEN24 owns sequence and timing, domain implementation remains here. No duplicate checker, bump driver, manifest launch or legacy fallback. Bump preflight verifies actual hardware probe/restore capability and typed owner receipt on selected BDFs, invalid zero cap refusal, kernel/driver/firmware/board identity. No manifest authorization and no power writes from compiler/triage. Changes to driver/firmware require appropriate fresh capability/qualification; preserve independent host idle plans.
+
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate Fleet telemetry adds BDF lookup, clocks/temp/memory busy/fan only on watched dashboard. Reuse presentation where useful; DPM selected level is not actual frequency. Does not replace exact amdgpu hwmon cap/current/min/max, invalid zero handling, typed restore or phase energy. No intrusive dashboard polling for idle; owner probes selected BDF only.
+
 ## Change Log
 
 - 2026-11-10T13:12:56.453273+00:00 (created-by): Created by agent
@@ -106,3 +110,7 @@ For a **validating** `xtx-cap2700-uv125` profile, bind per-BDF selected OD max, 
 - 2026-11-25T01:02:37.422892+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - RV4596
 - 2026-11-25T01:39:34.429611+00:00 (updated-by): Updated: section:notes
+- RV4614
+- 2026-11-25T02:08:53.144048+00:00 (updated-by): Updated: section:notes
+- RV4645
+- 2026-11-25T02:47:05.699591+00:00 (updated-by): Updated: section:notes

@@ -68,6 +68,8 @@ Full precision of IQ8R decoded weight scale (no avoidable BF16 intermediate roun
 
 2026-11-23 RUM15 on the LTX GEMM shapes (docs/evidence/2026-11-23-rum15-ltx-iq8r-f32-scale-ab): rad-kbench timing of every gemm_nt_q IQ8R shape the LTX graph declares, stock against the F32-scale diagnostic build, one card per run under its own lease. The large-M tiled row, which every DiT block runs at 2048 tokens and above, is unchanged within noise: median -0.47% on gfx1201 and +0.26% on gfx1100 at M >= 2048 (48 shapes each). The M <= 64 row's median moves +0.90% and +0.45%, with single shapes up to +17-18%. The earlier narrow-shape regressions came from Qwen fixtures and do not represent LTX's prefill-like path. The 242.8 MiB resident-memory cost of the folded F32 scales still stands. Remaining: per-rank residency and refill on the real LTX layout, M=1/16/64 in the issued LTX lane, and the old-layout cache invalidation.
 
+2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native int8 row group128 BF16 group scales and scalar IQR factored F32 scale are not proof of local IQ8R U8 x BF16 group256 precision. Compare actual source layout/tag/rounding and checkpoint-backed QKV against canonical F32 oracle; retain existing gfx1100/gfx1201 mixed/admission gates. Candidate layout changes may affect rad0061 reconciliation; no duplicate kernel or native backport.
+
 ## Change Log
 
 - 2026-11-22T09:17:06.700561+00:00 (created-by): Created by gpt-6
@@ -76,3 +78,8 @@ Full precision of IQ8R decoded weight scale (no avoidable BF16 intermediate roun
 - 2026-11-22T10:50:02.982673+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T11:27:10.667963+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T01:44:04.069729+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4649
+- 2026-11-25T02:49:08.398079+00:00 (updated-by): Updated: section:notes

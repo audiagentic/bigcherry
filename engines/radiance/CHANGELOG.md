@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.12.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.5...bc-radiance-2020.12.0) (2026-11-25)
+
+
+### New and changed
+
+* **patch:** promote rad0065_iqr_fused_gfx1201 ([#1554](https://github.com/audiagentic/bigcherry/issues/1554)) ([8a3950b](https://github.com/audiagentic/bigcherry/commit/8a3950bdac4e89bbda4198209a6ce3bacdc386ca))
+
 ## [2020.11.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.11.4...bc-radiance-2020.11.5) (2026-11-25)
 
 

@@ -27,3 +27,15 @@ Counting source files that mention each form at the pinned release:
 
 ## Next
 Arms A (our gfx11 build of libr4d's units), B (upstream native library, stock) and C (the reference oracle) on one XTX with the first-part inventory as the row list; the IQR and IQ8R rows are marked "no native row" and excluded from B.
+
+## Update: upstream main, 119 commits past the pinned release (same day)
+
+The newest upstream tag is still the pinned 2.2.0, but upstream's main branch has moved 119 commits (tip of 24 November). Read-only pin triage against that tip: verdict "patches affected"; no drift failures and no coupling failures; plugin ABI 43; 327 changed files; all 48 patch target files and six rewrite-anchor files (the all-reduce entry, the fp8 fused quant, the 8a8 prefill header, the fp8 GEMM, the rows file, the selftest) changed upstream. Whether the patch set still applies is the next check (the composition gate against that tree).
+
+What changed for gfx11, which supersedes the first-part finding above:
+- Upstream's native RDNA3 library gained the int8 trunk GEMM at both the plain int8 form and the form with rotated activations (the form of our IQ8R container): one row for every M, wave-matrix walk, exact integer group sums, a 128x128 tile from M of 128 up, with bit-for-bit selftests.
+- On 24 November it gained an exact packed dense IQR GEMM on gfx1100 (a GEMM unit, a layout unit and device tests).
+- Also new in the 17 units it changed: rope and rmsnorm rows, a causal convolution row, paged attention staging and split-KV scratch from geometry.
+- libr4d (gfx12) gained a bf16 GEMM over bf16x12 weights, a wide scalar head for M above 8, an f32 WMMA logits row for 17 to 64 rows, head_dim 128 attention at gqa 3, and model-specific operators.
+
+Consequence: the "no native row for IQR or the int8 form" statement holds for the pinned release only. At upstream main there is a native row for each, so part two of this item (matched arms on one card) must include them: upstream's native library at main as arm B against our libr3 on the IQR and IQ8R rows, decode and prefill, with output comparison. The decision to bump follows a tagged release; until then main is read for evidence only.
