@@ -95,7 +95,7 @@ def _metric_specs(rec: dict) -> dict[str, dict]:
     for phase in PHASES:
         for metric, spec in specs[phase].items():
             if (
-                set(spec) - {"direction", "gated", "repeat_groups"}
+                set(spec) - {"direction", "gated", "repeat_groups", "covariate"}
                 or spec["direction"] not in ("higher", "lower")
                 or type(spec["gated"]) is not bool
             ):
@@ -107,6 +107,24 @@ def _metric_specs(rec: dict) -> dict[str, dict]:
 def _values(rows: Sequence[dict], metric: str) -> list[float | None]:
     phase, name = metric.split(".", 1)
     return [row["record"]["metrics"][phase].get(name) for row in rows]
+
+
+def _fit_covariate(ys: Sequence[float], xs: Sequence[float]) -> tuple[float, float]:
+    """(slope, mean of x): the least-squares slope of a metric on its covariate over the baseline launches."""
+    xbar = statistics.fmean(xs)
+    sxx = sum((x - xbar) ** 2 for x in xs)
+    if sxx <= 0:
+        return 0.0, xbar
+    ybar = statistics.fmean(ys)
+    return sum((x - xbar) * (y - ybar) for x, y in zip(xs, ys)) / sxx, xbar
+
+
+def _adjust(y: float, x: float, slope: float, xbar: float) -> float:
+    return y - slope * (x - xbar)
+
+
+# A covariate needs enough launches for a slope to mean something; below this the metric is compared as it is.
+COVARIATE_MIN_LAUNCHES = 4
 
 
 def _metrics(rows: Sequence[dict]) -> dict[str, dict]:
@@ -124,6 +142,8 @@ def _metrics(rows: Sequence[dict]) -> dict[str, dict]:
             catalog[metric] = {
                 "direction": spec["direction"], "gated": spec["gated"],
             }
+            if spec.get("covariate"):
+                catalog[metric]["covariate"] = spec["covariate"]
     if not catalog:
         raise ResultsError("baseline has no recorded metric directions")
     result = {}
@@ -135,8 +155,19 @@ def _metrics(rows: Sequence[dict]) -> dict[str, dict]:
         if not valid:
             raise ResultsError(f"no measured value for {metric}")
         entry = {**identity, "value": statistics.median(valid), "launches": samples}
+        adjusted = valid
+        covariate = identity.get("covariate")
+        if covariate and identity["gated"] and len(rows) >= COVARIATE_MIN_LAUNCHES:
+            xs = _values(rows, covariate)
+            if any(x is None for x in xs):
+                raise ResultsError(f"covariate {covariate} of {metric} is missing in one or more launches")
+            slope, xbar = _fit_covariate(valid, xs)
+            adjusted = [_adjust(y, x, slope, xbar) for y, x in zip(valid, xs)]
+            entry.update({"value": statistics.median(adjusted),
+                          "covariate_fit": {"metric": covariate, "slope": slope, "mean": xbar,
+                                            "raw_value": statistics.median(valid)}})
         if identity["gated"]:
-            across = _spread(valid)
+            across = _spread(adjusted)
             repeated = []
             for row in rows:
                 for group in _metric_specs(row["record"]).get(metric, {}).get("repeat_groups", []):
@@ -371,6 +402,13 @@ def compare_records(
             ):
                 raise ResultsError(f"comparison metric direction/gate mismatch for {name}")
         missing = any(v is None for v in values)
+        fit = base.get("covariate_fit")
+        if fit and not missing:
+            xs = _values(current, fit["metric"])
+            if any(x is None for x in xs):
+                missing = True
+            else:
+                values = [_adjust(y, x, fit["slope"], fit["mean"]) for y, x in zip(values, xs)]
         now = statistics.median(v for v in values if v is not None) if not missing else None
         ref = base["value"]
         change = ((now - ref) / abs(ref) * 100) if now is not None and ref else None

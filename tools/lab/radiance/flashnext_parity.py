@@ -44,7 +44,12 @@ METRICS = {
     "decode1_ms_per_step": ("lower", True),
     "decode6_ms_per_step": ("lower", True),
     "sess8_ttft_s": ("lower", True),
+    # Gated with a covariate (COVARIATES): its step length follows how many sessions decode together, i.e. the tokens it
+    # accepts per step (25-32 between launches of one build), so the baseline fits the step time on that count over its
+    # launches and compare reads each measured launch at the baseline's mean count. The 1- and 6-stream and
+    # long-context rows have a fixed number of streams and are gated as they are.
     "sess8_ms_per_step": ("lower", True),
+    "sess8_tokens_per_step": ("higher", False),
     "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
@@ -59,6 +64,7 @@ METRICS = {
     "long8_acceptance": ("higher", False),
     "policy_transactions": ("higher", False),
 }
+COVARIATES = {"sess8_ms_per_step": "sess8_tokens_per_step"}
 # The long-context seeds (flashnext-parity.sh LONG_SEEDS): each seed is its own prompt, so its own metrics.
 LONG_SEEDS = (7, 8)
 class ParityError(RuntimeError):
@@ -408,6 +414,7 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
     # sessions decode together in each step (all 8 on a full hit: longer steps, several times the throughput); their
     # ms/step is informational, never comparable across rounds or builds.
     value["sess8_ms_per_step"] = _engine(cold[0], "decode_ms_per_step", launch / "sess8.json")
+    value["sess8_tokens_per_step"] = _engine(cold[0], "decode_tokens_per_step", launch / "sess8.json")
     warm = [_engine(r, "decode_ms_per_step", launch / "sess8.json") for r in rounds if r.get("rep") != 0]
     if warm:
         value["sess8_warm_ms_per_step"] = statistics.fmean(warm)
@@ -587,6 +594,8 @@ def publish_launch_record(
             continue
         metrics[phase][name] = value
         definition = {"direction": direction, "gated": gated}
+        if name in COVARIATES:
+            definition["covariate"] = f"{record_metric_phase(COVARIATES[name])}.{COVARIATES[name]}"
         groups = [group for group in repeats.get(name, []) if len(group) >= 2]
         if groups:
             definition["repeat_groups"] = groups
