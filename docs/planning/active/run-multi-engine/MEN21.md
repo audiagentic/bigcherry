@@ -65,6 +65,8 @@ BACKLOG TRIAGE 2026-11-04 (MERGE into RAD43; revalidated against main 6eb31a708,
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN21.md:18-31 requires moe-capture/replay/trace-report/balance-score verbs, build-lane binding, bitwise sweep and script retirement; no corresponding command definitions appear under tools/bigcherry. RAD43.md:18-30 instead owns replay-based GPU kernel-stage optimization, and RCS08.md:18-27 owns component lint, not the generic operator harness.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Existing lab migration owns shell/Python parity, power, helper sweeps/profilers/replay callers. Classify executable launch vs evidence readers vs unrelated tuning manifests; remove active manifest launch and --power-profile serving override, use existing arm_yaml for one intended change incl port/power, keep exact same build and owner session provenance. No duplicate runner, legacy shim or new launch record. Gate E/MEN17 exact candidate checks use actual owner receipt.
+
 ## Change Log
 
 - 2026-10-18T13:04:12.460753+00:00 (created-by): Created by agent
@@ -72,3 +74,8 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:47:39.960586+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:45:30.747955+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:34.908530+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4667
+- 2026-11-25T03:31:19.402177+00:00 (updated-by): Updated: section:notes

@@ -1,5 +1,7 @@
 # Radiance: retire the launch manifest, complete native YAML execution
 
+> **Serving/configuration closure sweep (2026-11-25):** [Field ownership, measured caches and caller migration](radiance-serve-config-review-20261125.md) specifies the remaining S18 work against the current implementation. In particular, native server.port remains authored, run capture is evidence-only, and actual resolved power settings scope performance calibration.
+
 > **Re-review (2026-11-25):** [Upstream comparison and implementation decisions](radiance-integration-review-20261125.md) compares the shipping pin with upstream main, corrects the provider/ABI and roster assumptions, and distinguishes discrete development gates from full migration and release acceptance. It controls where this design disagrees; no runtime changes or candidate repin.
 
 > **Bump integration and implementation order:** [Radiance upstream bump integration](radiance-bump-integration.md) defines the shared MEN24 sequence, candidate identities and acceptance gates. Domain ownership remains unchanged; this is a target design, not an implemented bump command.
@@ -28,7 +30,7 @@ Pinned upstream source verified from the local mirror (git show b6b8751:core/mai
 | Existing x-bigcherry closed extension | rank architecture constraints, helper groups, handoff/placement/helper and BC-only kernel intent, service/retention, genuine overrides of derived limits, variant provenance, power-profile selection and lab-only intent where required | duplicate native options, credentials, selected physical BDFs, measured resource plan, authority to write hardware |
 | Host/site YAML | machine policy, BDF-specific allowable power overrides and ceilings, local paths/roots/constraints, profile registry reference, explicit site default if owner chooses | native engine settings, cached resource results, implicit write authorization |
 | Named power profile YAML | portable typed role/arch policy; per-control target including symbolic device-minimum cap; mode intent | hardcoded physical board identities, performance qualification assertions |
-| Owner runtime | discovered ordered devices, effective power, helper index/budget/owner-map/segment, native derived host pool/prefix/checkpoint, dynamic port, plan measurement, qualification, execution identity | independently authored options |
+| Owner runtime | discovered ordered devices, effective power, helper index/budget/owner-map/segment, native derived host pool/prefix/checkpoint, actual bound endpoint, plan measurement, qualification, execution identity | independently authored options |
 | Evidence | input bytes and digest, measurements, provenance, actual readback, status | launch configuration or authority |
 
 Proposed YAML shape (names below are specification proposals, not supported today; implementation must update one existing typed decoder and tests, not claim existing support):
@@ -53,7 +55,7 @@ x-bigcherry:
   power:
     profile: minimum-cap
 ```
-Use actual existing schema/version rules; extending a closed YAML namespace with an intentional new key is not a new launch manifest. If changing schema version is needed, cut all authored configs and readers together; no compatibility reader. Example uses illustrative model path, not a new supported config. Native offline options go in their native YAML locations where supported. A lab arm edits a copy of the YAML with a single intentional change using existing arm_yaml tooling. Forced placement/trace/capture knobs go in closed extension only where not native, with lab-authorized scope. Runtime run-directory/output paths and nonces are ephemeral invocation context, not settings. Retire serving --power-profile override if YAML is authority; explicit CLI --allow-power-apply may remain a *consent* gate (not a configuration override). --native-config / named config select one YAML, --site selects one host YAML. No --set or per-flag duplicate model configuration.
+Use actual existing schema/version rules; extending a closed YAML namespace with an intentional new key is not a new launch manifest. If changing schema version is needed, cut all authored configs and readers together; no compatibility reader. Example uses illustrative model path, not a new supported config. Native offline options go in their native YAML locations where supported. A lab arm edits a copy of the YAML with a single intentional change using existing arm_yaml tooling. Forced placement/trace/capture knobs go in closed extension only where not native, with lab-authorized scope. Native server.port remains authored and is preserved; a lab arm may author a different port in its YAML. Runtime run-directory/output paths and nonces are ephemeral invocation context, not settings. Retire serving --power-profile override if YAML is authority; explicit CLI --allow-power-apply may remain a *consent* gate (not a configuration override). --native-config / named config select one YAML, --site selects one host YAML. No --set or per-flag duplicate model configuration.
 
 Example reusable policy YAML (proposed):
 ```yaml

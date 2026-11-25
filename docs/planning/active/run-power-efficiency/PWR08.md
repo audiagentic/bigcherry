@@ -71,6 +71,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Candidate native memory/queue changes affect performance and measured room, not power authority. Owner-only YAML profile and native PowerPlan independent of manifest/Fleet; no new hashes, retain existing receipt and actual build/profile/board compatibility. Required profile requalifies if context changed or refuses; stock no writes. No universal nonstock sweep on routine bump.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Existing policy_calibration_inputs keys profile name only; same name can resolve changed actual caps/clocks/voltage/BDF overrides. Supply resolved ordered control settings and verified readback to RHP16 existing calibration eligibility, not merely profile label. Memory plan key only actual resource-affecting values, time/energy key separate. YAML selected profile replaces active CLI --power-profile, Gate E stock YAML and PWR01 lab arm edits; explicit apply consent/lease separate. Migrate private local device intent explicitly; no automatic reactivation.
+
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
@@ -114,3 +116,5 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - 2026-11-25T02:09:24.099602+00:00 (updated-by): Updated: section:notes
 - RV4646
 - 2026-11-25T02:47:36.773505+00:00 (updated-by): Updated: section:notes
+- RV4662
+- 2026-11-25T03:28:39.913911+00:00 (updated-by): Updated: section:notes

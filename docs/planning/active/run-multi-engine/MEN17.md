@@ -65,6 +65,8 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN23. MEN23 describes an acceptance e
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Current Gate E evidence 2020.11.5 only two install/canary/stop layouts, not exact candidate hardware comparison or quality. Full S18 all supported installed YAMLs (18 currently) once, normal releases existing two Gate E plus affected configs/required cohorts. Exact candidate real provider/row and native ABI/layout, independent KLD reference and actual binary/home binding; no optional gate omission promoting qualified release. Native provider A/B/C same-source, not cross-pin speed attribution.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Bind acceptance and bench metadata to actual verified owner/child/endpoint, not /proc --manifest or newest record. Stock Gate E uses named stock YAML, nonstock intended lab arms use one YAML change with separate consent. Existing run evidence and independent KLD ref, no stale/missing provenance pass. S18 full supported config matrix distinct routine affected release gates.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -81,3 +83,5 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN23. MEN23 describes an acceptance e
 - RV4652
 - 2026-11-25T02:50:48.994436+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T02:53:31.547189+00:00 (updated-by): Updated: section:detailed_solution
+- RV4668
+- 2026-11-25T03:31:54.393313+00:00 (updated-by): Updated: section:notes

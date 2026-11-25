@@ -1,5 +1,7 @@
 # Radiance upstream bump integration: native serving and owned kernel overlays
 
+> **Serving/configuration closure sweep (2026-11-25):** [Field ownership, measured caches and caller migration](radiance-serve-config-review-20261125.md) specifies the remaining S18 work against the current implementation. In particular, native server.port remains authored, run capture is evidence-only, and actual resolved power settings scope performance calibration.
+
 > **Re-review (2026-11-25):** [Upstream comparison and implementation decisions](radiance-integration-review-20261125.md) compares the shipping pin with upstream main, corrects the provider/ABI and roster assumptions, and distinguishes discrete development gates from full migration and release acceptance. It controls where this design disagrees; no runtime changes or candidate repin.
 
 Status: target design and implementation order, 2026-11-25. Owner: MEN24 (one sequencing and bump-efficiency checklist); implementation remains with existing RCS19–25, RSC01–11, PWR07/08/10, MEN15/16/17 and RSP01. Companion to [native YAML launch](radiance-native-yaml-launch.md) and [kernel composition](radiance-kernel-composition.md). No new bump driver, plan group, launch manifest, compatibility path or upstream edits. Native YAML, owned overlays and run-capture evidence have distinct responsibilities. Kernel-origin metadata is build provenance, not a serving launch manifest. All upstream changes are reconciled through managed packages and owned components.

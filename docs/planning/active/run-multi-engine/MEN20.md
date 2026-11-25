@@ -71,6 +71,8 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 
 CONSOLIDATION 2026-11-22: owns MEN11's pending component lifecycle/promotion and helper evidence staging; MEN14 consumes it for release flow, RCS08 only lints produced records, RAD08/RAD07 own KLD/documentation. No duplicate helper-launcher implementation.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. bench/workloads.py _manifest_for_server reads hardcoded flashnext PID and --manifest from cmdline; after S18 this breaks provenance. Replace with actual existing owner status/control socket and run-dir receipt, verify PID/start time and bound endpoint/current generation. Explicit evidence path read-only; no newest record or second registry. Ad hoc unknown provenance may be reported but cannot pass candidate acceptance. Migrate all workload/benchmark callers with MEN21 and RSC11; test stale PID, two owners, wrong port, stop during measure.
+
 ## Change Log
 
 - 2026-10-18T13:04:07.928445+00:00 (created-by): Created by agent
@@ -83,3 +85,5 @@ CONSOLIDATION 2026-11-22: owns MEN11's pending component lifecycle/promotion and
 
 - RV4469
 - 2026-11-22T09:19:09.398060+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- RV4666
+- 2026-11-25T03:30:47.320533+00:00 (updated-by): Updated: section:notes

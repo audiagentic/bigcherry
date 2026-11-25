@@ -63,6 +63,8 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native per-card headroom keyed by cfg.devices local ordinal; prove BDF -> child visibility -> selected rank -> native headroom key mapping after mask, reversed mixed TP, helper disjointness and power same physical BDF. Not another inventory or global-card-index translation. Native --check alone does not prove device selection.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Preserve native cards as local visibility order, exact ordered BDF and helper disjointness, required actual provider/row (native missing name can warn), verify same native parser snapshot/root and selected local ordinal for per-card memory headroom. Do not treat native config port as derived GPU fact; refusal on unsupported mapping rather than automatic replacement. Readback physical BDF used for power/receipts.
+
 ## Change Log
 
 - 2026-11-02T03:40:33.029040+00:00 (created-by): Created by agent
@@ -81,3 +83,5 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 - 2026-11-25T02:13:56.078554+00:00 (updated-by): Updated: section:notes
 - RV4640
 - 2026-11-25T02:44:28.360126+00:00 (updated-by): Updated: section:notes
+- RV4657
+- 2026-11-25T03:25:58.046952+00:00 (updated-by): Updated: section:notes

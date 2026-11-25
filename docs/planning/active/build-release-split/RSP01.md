@@ -288,6 +288,8 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Gate E #1559 records 2020.11.5 stock archive two layouts with rad0065 unselected; #1554 subsequent promotion not proven by that canary. Retain existing identical-runtime carry rule, native full supported cutover matrix distinct from routine two production layout + affected tests. Existing upstream rad_plugin_abi_layout required alongside version even when integer unchanged; native loader exports and plain plugin versions, no additional digest format. Verify installed actual hierarchy/row/coverage and exact release identity.
 
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. Retain approved asset allowlist and installed membership checks: runtime_assets.NATIVE_RELEASE_PROFILES and release_archive.cpp kNativeProfiles currently duplicated (18) with test_native_profiles.py equality and generated presets. Derive from one existing approved list/build input, dynamic size and exact installed membership; never allow arbitrary archive YAML. Ship one YAML policy parser and portable profiles, not private site. Gate E script no --power-profile override; verify actual native launch, status/readback/stop, no old executable reader; historical evidence readers not prohibited.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -319,3 +321,5 @@ Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replac
 - RV4653
 - 2026-11-25T02:51:20.561788+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T02:53:44.093549+00:00 (updated-by): Updated: section:notes
+- RV4669
+- 2026-11-25T03:32:26.110400+00:00 (updated-by): Updated: section:notes

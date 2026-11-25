@@ -19,9 +19,7 @@ work: S
 
 ## Steps
 
-1. Measure the gap between the owner's admission figure and the engine's startup check (what is allocated between them; the RSC08 ledger margin is 1024 MiB) and what concurrent load does to MemAvailable during the ~2 min load.
-2. Decide the fix from evidence: reserve/pin the host memory at owner admission so the engine cannot lose it, or retry once with a bounded wait when the shortfall is transient (with the reason logged), or a lease/priority rule that heavy builds do not start beside a production start; no hand-picked margins (derive from measured startup consumption).
-3. A production start beside a build either succeeds or refuses before loading with a clear reason.
+Reproduce and measure owner-versus-native preweight host-room disagreement under concurrent builds, cgroup limits, pinned-memory limits and helper startup. Reuse RSC03 typed live resource admission and RSC11 transferred RSC10 structured shortfall/refit: one retry only when native reports needed/available/shortfall before weights or outstanding copies; recompute only derived resource outputs from live facts and measured margin, otherwise refuse early. No owner prepin by default, guessed margin or second retry. Verify one forced refusal/refit and repeated contention, with exact owner receipts and stop/restore.
 
 ## Detailed Solution & Technical Design
 
@@ -49,13 +47,19 @@ Reproduce: production start of flashnext-4gpu while a radiance lane build runs; 
 
 ## Acceptance Criteria
 
-No late out-of-memory stop of a production start caused by memory moving between admission and the engine's check.
+A concurrent build may cause a named early resource refusal, not a late OOM due to stale admission. Preserve RSC11's forced typed shortfall, one successful refit, double-refusal and three six-stream soak gates. No claim that memory cannot change after admission; native final allocator remains authoritative.
 
 ## Notes
 
-
+2026-11-25 serving/configuration closure sweep: docs/design/radiance-serve-config-review-20261125.md. RSC11 transferred RSC10 acceptance already owns structured preweight host shortfall and one retry; RSC03 owns measured ledger. Reuse only that implementation; this item owns reproduction and contention/failure fixtures. No owner prepin by default (double RAM charge), no guessed extra margin, no separate retry/launcher. Verify actual cgroup/pin/MemAvailable, helper residency, real concurrent build and before weight loading; success or clear early refusal is acceptable, no retry after partial weights/outstanding copy. Preserve RSC11 three six-stream soaks and forced one retry evidence. Distinguish resource refusal from benchmark or launch failure.
 
 ## Change Log
 
 - 2026-11-19T22:22:14.183742+00:00 (created-by): Created by agent
 - 2026-11-19T22:22:32.846506+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+
+## Reviews
+
+- RV4661
+- 2026-11-25T03:26:28.141785+00:00 (updated-by): Updated: section:notes
+- 2026-11-25T03:33:56.082142+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
