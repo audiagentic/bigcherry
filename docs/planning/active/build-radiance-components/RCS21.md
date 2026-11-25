@@ -65,6 +65,8 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 
 2026-11-25 closed as deferred: the traits seam and the unified fused tile are a maintainability and upstream-path refactor with no measurable gain (the harness can prove equal bytes and resources, not speed). The gfx1100 and gfx1201 fused tiles each ship and are gated (rad0065, libr3 rewrites, find-1-or-0 pairing). Reopen when upstream asks for the patch or a bump makes the two copies diverge.
 
+2026-11-25 reopened with the lib rework (see RCS23 notes). Finding that sizes stage S2: the fused single-band IQR tile exists twice as near-identical text, once in the rad0065 patch (libr4d, names IqrFused12*, guarded by #ifndef R3_TARGETS) and once in libr3/native/r4d_gemm_iqr.hip.rw (IqrFused*); the struct, the certificate, the kernel and the one-band dispatch are the same code, and the gemm_8a8_prefill_body Fused parameter already comes from the patch for both architectures (the libr3 rewrites carry find-1-or-0 pairs for it). Plan: one copy, arch-neutral, inside the patch (no #ifndef, one set of names), the libr3 fused blocks deleted from the .rw (the patched source already carries the tile), the naming lint taught the arch-neutral suffix by data (no exception hand-list). Proof by the unit harness on both architectures: iqr family on gfx1100 and gfx1201 against the shipped release, output hashes equal, resource records equal except the renamed gfx1201 fused symbols (listed), replay of the 65 to 128 row points no regression. A traits header is introduced only if a real difference between the two copies is found; none is expected, so the seam stays a note until a second architecture-specific tile appears.
+
 ## Change Log
 
 - 2026-11-25T00:40:51.713419+00:00 (created-by): Created by lead
@@ -83,3 +85,4 @@ Review (2026-11-25): upstream-shaped patches that come out of an owned overlay a
 - 2026-11-25T09:42:24.891543+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T09:43:00.957766+00:00 (state-transition): State: pending → deprecated
 - 2026-11-25T10:44:47.321276+00:00 (state-transition): State: deprecated → in_progress
+- 2026-11-25T10:46:36.297164+00:00 (updated-by): Updated: section:notes
