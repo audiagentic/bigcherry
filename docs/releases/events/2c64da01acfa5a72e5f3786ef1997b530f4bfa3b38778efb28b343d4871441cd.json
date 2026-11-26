@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_020041_gpu-stability-screens-now-use_5111",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Rotate three deterministic exact matrix corpora and verify per-corpus launches, host checks and device element coverage; guard outputs, check input and reference bytes, exercise deliberate comparator faults. Native protocol 2 and screen schema 3 refuse stale binaries and reference receipts before mutation. All four cards passed observe-only smoke; no power control changes.",
+  "timestamp-utc": "2026-11-26T02:00:41.522569Z",
+  "user-summary-candidate": "GPU stability screens now use three independent operand patterns and stricter verification counts rather than repeatedly checking one matrix pattern."
+}

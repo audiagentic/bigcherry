@@ -176,21 +176,28 @@ expected architecture before allocation. It selects a hipBLASLt heuristic or exp
 public default GEMM dispatch with atomics disabled. It records provider and
 library versions; hipBLASLt also records opaque algorithm bytes, while
 rocBLAS honestly records default dispatch, not an exact internal solution ID. It
-checks every active HIP/library operation. The corpus consists of two
-deterministic signed matrices. Floating inputs are exactly representable
-+/- 1/16, integer inputs +/-1. A CPU independent integer dot sum is exact
-for the chosen dimension range. The outputs are FP16 for FP16, FP32 for
-BF16/FP32/E4M3 FP8, and INT32 for INT8. The sole floating bit-equivalence
-exception is +0 versus -0; no tolerance is applied to other values. Poison
-the destination before every matmul. Default `--batch 1` reads back all
-elements after every launch. For sustained load, `--batch` (1–256) checks
-every element of every GEMM on-device against the independent CPU-generated
-reference before overwriting it, with exact coverage and mismatch counts,
-and independently checks the last result and the reference buffer on CPU
-each batch. Known single-element mismatch injection verifies the device
-checker at entry and exit. Memory always uses batch 1. Require at least
-two successful iterations and elapsed coverage. Positive pause is between
-batches (between launches at batch 1); neither mode alone proves GPU saturation.
+checks every active HIP/library operation. Native protocol 2 / screen
+observations schema 3 rotates three deterministic operand corpora: dense
+signed, sparse signed, and signed-diagonal A times dense B. Floating
+inputs are exactly representable 0 or +/-1/16, integer inputs 0 or +/-1.
+The CPU integer dot sum is exact over the supported dimension range. The
+outputs are FP16 for FP16, FP32 for BF16/FP32/E4M3 FP8, and INT32 for
+INT8. Only floating signed zero is interchangeable. Each corpus owns
+separate input, output and reference buffers. Outputs are poisoned before
+every launch with values outside the valid output range, and guarded.
+Default batch 1 reads every output on CPU; batch >1 checks every element
+on device, then host-checks the last output and reference for every corpus
+used in that batch, including output guards. Input and reference bytes are
+also checked before and after load. A deliberate one-element error at the
+first, middle and last element of each corpus must be detected at entry
+and exit. Exact per-corpus launches and host checks, and total host/device
+compared elements, are required in the receipt. All three corpora must
+execute, plus the elapsed duration. Memory retains batch 1 and at least
+two full passes. Positive pause is between batches. This is a stronger
+correctness workload, not a comparable throughput benchmark for old probes.
+Old schema-2 receipts are preserved as historical diagnostics; the
+protocol handshake refuses old native binaries before any transaction,
+and the new validator refuses an old reference.
 
 The stock receipt and candidate must match physical BDF/architecture, role,
 probe binary digest, kernel version, types, geometry, batch size, duration
@@ -498,3 +505,34 @@ but continuous hot coverage was missing. Helper1 passed through -125 mV.
 All four final receipts were harvested and exact restoration verified.
 No deeper helper0 arm was run. The highest passing sustained offsets in
 this recipe are -75 and -125 mV, not production stability limits.
+
+## PWR13 rotating-corpus implementation evidence (2026-11-26)
+
+Native protocol 2 compiled with ROCm 7.2.4 for gfx1030/gfx1100/gfx1201;
+CPU oracle self-test and protocol check passed. Hardware offline suite:
+197 passed, one skipped. New refusal fixtures cover missing/invalid per-corpus
+counts, old protocol/schema, handshake failure and binary change. Existing
+fake power transaction cases pass; no writer or production defaults changed.
+
+Observe-current, no writes, unchanged start/stop controls and identity in
+all six managed captures below; separate named leases, unchanged 80 C
+junction/memory ceiling. Matrix cases N=256, three seconds sustained unless
+specified; no hot-floor or production claim.
+
+| Role | Provider | Batch | FP16 | BF16 | FP32 | INT8 | FP8 | Managed run ID |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| gfx1100 helper0 | rocBLAS | 1 | 12575 | 16130 | 15825 | 16681 | not run | 20261126T015751Z-gpu-ai-screen-82c5b9fae077 |
+| gfx1100 helper1 | rocBLAS | 2 | 12156 | 15640 | 15486 | 16184 | not run | 20261126T015805Z-gpu-ai-screen-5cb973591371 |
+| gfx1201 engine | hipBLASLt | 32 | 72512 | 62560 | 56832 | 65472 | 65504 | 20261126T015818Z-gpu-ai-screen-835094a5e951 |
+| gfx1030 helper2 | rocBLAS | 32 | 81056 | 51776 | 58880 | 67104 | not run | 20261126T015836Z-gpu-ai-screen-6c7afecb7598 |
+
+Counts are clean GEMMs. All required cases passed. On gfx1100 helper0,
+N=768 BF16 batch 32, 10 s sustained and 10 s with 2 ms burst pause:
+41536 and 30464 clean GEMMs; 24498929664 and 17968398336 device element
+comparisons, 2296774656 and 1684537344 host element comparisons
+(20261126T015614Z-gpu-ai-screen-512f35e587ee). On gfx1030 helper2, 128 MiB
+memory completed 28 full passes (20261126T015921Z-gpu-ai-screen-4880e38ee7de).
+All six receipts harvested. No production qualification, no voltage/clock
+change. Exact instruction classes, mixed residency, varied shapes,
+transitions/thermal soak, cross-owner transaction hardening and native
+role/serving tests remain separate gates. No reused schema-2 reference.

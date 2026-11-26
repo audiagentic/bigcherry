@@ -112,7 +112,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
             journal_dir = _journal_dir()
         result = ai_probe.screen(args, cancelled=lambda: interrupted, journal_dir=journal_dir)
     except (ai_probe.ScreenError, OSError, ValueError, KeyError, TypeError, AttributeError, ImportError) as exc:
-        result = {"kind": "ai-power-screen", "schema_version": 2,
+        result = {"kind": "ai-power-screen", "schema_version": ai_probe.SCREEN_SCHEMA,
                   "status": getattr(exc, "status", "inconclusive"), "reason": str(exc),
                   "production_qualified": False}
     finally:
