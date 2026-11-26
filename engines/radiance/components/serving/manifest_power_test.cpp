@@ -64,6 +64,9 @@ class Cards final : public ps::Hardware {
             value.maximum = 1000;
             value.writable = true;
         }
+        // The injected cap-only controller has an absolute shader ceiling;
+        // it must not advertise the mutually exclusive signed offset.
+        card.controls[static_cast<size_t>(ps::ControlId::shader_offset)] = {};
         auto& cap = card.controls[static_cast<size_t>(ps::ControlId::board_cap)];
         cap.current = board_cap;
         cap.minimum = 50000000;

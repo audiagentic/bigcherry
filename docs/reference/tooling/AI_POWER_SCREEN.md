@@ -1450,3 +1450,10 @@ performance, full instruction coverage or long-duration stability.
 Native implementation has card-free transaction acceptance, not a
 physical native owner or release build qualification. Existing XTX
 profile and production defaults unchanged.
+
+The first 30+60 s FP32 sustained reference reached the 80 C hotspot
+ceiling after about 33 s (20261126T083443Z-gpu-ai-screen-c566b175881a).
+No candidate applied; all four original snapshots matched. This
+thermal nonpass remains part of the evidence. BF16 sustained cohort
+uses fresh references and identical safety ceilings; it does not
+replace or clear the FP32 result.
