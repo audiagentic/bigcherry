@@ -67,7 +67,7 @@ def plan_fixture(tmp_path):
     groups=resolve()
     groups["dot2-signed"]["options"]["dtype"]=["dot2"]
     # Only the two groups necessary to exercise pass and missing evidence.
-    doc={"schema":1,"protocol":a.NATIVE_PROTOCOL,"screen_schema":a.SCREEN_SCHEMA,
+    doc={"schema":1,"recipe":"fixture","protocol":a.NATIVE_PROTOCOL,"screen_schema":a.SCREEN_SCHEMA,
          "groups":{"direct":groups["direct"],"dot2-signed":groups["dot2-signed"]},
          "target":{"bdf":"0000:03:00.0","role":"helper0","arch":"gfx1100"},
          "profile":"stock","snapshot":{"observed":True},"native_scope":q.native_scope(None,"gfx1100"),
@@ -195,3 +195,55 @@ def test_unknown_native_rows_are_visible_even_with_no_unit_route():
          "requested_rows":[{"row":"unknown","status":"uncovered","routes":[]}]}
     scope=q.native_scope(doc,"gfx1201")
     assert scope["status"]=="incomplete" and scope["requested_rows"]==doc["requested_rows"]
+
+
+@pytest.mark.parametrize("arch,budget",[("gfx1030",11),("gfx1100",14),("gfx1201",15)])
+def test_slim_strict_budget(arch,budget):
+    raw=q.load_recipe(RECIPE)
+    args=(arch,24*2**30,23*2**30,512,80,80)
+    slim=q.resolve(raw,"slim",*args)
+    assert q.workload_seconds(slim)==budget
+    assert q.workload_seconds(q.resolve(raw,"sanity",*args))==2
+    assert slim["memory"]["options"]["memory_mib"]==192
+    assert slim["direct"]["options"]["pause_ms"]==[2]
+    assert not any(d in a.PRECISION_DTYPES for g in slim.values()
+                   if g["status"]=="planned" for d in g["options"]["dtype"])
+    assert q.resolve(raw,"extended",*args)["memory"]["options"]["memory_mib"]==21*1024
+    assert q.resolve(raw,"screen",*args)["direct"]["options"]["seconds"]==4
+
+
+@pytest.mark.parametrize("group,override",[
+    ("hot",{"seconds":1}),("direct",{"min_hotspot_c":1}),
+    ("direct",{"seconds":0}),("direct",{"memory_fraction":[1,128]}),
+    ("missing",{"seconds":1}),
+])
+def test_recipe_override_refuses_invalid(group,override):
+    raw=q.load_recipe(RECIPE)
+    raw["recipe"]["extended"]["overrides"]={group:override}
+    with pytest.raises(a.ScreenError):
+        resolve("gfx1100",raw)
+
+
+def test_run_all_stops_and_reports_missing(tmp_path):
+    plan=plan_fixture(tmp_path)
+    resolved=cli._plan(tmp_path,plan)
+    args=Namespace(work_root=tmp_path,plan=plan,all=True,group=None)
+    with patch.object(cli,"resolve_work_root",return_value=tmp_path), \
+         patch.object(cli,"_run_group",return_value=(2,"failed-run")) as run, \
+         patch.object(cli.workspace,"run_dir",return_value=tmp_path), \
+         patch.object(cli.harvest,"harvest") as harvest_run, \
+         patch.object(cli,"_plan",return_value=resolved), \
+         patch.object(cli,"cmd_report",return_value=2) as report:
+        assert cli.cmd_run(args)==2
+        assert run.call_count==harvest_run.call_count==1
+        assert report.call_args.args[0].result==["failed-run"]
+
+
+def test_run_all_rejects_precision_before_launch(tmp_path):
+    groups=resolve()
+    args=Namespace(work_root=tmp_path,plan="test",all=True,group=None)
+    with patch.object(cli,"resolve_work_root",return_value=tmp_path), \
+         patch.object(cli,"_plan",return_value=({"profile":"stock","groups":groups},tmp_path)), \
+         patch.object(cli,"_run_group") as run:
+        assert cli.cmd_run(args)==2
+        run.assert_not_called()
