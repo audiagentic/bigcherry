@@ -1,6 +1,6 @@
 # Current-pin upstream translation seam (RUM04): radiance_option, radiance_switch
 # and env_setting on the typed fields below are the ONE source of engine
-# flag/environment names consumed by the rad0009 argv bridge and bc-serve's
+# flag/environment names consumed by the owner's engine admission (v2/engine_admission) and bc-serve's
 # native option lookup. A rename changes this registry, then regenerates types.
 # The original authored YAML is carried whole (spec.native_config) and read by Radiance itself; do not add another
 # handwritten typed-option alias table.

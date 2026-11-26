@@ -80,13 +80,6 @@ NativeConfigSnapshot NativeConfigSnapshot::from_manifest(const nlohmann::json& f
                                 field.at("sha256").get_ref<const std::string&>());
 }
 
-NativeConfigSnapshot NativeConfigSnapshot::from_sealed_fd(int fd) {
-    const std::string bytes = v2::read_sealed_document(fd, "native snapshot descriptor");
-    const auto parsed = v2::parse_strict_json(bytes, "native snapshot descriptor");
-    if (!parsed) throw std::invalid_argument(v2::render_human("native snapshot descriptor", parsed.error()));
-    return from_manifest(parsed.value());
-}
-
 NativeConfigSnapshot NativeConfigSnapshot::from_raw_fd(int fd) {
     return NativeConfigSnapshot(v2::read_sealed_document(fd, "native YAML descriptor"), current_resolution_root(),
                                 std::nullopt);

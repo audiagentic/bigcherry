@@ -17,7 +17,7 @@ These are all engine GPU clocks at 100 MHz and can be compared only to other sta
 
 ## Exact policy-on diagnostic run (hold GPU lease throughout)
 
-Build a COMPLETE engine+helper+serving release from this branch, including rebuilt rad0009 manifest adapter. Do not mix plugins built with old BcEngineSettings. The native owner admits only an exact lab-only trace experiment of shape {"diagnostics":{"lanes":{"trace_level":N}}}; shape, force and other diagnostics remain refused. For this pure diagnostic, a measured lab manifest derives its live policy from the SAME narrow calibration key and record as production. Check live_policy_state.configured is true in the committed measured manifest before measuring. Never bypass the manifest reader or owner guards.
+Build a COMPLETE engine+helper+serving release from this branch, including the rebuilt rad0070 managed entry. Do not mix plugins built with old BcEngineSettings. The native owner admits only an exact lab-only trace experiment of shape {"diagnostics":{"lanes":{"trace_level":N}}}; shape, force and other diagnostics remain refused. For this pure diagnostic, a measured lab manifest derives its live policy from the SAME narrow calibration key and record as production. Check live_policy_state.configured is true in the committed measured manifest before measuring. Never bypass the manifest reader or owner guards.
 
 ~~~bash
 set -euo pipefail
