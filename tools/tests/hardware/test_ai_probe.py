@@ -33,7 +33,7 @@ def args(tmp_path, **kwargs):
     base = Namespace(profiles=ROOT / "engines/radiance/power-profiles.yaml",
                      profile="stock", role="engine", arch="gfx1100", bdf=BDF,
                      stock_confirmed=True, reference=None, probe=binary,
-                     dtype=["fp16"], n=768, matrix_shape=None, seconds=1, pause_ms=[0, 2],
+                     dtype=["fp16"], n=768, matrix_shape=None, resident_mib=0, seconds=1, pause_ms=[0, 2],
                      setup_timeout=2, max_hotspot_c=85, output=tmp_path / "result.json",
                      provider="hipblaslt", memory_mib=None, headroom_mib=None, batch=1,
                      warmup_seconds=0, min_hotspot_c=None, max_memory_c=None,
@@ -54,6 +54,8 @@ def case(pause, algorithm="00"*16, status="pass"):
               "corpus_iterations": [1, 1, 1], "corpus_host_checks": [1, 1, 1],
               "host_elements_checked": 3*768*768, "device_elements_checked": 0,
               "matrix_geometry": [768]*6, "host_padding_checked": 0, "device_padding_checked": 0,
+              "allocated_bytes": 3*(768*768*8+512)+1, "resident_bytes": 0,
+              "free_before_bytes": 2**30, "free_after_bytes": 2**30,
               "start_ns": 1_000_000_000, "end_ns": 2_000_000_000}}
 
 
@@ -480,6 +482,7 @@ def test_cli_managed_capture_receipt_and_reference(tmp_path):
 
 def test_batched_coverage_refuses_missing_host_checks():
     payload = case(0)["native"] | {"batch": 32, "iterations": 64, "host_checks": 6,
+        "allocated_bytes": 3*(768*768*8+512)+9,
         "corpus_iterations": [22, 21, 21], "corpus_host_checks": [2, 2, 2],
         "host_elements_checked": 6*768*768, "device_elements_checked": 64*768*768}
     a.validate_native(payload, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512, batch=32)
@@ -501,6 +504,7 @@ def test_rotating_corpus_coverage_rejects_bad_counts(bad):
 def test_two_launch_batch_covers_all_corpora():
     payload = case(0)["native"] | {
         "batch": 2, "iterations": 4, "host_checks": 4,
+        "allocated_bytes": 3*(768*768*8+512)+9,
         "corpus_iterations": [2, 1, 1], "corpus_host_checks": [2, 1, 1],
         "host_elements_checked": 4*768*768, "device_elements_checked": 4*768*768,
     }
@@ -624,6 +628,7 @@ def test_matrix_geometry_padding_and_identity():
     g = [15, 19, 7, 18, 11, 21]
     payload = case(0)["native"] | {
         "n": 19, "matrix_geometry": g, "host_elements_checked": 3*15*19,
+        "allocated_bytes": 3*((18*7+11*19)*2+2*21*19*2+512)+1,
         "host_padding_checked": 3*(21-15)*19,
     }
     a.validate_native(payload, BDF, "gfx1100", "fp16", 19, "hipblaslt", 1, 2, 512, geometry=g)
@@ -662,3 +667,46 @@ def test_explicit_geometry_resolves_mixed_case_n_and_provider(tmp_path):
     assert calls == [("fp16", 19, [15,19,7,18,11,21], "hipblaslt"),
                      ("wave", 768, None, "hip-native")]
     assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR13"
+
+def test_resident_coverage_including_partial_last_chunk():
+    # 5 MiB -> 4 MiB + 1 MiB chunks; 5 epochs visits 4,1,4,1,4.
+    g = [16]*6
+    words = 5*2**20//4
+    payload = case(0)["native"] | {
+        "n": 16, "matrix_geometry": g, "iterations": 5, "host_checks": 5,
+        "corpus_iterations": [2,2,1], "corpus_host_checks": [2,2,1],
+        "host_elements_checked": 5*16*16,
+        "allocated_bytes": 3*(16*16*8+512)+1+5*2**20,
+        "resident_bytes": 5*2**20, "resident_chunks": 2,
+        "resident_chunk_words": 2**20, "resident_epochs": 5,
+        "resident_full_sweeps": 2, "resident_words_checked": 4*words+2**20,
+    }
+    def validate(value):
+        a.validate_native(value, BDF, "gfx1100", "fp16", 16, "hipblaslt",
+                          1, 2, 512, geometry=g, resident_mib=5)
+    validate(payload)
+    for bad in ({"resident_epochs": 4}, {"resident_words_checked": 0},
+                {"resident_full_sweeps": 0}, {"resident_chunks": 1},
+                {"resident_bytes": 0}, {"free_after_bytes": 0},
+                {"allocated_bytes": 1}):
+        with pytest.raises(a.ScreenError, match="coverage"):
+            validate(payload | bad)
+
+
+def test_resident_requires_explicit_headroom_and_matrix():
+    for dtypes, mib, headroom in [(["memory"], 1, 512), (["fp16"], 1, None),
+                                 (["fp16"], -1, 512), (["fp16"], 1, 255)]:
+        with pytest.raises(a.ScreenError, match="resident"):
+            a.validate_resident_request(dtypes, mib, headroom)
+    a.validate_resident_request(["fp16"], 5, 512)
+
+
+def test_resident_refuses_application(tmp_path):
+    ref = stock_reference(tmp_path)
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, apply_profile=True, confirm_idle=True,
+              resident_mib=128, headroom_mib=512)
+    with patch.object(a, "PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError, match="observe-only"):
+            a.screen(ns, journal_dir=tmp_path)
+    tx.assert_not_called()

@@ -57,6 +57,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26 rectangular geometry slice: explicit M,N,K,LDA,LDB,LDC NN layout, three exact corpora and full logical/padding comparison, strict geometry identity, protocol 4/schema 5. Initial missing native geometry serialization was correctly rejected (four harvested inconclusive receipts); serializer fixed and native validation failures now retain per-case diagnostic/output. Final four observe-only captures passed 15 requested cases: 2158560 GEMMs, 2082375360 GPU and 195222690 CPU padding comparisons; eight captures harvested, IDs in AI_POWER_SCREEN.md. CPU golden self-test and 210 hardware tests passed (one skipped), all three offload targets compiled. No power changes; explicit geometry refuses apply pending P0. Remaining mixed residency/traffic, direct matrix/vector instruction and phase/transient coverage; native and production gates separate.
 
+2026-11-26 mixed-residency slice: protocol 5/schema 6, explicit resident budget and full known allocation headroom, independent nonblocking memory stream, 4 MiB changed-chunk exact host checks, initial/final full verification and complete compute-time sweep required. Three offload targets and CPU self-test passed; 213 hardware tests passed, one skipped. Five observe-only cases passed (129 MiB partial-chunk smoke plus 20992/20992/29184/12800 MiB full cohort); 671744 verified GEMMs and 66035122176 resident words across full-size runs, unchanged controls, all captures harvested (IDs in AI_POWER_SCREEN.md). Job-monitor restart interrupted two queued launches, resubmitted only after lease/process check. No actual overlap, hot floor or serving proof. New review confirms distinct gfx1100/gfx1201 WMMA layouts, no native WMMA on gfx1030, historical gfx1030 fdot2 builtin issue. Remaining native matrix/vector/packed-dot, peer traffic, phase/transition/health and P0 owner recovery/matched finalist gates. No control or native owner edits.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -64,3 +66,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T02:00:20.973947+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:02:56.388933+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:10:45.923234+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T03:21:55.716861+00:00 (updated-by): Updated: section:notes

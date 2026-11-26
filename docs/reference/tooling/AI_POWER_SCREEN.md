@@ -148,7 +148,7 @@ fence before any restore or new mutation.
 ## Managed evidence and retention
 
 Every screen creates an existing WSL01 capture run at
-`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR13 when an instruction case or explicit matrix shape is requested, otherwise PWR12,
+`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR13 when an instruction case, explicit matrix shape or mixed residency is requested, otherwise PWR12,
 engine none). The usual `run.manifest.json` records lifecycle, source and
 input digests, exit code, and a typed reference to the stock run for candidates.
 The single `<run-id>.power.json` uses the existing platform Receipt v1
@@ -209,7 +209,7 @@ semantics, packed dot or general vector-FP coverage.
 ## Explicit rectangular and padded matrices (PWR13)
 
 The same command accepts `--matrix-shape M N K LDA LDB LDC` for
-column-major NN GEMMs. Dimensions may be 12048, each leading dimension
+column-major NN GEMMs. Dimensions may be 1-2048, each leading dimension
 between its logical row count and that count plus 256. Without the option,
 all six values resolve to the existing square `--n`. With it, only matrix
 cases use the explicit geometry; memory and direct instruction cases retain
@@ -227,6 +227,29 @@ preserves exact FP16 output representability and the bounded stored span
 times batch fits the device verification counter. Unsupported provider
 shapes remain nonpasses. No transpose or nonzero-beta coverage yet.
 
+## Mixed residency and compute (PWR13)
+
+Select a matrix dtype and explicit `--resident-mib` with
+`--headroom-mib` (at least 256 MiB). The allocation is additional to
+the matrix input, output, oracle, guards, counters and workspace.
+The live free-memory checks before and after allocation cover the
+whole known budget. This mode is observe-only pending owner recovery
+hardening, not an authorization to alter the power profile.
+
+The resident buffer is initialized and fully read back before compute.
+A separate nonblocking HIP stream changes one bounded 4 MiB chunk per
+matrix batch using a deterministic epoch XOR, and the host verifies
+the changed chunk after synchronization. A final full-buffer verification
+is required; each chunk must be visited at least once during compute.
+The last chunk may be partial. The requested duration is a minimum:
+complete sweep coverage may extend execution. The existing timeout,
+lease and thermal stop remain authoritative; incomplete coverage is
+not a pass. Receipts validate exact bytes, chunk geometry, epochs,
+full sweeps and words verified, not just allocation success.
+The independently issued queues and live resident allocation are
+tested; actual simultaneous execution, model residency, peak saturation
+and peer traffic are not proven by this test.
+
 ## Numerical and identity contract
 
 The native probe uses actual HIP-visible PCI identity and validates the
@@ -234,8 +257,8 @@ expected architecture before allocation. It selects a hipBLASLt heuristic or exp
 public default GEMM dispatch with atomics disabled. It records provider and
 library versions; hipBLASLt also records opaque algorithm bytes, while
 rocBLAS honestly records default dispatch, not an exact internal solution ID. It
-checks every active HIP/library operation. Native protocol 4 / screen
-observations schema 5 retains the three-corpus check and rotates three deterministic operand corpora: dense
+checks every active HIP/library operation. Native protocol 5 / screen
+observations schema 6 retains the three-corpus check and rotates three deterministic operand corpora: dense
 signed, sparse signed, and signed-diagonal A times dense B. Floating
 inputs are exactly representable 0 or +/-1/16, integer inputs 0 or +/-1.
 The CPU integer dot sum is exact over the supported dimension range. The
@@ -253,12 +276,12 @@ compared elements, are required in the receipt. All three corpora must
 execute, plus the elapsed duration. Memory retains batch 1 and at least
 two full passes. Positive pause is between batches. This is a stronger
 correctness workload, not a comparable throughput benchmark for old probes.
-Old schema-2, schema-3 and schema-4 receipts are preserved as historical diagnostics; the
+Old schema-2 through schema-5 receipts are preserved as historical diagnostics; the
 protocol handshake refuses old native binaries before any transaction,
 and the new validator refuses an old reference.
 
 The stock receipt and candidate must match physical BDF/architecture, role,
-probe binary digest, kernel version, types, geometry, batch size, duration
+probe binary digest, kernel version, types, geometry, resident size, batch size, duration
 and pause recipe. Compare actual HIP/driver/library versions, provider, dispatch identity and
 workspace for each case. A rocBLAS default route does not prove identical internal
 kernel selection. Every iteration is checked against the independent CPU-generated oracle,
@@ -657,3 +680,30 @@ Eight captures harvested including the initial nonpasses. All final
 start/stop identities and controls matched; no writes, no hot/production
 claim. The deliberately different shapes are coverage samples rather than
 a complete per-card Cartesian product.
+
+### PWR13 mixed-residency evidence (2026-11-26)
+
+Protocol 5/schema 6, ROCm 7.2.4, three target code objects and CPU
+oracle self-test passed. Offline hardware suite: 213 passed, one skipped.
+BF16 N=768 batch=32, sustained, minimum 15 s (129 MiB smoke 5 s),
+512 MiB requested headroom and 80 C junction/memory ceilings.
+All five observe-only cases passed with unchanged start/stop controls.
+Complete initial/final memory readbacks and every compute-time changed
+chunk are counted in the verified words below.
+
+| Logical role | Resident MiB | GEMMs | Verified words | Compute sweeps | Run ID |
+| --- | ---: | ---: | ---: | ---: | --- |
+| helper0 smoke | 129 | 17120 | 616038400 | 16 | 20261126T031427Z-gpu-ai-screen-68c247443543 |
+| helper0 | 20992 | 167936 | 16508780544 | 1 | 20261126T031527Z-gpu-ai-screen-99c339967e08 |
+| helper1 | 20992 | 167936 | 16508780544 | 1 | 20261126T031643Z-gpu-ai-screen-e17f14d0d900 |
+| engine | 29184 | 233472 | 22951231488 | 1 | 20261126T031824Z-gpu-ai-screen-462d2bd264f1 |
+| helper2 | 12800 | 102400 | 10066329600 | 1 | 20261126T032004Z-gpu-ai-screen-4d63afab4334 |
+
+Full-size workload durations were 50.086, 49.170, 58.256 and
+46.403 seconds respectively; complete sweep coverage extended beyond
+the minimum duration. The full cohort verified 671744 GEMMs and
+66035122176 32-bit resident words, not unique bytes or overlap.
+All five captures harvested. A job-monitor restart interrupted queued
+launches for engine/helper2; no duplicate active processes or lease
+were present before resubmission. No mutation, hot floor, peak
+saturation, peer-transfer or serving proof is claimed.

@@ -237,3 +237,20 @@ hardware tests in addition to synthetic payload fixtures: the latter
 alone could not catch the native serialization omission. Transpose,
 nonzero beta, richer magnitudes and actual tensor instructions remain
 independent coverage extensions.
+
+
+## 15. Implementation update: mixed VRAM and compute
+
+Protocol 5/schema 6 adds an explicit resident budget to matrix cases,
+with checked full allocation headroom, bounded 4 MiB epoch transforms
+on a separate nonblocking stream, exact changed-chunk readback, and
+initial/final full-buffer verification. A pass requires at least one
+complete compute-time sweep even when the nominal minimum duration
+is exceeded. Exact coverage counters and residency parameters bind
+the receipt and reference. A 129 MiB smoke exercises a partial last
+chunk. These cases remain observe-only. This tests mixed issued work
+and verified live residency, not measured stream overlap or a serving
+model. Keep the native peer/collective, matrix ISA, transition, health
+and production-owner gates separate.
+
+Further ISA review: gfx1100 and gfx1201 require separate native WMMA operand and accumulator layouts (see libr3/r3_compat.h); gfx1030 has no WMMA and must not report an emulated tile as native coverage. Check actual emitted WMMA instructions and independently verify every output lane against an exact CPU tile oracle. Existing libr2 notes identify a historical gfx1030 fdot2 builtin miscompile; verify the emitted packed-dot form and exact output on that target instead of assuming the intrinsic is correct.

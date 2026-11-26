@@ -31,7 +31,9 @@ def register(sub) -> None:
     p.add_argument("--provider", choices=ai_probe.PROVIDERS, default="hipblaslt",
                    help="explicit installed matrix library; no silent fallback")
     p.add_argument("--memory-mib", type=int, help="total allocation for memory dtype; explicit even MiB")
-    p.add_argument("--headroom-mib", type=int, help="VRAM to leave free for memory dtype")
+    p.add_argument("--resident-mib", type=int, default=0,
+                   help="actively checked VRAM allocation concurrent with matrix workload")
+    p.add_argument("--headroom-mib", type=int, help="VRAM to leave free for memory or resident workload")
     p.add_argument("--warmup-seconds", type=int, default=0, help="additional bounded heating time per case")
     p.add_argument("--min-hotspot-c", type=int, help="required sampled temperature for entire final interval")
     p.add_argument("--max-memory-c", type=int, help="optional explicit memory temperature ceiling")
@@ -58,13 +60,14 @@ def cmd_screen(args: argparse.Namespace) -> int:
             ("memory" in args.dtype and (args.memory_mib is None or not 2 <= args.memory_mib <= 65536 or
                                         args.memory_mib % 2 or args.headroom_mib is None or
                                         not 256 <= args.headroom_mib <= 65536)) or
-            ("memory" not in args.dtype and (args.memory_mib is not None or args.headroom_mib is not None)) or
+            ("memory" not in args.dtype and (args.memory_mib is not None or (not args.resident_mib and args.headroom_mib is not None))) or
             ("fp8" in args.dtype and args.provider == "rocblas") or
             not all(0 <= x <= 1000 for x in args.pause_ms) or
             len(set(args.dtype)) != len(args.dtype) or len(set(args.pause_ms)) != len(args.pause_ms)):
         print("gpu-ai-screen: invalid device, bounds or duplicate test cases", file=sys.stderr)
         return 2
     try:
+        ai_probe.validate_resident_request(args.dtype, args.resident_mib, args.headroom_mib)
         if args.matrix_shape is not None:
             if not any(dtype in ai_probe.MATRIX_DTYPES for dtype in args.dtype):
                 raise ai_probe.ScreenError("matrix shape requires a matrix case")
@@ -98,7 +101,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
         for role, path in (("probe", args.probe), ("profiles", args.profiles)):
             inputs.append({"role": role, "uri": str(path.resolve()), "sha256": ai_probe.digest(path).removeprefix("sha256:")})
         args.input_digests = {i["role"]: "sha256:" + i["sha256"] for i in inputs}
-        plan_item = "PWR13" if args.matrix_shape is not None or any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
+        plan_item = "PWR13" if args.matrix_shape is not None or args.resident_mib or any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
         run = workspace.create_run(root, "capture", "gpu-ai-screen", plan_item=plan_item, engine="none",
                                    argv=sys.argv[:], purpose="Independent GPU power-profile screen",
                                    inputs=inputs, references=refs, subkind="gpu-ai-screen", repo=paths.REPO_ROOT)
