@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.78.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.77.0...bc-platform-1.78.0) (2026-11-26)
+
+
+### New and changed
+
+* **platform:** rotate exact GPU probe corpora and verify coverage ([#1645](https://github.com/audiagentic/bigcherry/issues/1645)) ([8f78ff2](https://github.com/audiagentic/bigcherry/commit/8f78ff2813cbe8d8163c90b8e8da07576a0b98a1))
+
 ## [1.77.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.76.0...bc-platform-1.77.0) (2026-11-26)
 
 
