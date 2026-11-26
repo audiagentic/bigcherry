@@ -2,6 +2,9 @@
 schema = 2
 [target.gfx1030]
 hot_dtype = "bf16"
+# Observed 60 s hot window at 66–74 C; 1536 stopped at the 80 C ceiling.
+hot_n = 1024
+hot_warmup_seconds = 60
 provider = "rocblas"
 matrix = ["fp16", "bf16", "fp32", "int8"]
 [target.gfx1100]
@@ -16,8 +19,11 @@ matrix = ["fp16", "bf16", "fp32", "int8", "fp8"]
 
 [recipe.screen]
 groups = ["matrix", "direct", "dot2-signed", "wmma-positive", "wmma-fp16-signed", "wmma-bf16-signed"]
+# "hot" is the historical group ID; ordinary sustained load has no floor.
 [recipe.operational]
 groups = ["hot", "burst"]
+[recipe.elevated-temperature]
+groups = ["elevated-temperature"]
 [recipe.precision]
 groups = ["dot2-signed", "wmma-fp16-signed", "wmma-bf16-signed"]
 [recipe.precision-workarounds]
@@ -82,6 +88,15 @@ n = 768
 batch = 32
 seconds = 60
 warmup_seconds = 30
+pause_ms = [0]
+
+# Optional coverage diagnostic, not part of ordinary operational/extended.
+[group.elevated-temperature]
+hot = true
+n = 768
+batch = 32
+seconds = 60
+warmup_seconds = 30
 min_hotspot_c = 60
 pause_ms = [0]
 [group.burst]
@@ -101,3 +116,29 @@ dtypes = ["wmma-fp16-bias", "wmma-bf16-bias"]
 n = 64
 seconds = 4
 pause_ms = [0, 2]
+
+[recipe.sanity]
+groups = ["sanity"]
+
+# Strict early rejection only; no signed native precision exceptions or hot gate.
+[recipe.slim]
+groups = ["direct", "matrix", "wmma-positive", "memory"]
+[recipe.slim.overrides.direct]
+seconds = 1
+pause_ms = [2]
+[recipe.slim.overrides.matrix]
+seconds = 1
+pause_ms = [0]
+[recipe.slim.overrides.wmma-positive]
+seconds = 1
+pause_ms = [0]
+[recipe.slim.overrides.memory]
+seconds = 1
+memory_fraction = [1, 128]
+
+[group.sanity]
+dtypes = ["alu", "bf16"]
+n = 64
+batch = 32
+seconds = 1
+pause_ms = [0]

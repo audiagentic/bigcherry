@@ -52,19 +52,34 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
     _need(_integer(max_hotspot, 1, 110) and _integer(max_memory, 1, 110),
           "invalid thermal ceiling")
     target = raw["target"][arch]
-    _need({"provider","matrix","hot_dtype"} <= set(target) <= {"provider","matrix","hot_dtype","precision_references"} and target["provider"] in a.PROVIDERS
+    _need({"provider","matrix","hot_dtype"} <= set(target) <= {"provider","matrix","hot_dtype","precision_references","hot_n","hot_warmup_seconds"} and target["provider"] in a.PROVIDERS
           and _names(target["matrix"]) and set(target["matrix"]) <= set(a.MATRIX_DTYPES)
           and target["hot_dtype"] in target["matrix"]
+          and ("hot_n" not in target or _integer(target["hot_n"],16,2048))
+          and ("hot_warmup_seconds" not in target or _integer(target["hot_warmup_seconds"],0,3599))
           and not (target["provider"] == "rocblas" and "fp8" in target["matrix"]),
           "invalid target capability configuration")
     precision = target.get("precision_references",False)
     _need(type(precision) is bool and (not precision or arch=="gfx1100"),"invalid precision reference target")
     selected = raw["recipe"][recipe]
-    _need(set(selected) == {"groups"} and _names(selected["groups"]), "invalid group selection")
+    _need({"groups"} <= set(selected) <= {"groups", "overrides"}
+          and _names(selected["groups"]), "invalid group selection")
+    overrides = selected.get("overrides", {})
+    _need(isinstance(overrides, dict) and set(overrides) <= set(selected["groups"]),
+          "override must name a selected group")
     groups = {}
     for name in selected["groups"]:
         _need(name in raw["group"], "unknown selected group")
         g = raw["group"][name]
+        if name in overrides:
+            override = overrides[name]
+            _need(isinstance(override, dict) and bool(override)
+                  and set(override) <= {"seconds", "pause_ms", "memory_fraction"}
+                  and not g.get("hot") and "min_hotspot_c" not in g
+                  and "warmup_seconds" not in g
+                  and ("memory_fraction" not in override or "memory_fraction" in g),
+                  "invalid short-recipe override")
+            g = g | override
         _need(not set(g)-GROUP_FIELDS and sum(k in g for k in ("matrix","dtypes","hot"))==1
               and ("matrix" not in g or g["matrix"] is True)
               and ("hot" not in g or g["hot"] is True), "invalid group fields")
@@ -83,10 +98,13 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
         n, batch = g.get("n", 768), g.get("batch", 1)
         sec, warm, timeout = g["seconds"], g.get("warmup_seconds", 0), g.get("setup_timeout", 60)
         pause, hot = g["pause_ms"], g.get("min_hotspot_c")
+        if g.get("hot"):
+            n = target.get("hot_n",n)
+            warm = target.get("hot_warmup_seconds",warm)
         _need(_integer(n,16,2048) and _integer(batch,1,256) and _integer(sec,1,3600)
               and _integer(warm,0,3600-sec) and _integer(timeout,1,300)
               and isinstance(pause,list) and bool(pause) and all(_integer(x,0,1000) for x in pause)
-              and len(pause)==len(set(pause)) and (not warm or hot is not None)
+              and len(pause)==len(set(pause))
               and (hot is None or _integer(hot,1,max_hotspot-1)), "invalid group bounds")
         _need(not any(d in a.PRECISION_DTYPES for d in dtypes) or (arch=="gfx1100" and n<=64 and all(d in a.PRECISION_DTYPES for d in dtypes)), "invalid precision reference scope")
         matrix = any(d in a.MATRIX_DTYPES for d in dtypes)
@@ -117,6 +135,13 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
             "headroom_mib": headroom}}
     _need(any(g["status"]=="planned" for g in groups.values()), "no executable group")
     return groups
+
+
+def workload_seconds(groups: dict) -> int:
+    """Nominal native load budget, excluding setup, teardown and lease waits."""
+    return sum((g["options"]["seconds"] + g["options"]["warmup_seconds"])
+               * len(g["options"]["dtype"]) * len(g["options"]["pause_ms"])
+               for g in groups.values() if g["status"] == "planned")
 
 
 def native_scope(doc: dict | None, arch: str) -> dict:

@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import subprocess
 from pathlib import Path
 
 from ..core import harvest, paths, run_manifest as rm, workspace
@@ -29,9 +28,11 @@ def register(sub):
     for name in ("headroom-mib", "max-hotspot-c", "max-memory-c"):
         plan.add_argument("--"+name,type=int,required=True)
     plan.set_defaults(func=cmd_plan)
-    run = sp.add_parser("run", help="execute one planned group under an existing GPU lease")
+    run = sp.add_parser("run", help="execute planned groups under an existing GPU lease")
     run.add_argument("--plan",required=True)
-    run.add_argument("--group",required=True)
+    selection = run.add_mutually_exclusive_group(required=True)
+    selection.add_argument("--group")
+    selection.add_argument("--all",action="store_true",help="run strict groups, stop on nonpass, harvest and report")
     run.set_defaults(func=cmd_run)
     report = sp.add_parser("report", help="aggregate explicit managed group receipts; missing/nonpassing work stays visible")
     report.add_argument("--plan",required=True)
@@ -122,7 +123,9 @@ def cmd_plan(args):
                  "sources":{s["role"]:s for s in sources},"groups":groups,"native_scope":scope,
                  "production_qualified":False}
         rid=_capture(root,"gpu-ai-qualification-plan",payload,sources)
-        print(json.dumps({"plan":rid,"groups":groups,"native_scope":scope,"production_qualified":False},indent=2))
+        print(json.dumps({"plan":rid,"recipe":args.recipe,"groups":groups,
+                          "nominal_workload_seconds":q.workload_seconds(groups),
+                          "native_scope":scope,"production_qualified":False},indent=2))
         return 0
     except (OSError,ValueError,KeyError,TypeError,RuntimeError,AttributeError) as exc:
         print("gpu-ai-qualify plan: "+str(exc),file=sys.stderr)
@@ -130,35 +133,58 @@ def cmd_plan(args):
 
 
 def idle_preflight():
-    try:
-        result=subprocess.run(["rocm-smi","--showpids"],capture_output=True,text=True,timeout=10,check=True)
-    except (OSError,subprocess.SubprocessError) as exc:
-        raise a.ScreenError("GPU process inventory unavailable") from exc
-    q._need("No KFD PIDs currently running" in result.stdout, "GPU process inventory not idle")
+    a.idle_preflight()
 
+
+def _run_group(root, doc, path, plan_id, name):
+    q._need(doc["profile"]=="stock","candidate execution blocked pending power-owner recovery hardening")
+    group=doc["groups"][name]
+    q._need(group["status"]=="planned","group is not executable on this target")
+    q._need(lease.held_by_this_process(),"GPU lease not verified")
+    idle_preflight()
+    for role in ("probe","profiles"):
+        source=doc["sources"][role]
+        q._need(_source(Path(source["uri"]),role)==source,"planned input digest changed: "+role)
+    target=doc["target"]
+    ns=argparse.Namespace(**group["options"],**target,profile="stock",
+        probe=Path(doc["sources"]["probe"]["uri"]),profiles=Path(doc["sources"]["profiles"]["uri"]),
+        work_root=root,stock_confirmed=False,observe_current=True,apply_profile=False,
+        confirm_idle=False,reference=None,
+        qualification={"plan":plan_id,"group":name,"digest":a.digest(path)},
+        qualification_path=path,qualification_expected=doc["snapshot"],
+        qualification_sources=doc["sources"])
+    from .ai_probe_cmds import cmd_screen
+    return cmd_screen(ns), getattr(ns,"run_id",None)
 
 def cmd_run(args):
     try:
         root=resolve_work_root(args.work_root)
         doc,path=_plan(root,args.plan)
+        if not getattr(args,"all",False):
+            return _run_group(root,doc,path,args.plan,args.group)[0]
         q._need(doc["profile"]=="stock","candidate execution blocked pending power-owner recovery hardening")
-        group=doc["groups"][args.group]
-        q._need(group["status"]=="planned","group is not executable on this target")
-        q._need(lease.held_by_this_process(),"GPU lease not verified")
-        idle_preflight()
-        for role in ("probe","profiles"):
-            source=doc["sources"][role]
-            q._need(_source(Path(source["uri"]),role)==source,"planned input digest changed: "+role)
-        target=doc["target"]
-        ns=argparse.Namespace(**group["options"],**target,profile="stock",
-            probe=Path(doc["sources"]["probe"]["uri"]),profiles=Path(doc["sources"]["profiles"]["uri"]),
-            work_root=root,stock_confirmed=False,observe_current=True,apply_profile=False,
-            confirm_idle=False,reference=None,
-            qualification={"plan":args.plan,"group":args.group,"digest":a.digest(path)},
-            qualification_path=path,qualification_expected=doc["snapshot"],
-            qualification_sources=doc["sources"])
-        from .ai_probe_cmds import cmd_screen
-        return cmd_screen(ns)
+        names=[n for n,g in doc["groups"].items() if g["status"]=="planned"]
+        q._need(bool(names) and not any(d in a.PRECISION_DTYPES for n in names
+                                       for d in doc["groups"][n]["options"]["dtype"]),
+                "all-group execution requires strict groups; precision references use individual runs")
+        results=[]
+        rc=0
+        for name in names:
+            try:
+                rc,rid=_run_group(root,doc,path,args.plan,name)
+            except (OSError,ValueError,KeyError,TypeError,RuntimeError,AttributeError) as exc:
+                print("gpu-ai-qualify group "+name+": "+str(exc),file=sys.stderr)
+                rc=2
+                break
+            if rid:
+                harvest.harvest(root,workspace.run_dir(root,"capture",rid))
+                results.append(rid)
+            if rc or not rid:
+                rc=2
+                break
+        report_rc=cmd_report(argparse.Namespace(work_root=root,plan=args.plan,result=results,
+                                               precision_reference=[]))
+        return rc or report_rc
     except (OSError,ValueError,KeyError,TypeError,RuntimeError,AttributeError) as exc:
         print("gpu-ai-qualify run: "+str(exc),file=sys.stderr)
         return 2
@@ -276,7 +302,9 @@ def cmd_report(args):
                 if len(matches)==len(group["runs"]) and precision_match(references,matches):
                     group["status"]="allowed_precision"
         passed=all(g["status"] in ("pass","not_applicable","allowed_precision") for g in groups.values())
-        payload={"schema":1,"plan":args.plan,"groups":groups,"independent_pass":passed,
+        payload={"schema":1,"plan":args.plan,"recipe":doc["recipe"],
+                 "nominal_workload_seconds":q.workload_seconds(doc["groups"]),
+                 "groups":groups,"independent_pass":passed,
                  "native_scope":doc["native_scope"],"production_qualified":False}
         rid=_capture(root,"gpu-ai-qualification-report",payload,inputs,refs,passed)
         print(json.dumps(payload|{"report":rid},indent=2))

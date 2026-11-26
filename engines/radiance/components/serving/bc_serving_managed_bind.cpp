@@ -100,6 +100,13 @@ int bc_serving_managed_bind(rad::fleet::FleetConfig* fleet) {
             return refuse("the KL run files are not a valid record or score invocation");
         if (a.handoff && !matched_quality_owner(cfg.radiance_home, bc_serving_managed_admission_fd()))
             return refuse("KL scoring with helpers requires its matched owner and its retained admission");
+        // A KL run scores the trunk's own rows: the engine refuses an explicit speculative depth rather than ignoring it
+        // ("leave it at auto or 0"), and a serving config states one (the bundled configs say 3). Quality-only, explicit and
+        // recorded: the one authored option a KL run overrides (the engine itself turns the drafter, the prefix cache and
+        // multimodal patches off for it). The retired manifest path forced nothing: KL runs there took a config that already
+        // said 0 or auto. A serving start never reaches this branch.
+        cfg.n_spec = 0;
+        cfg.given.insert_or_assign("--num-speculative-tokens", "engine admission: a KL run scores the trunk");
         cfg.devices = ordinals;
         bc_serving_managed_mark();
         return 0;

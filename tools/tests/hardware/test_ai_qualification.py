@@ -26,8 +26,23 @@ def test_platform_recipe_architecture_capabilities_and_memory():
         assert groups["wmma-positive"]["status"]==("not_applicable" if arch=="gfx1030" else "planned")
         assert groups["dot2-signed"]["status"]=="planned"
         assert groups["dot2-signed"]["options"]["dtype"]==[a.PRECISION_CASES["dot2"] if arch=="gfx1100" else "dot2"]
-        assert groups["hot"]["options"]["min_hotspot_c"]==60
+        assert groups["hot"]["options"]["min_hotspot_c"] is None
+        elevated=q.resolve(q.load_recipe(RECIPE),"elevated-temperature",arch,
+                           24*2**30,23*2**30,512,80,80)
+        assert set(elevated)=={"elevated-temperature"}
+        assert elevated["elevated-temperature"]["options"] == (
+            groups["hot"]["options"] | {"min_hotspot_c":60})
+        assert "elevated-temperature" not in groups
+        operational=q.resolve(q.load_recipe(RECIPE),"operational",arch,
+                              24*2**30,23*2**30,512,80,80)
+        assert operational["hot"]["options"]["min_hotspot_c"] is None
+        assert operational["hot"]["options"]["max_hotspot_c"]==80
+        assert operational["hot"]["options"]["max_memory_c"]==80
         assert groups["hot"]["options"]["dtype"]==["fp32" if arch=="gfx1201" else "bf16"]
+        assert groups["hot"]["options"]["n"]==(1024 if arch=="gfx1030" else 768)
+        assert groups["hot"]["options"]["warmup_seconds"]==(60 if arch=="gfx1030" else 30)
+        assert groups["hot"]["options"]["seconds"]==60
+        assert groups["burst"]["options"]["n"]==768
         mem=groups["memory"]["options"]["memory_mib"]
         res=groups["resident"]["options"]["resident_mib"]
         assert mem==res==21*1024
@@ -67,7 +82,7 @@ def plan_fixture(tmp_path):
     groups=resolve()
     groups["dot2-signed"]["options"]["dtype"]=["dot2"]
     # Only the two groups necessary to exercise pass and missing evidence.
-    doc={"schema":1,"protocol":a.NATIVE_PROTOCOL,"screen_schema":a.SCREEN_SCHEMA,
+    doc={"schema":1,"recipe":"fixture","protocol":a.NATIVE_PROTOCOL,"screen_schema":a.SCREEN_SCHEMA,
          "groups":{"direct":groups["direct"],"dot2-signed":groups["dot2-signed"]},
          "target":{"bdf":"0000:03:00.0","role":"helper0","arch":"gfx1100"},
          "profile":"stock","snapshot":{"observed":True},"native_scope":q.native_scope(None,"gfx1100"),
@@ -108,9 +123,9 @@ def test_modified_plan_bundle_refused(tmp_path):
 
 def test_idle_preflight_fails_closed():
     from subprocess import CompletedProcess
-    with patch.object(cli.subprocess,"run",return_value=CompletedProcess([],0,"No KFD PIDs currently running","")):
+    with patch.object(a.subprocess,"run",return_value=CompletedProcess([],0,"No KFD PIDs currently running","")):
         cli.idle_preflight()
-    with patch.object(cli.subprocess,"run",return_value=CompletedProcess([],0,"PID 123","")):
+    with patch.object(a.subprocess,"run",return_value=CompletedProcess([],0,"PID 123","")):
         with pytest.raises(a.ScreenError,match="not idle"):
             cli.idle_preflight()
 
@@ -195,3 +210,63 @@ def test_unknown_native_rows_are_visible_even_with_no_unit_route():
          "requested_rows":[{"row":"unknown","status":"uncovered","routes":[]}]}
     scope=q.native_scope(doc,"gfx1201")
     assert scope["status"]=="incomplete" and scope["requested_rows"]==doc["requested_rows"]
+
+
+@pytest.mark.parametrize("arch,budget",[("gfx1030",11),("gfx1100",14),("gfx1201",15)])
+def test_slim_strict_budget(arch,budget):
+    raw=q.load_recipe(RECIPE)
+    args=(arch,24*2**30,23*2**30,512,80,80)
+    slim=q.resolve(raw,"slim",*args)
+    assert q.workload_seconds(slim)==budget
+    assert q.workload_seconds(q.resolve(raw,"sanity",*args))==2
+    assert slim["memory"]["options"]["memory_mib"]==192
+    assert slim["direct"]["options"]["pause_ms"]==[2]
+    assert not any(d in a.PRECISION_DTYPES for g in slim.values()
+                   if g["status"]=="planned" for d in g["options"]["dtype"])
+    assert q.resolve(raw,"extended",*args)["memory"]["options"]["memory_mib"]==21*1024
+    assert q.resolve(raw,"screen",*args)["direct"]["options"]["seconds"]==4
+
+
+@pytest.mark.parametrize("group,override",[
+    ("hot",{"seconds":1}),("direct",{"min_hotspot_c":1}),
+    ("direct",{"seconds":0}),("direct",{"memory_fraction":[1,128]}),
+    ("missing",{"seconds":1}),
+])
+def test_recipe_override_refuses_invalid(group,override):
+    raw=q.load_recipe(RECIPE)
+    raw["recipe"]["extended"]["overrides"]={group:override}
+    with pytest.raises(a.ScreenError):
+        resolve("gfx1100",raw)
+
+
+def test_run_all_stops_and_reports_missing(tmp_path):
+    plan=plan_fixture(tmp_path)
+    resolved=cli._plan(tmp_path,plan)
+    args=Namespace(work_root=tmp_path,plan=plan,all=True,group=None)
+    with patch.object(cli,"resolve_work_root",return_value=tmp_path), \
+         patch.object(cli,"_run_group",return_value=(2,"failed-run")) as run, \
+         patch.object(cli.workspace,"run_dir",return_value=tmp_path), \
+         patch.object(cli.harvest,"harvest") as harvest_run, \
+         patch.object(cli,"_plan",return_value=resolved), \
+         patch.object(cli,"cmd_report",return_value=2) as report:
+        assert cli.cmd_run(args)==2
+        assert run.call_count==harvest_run.call_count==1
+        assert report.call_args.args[0].result==["failed-run"]
+
+
+def test_run_all_rejects_precision_before_launch(tmp_path):
+    groups=resolve()
+    args=Namespace(work_root=tmp_path,plan="test",all=True,group=None)
+    with patch.object(cli,"resolve_work_root",return_value=tmp_path), \
+         patch.object(cli,"_plan",return_value=({"profile":"stock","groups":groups},tmp_path)), \
+         patch.object(cli,"_run_group") as run:
+        assert cli.cmd_run(args)==2
+        run.assert_not_called()
+
+
+@pytest.mark.parametrize("key,value",[("hot_n",0),("hot_n",True),("hot_warmup_seconds",3600)])
+def test_invalid_target_hot_geometry(key,value):
+    raw=q.load_recipe(RECIPE)
+    raw["target"]["gfx1030"][key]=value
+    with pytest.raises(a.ScreenError):
+        resolve("gfx1030",raw)

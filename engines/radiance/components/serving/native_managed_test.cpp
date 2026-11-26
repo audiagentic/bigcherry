@@ -71,6 +71,7 @@ rad::fleet::FleetConfig fleet(int tp = 2) {
     rad::fleet::ModelEntry m;
     m.name = "m";
     m.cfg.tp = tp;
+    m.cfg.model = "m.rad";   // an authored file always names its model (the KL overlay parse needs it)
     m.cfg.host = "127.0.0.1";
     f.models.push_back(m);
     return f;
@@ -164,6 +165,26 @@ int main() {
             check(c.rank_devices == std::vector<std::string>({"0000:03:00.0", "0000:06:00.0"}), "rank devices were not bound");
             check(c.given.at("--prefix-cache-mib") == "engine admission", "the source of a bound value is not recorded");
             check(bc_serving_managed(), "an accepted bind did not mark the process managed");
+        }
+        {   // A KL run scores the trunk: its start overrides the authored speculative depth (3 in the bundled configs) with 0,
+            // recorded; a serving start keeps what the file says.
+            bc::serving::EngineAdmission kl = admission();
+            kl.measuring = false;
+            kl.quality = bc::serving::EngineAdmission::Quality{false, "/ref", "", "/out.json"};
+            check(take(kl) == 0, "a KL admission was refused");
+            rad::fleet::FleetConfig f = fleet();
+            f.models[0].cfg.n_spec = 3;
+            f.models[0].cfg.given["--num-speculative-tokens"] = "yaml";
+            check(bc_serving_managed_bind(&f) == 0, "the KL bind was refused: " + bc_serving_managed_last_refusal());
+            check(f.models[0].cfg.n_spec == 0 && f.models[0].cfg.kld() &&
+                      f.models[0].cfg.given.at("--num-speculative-tokens").find("KL run") != std::string::npos,
+                  "a KL start kept the authored speculative depth");
+            check(take(admission()) == 0, "the serving admission was refused");
+            rad::fleet::FleetConfig serving = fleet();
+            serving.models[0].cfg.n_spec = 3;
+            serving.models[0].cfg.given["--num-speculative-tokens"] = "yaml";
+            check(bc_serving_managed_bind(&serving) == 0 && serving.models[0].cfg.n_spec == 3 && !serving.models[0].cfg.kld(),
+                  "a serving start changed the authored speculative depth");
         }
         check(bc_serving_managed_engine_exited() == false, "engine exit flagged early");
         bc_serving_managed_note_engine_exit();

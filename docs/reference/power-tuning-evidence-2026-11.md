@@ -217,3 +217,85 @@ Source reviewed: [RDNA 4 Sweet-Spot Tuner v3.5.15](https://gitlab.com/spawnitems
 4. PWR01/PWR02: matched stock/candidate/stock with actual per-phase integrated GPU+CPU energy, throughput, latency, quality, temperature/clock/fan/readback. Small supported cap/clock grid, only viable paired offset settings, memory last if relevant; no search to crash, no automatic OC or default changes. Select only qualified non-regressing points unless owner explicitly approves a tradeoff. Finalist gets one bounded representative real inference/quality and transition/thermal soak, exact restoration under lease; retain negative data. Existing PWR10 and PWR02 owners record per-card qualification and native YAML. Do not create a second power controller, optimizer or store.
 
 This review strengthens the existing qualification requirement for changed voltage/clock settings; it does not require rerunning every historical stock or cap-only workload.
+
+
+## 2026-11-26: opt-in model-run candidate
+
+Reuse the existing named `xtx-sclk2700-uv125` profile. The paired 2700 MHz
+ceiling and -125 mV offset are now independently pressure-screened on both
+XTX boards: 8/8 sustained, 8/8 VRAM, 32/32 burst and 8/8 mixed residency
+cases passed. Estimated sustained compute throughput was approximately
+1–2.3% below original settings; estimated sustained GPU power was 33–39%
+lower. Mixed energy per verified GEMM was approximately 22% lower than the
+matched-clock zero-offset control. See [AI_POWER_SCREEN.md](tooling/AI_POWER_SCREEN.md)
+for capture IDs and the exact scope.
+
+Native TP3 response matched the original 128-token response exactly in
+all four arms. The phase workloads nevertheless stopped at the unchanged
+80 C thermal ceiling. No native phase throughput/energy or long-soak pass
+is claimed. Use for explicitly supervised model-run experiments, not
+automatic production promotion. Only gfx1100 engine/helper rules change
+clock and offset; R9700 and gfx1030 settings remain untouched.
+
+Select the named profile in a copy of the native model YAML using
+the existing arm generator. Profile selection alone is observe-only.
+The first supervised model run requires native lab apply admission,
+a verified lease, all-owner journal audit and a fresh idle check.
+Subsequent application still requires explicit consent and matching
+native per-card control receipts in the selected work root. Check
+site overrides, retain upper thermal protection and verify exact
+restoration. The receipts qualify controls, not workload stability.
+Production defaults remain unchanged.
+
+
+## 2026-11-26: matched short native inference ABBA
+
+Radiance release 2020.22.0, Qwen3.8-27B IQ8R DFlash, native TP3
+(two XTX and R9700), same kernel list, model and authored options.
+A1/B1/B2/A2 each start a fresh native owner under a separate verified
+lease. A selects stock; B selects the existing named
+xtx-sclk2700-uv125 profile with explicit native lab apply consent.
+No site override, no changes to R9700 or the fourth GPU. The native
+manifest resolves precisely both XTX clock/offset settings. The
+supervisor checks actual settings and the 80 C upper hotspot/memory
+ceilings, with 12 s rest between short requests and owner stop/restore.
+No minimum temperature.
+
+Two deterministic 256-output-token streamed decode requests and two
+uncached one-output-token prefill requests (4653 and 4614 prompt
+tokens) per arm. Four samples per phase per setting; no calibration
+traffic or prefix-cache benefit in prefill. Decode rate is client
+first-to-last event estimate; prefill rate is prompt tokens divided
+by one-token request wall duration, not an engine-only kernel timer.
+All prompt/output hashes and token counts matched across arms.
+Energy integrates sampled average board power over each whole request
+at approximately 200 ms intervals, using the existing gap-bounded
+trapezoid estimator on all three participating GPUs. These very short
+windows are subject to sensor averaging lag and are not wall-system
+energy or sustained throughput measurements.
+
+| Metric | Stock A1/A2 | Candidate B1/B2 | Change |
+|---|---:|---:|---:|
+| Decode tok/s | 125.312 | 123.879 | -1.14% |
+| Prefill tok/s | 2453.205 | 2431.289 | -0.89% |
+| Decode TTFT ms | 101.954 | 113.367 | +11.19% |
+| Prefill one-token latency ms | 1888.747 | 1905.772 | +0.90% |
+| Decode J/token | 6.4521 | 5.2793 | -18.18% |
+| Prefill J/token | 0.28785 | 0.22858 | -20.59% |
+| Decode aggregate board W | 772.38 | 621.86 | -19.49% |
+| Prefill aggregate board W | 706.14 | 555.69 | -21.31% |
+
+16/16 completed requests, 12 matched comparisons to A1. No thermal
+stops. Maximum sampled hotspot across selected boards was 77 C stock
+and 65 C candidate; maximum memory 72 C stock and 70 C candidate.
+Both native apply receipts restored, all four physical snapshots
+matched their respective original settings at each arm exit.
+
+Verified managed capture: 20261126T080348Z-native-power-short-96c5fc86df13
+(48 source artifacts plus summary). Retains native plans, receipts,
+per-request traces and exact runner source; no new power writer.
+Both candidate arms used isolated qualification work roots. This
+supports opt-in supervised short model experiments only. Earlier
+sustained inference thermal stops, driver health, concurrent-load
+throughput and long-duration stability remain unresolved. No change
+to production defaults or claim of full production qualification.

@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_055753_platform-gpu-power-transaction_8070",
+  "files": [
+    "tools/bigcherry/hardware/power_transaction.py",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/cli/power_cmds.py",
+    "tools/tests/hardware/test_power_transaction.py",
+    "docs/design/gpu-qualification-code-guide.md"
+  ],
+  "plan-item-ids": [
+    "PWR15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Check the GPU lease on every platform control write and on resolution, validate original state, identity and restore range, reject invalid journal inventories, and retain unresolved state on full readback failure.",
+  "timestamp-utc": "2026-11-26T05:57:53.703548Z",
+  "user-summary-candidate": "Platform GPU power transactions now refuse stale or uncertain restoration and stop writes when lease ownership is lost."
+}
