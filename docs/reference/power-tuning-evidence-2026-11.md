@@ -217,3 +217,32 @@ Source reviewed: [RDNA 4 Sweet-Spot Tuner v3.5.15](https://gitlab.com/spawnitems
 4. PWR01/PWR02: matched stock/candidate/stock with actual per-phase integrated GPU+CPU energy, throughput, latency, quality, temperature/clock/fan/readback. Small supported cap/clock grid, only viable paired offset settings, memory last if relevant; no search to crash, no automatic OC or default changes. Select only qualified non-regressing points unless owner explicitly approves a tradeoff. Finalist gets one bounded representative real inference/quality and transition/thermal soak, exact restoration under lease; retain negative data. Existing PWR10 and PWR02 owners record per-card qualification and native YAML. Do not create a second power controller, optimizer or store.
 
 This review strengthens the existing qualification requirement for changed voltage/clock settings; it does not require rerunning every historical stock or cap-only workload.
+
+
+## 2026-11-26: opt-in model-run candidate
+
+Reuse the existing named `xtx-sclk2700-uv125` profile. The paired 2700 MHz
+ceiling and -125 mV offset are now independently pressure-screened on both
+XTX boards: 8/8 sustained, 8/8 VRAM, 32/32 burst and 8/8 mixed residency
+cases passed. Estimated sustained compute throughput was approximately
+1–2.3% below original settings; estimated sustained GPU power was 33–39%
+lower. Mixed energy per verified GEMM was approximately 22% lower than the
+matched-clock zero-offset control. See [AI_POWER_SCREEN.md](tooling/AI_POWER_SCREEN.md)
+for capture IDs and the exact scope.
+
+Native TP3 response matched the original 128-token response exactly in
+all four arms. The phase workloads nevertheless stopped at the unchanged
+80 C thermal ceiling. No native phase throughput/energy or long-soak pass
+is claimed. Use for explicitly supervised model-run experiments, not
+automatic production promotion. Only gfx1100 engine/helper rules change
+clock and offset; R9700 and gfx1030 settings remain untouched.
+
+Select the named profile in a copy of the native model YAML using
+the existing arm generator. Profile selection alone is observe-only.
+The first supervised model run requires native lab apply admission,
+a verified lease, all-owner journal audit and a fresh idle check.
+Subsequent application still requires explicit consent and matching
+native per-card control receipts in the selected work root. Check
+site overrides, retain upper thermal protection and verify exact
+restoration. The receipts qualify controls, not workload stability.
+Production defaults remain unchanged.

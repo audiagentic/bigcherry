@@ -100,3 +100,17 @@ def test_non_observe_and_unknown_keys_rejected(tmp_path):
     path.write_text("schema: 1\nprofiles:\n  stock: {not_a_key: 1}\n")
     with pytest.raises(ProfileError, match="unknown keys"):
         load_profiles(path)
+
+
+def test_xtx_model_run_candidate_is_paired_and_arch_scoped():
+    profile = get_profile(
+        load_profiles(ROOT / "engines/radiance/power-profiles.yaml"),
+        "xtx-sclk2700-uv125",
+    )
+    for role in ("engine", "helper0", "helper1"):
+        assert profile.settings_for(role, "gfx1100") == {
+            "sclk_max_mhz": 2700, "vddgfx_offset_mv": -125,
+        }
+        for arch in ("gfx1201", "gfx1030"):
+            assert profile.settings_for(role, arch) == {}
+    assert profile.default_mode == "observe"
