@@ -76,6 +76,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 authorized voltage sweep: PR #1640 merged (a8ba2396d); retain the 2700 MHz / 0 mV observed-candidate-observed comparison. Managed experimental input 20261126T005904Z-pwr12-voltage-input-cfdc66286460, linked to the original input and hash-verified by capture/v1; no canonical production profile edits. Queue independently per gfx1100 helper at fixed 2700 MHz with offsets -25, -50, -75, -100, -125 mV, ascending depth only after the previous matched BF16 sustained screen passes with exact restore. Same N=768, batch 32, 30 s warmup and 60 s final, 60 C continuous junction floor, 80 C junction/memory ceiling, separate leases and idle/recovery preflight; stop each card on any nonpass. References are the matching post-candidate observed runs, not factory stock; no new results claimed while the RSC02 acceptance owner holds the GPU. For finalists, require existing native kernel selftest/replay on actual installed plugin composition (including IQR/IQ8R, attention/GDN and MoE where used, exact output or justified existing tolerance, matched per-card observed/candidate/observed reference, no silent skips), existing native production owner admission/recovery, hot/burst and memory coverage, driver health and phase energy/quality under PWR10/PWR02. Synthetic rocBLAS/hipBLASLt correctness alone does not qualify Radiance kernels; no arbitrary subprocess path added to platform tool and no other active plans edited.
 
+2026-11-26 first matched voltage arms completed: 2700 MHz / -25 mV sustained BF16 helper0 passed 621888 clean GEMMs, 154.52 W mean sampled board power, 62–64 C verified junction, run 20261126T010017Z-gpu-ai-screen-bb063285fb11; helper1 passed 635488, 166.08 W, 63–64 C, run 20261126T010148Z-gpu-ai-screen-9a8a4492b230. Both original/restored controls matched exactly and managed receipts were harvested and hash-verified. Relative to the prior 2700 MHz / 0 mV arms, sampled watts fell 8.5% and 6.3%; iteration counts fell 2.2% and 0.03%. Synthetic results only. Both -50 mV arms are next in the separate lease queue. No production promotion or Radiance kernel pass is implied.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -90,3 +92,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T00:48:59.954682+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T00:51:43.453278+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T01:00:44.850238+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T01:03:50.950277+00:00 (updated-by): Updated: section:notes
