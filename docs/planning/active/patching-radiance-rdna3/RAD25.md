@@ -62,8 +62,15 @@ Split out of RAD20. Reject if decode regresses materially even if CPU drops.
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE; no 14% regressions for unproven wake" was NOT applied; this item stays open. Why: docs/planning/active/patching-radiance-rdna3/RAD25.md:49-54 records that blocking HIP events saved no decode CPU on ROCm 7.2, so adoption is ruled out on present evidence. However docs/planning/active/run-power-efficiency/PWR03.md:18,56 still specifies before/after lane-yield work and says its comparison is most useful after RAD25; the requested no-dependent CLOSE gate is therefore not clear. Active items that reference this one: PWR03. Record the negative blocking-event result and resolve PWR03's explicit sequencing/reference before closing this item.
 
+2026-11-27 power scope reconciliation: PWR03 is deferred, so it is no longer an active sequencing dependency. Its original notes remain in docs/planning/completed/run-power-efficiency/PWR03.md. Reassess RAD25 on its own evidence; no state change here.
+
 ## Change Log
 
 - 2026-10-27T02:15:19.709939+00:00 (created-by): Created by agent
 - 2026-10-27T04:44:03.072985+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:24:10.742283+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4692
+- 2026-11-26T23:20:14.022777+00:00 (updated-by): Updated: section:notes

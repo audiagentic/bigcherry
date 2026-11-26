@@ -2,7 +2,7 @@
 id: PWR06
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: deferred
 created-at: '2026-11-02T01:49:10.007322+00:00'
 breadth: ''
 skill: intermediate
@@ -60,6 +60,8 @@ Owner-run (root). Evidence: $BC_WORK_ROOT/runs/r9700-idle/result.txt; GPT R9700 
 **2026-11-14 check requested.** With the gfxoff kernel, measure first-kernel latency of a gfx12 compute queue after 0.1 / 0.5 / 1 / 2 / 5 ms idle while a second queue of the same process is busy (the TP3 pipelined prefill's shape), against the stock kernel, before the kernel is treated as latency-neutral for serving (see HL02 step 7).
 
 2026-11-25: measured GFX12 GFXOFF gain 20.6->15 W is historical, not board deep idle proof. Current read-only snapshot active D0 with runtime_usage=0 on four cards, cause unknown. Keep R9700 GFXOFF/firmware/BACO causal investigation here, cross-reference BHK01 protected kernel recovery, latency and long-running gates; all-device platform idle separate. No force ASPM, firmware or kernel changes without maintenance approval. Owner disabled ASPM after suspected issues. Native diagnostics remain advisory.
+
+2026-11-27 consolidation (deferred): Re-enter if measured loaded-idle duty cycle and energy justify driver/firmware work with approved rollback and model residency proof. Preserve negative trials and installed kernel prerequisites. All earlier results remain historical; see power-session-closeout inventory.
 
 ## Update 2026-11-10 (owner brief: R9700 idle power next investigation)
 
@@ -130,3 +132,6 @@ Live shell launcher hook: `tools/lab/radiance/launch-flashnext-best.sh` captures
 
 - RV4584
 - 2026-11-25T01:06:10.693840+00:00 (updated-by): Updated: section:notes
+- RV4690
+- 2026-11-26T23:16:41.996852+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:19:20.229871+00:00 (state-transition): State: in_progress → deferred

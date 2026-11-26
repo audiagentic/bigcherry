@@ -2,7 +2,7 @@
 id: PWR07
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: superseded
 created-at: '2026-11-10T13:12:56.453273+00:00'
 breadth: ''
 skill: intermediate
@@ -72,6 +72,8 @@ CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement 
 
 2026-11-26 roadmap reconciliation at 165d6f724: External reference: Sweet-Spot Tuner v3.5.15, commit a2a31ce63cc1d40af72997de621115eaa2dcd54d (https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15); see docs/reference/power-tuning-evidence-2026-11.md, hot AI qualification section. Use existing LinuxHardware/power_linux.cpp and power_records.cpp, no external tuner/sysfs bridge or new writer. Verify physical BDF -> one visible HIP ordinal and hipGetDeviceProperties/PCI identity, actual temperature/hotspot and memory temperature where supported, clocks/throttle and current control readback. Probe must distinguish unavailable sensor/unsupported algorithm, failed numerical check, runtime/device error/reset, timeout, thermal stop and insufficient coverage. Unavailable is not a pass; invalid cap or unknown restoration refuses. Do not enable all ppfeaturemask bits, force fan curves, install boot service or download another ROCm. Preserve exact owner journal/reap/restore and record actual thermal envelope; existing native backend must first prove supported R9700 offset.
 
+2026-11-27 consolidation (superseded): Transfer portable control, startup optional observability including PWR04, unsupported explicit request refusal and receipts to PWR15; no waiver. All earlier results remain historical; see power-session-closeout inventory.
+
 ## Change Log
 
 - 2026-11-10T13:12:56.453273+00:00 (created-by): Created by agent
@@ -117,3 +119,6 @@ For a **validating** `xtx-cap2700-uv125` profile, bind per-BDF selected OD max, 
 - RV4645
 - 2026-11-25T02:47:05.699591+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T19:01:31.996114+00:00 (updated-by): Updated: section:notes
+- RV4686
+- 2026-11-26T23:16:12.790437+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:17:55.201734+00:00 (state-transition): State: in_progress → superseded

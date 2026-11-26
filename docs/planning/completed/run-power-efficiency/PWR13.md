@@ -2,7 +2,7 @@
 id: PWR13
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: superseded
 created-at: '2026-11-26T01:45:56.843677+00:00'
 breadth: ''
 skill: advanced
@@ -83,6 +83,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26 owner-directed policy correction: ordinary operational/extended sustained group (historical ID hot) no longer requests min_hotspot_c, with unchanged geometry, warmup, measured duration and upper safety ceilings; optional elevated-temperature recipe retains the prior 60 C coverage floor. Preserve historical reports without reclassification. CLI accepts warmup without a temperature floor. 293 hardware/CLI tests pass, one skipped; fresh floor-free candidate receipts use newly matched references. No change to observe-only restrictions or native/production gates.
 
+2026-11-27 consolidation (superseded): Transfer production relevant kernel/precision/shape/transfer/residency and fail-closed gates to PWR12. Preserve signed nonpasses and all evidence; retire exhaustive theoretical coverage. All earlier results remain historical; see power-session-closeout inventory.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -103,3 +105,9 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T05:36:53.590760+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T05:59:28.544787+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:54:41.407843+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4687
+- 2026-11-26T23:16:20.008937+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:18:16.438224+00:00 (state-transition): State: in_progress → superseded

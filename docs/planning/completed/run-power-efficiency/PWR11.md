@@ -2,7 +2,7 @@
 id: PWR11
 order: 0
 plan: run-power-efficiency
-state: pending
+state: deferred
 created-at: '2026-11-25T01:08:44.064289+00:00'
 breadth: ''
 skill: advanced
@@ -53,6 +53,14 @@ Reproducible read-only baseline and capability report; each authorized change ha
 
 New distinct platform scope from 2026-11-25 power audit. Does not block first native minimum-cap profile.
 
+2026-11-27 consolidation (deferred): Re-enter only if idle duty cycle and energy show material savings, with host authorization, wake/build/inference stability and restoration. No host writes now. All earlier results remain historical; see power-session-closeout inventory.
+
 ## Change Log
 
 - 2026-11-25T01:08:44.064289+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4691
+- 2026-11-26T23:16:49.466715+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:19:40.754216+00:00 (state-transition): State: pending → deferred

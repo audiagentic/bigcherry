@@ -21,6 +21,8 @@ Resolve the PWR13 P0 platform lease and exact restoration defects in existing Po
 
 1. Require lease before every write and completion, validate original controls before first write, verify all observed controls before terminal journal state. 2. Fail closed on malformed or reused journals and recovery identity. 3. Review native and platform journal ownership with RSC02/PWR08; enforce reciprocal admission before unattended candidate execution. 4. Run fault-injected fixtures then owner-approved hardware validation.
 
+Current scope: recover XTX through native owner under lease; prove reciprocal native/platform admission and exact recovery, including physical restore and fault injection. Coordinate RSC02/PWR08.
+
 ## Detailed Solution & Technical Design
 
 
@@ -49,11 +51,15 @@ Inject lease loss, unexpected control drift, malformed recovery inventory and st
 
 No unattended candidate sweep until reciprocal owner admission, exact restoration and hardware qualification are proven. Keep unresolved journals on any uncertain write or restore; preserve existing supported controls and no-write observation.
 
+Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional absent/unreadable features warn, ordinary start records BDF/source/CPU and distinguishes missing sensor, permission and observe-only. No new writer, implicit apply or false cap=0 success. No candidate writes until safety gates pass.
+
 ## Notes
 
 2026-11-26: hardened platform PowerTransaction: validate run/BDF and requested setting, reject reused/unknown/malformed journals, check fresh original snapshot and restorable range before writes, lease check per write and final apply/restore, full control plus physical identity/default cap readback for all touched devices, late caller readback invalidates terminal journal, strict recovery inventory. Historical active journals without saved identity require manual owner recovery; resolved historical records retained. Card-free hardware and CLI tests 289 passed/1 skipped. Native C++ already has per-write lease checks; cross-owner directories remain separate. PWR15 remains in progress: reciprocal admission across native and platform roots and approved real fault/recovery qualification still outstanding. No physical power writes or automated candidates in this slice.
 
 2026-11-27: native 210 W diagnostic showed second XTX restore write fault, despite complete independent snapshots matching. Retain unresolved journal and recover through native owner. See PWR16 and docs/evidence/2026-11-26-power-session-closeout. Cross-owner admission remains open.
+
+2026-11-27: consolidate portable power safety and startup observability from PWR07 into PWR15; retain existing acceptance and historical evidence.
 
 ## Change Log
 
@@ -61,3 +67,9 @@ No unattended candidate sweep until reciprocal owner admission, exact restoratio
 - 2026-11-26T05:48:42.356489+00:00 (state-transition): State: pending → in_progress
 - 2026-11-26T05:57:33.132221+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T21:28:12.962663+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4680
+- 2026-11-26T23:12:00.089479+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:13:35.421669+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
