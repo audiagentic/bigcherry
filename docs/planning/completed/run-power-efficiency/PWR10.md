@@ -2,7 +2,7 @@
 id: PWR10
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: superseded
 created-at: '2026-11-25T00:42:29.487523+00:00'
 breadth: ''
 skill: intermediate
@@ -75,6 +75,8 @@ Historical note (superseded by the clarification below): the then-active voltage
 
 Evidence: docs/evidence/2026-11-26-pwr10-rsc14-native-acceptance. Item stays open for its research part only (steps 2-4: stock/XTX-only/R9700-only/all-selected minimum-cap A/B with three runs per arm, clock-only and paired voltage qualification); the native apply/readback/restore path itself is accepted.
 
+2026-11-27 consolidation (superseded): Native minimum-cap apply/readback/restore accepted #1673; transfer residual matched cap, clock and voltage research to PWR16. No duplicate campaign or claim of full pass. All earlier results remain historical; see power-session-closeout inventory.
+
 ## Change Log
 
 - 2026-11-25T00:42:29.487523+00:00 (created-by): Created by lead
@@ -98,3 +100,6 @@ Evidence: docs/evidence/2026-11-26-pwr10-rsc14-native-acceptance. Item stays ope
 - 2026-11-26T05:43:32.075041+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T08:35:13.183700+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T08:36:15.464511+00:00 (state-transition): State: pending → in_progress
+- RV4685
+- 2026-11-26T23:16:05.519382+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:17:34.283147+00:00 (state-transition): State: in_progress → superseded

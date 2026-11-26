@@ -2,7 +2,7 @@
 id: PWR03
 order: 0
 plan: run-power-efficiency
-state: pending
+state: deferred
 created-at: '2026-10-27T02:15:48.543469+00:00'
 breadth: ''
 skill: basic
@@ -65,6 +65,8 @@ RECONCILED 2026-11-10 (gateway audit): the automatic efficiency-core placement o
 
 2026-11-25: keep delivered helper small-lane E-core placement #448; measure actual native affinity and remaining CPU EPP/package residency/RAPL under matched idle/decode/prefill. Extend research to supported package power limits PL1/PL2 and build energy if host owner authorizes; host-wide controller/lease separate from GPU policy. RAD25/26 own busy-wait implementation. CPU remains observe-only in GPU transaction.
 
+2026-11-27 consolidation (deferred): Re-enter only if PWR01 shows material CPU package energy or latency opportunity and host owner authorizes a separate lease. Preserve affinity research and original settings. All earlier results remain historical; see power-session-closeout inventory.
+
 ## Change Log
 
 - 2026-10-27T02:15:48.543469+00:00 (created-by): Created by agent
@@ -77,3 +79,6 @@ RECONCILED 2026-11-10 (gateway audit): the automatic efficiency-core placement o
 
 - RV4583
 - 2026-11-25T01:05:40.857271+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4689
+- 2026-11-26T23:16:34.651713+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:18:59.441414+00:00 (state-transition): State: pending → deferred

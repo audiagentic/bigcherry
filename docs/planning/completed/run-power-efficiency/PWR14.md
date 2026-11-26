@@ -2,7 +2,7 @@
 id: PWR14
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: superseded
 created-at: '2026-11-26T05:40:49.412413+00:00'
 breadth: ''
 skill: advanced
@@ -53,6 +53,8 @@ Strict slim pass is recipe-bound only; unsupported/missing cases explicit; no we
 
 2026-11-26: first slice implemented, 261 hardware tests pass/1 skipped. One sanity and four slim runs passed 56 cases (449792 GEMMs across five runs); 16 group captures harvested, unchanged controls and identities, no transaction. Sanity 3.554 s wall; slim gfx1030 15.270 s, gfx1100 19.448/19.259 s, gfx1201 21.847 s including planning/harvest/report excluding lease waits. Managed report IDs and detailed counts in AI_POWER_SCREEN.md. Driver health incomplete; no native execution or profile mutation. Current target achieved without persistent HIP; keep that optimization evidence-led. Matched candidate sweep and escalation remain blocked on power-owner recovery and native/production integration; PWR14 remains in progress.
 
+2026-11-27 consolidation (superseded): Existing progressive slim implementation retained; transfer bounded recipe acceptance to PWR12. Persistent probe and candidate escalation only for measured coverage/cost gap; no weakened gates. All earlier results remain historical; see power-session-closeout inventory.
+
 ## Acceptance
 
 Strict slim pass is recipe-bound only; unsupported/missing cases explicit; no weakened hot/precision/restore gates; no unattended writes or promotion. Persistent probe and candidate escalation remain open until separately proven.
@@ -63,3 +65,9 @@ Strict slim pass is recipe-bound only; unsupported/missing cases explicit; no we
 - 2026-11-26T05:40:54.168002+00:00 (state-transition): State: pending → in_progress
 - 2026-11-26T05:44:38.034429+00:00 (updated-by): Updated: section:acceptance_criteria, section:detailed_solution
 - 2026-11-26T05:44:48.978429+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4688
+- 2026-11-26T23:16:27.741520+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T23:18:38.062485+00:00 (state-transition): State: in_progress → superseded

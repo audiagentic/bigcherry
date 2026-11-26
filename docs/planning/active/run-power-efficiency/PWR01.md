@@ -23,6 +23,8 @@ Only the XTX helpers' idle power has been gated (RAD20, 6-7 W). Measure where th
 2. One run; record watts per device per phase and joules per token for decode/prefill.
 3. If the R9700 idles high, profile its queues/waits like RAD20.
 
+Current scope (takes precedence over earlier breadth): 2026-11-27: bound to matched stock/candidate idle/decode/prefill system measurement within PWR16, synchronized GPU and CPU package energy, wall meter if available, label component estimates and unavailable sensors. Record throughput/latency, clocks, temperature, energy/token. No host-wide writes or duplicate sweep.
+
 ## Detailed Solution & Technical Design
 
 
@@ -53,6 +55,8 @@ Per-device, per-phase table recorded on the model page and in the research recor
 
 Time-aligned sensor samples and actual tokens, integrate W*dt per phase; RAPL counter wrap and missing/unavailable explicit; report GPU, CPU+GPU and wall energy separately; no double count. Current dense and MoE baselines, replicated controls and dispersion, immutable run refs and receipts. Preserve previous transferred acceptance.
 
+Current acceptance scope: 2026-11-27: bound to matched stock/candidate idle/decode/prefill system measurement within PWR16, synchronized GPU and CPU package energy, wall meter if available, label component estimates and unavailable sensors. Record throughput/latency, clocks, temperature, energy/token. No host-wide writes or duplicate sweep.
+
 ## Notes
 
 Measurement only, no speed risk. RX 6900 XT runs an unrelated service; record it but out of scope for tuning.
@@ -64,6 +68,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 2026-11-25 add dense TP3 2020.11.4 and current-build stock/controlled phases to baseline. Old four-GPU MoE results are separate cohorts. Owner trial power windows mix decode/prefill; do not divide by one phase throughput to infer energy. Measure per BDF, CPU RAPL and wall meter if available; phase markers, cache/warmup/thermal conditions, actual settings and sensor identity. Record unloaded, HIP-resident, loaded idle and post-request idle without intrusive polling, all cards including unused 6900 (observation only). PWR10 references this protocol.
 
 2026-11-26 roadmap reconciliation at 165d6f724: External reference: Sweet-Spot Tuner v3.5.15, commit a2a31ce63cc1d40af72997de621115eaa2dcd54d (https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15); see docs/reference/power-tuning-evidence-2026-11.md, hot AI qualification section. For clock/voltage comparisons record stock before and after, same workload, warmed thermal envelope/normal fan policy, hotspot and memory temperature if readable, actual clocks and throttle; integrate synchronized GPU+CPU energy by phase and token count. Include cold-to-boost and warm idle-to-burst transitions, not just sustained GPU saturation. Do not force RX9070-specific 70–90 C range or assume 94 C limit for all boards; use supported device limits, observed safe operating envelope, and explicit bounded soak objective; thermal stop or missing required telemetry is inconclusive, never instability/pass. No extra matrix for already qualified stock and cap-only.
+
+2026-11-27: bound to matched stock/candidate idle/decode/prefill system measurement within PWR16, synchronized GPU and CPU package energy, wall meter if available, label component estimates and unavailable sensors. Record throughput/latency, clocks, temperature, energy/token. No host-wide writes or duplicate sweep.
 
 ## Change Log
 
@@ -77,3 +83,5 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 - RV4582
 - 2026-11-25T01:05:11.696313+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
 - 2026-11-25T19:01:36.788268+00:00 (updated-by): Updated: section:notes
+- RV4683
+- 2026-11-26T23:13:06.718785+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
