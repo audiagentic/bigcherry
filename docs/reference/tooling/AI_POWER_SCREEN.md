@@ -455,3 +455,44 @@ The observed-candidate-observed sustained research is complete. This is not
 factory-stock confirmation, a hot burst pass, production-role replay or
 phase-integrated energy/throughput qualification. No production profile
 was changed or promoted.
+
+### Matched voltage sweep at 2700 MHz
+
+Managed input `20261126T005904Z-pwr12-voltage-input-cfdc66286460` is
+linked to the earlier experimental input and hash-verified. The sustained
+recipe and thermal limits are unchanged. Each card advances in 25 mV
+steps from -25 to -125 mV only after a passing previous step and exact
+restoration; a nonpass stops that card. These are observed-reference
+diagnostics; no factory confirmation or production qualification.
+
+| Card | Offset mV | Clean GEMMs | Mean sampled W | Verified junction C | Result | Managed run ID |
+|---|---:|---:|---:|---|---|---|
+| gfx1100 helper0 | -25 | 621888 | 154.52 | 62–64 | pass | 20261126T010017Z-gpu-ai-screen-bb063285fb11 |
+| gfx1100 helper1 | -25 | 635488 | 166.08 | 63–64 | pass | 20261126T010148Z-gpu-ai-screen-9a8a4492b230 |
+| gfx1100 helper0 | -50 | 635680 | 145.91 | 61–63 | pass | 20261126T010333Z-gpu-ai-screen-7585383d5229 |
+| gfx1100 helper1 | -50 | 636864 | 158.10 | 63–65 | pass | 20261126T010505Z-gpu-ai-screen-7ec9b6af2691 |
+| gfx1100 helper0 | -75 | 636672 | 138.57 | 60–61 | pass | 20261126T010638Z-gpu-ai-screen-e993831118d0 |
+| gfx1100 helper1 | -75 | 636704 | 150.35 | 63–64 | pass | 20261126T010810Z-gpu-ai-screen-8ae0e2f0beaf |
+| gfx1100 helper0 | -100 | 636992 | 130.22 | max 60 | inconclusive | 20261126T010943Z-gpu-ai-screen-aaf17d1ffc5a |
+| gfx1100 helper1 | -100 | 639072 | 142.92 | 61–62 | pass | 20261126T011115Z-gpu-ai-screen-f21a5f0cf7b6 |
+| gfx1100 helper1 | -125 | 637376 | 134.34 | 61–62 | pass | 20261126T011813Z-gpu-ai-screen-bf39ddd2c3d1 |
+
+Both restored exactly and both receipts were harvested. Relative to the
+2700 MHz / 0 mV arms, sampled board power decreased 8.5% and 6.3%;
+completed GEMM counts decreased 2.2% and 0.03%. The matrix oracle checks
+actual numerical results, but not the installed Radiance kernel hierarchy.
+Finalists require native correctness/replay and quality/energy evidence
+under the existing owner. No production settings were changed.
+
+The -50 mV arms also passed with exact restoration and verified harvests.
+Against 2700 MHz / 0 mV, sampled watts fell 13.6% and 10.8%; completed
+GEMM counts changed +0.01% and +0.19%, respectively. No serving claim.
+
+The first -75 mV arm passed with exact restoration and verified harvest;
+its junction window was close to the lower bound.
+
+The completed sweep stopped helper0 at -100 mV: numerical output was clean,
+but continuous hot coverage was missing. Helper1 passed through -125 mV.
+All four final receipts were harvested and exact restoration verified.
+No deeper helper0 arm was run. The highest passing sustained offsets in
+this recipe are -75 and -125 mV, not production stability limits.
