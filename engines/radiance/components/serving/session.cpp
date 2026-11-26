@@ -181,6 +181,11 @@ std::filesystem::path EngineStart::execution_manifest() const {
     return pinned_manifest ? pinned_manifest->path() : manifest;
 }
 
+v2::Result<v2::Manifest> EngineStart::admitted_manifest() const {
+    if (admitted) return *admitted;
+    return v2::load_manifest(execution_manifest(), v2::PlanUse::serving);
+}
+
 namespace {
 // What an engine child is given instead of a manifest: the admitted raw YAML and the engine admission document (what the
 // owner derived, v2/engine_admission.h), both sealed and inherited. The manifest stays the owner's own record.
@@ -1774,7 +1779,7 @@ class Owner {
     void recheck_native_host_room() {
         if (!plan_.native_launch || !plan_.pinned_manifest)
             throw PlanFailed("native serving pre-exec requires admitted launch inputs and a sealed manifest");
-        const auto manifest = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
+        const auto manifest = plan_.admitted_manifest();
         if (!manifest)
             throw PlanFailed(v2::render_human("native serving pre-exec", manifest.error()));
         const auto& admitted = manifest.value();
@@ -2003,8 +2008,7 @@ class Owner {
         // engine with manifest-declared heat. Measuring engines, standalone
         // engines and helpers never receive it; no ambient environment read.
         std::vector<std::string> argv = plan_.argv;
-        const fs::path execution_manifest = plan_.execution_manifest();
-        const auto manifest = v2::load_manifest(execution_manifest, v2::PlanUse::serving);
+        const auto manifest = plan_.admitted_manifest();
         const auto& native_launch = plan_.native_launch;
         if (!native_launch || !plan_.pinned_manifest || !plan_.config || !plan_.admission || !manifest)
             throw PlanFailed("native serving: missing admitted launch inputs, sealed manifest or sealed YAML");
@@ -3728,6 +3732,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.manifest = measured_manifest;
         out.stored_sha256 = std::move(final_snapshot.sha256);
         out.pinned_manifest = std::move(final_snapshot.pinned);
+        out.admitted = std::make_shared<const v2::Manifest>(final_snapshot.parsed);
         {
             const EngineInputs inputs = engine_inputs(final_snapshot.parsed, false);
             out.config = inputs.config;
@@ -4019,6 +4024,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     out.manifest = stored;
     out.stored_sha256 = sha256_hex(bytes);
     out.pinned_manifest = std::move(pinned);
+    out.admitted = std::make_shared<const v2::Manifest>(accepted);
     out.port = int(accepted.spec.processes.engine.server.port);
     {
         const EngineInputs inputs = engine_inputs(accepted, false);

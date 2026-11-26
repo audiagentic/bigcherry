@@ -263,7 +263,7 @@ ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_
 v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engine_log, const Retry& retry) {
     if (manifest_)
         return refuse("startup", "runtime guard was already bound");
-    auto loaded = v2::load_manifest(plan.execution_manifest(), v2::PlanUse::serving);
+    auto loaded = plan.admitted_manifest();
     if (!loaded)
         return loaded.error();
     auto manifest = std::move(loaded.value());
