@@ -1457,3 +1457,18 @@ No candidate applied; all four original snapshots matched. This
 thermal nonpass remains part of the evidence. BF16 sustained cohort
 uses fresh references and identical safety ceilings; it does not
 replace or clear the FP32 result.
+
+90-second continuous BF16 pressure (768 square, batch32, 30+60 s,
+no pause; identical 80 C ceilings). All four cases passed:
+
+| Cap W / shader offset MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 300/0/0 (A1) | 468608 | 90.002 | 7481.768 | 83.128 | 15.966 | 58 | 20261126T083723Z-gpu-ai-screen-d36bf3085105 |
+| 300/-200/-50 | 473344 | 90.004 | 7491.458 | 83.235 | 15.827 | 61 | 20261126T083904Z-gpu-ai-screen-9cd5d353beff |
+| 210/-200/-75 | 474208 | 90.003 | 7436.050 | 82.620 | 15.681 | 62 | 20261126T084046Z-gpu-ai-screen-3f86eadc8929 |
+| 300/0/0 (A2) | 468480 | 90.003 | 7626.687 | 84.738 | 16.280 | 64 | 20261126T084228Z-gpu-ai-screen-ea69bf51f2da |
+
+Both candidate restores passed, all four original card snapshots matched,
+lease released. Driver health incomplete. This is sustained BF16 only;
+FP32 thermal nonpass, VRAM/burst/mixed pressure, native physical owner
+and matched model inference remain separate gates. No profile promotion.
