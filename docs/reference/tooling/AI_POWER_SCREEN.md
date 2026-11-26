@@ -435,6 +435,23 @@ All four passed; both candidate applications restored original controls
 exactly. Mean sampled board power fell 18.7% and 26.9%, while completed
 GEMMs fell 4.8% and 6.5%, respectively. These are synthetic fixed-duration
 screen counts and sampled power, not phase-integrated energy or serving
-throughput. All four receipts were harvested; matched post-candidate
-observations are pending. Burst thermal coverage remains inconclusive.
+throughput. All four receipts were harvested. Matched post-candidate observations follow.
+Burst thermal coverage remains inconclusive.
 No factory reference assertion or production qualification.
+
+### Post-candidate matched observed references
+
+| Card | Clean GEMMs | Mean sampled W | Verified junction C | Managed run ID |
+|---|---:|---:|---|---|
+| gfx1100 helper0 | 668864 | 207.40 | 73–75 | 20261126T004812Z-gpu-ai-screen-e7610fe49260 |
+| gfx1100 helper1 | 679584 | 240.49 | 74–77 | 20261126T004944Z-gpu-ai-screen-553b88ebbb82 |
+
+Both post-candidate observed references passed and were harvested. Pre/post
+request, full start and stop controls and device identity matched for each
+card; candidate original/restored controls matched exactly. Against the
+midpoint of the two observed arms, mean sampled board power fell 18.7%
+and 26.6%, with 4.9% and 6.5% fewer completed GEMMs, respectively.
+The observed-candidate-observed sustained research is complete. This is not
+factory-stock confirmation, a hot burst pass, production-role replay or
+phase-integrated energy/throughput qualification. No production profile
+was changed or promoted.

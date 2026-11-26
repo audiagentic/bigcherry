@@ -72,6 +72,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 separate sustained-only matched research (same N=768 BF16 rocBLAS, batch 32, 30 s warmup/60 s final, 60 C floor/80 C junction and memory ceilings): helper0 observed reference 667328 clean GEMMs, 207.60 W sample mean, 74–76 C, run 20261126T004204Z-gpu-ai-screen-6a482ae0c172; matched 2700 MHz / 0 mV candidate 635616, 168.78 W, 66–67 C, run 20261126T004508Z-gpu-ai-screen-ca59ff2a7abe. Helper1 observed reference 679680, 242.52 W, 75–78 C, run 20261126T004335Z-gpu-ai-screen-4310f902d81b; matched candidate 635648, 177.32 W, 65–66 C, run 20261126T004640Z-gpu-ai-screen-acf831cdd992. All four passed; both candidate transactions restored exact original readback; all harvested. Sample mean board power reduced 18.7% and 26.9%, but completed GEMM counts decreased 4.8% and 6.5%; no phase-integrated energy, factory stock assertion, or production qualification. Burst thermal nonpasses remain; do not treat sustained-only results as full qualification. Post-candidate matched observed references pending.
 
+2026-11-26 matched post-candidate observed references: helper0 pass 668864 clean GEMMs, 207.40 W mean sampled board power, 73–75 C verified junction, run 20261126T004812Z-gpu-ai-screen-e7610fe49260; helper1 pass 679584, 240.49 W, 74–77 C, run 20261126T004944Z-gpu-ai-screen-553b88ebbb82. Both receipts harvested. Pre/post request, full start and stop controls and device identity matched exactly for each card; candidate original/restored readbacks exact. Observed-candidate-observed sustained research is complete for 2700 MHz / 0 mV; mean sampled board power relative to the two observed arms' midpoint reduced 18.7%/26.6%, GEMM counts reduced 4.9%/6.5%. No stock confirmation, no hot burst pass, no phase energy or production replay, no promotion. PWR12 remains in_progress; native serving admission/replay and owner coordination still required. All task GPU leases released.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -84,3 +86,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T00:36:29.997424+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T00:42:36.050989+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T00:48:59.954682+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T00:51:43.453278+00:00 (updated-by): Updated: section:notes
