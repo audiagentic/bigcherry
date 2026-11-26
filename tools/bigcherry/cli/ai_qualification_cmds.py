@@ -37,6 +37,8 @@ def register(sub):
     report.add_argument("--plan",required=True)
     report.add_argument("--result",action="append",default=[])
     report.set_defaults(func=cmd_report)
+    from .ai_peer_cmds import register as register_peer
+    register_peer(sp)
     for cmd in (plan,run,report):
         cmd.add_argument("--work-root",type=Path)
 

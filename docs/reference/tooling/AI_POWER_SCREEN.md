@@ -799,3 +799,13 @@ has no joule value. Driver-health observation uses a private read-only
 kernel log cursor; unavailable/overrun coverage is explicit and observed
 AMDGPU fault classes stop the workload. The scope is system AMDGPU,
 not an inferred physical-card fault attribution.
+
+### Independent peer transfer scope
+
+Build the existing GP11/GP13 peer-copy fixture with the installed SDK.
+Under the GPU lease, invoke `gpu-ai-qualify peer --probe PROBE --bdf A B
+--arch ARCH_A ARCH_B --headroom-mib MIB --max-hotspot-c C --max-memory-c C`.
+The command retains a separate managed peer capture for the explicit pair.
+Unavailable peer access is a nonpass, never a staged-copy pass. Both
+endpoints must retain their original observed controls. This is separate
+from native collective and production serving qualification.
