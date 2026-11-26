@@ -1687,6 +1687,84 @@ void native_only_planning_refusals() {
     }
 }
 
+// PWR08/PWR10: the YAML's x-bigcherry.power.profile, the work root's power-site file and --allow-power-apply reach the
+// power plan the owner admits: apply with per-BDF settings from the site, observe without the authorization, a refusal that
+// names the missing receipt for an unqualified setting, and the lab-only qualifying apply accepted without one.
+void power_apply_reaches_the_admitted_plan() {
+    namespace v2 = bc::serving::v2;
+    struct Outcome {
+        std::string refusal;
+        std::optional<v2::Manifest> admitted;
+    };
+    const auto plan_with = [&](const std::string& label, bool allow_apply, bool receipt, bool qualify) {
+        auto native = bc::test::native_session_inputs(g_host, g_root / ("power-apply-" + label), bc::test::free_port());
+        auto& env = native.inputs.native_admission->runtime_overrides;
+        Json x = Json::parse(env.at("TEST_NATIVE_INSPECT_XBIGCHERRY"));
+        x["power"] = {{"profile", "capped"}};
+        env["TEST_NATIVE_INSPECT_XBIGCHERRY"] = x.dump();
+        env["TEST_NATIVE_INSPECT_POWER_PROFILES"] =
+            Json{{"schema", 1}, {"profiles", {{"stock", {{"default_mode", "observe"}}}, {"capped", {{"default_mode", "observe"}}}}}}
+                .dump();
+        Json devices = Json::object();
+        for (const Json& bdf : native.resolved_values.at("layout").at("engine_cards"))
+            devices[bdf.get<std::string>()] = {{"settings", {{"power_cap_w", 272}}}, {"evidence", "test"}};
+        env["TEST_NATIVE_INSPECT_POWER_SITE"] = Json{{"schema", 1}, {"devices", devices}}.dump();
+        native.inputs.power.apply = allow_apply;
+        native.inputs.power.evidence.qualify = qualify;
+        native.inputs.power.evidence.probe = [](const std::string& bdf) {
+            v2::S10DeviceProbe probe;
+            probe.bdf = bdf;
+            probe.driver = "amdgpu";
+            probe.controls["power_cap_w"] = {1000000, 400000000, true, true};
+            return probe;
+        };
+        if (receipt)
+            native.inputs.power.evidence.qualified_by = [](const std::string&, const v2::PowerSettings&) {
+                return std::optional<std::string>("run-1");
+            };
+        auto hooks = bc::test::standalone_plan_hooks();
+        hooks.power_site_yaml = "schema: 1\n";   // a host with a site file: the inspector is given its descriptor
+        Outcome out;
+        hooks.admit_power = [&](const fs::path&, const v2::Manifest& manifest, v2::PlanUse) {
+            if (!out.admitted) out.admitted = manifest;
+            return v2::Status{};
+        };
+        const fs::path plan_dir = g_root / ("power-apply-" + label + "-plan");
+        fs::create_directories(plan_dir);
+        try {
+            (void)ss::plan_engine_only(native.inputs, plan_dir, hooks);
+        } catch (const ss::PlanFailed& error) {
+            out.refusal = error.what();
+        }
+        return out;
+    };
+    {   // the config selects a profile, the site names per-BDF caps, the operator authorizes and a receipt qualifies them
+        const Outcome applied = plan_with("applied", true, true, false);
+        assert(applied.refusal.empty() && applied.admitted);
+        const auto& plan = applied.admitted->spec.plan.power;
+        assert(plan.mode == v2::PowerMode::kApply && plan.profile == "capped" &&
+               applied.admitted->spec.intent.power.profile == "capped");
+        assert(plan.devices.size() == 3);
+        for (const auto& device : plan.devices) assert(device.settings.power_cap_w == 272);
+    }
+    {   // the same config without the authorization observes: nothing to write
+        const Outcome observed = plan_with("observed", false, true, false);
+        assert(observed.refusal.empty() && observed.admitted);
+        assert(observed.admitted->spec.plan.power.mode == v2::PowerMode::kObserve);
+        for (const auto& device : observed.admitted->spec.plan.power.devices) assert(!device.settings.power_cap_w);
+    }
+    {   // authorized but no receipt qualifies the setting: refused naming what is missing, before any power admission
+        const Outcome refused = plan_with("unqualified", true, false, false);
+        assert(!refused.admitted &&
+               refused.refusal.find("no verified apply, readback and restore receipt") != std::string::npos);
+    }
+    {   // the lab-only qualifying apply waives the receipt match and nothing else
+        const Outcome qualifying = plan_with("qualifying", true, false, true);
+        assert(qualifying.refusal.empty() && qualifying.admitted &&
+               qualifying.admitted->spec.plan.power.mode == v2::PowerMode::kApply);
+    }
+}
+
 void premeasurement_manifest_hook_integration() {
     // One owner, one run, and one manifest admission *before* measuring.
     // Explicit fake hooks record their sequencing without ever touching sysfs.
@@ -1833,7 +1911,7 @@ int test_main(int argc, char** argv) {
     // all. Every test is in exactly one group.
     static const std::vector<std::vector<void (*)()>> groups = {
         {real_session_power_returned_errors, manifest_writer_before_durable_admission, native_config_inspector_before_admission, callback_exception_matrix, power_hook_returned_status_errors, stop_while_waiting_for_health, stop_during_plan, unwritable_record_still_stops},
-        {native_only_planning_refusals, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, calibration_ingest_never_fails_serving, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
+        {native_only_planning_refusals, power_apply_reaches_the_admitted_plan, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, calibration_ingest_never_fails_serving, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
         {injected_owner_plan_exception, feature_state_start_status_and_warning, feature_state_invalid_manifest_prevents_child, helper_failure_unwinds, helper_shared_segment_gate, long_run_dir, shared_run_dir_and_stale_socket, engine_refuses_the_stored_plan, engine_never_healthy, plan_refused},
         {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_refuses_host_room, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
     };

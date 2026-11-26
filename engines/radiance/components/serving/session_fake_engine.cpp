@@ -92,7 +92,8 @@ void reply(int fd, int status, const std::string& body) {
 int main(int argc, char** argv) {
     using nlohmann::json;
     using Clock = std::chrono::steady_clock;
-    if ((argc == 3 || (argc == 5 && std::strcmp(argv[3], "--bc-profile-fd") == 0)) &&
+    if ((argc == 3 || ((argc == 5 || (argc == 7 && std::strcmp(argv[5], "--bc-site-fd") == 0)) &&
+                         std::strcmp(argv[3], "--bc-profile-fd") == 0)) &&
         std::strcmp(argv[1], "--bc-inspect-native-config") == 0) {
         const int fd = std::atoi(argv[2]);
         constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
