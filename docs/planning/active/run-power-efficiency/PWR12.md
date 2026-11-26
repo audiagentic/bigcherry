@@ -88,6 +88,10 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 second supervised trial: same helper0 gfx1100, BF16/FP32 1024 square batch32 3 s/case gaps 0/2 ms and 80 C ceilings. A1 observed 2935 MHz/0 mV, B 2700/0, C 2700/-25, A2 restored 2935/0, all at 303 W cap. All 16 cases pass; 26720/27488/27872/28192 verified GEMMs; estimated energy J 1458.25/1306.77/1249.00/1492.50; J per 1000 GEMMs 54.575/47.540/44.812/52.941. All four GPU snapshots restored after each arm; both candidate transactions report exact restore. Captures 20261126T061116Z-gpu-ai-screen-8055e39098d3, 20261126T061131Z-gpu-ai-screen-6aa91b910b07, 20261126T061146Z-gpu-ai-screen-6af684f8b475, 20261126T061201Z-gpu-ai-screen-9ac3a20a26fc harvested. Exploratory single short arm only; repeat matched clock/UV and use native/model workload before promotion; health incomplete. Candidate settings temporary, no default changes.
 
+2026-11-26: supervised helper0 sweep completed 10 arms (bracketing observed baseline, 2500/2700/2800 MHz at 0 mV, 2700 MHz -25/-50/-75/-100/-125 mV). 40/40 cases, 264896 verified GEMMs; all eight candidate transactions restored and all four card snapshots match. 303 W cap, BF16/FP32 1024 square batch32 3 s/case gaps 0/2 ms, unchanged 80 C limits. Lowest energy 2700/-125 39.817 J/1000 vs bracketed 54.840, approximately 27.4% lower estimated energy and 6.7% lower aggregate rate. 2700/-100 and 2500/0 also promising. Ten captures harvested and IDs/results in AI_POWER_SCREEN.md. Short diagnostic only; driver health incomplete, no promotion. helper1 queued separately.
+
+2026-11-26: helper1 same sweep completed 10 arms, 40/40 cases and 274816 verified GEMMs; eight candidate transactions restored, all four device snapshots match. 2700/-125 lowest observed 38.411 J/1000 vs bracketed baseline 56.281 (31.8% lower estimated energy, 2.2% lower aggregate rate); 2700/-100 40.324, 0.9% lower aggregate rate. Both cards 80/80 cases, 539712 verified GEMMs, 20 harvested captures, no setting persisted. Detailed per-arm capture IDs/metrics in AI_POWER_SCREEN.md. Repeat finalist matched arms and native/model performance/stability before any profile promotion; driver-health and reciprocal owner admission incomplete. No changes to production settings.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -108,3 +112,5 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T01:20:31.492037+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:11:31.901823+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:12:37.386843+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:19:29.145327+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:21:17.933628+00:00 (updated-by): Updated: section:notes

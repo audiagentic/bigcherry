@@ -1102,3 +1102,63 @@ one short observation per setting is insufficient for a stable estimate.
 No production speed, quality or energy claim. Health remains incomplete.
 Repeat matched clock and voltage arms and screen promising candidates
 before longer native/model workload tests. No unattended sweep or promotion.
+
+### Supervised two-XTX clock/voltage sweep (2026-11-26)
+
+Separate bounded GPU leases, known-root journal audit and idle check before
+every arm, exact all-four-card control/identity snapshots after every arm.
+Each card uses its own observed reference; temporary profile copy only.
+Clock-only points 2500/2700/2800 MHz, then 2700 MHz at -25/-50/-75/-100/-125
+mV (bounded by existing research candidate, not hardware range endpoint).
+303 W cap and memory clock unchanged. BF16/FP32 rocBLAS, square 1024,
+batch 32, 3 s per case, 0/2 ms gaps, 80 C hotspot/memory ceilings.
+Stop on first nonpass; never promote based on short numerical screen.
+Estimated native-load GPU energy, not wall/system energy or inference.
+Aggregate rate mixes four equally timed cases; compare individual cases
+before any production decision. All receipts harvested.
+
+#### helper0 (gfx1100)
+
+| Arm | MHz | mV | GEMMs | Native s | Estimated J | W | J/1000 GEMMs | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| A1 | 2935 | 0 | 27520 | 12.036 | 1494.633 | 124.177 | 54.311 | 61 | 20261126T061533Z-gpu-ai-screen-6d84a3ba2deb |
+| candidate | 2500 | 0 | 26624 | 12.025 | 1099.256 | 91.415 | 41.288 | 56 | 20261126T061548Z-gpu-ai-screen-5998b43a7877 |
+| candidate | 2700 | 0 | 25216 | 12.015 | 1242.594 | 103.422 | 49.278 | 56 | 20261126T061602Z-gpu-ai-screen-a0fafa78bc66 |
+| candidate | 2800 | 0 | 27264 | 12.034 | 1317.772 | 109.502 | 48.334 | 58 | 20261126T061617Z-gpu-ai-screen-ce1ab3349ed2 |
+| candidate | 2700 | -25 | 27008 | 12.026 | 1204.208 | 100.138 | 44.587 | 57 | 20261126T061632Z-gpu-ai-screen-497094532558 |
+| candidate | 2700 | -50 | 26912 | 12.025 | 1199.705 | 99.768 | 44.579 | 56 | 20261126T061648Z-gpu-ai-screen-85b3468aa3bd |
+| candidate | 2700 | -75 | 25664 | 12.027 | 1069.724 | 88.944 | 41.682 | 56 | 20261126T061703Z-gpu-ai-screen-57fe35451d31 |
+| candidate | 2700 | -100 | 26944 | 12.025 | 1099.964 | 91.475 | 40.824 | 58 | 20261126T061718Z-gpu-ai-screen-24eb1f4e50f0 |
+| candidate | 2700 | -125 | 25216 | 12.03 | 1004.037 | 83.46 | 39.817 | 56 | 20261126T061733Z-gpu-ai-screen-3cc69b5e5435 |
+| A2 | 2935 | 0 | 26528 | 12.028 | 1469.34 | 122.16 | 55.388 | 61 | 20261126T061748Z-gpu-ai-screen-eed5aca95190 |
+
+40/40 cases pass, 264896 GEMMs, eight candidate transactions restored;
+all four snapshots match. Bracketed baseline energy 54.840 J/1000 GEMMs.
+2700/-125 is lowest observed energy (39.817), about 27.4% below baseline,
+with about 6.7% lower aggregate GEMM rate. 2500/0 and 2700/-100 are useful
+alternative candidates. Driver health remains incomplete.
+
+#### helper1 (gfx1100)
+
+| Arm | MHz | mV | GEMMs | Native s | Estimated J | W | J/1000 GEMMs | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| A1 | 3010 | 0 | 27904 | 12.028 | 1562.51 | 129.903 | 55.996 | 66 | 20261126T061805Z-gpu-ai-screen-9eb0b0a978c9 |
+| candidate | 2500 | 0 | 27200 | 12.031 | 1134.014 | 94.257 | 41.692 | 58 | 20261126T061820Z-gpu-ai-screen-cf931db2c8cf |
+| candidate | 2700 | 0 | 27392 | 12.019 | 1304.384 | 108.523 | 47.619 | 63 | 20261126T061834Z-gpu-ai-screen-b241deee1972 |
+| candidate | 2800 | 0 | 27520 | 12.029 | 1388.239 | 115.407 | 50.445 | 63 | 20261126T061849Z-gpu-ai-screen-0ff25a379a1f |
+| candidate | 2700 | -25 | 27872 | 12.023 | 1256.274 | 104.491 | 45.073 | 61 | 20261126T061904Z-gpu-ai-screen-e670885dabe8 |
+| candidate | 2700 | -50 | 27904 | 12.038 | 1225.104 | 101.769 | 43.904 | 61 | 20261126T061919Z-gpu-ai-screen-0c651a558620 |
+| candidate | 2700 | -75 | 27392 | 12.011 | 1117.973 | 93.077 | 40.814 | 59 | 20261126T061933Z-gpu-ai-screen-8f266424ed9c |
+| candidate | 2700 | -100 | 27360 | 12.034 | 1103.264 | 91.678 | 40.324 | 59 | 20261126T061949Z-gpu-ai-screen-5120c1649b2a |
+| candidate | 2700 | -125 | 27008 | 12.036 | 1037.405 | 86.191 | 38.411 | 58 | 20261126T062004Z-gpu-ai-screen-64d29f7f13a7 |
+| A2 | 3010 | 0 | 27264 | 12.024 | 1542.393 | 128.278 | 56.573 | 64 | 20261126T062018Z-gpu-ai-screen-cacb2c04b582 |
+
+40/40 cases pass, 274816 GEMMs, eight candidate transactions restored;
+all four snapshots match. Bracketed baseline energy 56.281 J/1000 GEMMs.
+2700/-125 is lowest observed energy (38.411), 31.8% below baseline,
+with 2.2% lower aggregate GEMM rate. Both cards passed every point,
+80/80 cases, 539712 verified GEMMs and 20 harvested captures. No
+setting persisted. Driver health incomplete. The 2700/-100 arm is a
+candidate for a better rate/energy tradeoff; 2500/0 is a clock-only
+control worth retaining. No inference performance claim. Retain all
+points rather than select a profile solely on this single sweep.
