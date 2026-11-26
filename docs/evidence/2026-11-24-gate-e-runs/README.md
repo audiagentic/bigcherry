@@ -1,4 +1,4 @@
-# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.18.0)
+# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.21.1)
 
 Gate E takes a published release, downloads its archive, checksum and receipt, installs it into an isolated root with the ROCm SDK (7.2.4),
 verifies the root, then starts, canaries and stops two production layouts under a short GPU lease: `flashnext-4gpu` and `qwen27b-tp3`.
@@ -33,6 +33,10 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.17.0 | bea7cb21 | 196 s | 26 s | the IQR GEMM family as the third owned unit (rad0065 archived); libr3 builds none of the three owned units, so both layouts ran their IQR embedding, vocabulary head and GEMM rows from libbciqr only; a cold release build |
 | 2020.17.1 | 70e8068a | 237 s | 20 s | the owner writes the draft and measured manifests in-process (no writer child); helpers take typed settings on a sealed descriptor (no manifest); card selection through one mapping; shared-memory identity from the owner segment. A release build with the compiler cache took about 6 minutes |
 | 2020.18.0 | cc31784b | 196 s | 20 s | the power profile is selected by x-bigcherry.power.profile from one power-profiles.yaml; --power-profile removed |
+| 2020.19.0 | 90568ccb | 184 s | 21 s | power apply qualified from verified controller receipts, per-BDF site overrides, typed power plan straight to admission |
+| 2020.20.0 | a1207813 | 245 s | 21 s | the managed native entry patch (rad0070) and the engine admission document, not yet composed |
+| 2020.21.0 | 90734b28 | 196 s | 20 s | the first release that starts every engine on stock `radiance --config` with a sealed admission (rad0070 validated, rad0009 archived, manifest entry and managed front deleted). The first Gate E run of this archive failed in both layouts (never reached running, serve exit 1) and its logs were not kept; a rerun of the same archive passed; unexplained, now a failed run keeps its logs |
+| 2020.21.1 | 20e7c4ea | 181 s | 20 s | the dead `--write-manifest` mode and `start --manifest` command removed; the engine's early host-room refusal is named and keeps the stored plan |
 
 ## How to read this, and when Gate E need not be run again
 
