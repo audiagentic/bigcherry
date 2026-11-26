@@ -1,0 +1,18 @@
+2026-11-25T05:37:49.210266 module bytes 53786336 HIP_VISIBLE_DEVICES 0 ROCR_VISIBLE_DEVICES None CUDA_VISIBLE_DEVICES None
+
+
+============================ ROCm System Management Interface ============================
+===================================== KFD Processes ======================================
+No KFD PIDs currently running
+==========================================================================================
+================================== Memory Usage (Bytes) ==================================
+GPU[0]		: VRAM Total Memory (B): 25753026560
+GPU[0]		: VRAM Total Used Memory (B): 27959296
+GPU[1]		: VRAM Total Memory (B): 25753026560
+GPU[1]		: VRAM Total Used Memory (B): 27959296
+GPU[2]		: VRAM Total Memory (B): 34208743424
+GPU[2]		: VRAM Total Used Memory (B): 59924480
+GPU[3]		: VRAM Total Memory (B): 17163091968
+GPU[3]		: VRAM Total Used Memory (B): 17199104
+==========================================================================================
+================================== End of ROCm SMI Log ===================================
