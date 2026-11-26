@@ -67,6 +67,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26: Extended existing GP11/GP13 peer fixture with explicit physical BDF/architecture bindings, per-direction HIP capability reporting, per-endpoint allocation headroom and 48 exact copy/source verification cases (push, pull, explicit peer sync and async; six boundary sizes, both directions), leased managed wrapper with both thermal sensors, driver-health observation and unchanged snapshots. Compiled against ROCm 7.2.4 all three targets; 240 offline hardware tests passed/1 skipped. Six physical pairs probed, all 12 directional capabilities false; no copies launched, all unavailable not pass, controls unchanged, all harvested. IDs 20261126T040021Z-gpu-ai-peer-4f9358f01f4e, 20261126T040022Z-gpu-ai-peer-97262d198490, 20261126T040023Z-gpu-ai-peer-149d4d73955d, 20261126T040023Z-gpu-ai-peer-f55953947d8a, 20261126T040024Z-gpu-ai-peer-303657000cdd, 20261126T040025Z-gpu-ai-peer-b6056248773e. Host kernel log unavailable; health incomplete. Peer data-path hardware coverage remains blocked on peer-capable allocation; API success would not prove physical route. Production remains blocked.
 
+2026-11-26: Real telemetry validation on engine R9700: transition smoke 20261126T040058Z-gpu-ai-screen-8dafa7337ac5 passed all five 0/1/2/10/100 ms load gaps, complete native-load energy estimates for each; observed hotspot 34-39 C, unchanged controls. 30+60 s sustained hot trial 20261126T040128Z-gpu-ai-screen-ee71f5be59e7 inconclusive (37-50 C, required >=60 C final window not reached); energy estimate 7202.76 J across native interval; unchanged controls, health unavailable. Both harvested. PWR10 owner holds GPU lease for first native min-cap apply; no duplicate control mutation, no profile promotion. PWR13 remains open for peer-capable data path, full hot/transition cohort, verified health and integration with native family/production owners.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -79,3 +81,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T03:50:43.706946+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:56:02.771051+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T04:01:14.438957+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T04:03:55.901123+00:00 (updated-by): Updated: section:notes
