@@ -110,6 +110,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26: narrowly enable supervised square-matrix mixed-resident research after PWR15 platform exact restoration hardening. Requires observed matched passing reference, explicit apply/confirm-idle and existing lease/transaction, fresh idle KFD inventory before transaction; operator audits all owner journals under lease. Factory-reference resident applies, new instruction/geometry applies, precision exceptions and automatic qualification remain refused. Four card-free tests cover valid mixed reference, busy inventory, corrupt resident coverage and mismatch restoration; full hardware/CLI 297 pass, 1 skip. No new writer or output schema; PWR15 reciprocal automatic admission remains incomplete. Actual resident pressure tests use canonical workload resolver with only 60 s duration override and explicit headroom.
 
+Native TP3 four-arm diagnostic: exact common 128-token response hash, all four thermal stops at unchanged 80 C (stock/0/-100 XTX0 memory; -125 R9700 junction), all four settings restored. Verified managed capture 20261126T071902Z-native-power-pressure-c8105ec7454a. Native performance and long soak withheld until thermal remediation; no production promotion.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -141,3 +143,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T06:54:14.212273+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:07:24.539911+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:15:20.394263+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T07:20:20.442976+00:00 (updated-by): Updated: section:notes

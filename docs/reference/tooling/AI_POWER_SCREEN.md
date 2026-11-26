@@ -1331,3 +1331,36 @@ captures harvested. Together with previous 8/8 independent memory and
 32/32 burst cases, both finalists pass this bounded pressure screen.
 No claim of elevated-temperature, mixed-residency or long-soak coverage.
 Driver health remains incomplete. No production profile change.
+
+### Native TP3 inference pressure — thermal-stop diagnostics
+
+Installed verified release 2020.22.0, dense qwen27b TP3, both XTXs
+and R9700. Native serving owner alone applies the XTX clock/offset;
+the other two cards are unchanged. All four arms produced exactly
+the same greedy 128-token response (SHA256
+`b6e443f141325995c162183a3c78147ae548d62ae6ce4696975cffad254294a0`).
+This is one response check, not model-quality certification.
+
+| Both XTXs | XTX0 junction/memory C | XTX1 junction/memory C | R9700 junction/memory C | Stop reason |
+|---|---:|---:|---:|---|
+| Observed stock | 74/80 | 73/66 | 69/58 | XTX0 memory |
+| 2700/0 | 70/80 | 69/66 | 75/64 | XTX0 memory |
+| 2700/-100 | 67/80 | 65/64 | 79/68 | XTX0 memory |
+| 2700/-125 | 67/79 | 64/64 | 80/68 | R9700 junction |
+
+Every arm stopped at the unchanged 80 C safety ceiling before the
+native power-phase workload completed. The native owner stopped
+normally, and all four original settings snapshots matched after
+each arm. Three native apply receipts:
+`power-8fd045f6-2866-417e-9f7e-a81a5a3a9965`,
+`power-b80b1e7d-db18-4c8d-8f19-ef43d32868ff`,
+`power-90f8aaeb-36e9-4a3d-b746-2d9a9839c957`.
+Verified diagnostic capture
+`20261126T071902Z-native-power-pressure-c8105ec7454a`
+preserves native manifests, sessions, receipts, and supervisor output.
+No completed matched inference throughput or energy result exists.
+The upper thermal limit is not changed, and longer inference soak
+is withheld pending thermal remediation and passing native references.
+Initial old-tag, runtime-library and port preflight refusals were
+resolved without applying candidate settings: use current verified
+release, installed runtime libraries, and a free local port.
