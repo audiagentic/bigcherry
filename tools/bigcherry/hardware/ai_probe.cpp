@@ -21,7 +21,7 @@
 #include <vector>
 
 namespace {
-constexpr int protocol_version = 3;
+constexpr int protocol_version = 4;
 constexpr size_t corpus_count = 3;
 constexpr size_t guard_bytes = 256;
 struct Failure : std::runtime_error {
@@ -47,12 +47,13 @@ struct Buffer {
 struct Handles {
     hipblasLtHandle_t h = nullptr;
     hipblasLtMatmulDesc_t desc = nullptr;
-    hipblasLtMatrixLayout_t in = nullptr, out = nullptr;
+    hipblasLtMatrixLayout_t a = nullptr, b = nullptr, out = nullptr;
     hipblasLtMatmulPreference_t pref = nullptr;
     ~Handles() {
         if (pref) hipblasLtMatmulPreferenceDestroy(pref);
         if (out) hipblasLtMatrixLayoutDestroy(out);
-        if (in) hipblasLtMatrixLayoutDestroy(in);
+        if (b) hipblasLtMatrixLayoutDestroy(b);
+        if (a) hipblasLtMatrixLayoutDestroy(a);
         if (desc) hipblasLtMatmulDescDestroy(desc);
         if (h) hipblasLtDestroy(h);
     }
@@ -167,36 +168,62 @@ int sign(uint64_t& seed) {
     seed = seed * 6364136223846793005ULL + 1442695040888963407ULL;
     return seed >> 63 ? 1 : -1;
 }
+struct Geometry {
+    int m, n, k, lda, ldb, ldc;
+    size_t a_elements() const { return size_t(lda)*k; }
+    size_t b_elements() const { return size_t(ldb)*n; }
+    size_t c_elements() const { return size_t(ldc)*n; }
+    size_t logical() const { return size_t(m)*n; }
+};
+uint8_t output_poison(const std::string& dtype) {
+    return dtype=="int8" ? 0x80 : 0xff;
+}
 struct Corpus {
     std::vector<uint8_t> a, b, expected;
-    Corpus(int n, const std::string& dtype, Format f, size_t pattern)
-        : a(size_t(n)*n*f.in_bytes), b(a.size()), expected(size_t(n)*n*f.out_bytes) {
-        std::vector<int8_t> x(size_t(n)*n), y(x.size());
+    Corpus(Geometry g, const std::string& dtype, Format f, size_t pattern)
+        : a(g.a_elements()*f.in_bytes), b(g.b_elements()*f.in_bytes),
+          expected(g.c_elements()*f.out_bytes, output_poison(dtype)) {
+        std::vector<int8_t> x(size_t(g.m)*g.k), y(size_t(g.k)*g.n);
         if (pattern >= corpus_count) throw Failure(3, "invalid corpus pattern");
         uint64_t seed = 7 + pattern * 0x9e3779b97f4a7c15ULL;
-        for (size_t i = 0; i < x.size(); ++i) {
-            x[i] = sign(seed); y[i] = sign(seed);
-            if (pattern == 1) {
-                if (i % 5 < 2) x[i] = 0;
-                if (i % 7 < 3) y[i] = 0;
-            } else if (pattern == 2) {
-                x[i] = i % n == i / n ? ((i / n) % 2 ? -1 : 1) : 0;
+        for (size_t i=0; i<std::max(x.size(),y.size()); ++i) {
+            int a_sign=sign(seed), b_sign=sign(seed);
+            if (i<x.size()) {
+                x[i]=a_sign;
+                if (pattern==1 && i%5<2) x[i]=0;
+                if (pattern==2)
+                    x[i]=i%g.m==i/g.m ? ((i/g.m)%2 ? -1 : 1) : 0;
+                encode(a, i%g.m+(i/g.m)*g.lda, x[i], dtype);
             }
-            encode(a, i, x[i], dtype); encode(b, i, y[i], dtype);
+            if (i<y.size()) {
+                y[i]=b_sign;
+                if (pattern==1 && i%7<3) y[i]=0;
+                encode(b, i%g.k+(i/g.k)*g.ldb, y[i], dtype);
+            }
         }
-        // Column-major C = A B. Cache-friendly independent integer oracle.
-        std::vector<int> sums(x.size(), 0);
-        for (int j = 0; j < n; ++j)
-            for (int k = 0; k < n; ++k) {
-                const int v = y[k+j*n];
-                if (v == 0) continue;
-                if (pattern == 2) sums[k+j*n] = x[k+k*n] * v;
-                else for (int i = 0; i < n; ++i) sums[i+j*n] += x[i+k*n] * v;
+        // Padding is distinct from all logical input encodings.
+        for (int j=0;j<g.k;++j)
+            std::fill(a.begin()+(size_t(j)*g.lda+g.m)*f.in_bytes,
+                      a.begin()+size_t(j+1)*g.lda*f.in_bytes,0x5a);
+        for (int j=0;j<g.n;++j)
+            std::fill(b.begin()+(size_t(j)*g.ldb+g.k)*f.in_bytes,
+                      b.begin()+size_t(j+1)*g.ldb*f.in_bytes,0x5a);
+        // Column-major C = A B. Each sum is bounded by k <= 2048.
+        std::vector<int> sums(g.logical(),0);
+        for (int j=0;j<g.n;++j)
+            for (int k=0;k<g.k;++k) {
+                const int v=y[k+j*g.k];
+                if (!v) continue;
+                if (pattern==2) {
+                    if (k<g.m) sums[k+j*g.m]=x[k+k*g.m]*v;
+                } else for (int i=0;i<g.m;++i) sums[i+j*g.m]+=x[i+k*g.m]*v;
             }
-        for (size_t i = 0; i < sums.size(); ++i) {
-            if (dtype == "fp16") store(expected, i, exact_half(sums[i]));
-            else if (dtype == "int8") store(expected, i, int32_t(sums[i]));
-            else store(expected, i, float(sums[i]) / 256);
+        for (int j=0;j<g.n;++j) for (int i=0;i<g.m;++i) {
+            size_t pos=i+size_t(j)*g.ldc;
+            int sum=sums[i+j*g.m];
+            if (dtype=="fp16") store(expected,pos,exact_half(sum));
+            else if (dtype=="int8") store(expected,pos,int32_t(sum));
+            else store(expected,pos,float(sum)/256);
         }
     }
 };
@@ -452,16 +479,24 @@ int main(int argc, char** argv) {
             if (exact_half(1) != 0x1c00 || exact_half(-256) != 0xbc00 ||
                 exact_half(2048) != 0x4800 || exact_half(0) != 0) return 2;
             auto f = format("int8");
-            std::vector<uint8_t> previous;
-            for (size_t pattern = 0; pattern < corpus_count; ++pattern) {
-                Corpus c(17, "int8", f, pattern);
-                if (c.expected == previous) return 2;
-                previous = c.expected;
-                for (int j=0;j<17;++j) for (int i=0;i<17;++i) {
-                    int32_t want = 0, got = 0;
-                    for (int k=0;k<17;++k) want += int8_t(c.a[i+k*17])*int8_t(c.b[k+j*17]);
-                    std::memcpy(&got, c.expected.data()+(i+j*17)*sizeof(got), sizeof(got));
-                    if (want != got) return 2;
+            for (Geometry g : {Geometry{17,17,17,17,17,17},
+                               Geometry{15,19,7,18,11,21},
+                               Geometry{5,3,17,8,20,9}}) {
+                std::vector<uint8_t> previous;
+                for (size_t pattern=0;pattern<corpus_count;++pattern) {
+                    Corpus c(g,"int8",f,pattern);
+                    if (c.expected==previous) return 2;
+                    previous=c.expected;
+                    for (int j=0;j<g.n;++j) for (int i=0;i<g.m;++i) {
+                        int32_t want=0,got=0;
+                        for (int k=0;k<g.k;++k) want+=int8_t(c.a[i+k*g.lda])*int8_t(c.b[k+j*g.ldb]);
+                        std::memcpy(&got,c.expected.data()+(i+j*g.ldc)*sizeof(got),sizeof(got));
+                        if (want!=got) return 2;
+                    }
+                    for (int j=0;j<g.n;++j)
+                        for (int i=g.m;i<g.ldc;++i)
+                            for (size_t b=0;b<f.out_bytes;++b)
+                                if (c.expected[(i+j*g.ldc)*f.out_bytes+b]!=output_poison("int8")) return 2;
                 }
             }
             uint16_t pos = 0, neg = 0x8000, nonzero = 1;
@@ -486,10 +521,21 @@ int main(int argc, char** argv) {
             std::cout << "CPU oracle self-test passed\n";
             return 0;
         }
-        if (argc != 10) throw Failure(3, "usage: ai-probe BDF arch dtype N seconds pause-ms provider headroom-MiB batch");
+        if (argc != 15) throw Failure(3, "usage: ai-probe BDF arch dtype N seconds pause-ms provider headroom-MiB batch M K LDA LDB LDC");
         std::string bdf = argv[1], expected_arch = argv[2], dtype = argv[3];
         std::string provider = argv[7];
-        int n = parse_int(argv[4], dtype == "memory" ? 2 : 16, dtype == "memory" ? 65536 : 2048);
+        const bool matrix = dtype!="memory" && dtype!="alu" && dtype!="wave" && dtype!="lds";
+        int n = parse_int(argv[4], dtype=="memory" ? 2 : matrix ? 1 : 16,
+                          dtype=="memory" ? 65536 : 2048);
+        Geometry g{parse_int(argv[10],0,2048),n,parse_int(argv[11],0,2048),
+                   parse_int(argv[12],0,2304),parse_int(argv[13],0,2304),
+                   parse_int(argv[14],0,2304)};
+        if (matrix) {
+            if (!g.m || !g.k || g.lda<g.m || g.lda>g.m+256 ||
+                g.ldb<g.k || g.ldb>g.k+256 || g.ldc<g.m || g.ldc>g.m+256)
+                throw Failure(3,"invalid matrix geometry");
+        } else if (g.m || g.k || g.lda || g.ldb || g.ldc)
+            throw Failure(3,"matrix geometry is not valid for this case");
         if (dtype == "memory" && n % 2) throw Failure(3, "memory budget must be even MiB");
         int headroom = parse_int(argv[8], 256, 65536);
         int batch = parse_int(argv[9], 1, 256);
@@ -543,13 +589,14 @@ int main(int argc, char** argv) {
             auto setup = hipblasLtMatmulDescCreate(&h.desc, f.compute, f.scale);
             if (setup == HIPBLAS_STATUS_NOT_SUPPORTED) throw Failure(3, "dtype not supported");
             lt(setup, "create matmul descriptor");
-            LT(hipblasLtMatrixLayoutCreate(&h.in, f.in, n, n, n));
-            LT(hipblasLtMatrixLayoutCreate(&h.out, f.out, n, n, n));
+            LT(hipblasLtMatrixLayoutCreate(&h.a,f.in,g.m,g.k,g.lda));
+            LT(hipblasLtMatrixLayoutCreate(&h.b,f.in,g.k,g.n,g.ldb));
+            LT(hipblasLtMatrixLayoutCreate(&h.out,f.out,g.m,g.n,g.ldc));
             LT(hipblasLtMatmulPreferenceCreate(&h.pref));
             const size_t limit = 32ull << 20;
             LT(hipblasLtMatmulPreferenceSetAttribute(h.pref, HIPBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &limit, sizeof(limit)));
             int found = 0;
-            auto st = hipblasLtMatmulAlgoGetHeuristic(h.h, h.desc, h.in, h.in, h.out, h.out, h.pref, 1, &algo, &found);
+            auto st = hipblasLtMatmulAlgoGetHeuristic(h.h, h.desc, h.a, h.b, h.out, h.out, h.pref, 1, &algo, &found);
             if (st == HIPBLAS_STATUS_NOT_SUPPORTED || (st == HIPBLAS_STATUS_SUCCESS && !found))
                 throw Failure(3, "no supported algorithm");
             lt(st, "get heuristic");
@@ -573,8 +620,8 @@ int main(int argc, char** argv) {
             Corpus c;
             Buffer a, b, out, expected;
             int64_t launches = 0, checks = 0;
-            Slot(int n, const std::string& dtype, Format f, size_t pattern)
-                : c(n, dtype, f, pattern), a(c.a.size()), b(c.b.size()),
+            Slot(Geometry g, const std::string& dtype, Format f, size_t pattern)
+                : c(g, dtype, f, pattern), a(c.a.size()), b(c.b.size()),
                   out(c.expected.size()+2*guard_bytes), expected(c.expected.size()) {
                 HIP(hipMemcpy(a.p, c.a.data(), c.a.size(), hipMemcpyHostToDevice));
                 HIP(hipMemcpy(b.p, c.b.data(), c.b.size(), hipMemcpyHostToDevice));
@@ -585,17 +632,17 @@ int main(int argc, char** argv) {
         };
         std::vector<std::unique_ptr<Slot>> slots;
         for (size_t i=0;i<corpus_count;++i)
-            slots.push_back(std::make_unique<Slot>(n,dtype,f,i));
+            slots.push_back(std::make_unique<Slot>(g,dtype,f,i));
         Buffer ws(std::max(size_t(1), workspace));
         std::vector<uint8_t> actual(slots[0]->c.expected.size());
         float alpha = 1, beta = 0;
         int32_t ia = 1, ib = 0;
         const void* pa = dtype == "int8" ? static_cast<void*>(&ia) : static_cast<void*>(&alpha);
         const void* pb = dtype == "int8" ? static_cast<void*>(&ib) : static_cast<void*>(&beta);
-        const size_t elements = size_t(n) * n;
+        const size_t elements = g.c_elements(), logical=g.logical();
         const bool integer = dtype == "int8";
         std::unique_ptr<Buffer> counters;
-        // With batch <= 256 and n <= 2048, per-batch counters cannot overflow.
+        // Bounded ldc <= 2304, n <= 2048, batch <= 256: counter fits uint32.
         if (batch > 1) counters = std::make_unique<Buffer>(2 * sizeof(unsigned));
         auto verify_counts = [&](unsigned want_seen, unsigned want_bad) {
             unsigned counts[2] = {};
@@ -661,7 +708,9 @@ int main(int argc, char** argv) {
                   << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
                   << ",\"provider\":\"" << provider << "\",\"library_version\":\"" << version
                   << "\",\"workspace\":" << workspace << ",\"algorithm\":\"" << algorithm
-                  << "\",\"batch\":" << batch;
+                  << "\",\"batch\":" << batch
+                  << ",\"matrix_geometry\":[" << g.m << "," << g.n << "," << g.k << ","
+                  << g.lda << "," << g.ldb << "," << g.ldc << "]";
         auto start = mono_ns();
         int64_t iterations = 0, host_checks = 0;
         do {
@@ -671,13 +720,13 @@ int main(int argc, char** argv) {
                 const size_t index = size_t(iterations+j) % corpus_count;
                 auto& s = *slots[index];
                 used[index] = true;
-                HIP(hipMemsetAsync(s.data(), integer ? 0x80 : 0xff, actual.size()));
+                HIP(hipMemsetAsync(s.data(), output_poison(dtype), actual.size()));
                 if (provider == "hipblaslt") {
-                    LT(hipblasLtMatmul(h.h, h.desc, pa, s.a.p, h.in, s.b.p, h.in, pb,
+                    LT(hipblasLtMatmul(h.h, h.desc, pa, s.a.p, h.a, s.b.p, h.b, pb,
                                       s.data(), h.out, s.data(), h.out, &algo.algo, ws.p, workspace, nullptr));
                 } else {
                     RB(rocblas_gemm_ex(r.h, rocblas_operation_none, rocblas_operation_none,
-                                      n,n,n,pa,s.a.p,rin,n,s.b.p,rin,n,pb,s.data(),rout,n,s.data(),rout,n,
+                                      g.m,g.n,g.k,pa,s.a.p,rin,g.lda,s.b.p,rin,g.ldb,pb,s.data(),rout,g.ldc,s.data(),rout,g.ldc,
                                       rcompute,rocblas_gemm_algo_standard,0,0));
                 }
                 if (batch > 1)
@@ -701,8 +750,10 @@ int main(int argc, char** argv) {
         for (size_t i=0;i<corpus_count;++i) std::cout << (i ? "," : "") << slots[i]->launches;
         std::cout << "],\"corpus_host_checks\":[";
         for (size_t i=0;i<corpus_count;++i) std::cout << (i ? "," : "") << slots[i]->checks;
-        std::cout << "],\"device_elements_checked\":" << (batch>1 ? uint64_t(iterations)*elements : 0)
-                  << ",\"host_elements_checked\":" << uint64_t(host_checks)*elements
+        std::cout << "],\"device_elements_checked\":" << (batch>1 ? uint64_t(iterations)*logical : 0)
+                  << ",\"host_elements_checked\":" << uint64_t(host_checks)*logical
+                  << ",\"device_padding_checked\":" << (batch>1 ? uint64_t(iterations)*(elements-logical) : 0)
+                  << ",\"host_padding_checked\":" << uint64_t(host_checks)*(elements-logical)
                   << ",\"elapsed_s\":" << std::setprecision(9) << double(end-start)/1e9
                   << ",\"start_ns\":" << start << ",\"end_ns\":" << end << ",\"status\":\"pass\"}\n";
         return 0;
