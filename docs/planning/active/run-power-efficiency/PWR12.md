@@ -66,6 +66,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 authorized physical research: #1634 merged; exact observed-reference research mode (factory confirmation unavailable), bounded batched native GEMM checker with CPU cross-check, in-load sampled hot-window correction, 78 targeted tests and ROCm 7.2.4 build/self-test pass. Four-card arithmetic and 512 MiB memory pass; ten short cap/clock/paired-UV applications pass, exact restoration. 30 s hot screens: both XTX 2700/0 pass, -125 mV clean but insufficient thermal floor; R9700 210 W thermal stop at 80 C; RX6900XT 272 W passes without demonstrated saving. Both XTX observed/2700 MHz 20992 MiB memory pass; R9700 observed 29184 MiB pass; RX6900XT 12800 MiB pair queued behind Gate E. 36 screen captures harvested/verified, input capture retained, full evidence table in docs/reference/tooling/AI_POWER_SCREEN.md. No defaults/profile promotion, no engine or other plan changes. Remains in_progress: pending large-residency and extended hot/burst, actual verified factory reference, production-role replay/quality, driver health and phase energy under existing PWR10/PWR02 owners; native/platform journal admission fence requires owner coordination.
 
+2026-11-26 follow-up: the queued gfx1030 helper2 observed and 272 W candidate 12800 MiB memory cases completed, two checked whole-buffer passes each; candidate restored exact original controls. Managed run IDs 20261125T234829Z-gpu-ai-screen-97b163609ed5 and 20261125T234916Z-gpu-ai-screen-64226fcb1beb; both hash-verified by the standard run harvest. Sampled mean board power 48.36/48.44 W (not phase energy); no demonstrated saving. All four cards now have the planned observed large-residency diagnostic, both XTX clock-only arms and gfx1030 cap arm tested; R9700 candidate remains thermally stopped. No factory assertion, hot simultaneous model residency, or production qualification.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -75,3 +77,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-25T23:06:41.278723+00:00 (state-transition): State: pending → in_progress
 - 2026-11-25T23:18:17.777002+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T23:46:49.293197+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T00:36:29.997424+00:00 (updated-by): Updated: section:notes

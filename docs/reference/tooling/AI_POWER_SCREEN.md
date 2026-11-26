@@ -378,14 +378,17 @@ not concurrent model residency or hot GEMM/VRAM coverage.
 | gfx1100 helper1 | observed | 20992 | 2 | pass | 20261125T234346Z-gpu-ai-screen-abca1fd9f379 |
 | gfx1100 helper1 | 2700/0 | 20992 | 2 | pass | 20261125T234413Z-gpu-ai-screen-d570544c6a49 |
 | gfx1201 engine | observed | 29184 | 2 | pass | 20261125T234444Z-gpu-ai-screen-bfcef0f1a2c2 |
+| gfx1030 helper2 | observed | 12800 | 2 | pass | 20261125T234829Z-gpu-ai-screen-97b163609ed5 |
+| gfx1030 helper2 | 272 W cap | 12800 | 2 | pass | 20261125T234916Z-gpu-ai-screen-64226fcb1beb |
 
 The two XTX arms restored exactly and each allocation left about
 3522 MiB available after allocation. The R9700 left about 3364 MiB;
-the thermally stopped candidate was not repeated. The gfx1030 12800 MiB
-reference/candidate pair was queued behind the separate release Gate E
-GPU lease and is not part of the verified results above.
+the thermally stopped candidate was not repeated. The gfx1030 reference
+and 272 W cap pair completed after Gate E, each leaving about 3532 MiB
+free after allocation; the candidate restored exact original controls.
+Sample mean board power was 48.36/48.44 W, respectively, showing no saving.
 
-The managed capture/v1 harvest verified all 36 completed screen bundles
+The managed capture/v1 harvest verified all 38 completed screen bundles
 including nonpasses, plus the separately managed candidate input. Raw
 receipts and verified evidence-hold copies retain native results,
 reference links, original/restored controls and transaction journals;
