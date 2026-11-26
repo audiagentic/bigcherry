@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_065452_cooler-gpus-can-pass-normal-su_5583",
+  "files": [
+    "config/gpu-ai-qualification.toml",
+    "tools/bigcherry/hardware/ai_qualification.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR12",
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the minimum hotspot from normal sustained operational and extended qualification; retain optional elevated-temperature coverage and unchanged upper limits. Allow workload warmup without a floor.",
+  "timestamp-utc": "2026-11-26T06:54:52.650936Z",
+  "user-summary-candidate": "Cooler GPUs can pass normal sustained stability tests without being forced to heat up; elevated-temperature testing is now a separate optional diagnostic."
+}

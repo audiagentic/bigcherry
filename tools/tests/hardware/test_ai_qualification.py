@@ -26,7 +26,18 @@ def test_platform_recipe_architecture_capabilities_and_memory():
         assert groups["wmma-positive"]["status"]==("not_applicable" if arch=="gfx1030" else "planned")
         assert groups["dot2-signed"]["status"]=="planned"
         assert groups["dot2-signed"]["options"]["dtype"]==[a.PRECISION_CASES["dot2"] if arch=="gfx1100" else "dot2"]
-        assert groups["hot"]["options"]["min_hotspot_c"]==60
+        assert groups["hot"]["options"]["min_hotspot_c"] is None
+        elevated=q.resolve(q.load_recipe(RECIPE),"elevated-temperature",arch,
+                           24*2**30,23*2**30,512,80,80)
+        assert set(elevated)=={"elevated-temperature"}
+        assert elevated["elevated-temperature"]["options"] == (
+            groups["hot"]["options"] | {"min_hotspot_c":60})
+        assert "elevated-temperature" not in groups
+        operational=q.resolve(q.load_recipe(RECIPE),"operational",arch,
+                              24*2**30,23*2**30,512,80,80)
+        assert operational["hot"]["options"]["min_hotspot_c"] is None
+        assert operational["hot"]["options"]["max_hotspot_c"]==80
+        assert operational["hot"]["options"]["max_memory_c"]==80
         assert groups["hot"]["options"]["dtype"]==["fp32" if arch=="gfx1201" else "bf16"]
         assert groups["hot"]["options"]["n"]==(1024 if arch=="gfx1030" else 768)
         assert groups["hot"]["options"]["warmup_seconds"]==(60 if arch=="gfx1030" else 30)

@@ -119,7 +119,9 @@ small smoke may use `--dtype memory --memory-mib 128 --headroom-mib 512`;
 larger resident-memory tests require an appropriate measured safe budget.
 No multi-GPU/collective or simultaneous model-resident coverage is implied.
 
-For an actual thermal-envelope screen select `--min-hotspot-c` and optional
+For ordinary sustained qualification, no minimum temperature is required;
+`--warmup-seconds` is independent of the optional temperature floor.
+For a separate elevated-temperature coverage diagnostic select `--min-hotspot-c` and optional
 `--warmup-seconds` per case, in addition to the required safe maximum.
 The workload runs for warmup plus requested measured time. Native monotonic
 timestamps and sampled temperatures must establish the entire requested
@@ -1229,3 +1231,56 @@ to matched 2700/0, -100 has about 2% lower aggregate rate and -125 has
 about 0.5% higher rate; energy per GEMM is 13.3% and 16.2% lower.
 Combined 32/32 cases, 978848 GEMMs. No production throughput or
 stability guarantee. All controls/identities verified after each arm.
+
+
+Sustained pressure: original 768-square BF16 hot recipe, batch 32,
+30 s warmup + 60 s measurement, 60 C floor and 80 C hotspot/memory
+ceilings. Fresh 1024- and 1536-square helper0 observed references
+completed native arithmetic but missed the continuous hot floor.
+The candidate interface correctly refused to proceed on these references.
+Returning to the previously passing exact 768-square per-card references
+allows a separate bounded target test. A verified native pass with only
+a hot-window nonpass is recorded as inconclusive; do not treat it as a
+thermal qualification or waive the temperature gate. No deeper arm
+runs after arithmetic, safety ceiling or restoration failure.
+
+| Role | Geometry | Clock/offset | Verified GEMMs | Hotspot C | Thermal | Capture |
+|---|---:|---|---:|---|---|---|
+| helper0 | 1024 | observed | 173024 | 52–62 | inconclusive | 20261126T064108Z-gpu-ai-screen-92a0c4677033 |
+| helper0 | 1536 | observed | 71392 | 50–63 | inconclusive | 20261126T064306Z-gpu-ai-screen-9d29ed2929b4 |
+| helper0 | 768 | 2700/-100 | 357248 | 50–59 | inconclusive | 20261126T064503Z-gpu-ai-screen-3b4095056ef5 |
+| helper0 | 768 | 2700/-125 | 359488 | 54–56 | inconclusive | 20261126T064634Z-gpu-ai-screen-7a2a2ace7fd6 |
+
+Both candidate native arithmetic passes cover 90 s, both exact
+restores verified on all four cards. Both memory peaks below ceiling
+(69 and 68 C). No full hot-window pass on helper0.
+
+
+| Role | Geometry | Clock/offset | Verified GEMMs | Hotspot C | Thermal | Capture |
+|---|---:|---|---:|---|---|---|
+| helper1 | 768 | 2700/0 | 364064 | 48–60 | inconclusive | 20261126T064807Z-gpu-ai-screen-3620203a2d26 |
+| helper1 | 768 | 2700/-100 | 367936 | 48–58 | inconclusive | 20261126T064938Z-gpu-ai-screen-4bed2afadce0 |
+| helper1 | 768 | 2700/-125 | 368032 | 48–58 | inconclusive | 20261126T065109Z-gpu-ai-screen-6ee54dfe2805 |
+
+All three completed 90 s with native arithmetic passing and exact
+restoration; memory peaks 50/52/52 C. Historical elevated-temperature
+nonpasses are retained, not rewritten.
+
+### Sustained qualification policy correction (2026-11-26)
+
+Owner decision: low observed operating temperature must not cause a
+normal pressure-test refusal. The canonical operational and extended
+recipes retain the historical hot group ID, architecture-specific
+geometry, warmup and measured durations, but no minimum temperature.
+The group ID is not a claim of verified elevated-temperature coverage.
+A separately selected elevated-temperature recipe retains the previous
+60 C coverage floor. Both use unchanged explicit upper ceilings and
+reported device limits. CLI warmup is independent of the optional floor.
+No artificial heating or altered cooling policy, no relaxed numerical,
+duration, thermal ceiling, receipt, lease or restoration gates. An old
+floor-bound nonpass remains an elevated-temperature nonpass. Fresh
+floor-free references and results are required for the new recipe;
+no reference-identity bypass. The 293 hardware/CLI tests passed, one
+skipped, including cool sustained warmup CLI capture and optional
+diagnostic resolution across architectures. Driver health and native
+family proof remain separate; no production promotion.

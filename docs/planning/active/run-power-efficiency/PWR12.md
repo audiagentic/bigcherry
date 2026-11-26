@@ -100,6 +100,12 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 helper1 same 60 s burst diagnostic: reference/2700-0/-100/-125 all 16 cases pass, 125024/123232/120640/123616 verified GEMMs, J/1000 31.585/29.387/25.486/24.629. Exact candidate restores and all four snapshots equal. Captures 20261126T063659Z-gpu-ai-screen-6377d90f4272, 20261126T063801Z-gpu-ai-screen-7d931ba66e88, 20261126T063903Z-gpu-ai-screen-21b84208bd3b, 20261126T064005Z-gpu-ai-screen-94c387411526. Both cards combined 32/32 cases, 978848 verified GEMMs. -125 no aggregate rate regression vs matched 2700/0 on either card, -100 about 2% lower on helper1. Health incomplete. Shortened pressure diagnostic, not full operational burst duration.
 
+2026-11-26: 1024-square BF16 hot diagnostic with fresh helper0 observed reference, batch32 30+60 s, completed 173024 verified GEMMs, hotspot 52–62 C, memory peak 68 C; still inconclusive full 60 C hot window not reached. Capture 20261126T064108Z-gpu-ai-screen-92a0c4677033. No candidate applied because baseline not passed. All four snapshots unchanged. Retain floor and ceiling; try 1536 square, same duration.
+
+2026-11-26: helper0 1536-square fresh observed hot reference (30+60 s BF16) also completed 71392 GEMMs but hot window not reached, hotspot 50–63 C, memory peak 68 C. Capture 20261126T064306Z-gpu-ai-screen-9d29ed2929b4. No candidate applied under this nonpassed reference. Retain both geometry nonpasses. Returning to earlier passing exact per-card 768-square hot references to record actual target sustained arithmetic, preserving thermal-floor nonpasses independently; no thermal qualification or promotion inferred.
+
+2026-11-26: helper1 previous floor-bound 768-square BF16 sustained control and both candidates completed 90 s and native passes (364064/367936/368032 GEMMs; hotspot 48–60/48–58/48–58 C), all inconclusive only on continuous 60 C floor. Captures 20261126T064807Z-gpu-ai-screen-3620203a2d26, 20261126T064938Z-gpu-ai-screen-4bed2afadce0, 20261126T065109Z-gpu-ai-screen-6ee54dfe2805. All restored. Owner directed removal of minimum temperature from ordinary sustained qualification: retain historical group ID hot and duration, no min_hotspot_c in operational/extended; explicit elevated-temperature recipe is optional and retains old floor as separate coverage. CLI allows warmup without floor; upper limits unchanged. Historical evidence immutable. 293 card-free hardware/CLI tests passed/1 skipped; fresh matched floor-free sustained runs underway.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -126,3 +132,6 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T06:33:12.654600+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:37:49.897111+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:41:44.624784+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:43:21.873726+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:45:28.297760+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:54:14.212273+00:00 (updated-by): Updated: section:notes

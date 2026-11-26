@@ -785,3 +785,23 @@ def test_strict_case_never_accepts_precision_metadata():
     with pytest.raises(a.ScreenError,match="unexpected precision"):
         a.validate_native(case(0)["native"] | {"precision_epochs":8},BDF,"gfx1100","fp16",768,
                           "hipblaslt",1,2,512)
+
+
+def test_cli_sustained_warmup_without_temperature_floor(tmp_path):
+    from bigcherry.cli.ai_probe_cmds import cmd_screen
+    ns = args(tmp_path, warmup_seconds=30, seconds=60, pause_ms=[0],
+              max_hotspot_c=80, max_memory_c=80)
+    ns.work_root = tmp_path / "work"
+    cool = case(0) | {"warmup_seconds": 30, "requested_seconds": 60,
+                      "hotspot_min_mc": 45000, "hotspot_max_mc": 55000,
+                      "hot_window_verified": False}
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(STOCK, tmp_path)), \
+            patch.object(a, "thermal_sensor", return_value=(tmp_path/"sensor", 80000)), \
+            patch.object(a, "run_case", return_value=cool) as execute:
+        assert cmd_screen(ns) == 0
+    assert execute.call_args.kwargs["warmup_seconds"] == 30
+    assert execute.call_args.kwargs["min_hotspot_c"] is None
+    receipt = json.loads(ns.output.read_text())
+    assert receipt["observations"]["ai_screen"]["status"] == "pass"
+    assert receipt["observations"]["ai_screen"]["cases"][0]["hot_window_verified"] is False
