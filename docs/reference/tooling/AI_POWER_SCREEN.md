@@ -977,3 +977,12 @@ No native scope was supplied to these reports. PR #1670 adds native
 scope/evidence binding separately, not physical execution proof.
 Peer-capable transfer, driver health, native execution, owner recovery,
 and matched candidate/production gates remain outstanding.
+
+The follow-up gfx1030 FP32 hot diagnostic retained the 768 square geometry,
+batch 32, 30 s warmup, 60 s measured window and the same thermal limits.
+It completed 295,168 numerically correct GEMMs but only reached 41–58 C;
+no qualifying window, so the report is nonpassing. Identity and controls
+matched and driver health remained incomplete. The harvested capture is
+20261126T053453Z-gpu-ai-screen-096213d56357 and its report is
+20261126T053624Z-gpu-ai-qualification-report-f6ae62d0827e. Retain the
+original BF16 recipe; neither workload has qualified the gfx1030 hot gate.

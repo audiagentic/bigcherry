@@ -77,6 +77,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26 operational cohort completed: eight harvested observe-only captures, 20 native numerical cases pass, 3,283,552 GEMMs, all eight physical identities and control snapshots match before/after; no transaction requested. All 16 burst cases pass. Final 60 s >=60 C hot window passed engine (FP32, min 65 C), helper0 (BF16, min 61 C), helper1 (BF16, min 62 C); helper2 gfx1030 BF16 hot inconclusive (41–63 C over 90 s, no qualifying window, 263584 correct GEMMs). Four managed reports 20261126T050031Z-gpu-ai-qualification-report-e43773f7f083, 20261126T050606Z-gpu-ai-qualification-report-0378929b2047, 20261126T051140Z-gpu-ai-qualification-report-c9eb513d60d6, 20261126T051715Z-gpu-ai-qualification-report-87d0333aac4f (last nonpass). Driver health incomplete in all cases; no peer/native/production proof in these reports. PR1670 merged native scope/evidence binding separately, not execution proof. Keep PWR13 in_progress; investigate architecture-supported gfx1030 load selection using existing recipe and unchanged thermal limits, health access and peer capability under existing owners; no unattended mutation or profile promotion.
 
+2026-11-26 follow-up gfx1030 FP32 hot diagnostic: scratch recipe selected supported rocBLAS FP32 (same N=768, batch 32, 30 s warmup, 60 s measured window, 60 C floor and 80 C ceilings). Managed plan 20261126T053453Z-gpu-ai-qualification-plan-e4d878519b21, harvested capture 20261126T053453Z-gpu-ai-screen-096213d56357 and report 20261126T053624Z-gpu-ai-qualification-report-f6ae62d0827e. Native arithmetic passed 295168 GEMMs; hotspot 41–58 C, no qualifying hot window, overall nonpass/inconclusive. Controls and identity exactly unchanged, no transaction, driver health incomplete. FP32 is not a replacement for BF16 on this evidence; preserve both nonpasses and investigate more sustained effective load or larger geometry under same limits. Two setup attempts failed before compute (missing YAML dependency in alternate Python; lease identity mismatch); corrected interpreter and lease owner before the successful diagnostic. No profile promotion.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -94,3 +96,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T04:38:17.313462+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T04:45:49.998369+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T05:32:58.821400+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T05:36:53.590760+00:00 (updated-by): Updated: section:notes
