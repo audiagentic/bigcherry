@@ -805,3 +805,77 @@ def test_cli_sustained_warmup_without_temperature_floor(tmp_path):
     receipt = json.loads(ns.output.read_text())
     assert receipt["observations"]["ai_screen"]["status"] == "pass"
     assert receipt["observations"]["ai_screen"]["cases"][0]["hot_window_verified"] is False
+
+
+@pytest.mark.parametrize("outcome",["pass","mismatch","busy","bad_reference"])
+def test_explicit_resident_research_uses_matched_transaction(tmp_path,outcome):
+    g=[16]*6
+    words=5*2**20//4
+    native=case(0)["native"] | {
+        "n":16,"matrix_geometry":g,"iterations":5,"host_checks":5,
+        "corpus_iterations":[2,2,1],"corpus_host_checks":[2,2,1],
+        "host_elements_checked":5*16*16,
+        "allocated_bytes":a.matrix_allocation("fp16",g,0,1,5),
+        "resident_bytes":5*2**20,"resident_chunks":2,
+        "resident_chunk_words":2**20,"resident_epochs":5,
+        "resident_full_sweeps":2,"resident_words_checked":4*words+2**20,
+    }
+    c=case(0) | {"n":16,"native":native}
+    a.validate_native(native,BDF,"gfx1100","fp16",16,"hipblaslt",1,2,512,
+                      geometry=g,resident_mib=5)
+    opts=dict(n=16,resident_mib=5,headroom_mib=512,pause_ms=[0],
+              observe_current=True,stock_confirmed=False)
+    ns=args(tmp_path,**opts)
+    sensor=tmp_path/"temp2_input";sensor.write_text("50000")
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"snapshot",return_value=(STOCK,tmp_path)), \
+            patch.object(a,"thermal_sensor",return_value=(sensor,85000)), \
+            patch.object(a,"run_case",return_value=c):
+        ref_result=a.screen(ns)
+    assert ref_result["status"]=="pass"
+    if outcome=="bad_reference":
+        ref_result["cases"][0]["native"]["resident_full_sweeps"]=0
+    ref=tmp_path/"ref.json"
+    a.screen_receipt("fixture-stock",ref_result).save(ref)
+    candidate=args(tmp_path,**opts,profile="xtx-sclk2700-uv125",reference=ref,
+                   apply_profile=True,confirm_idle=True)
+    state=[STOCK];events=[]
+    class Tx:
+        def __init__(self,run_id,journal_dir,lease_ok):
+            assert lease_ok()
+            self.run_id=run_id;self.journal_path=journal_dir/(run_id+".json")
+            self.state="new";self.touched=[]
+        def prepare(self,requested,bdfs):
+            assert bdfs==[BDF] and requested[BDF].vddgfx_offset_mv==-125
+            events.append("prepare");self.state="prepared"
+        def apply(self):
+            events.append("apply");self.state="applied";self.touched=[BDF];state[0]=TUNED
+        def restore(self,*,processes_exited):
+            assert processes_exited
+            events.append("restore");self.state="restored";state[0]=STOCK
+            return True
+    def run(*pos,**kw):
+        assert state[0]==TUNED and kw["resident_mib"]==5
+        events.append("probe")
+        return c | {"status":"mismatch" if outcome=="mismatch" else "pass"}
+    with patch.object(a.lease,"held_by_this_process",return_value=True), \
+            patch.object(a,"snapshot",side_effect=lambda bdf:(state[0],tmp_path)), \
+            patch.object(a,"thermal_sensor",return_value=(sensor,85000)), \
+            patch.object(a,"PowerTransaction",Tx), \
+            patch.object(a,"idle_preflight",side_effect=a.ScreenError("busy") if outcome=="busy" else None) as idle, \
+            patch.object(a,"run_case",side_effect=run):
+        if outcome=="bad_reference":
+            with pytest.raises(a.ScreenError,match="resident memory verification"):
+                a.screen(candidate,journal_dir=tmp_path)
+            idle.assert_not_called()
+            assert events==[]
+            return
+        result=a.screen(candidate,journal_dir=tmp_path)
+    idle.assert_called_once()
+    if outcome=="busy":
+        assert result["status"]=="inconclusive" and events==[]
+    else:
+        assert result["status"]==outcome
+        assert result["transaction"]["state"]=="restored"
+        assert events==["prepare","apply","probe","restore"]
+    assert state[0]==STOCK and not result["production_qualified"]

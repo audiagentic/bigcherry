@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_071522_supervised-mixed-computevram_9601",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/cli/ai_qualification_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR12",
+    "PWR15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Allow only explicit matched observed-reference supervised square matrix resident pressure through hardened PowerTransaction; require fresh idle inventory, retain instruction/geometry and unattended candidate refusal.",
+  "timestamp-utc": "2026-11-26T07:15:22.522476Z",
+  "user-summary-candidate": "Supervised mixed compute/VRAM pressure tests can temporarily apply an observed candidate with exact verification and restoration."
+}

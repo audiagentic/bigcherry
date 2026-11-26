@@ -235,8 +235,16 @@ Select a matrix dtype and explicit `--resident-mib` with
 `--headroom-mib` (at least 256 MiB). The allocation is additional to
 the matrix input, output, oracle, guards, counters and workspace.
 The live free-memory checks before and after allocation cover the
-whole known budget. This mode is observe-only pending owner recovery
-hardening, not an authorization to alter the power profile.
+whole known budget. After PWR15 platform transaction hardening, square
+matrix resident cases may run an explicitly supervised research candidate
+with a fresh matching observed reference, `--observe-current --apply-profile
+--confirm-idle`, a verified lease and all-owner journal audit. The executor
+also checks a fresh idle KFD inventory before constructing the transaction.
+Factory-reference resident application, non-matrix resident mixes,
+instruction and explicit rectangular candidate applies, and automated
+qualification candidates remain refused. No precision exceptions or
+production promotion are allowed. Cross-owner automated admission remains
+a separate PWR15 gate.
 
 The resident buffer is initialized and fully read back before compute.
 A separate nonblocking HIP stream changes one bounded 4 MiB chunk per
@@ -1323,3 +1331,69 @@ captures harvested. Together with previous 8/8 independent memory and
 32/32 burst cases, both finalists pass this bounded pressure screen.
 No claim of elevated-temperature, mixed-residency or long-soak coverage.
 Driver health remains incomplete. No production profile change.
+
+### Native TP3 inference pressure — thermal-stop diagnostics
+
+Installed verified release 2020.22.0, dense qwen27b TP3, both XTXs
+and R9700. Native serving owner alone applies the XTX clock/offset;
+the other two cards are unchanged. All four arms produced exactly
+the same greedy 128-token response (SHA256
+`b6e443f141325995c162183a3c78147ae548d62ae6ce4696975cffad254294a0`).
+This is one response check, not model-quality certification.
+
+| Both XTXs | XTX0 junction/memory C | XTX1 junction/memory C | R9700 junction/memory C | Stop reason |
+|---|---:|---:|---:|---|
+| Observed stock | 74/80 | 73/66 | 69/58 | XTX0 memory |
+| 2700/0 | 70/80 | 69/66 | 75/64 | XTX0 memory |
+| 2700/-100 | 67/80 | 65/64 | 79/68 | XTX0 memory |
+| 2700/-125 | 67/79 | 64/64 | 80/68 | R9700 junction |
+
+Every arm stopped at the unchanged 80 C safety ceiling before the
+native power-phase workload completed. The native owner stopped
+normally, and all four original settings snapshots matched after
+each arm. Three native apply receipts:
+`power-8fd045f6-2866-417e-9f7e-a81a5a3a9965`,
+`power-b80b1e7d-db18-4c8d-8f19-ef43d32868ff`,
+`power-90f8aaeb-36e9-4a3d-b746-2d9a9839c957`.
+Verified diagnostic capture
+`20261126T071902Z-native-power-pressure-c8105ec7454a`
+preserves native manifests, sessions, receipts, and supervisor output.
+No completed matched inference throughput or energy result exists.
+The upper thermal limit is not changed, and longer inference soak
+is withheld pending thermal remediation and passing native references.
+Initial old-tag, runtime-library and port preflight refusals were
+resolved without applying candidate settings: use current verified
+release, installed runtime libraries, and a free local port.
+
+### Supervised mixed compute/residency pressure
+
+Fresh per-card matched references. BF16 768 square, batch32, requested
+60 s, 21490 MiB resident allocation, 2048 MiB reserved headroom,
+no lower thermal floor, both upper ceilings 80 C. The existing
+resident workload verifies memory contents during compute and requires
+at least one full resident sweep. No unattended candidate admission.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | Hotspot/memory peak C | Resident words checked | Capture |
+|---|---|---:|---:|---:|---|---:|---|
+| helper0 | observed | 205248 | 60.009 | 7341.637 | 61/68 | 17991991296 | 20261126T071658Z-gpu-ai-screen-de7570c19abc |
+| helper0 | 2700/0 | 198944 | 60.009 | 6155.289 | 54/65 | 17785421824 | 20261126T071823Z-gpu-ai-screen-9c7985c76337 |
+| helper0 | 2700/-100 | 201760 | 60.009 | 5303.073 | 60/70 | 17877696512 | 20261126T071948Z-gpu-ai-screen-b2dd418eddd5 |
+| helper0 | 2700/-125 | 201824 | 60.008 | 4895.348 | 54/65 | 17879793664 | 20261126T072114Z-gpu-ai-screen-1a89b2724631 |
+
+Four of four pass, one full resident sweep per arm, three exact
+candidate restores, all four physical snapshots unchanged at exit.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | Hotspot/memory peak C | Resident words checked | Capture |
+|---|---|---:|---:|---:|---|---:|---|
+| helper1 | observed | 206048 | 60.006 | 7911.099 | 62/50 | 18018205696 | 20261126T072241Z-gpu-ai-screen-5800113d9e1f |
+| helper1 | 2700/0 | 198368 | 60.004 | 6287.741 | 57/50 | 17766547456 | 20261126T072406Z-gpu-ai-screen-55f9534c5435 |
+| helper1 | 2700/-100 | 201088 | 60.006 | 5288.378 | 58/52 | 17855676416 | 20261126T072532Z-gpu-ai-screen-28c522db084f |
+| helper1 | 2700/-125 | 201568 | 60.007 | 4993.573 | 58/54 | 17871405056 | 20261126T072657Z-gpu-ai-screen-498fdd065b9e |
+
+All eight cases pass, all eight complete one full resident sweep, six
+candidate restores and both all-card snapshot checks pass. Total
+1614848 verified GEMMs. Compared with matched clock-only control,
+-125 reduces estimated energy per GEMM by 21.6%/21.8% on helper0/1.
+Driver health remains incomplete; independent pressure is not
+production qualification. Both GPU leases released. Native thermal
+stops still block longer inference soak and matched phase comparisons.

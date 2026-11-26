@@ -123,9 +123,9 @@ def test_modified_plan_bundle_refused(tmp_path):
 
 def test_idle_preflight_fails_closed():
     from subprocess import CompletedProcess
-    with patch.object(cli.subprocess,"run",return_value=CompletedProcess([],0,"No KFD PIDs currently running","")):
+    with patch.object(a.subprocess,"run",return_value=CompletedProcess([],0,"No KFD PIDs currently running","")):
         cli.idle_preflight()
-    with patch.object(cli.subprocess,"run",return_value=CompletedProcess([],0,"PID 123","")):
+    with patch.object(a.subprocess,"run",return_value=CompletedProcess([],0,"PID 123","")):
         with pytest.raises(a.ScreenError,match="not idle"):
             cli.idle_preflight()
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-import subprocess
 from pathlib import Path
 
 from ..core import harvest, paths, run_manifest as rm, workspace
@@ -134,11 +133,7 @@ def cmd_plan(args):
 
 
 def idle_preflight():
-    try:
-        result=subprocess.run(["rocm-smi","--showpids"],capture_output=True,text=True,timeout=10,check=True)
-    except (OSError,subprocess.SubprocessError) as exc:
-        raise a.ScreenError("GPU process inventory unavailable") from exc
-    q._need("No KFD PIDs currently running" in result.stdout, "GPU process inventory not idle")
+    a.idle_preflight()
 
 
 def _run_group(root, doc, path, plan_id, name):
