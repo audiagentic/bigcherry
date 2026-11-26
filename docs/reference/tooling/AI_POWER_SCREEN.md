@@ -952,3 +952,37 @@ rejected variants and results. Do not promote a slower or lower-quality
 replacement; the currently shipped fast kernels remain the default. The
 precision-reference exception does not authorize voltage changes or
 candidate qualification with changed controls.
+
+
+### Operational cohort results (2026-11-26)
+
+Protocol-7/schema-8 observe-only: all 20 native numerical cases passed
+(3,283,552 verified GEMMs); all 16 burst cases passed (1, 2, 10 and
+100 ms gaps per card). Eight captures harvested; start/stop identity and
+control snapshots match in all eight; transactions not requested.
+
+| Architecture / role | Hot load | Final window minimum | Hot | Burst | Managed report |
+|---|---|---:|---|---|---|
+| gfx1201 engine | FP32 | 65 C | pass | pass | 20261126T050031Z-gpu-ai-qualification-report-e43773f7f083 |
+| gfx1100 helper0 | BF16 | 61 C | pass | pass | 20261126T050606Z-gpu-ai-qualification-report-0378929b2047 |
+| gfx1100 helper1 | BF16 | 62 C | pass | pass | 20261126T051140Z-gpu-ai-qualification-report-c9eb513d60d6 |
+| gfx1030 helper2 | BF16 | not reached | inconclusive | pass | 20261126T051715Z-gpu-ai-qualification-report-87d0333aac4f |
+
+The gfx1030 hot capture 20261126T051141Z-gpu-ai-screen-966b9f3c0e3a
+completed 263,584 correct GEMMs over 90 s, with hotspot range 41–63 C
+but no continuous final 60 s window at or above 60 C. Preserve the
+nonpass; investigate a supported alternative load without changing limits.
+Driver health is incomplete in every case (kernel log unavailable).
+No native scope was supplied to these reports. PR #1670 adds native
+scope/evidence binding separately, not physical execution proof.
+Peer-capable transfer, driver health, native execution, owner recovery,
+and matched candidate/production gates remain outstanding.
+
+The follow-up gfx1030 FP32 hot diagnostic retained the 768 square geometry,
+batch 32, 30 s warmup, 60 s measured window and the same thermal limits.
+It completed 295,168 numerically correct GEMMs but only reached 41–58 C;
+no qualifying window, so the report is nonpassing. Identity and controls
+matched and driver health remained incomplete. The harvested capture is
+20261126T053453Z-gpu-ai-screen-096213d56357 and its report is
+20261126T053624Z-gpu-ai-qualification-report-f6ae62d0827e. Retain the
+original BF16 recipe; neither workload has qualified the gfx1030 hot gate.
