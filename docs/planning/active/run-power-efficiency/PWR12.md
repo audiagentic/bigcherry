@@ -82,6 +82,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 helper0 -75 mV matched sustained BF16 passed at 2700 MHz: 636672 clean GEMMs, 138.57 W mean sampled power, 60–61 C verified junction, run 20261126T010638Z-gpu-ai-screen-e993831118d0. Original/restored readbacks matched exactly; capture/v1 harvest verified. Helper1 -75 mV is executing under its own lease; helper0 -100 mV is queued. These results remain synthetic and do not establish native production-kernel correctness.
 
+2026-11-26 voltage sweep completion: helper0 2700/-100 mV produced 636992 clean GEMMs at 130.22 W, max junction 60 C, but no verified continuous hot window; inconclusive, run 20261126T010943Z-gpu-ai-screen-aaf17d1ffc5a; stopped before -125 mV per staged gate. Helper1 -75 mV passed 636704 GEMMs, 150.35 W, 63–64 C, run 20261126T010810Z-gpu-ai-screen-8ae0e2f0beaf; -100 mV passed 639072, 142.92 W, 61–62 C, run 20261126T011115Z-gpu-ai-screen-f21a5f0cf7b6; -125 mV passed 637376, 134.34 W, 61–62 C, run 20261126T011813Z-gpu-ai-screen-bf39ddd2c3d1. All four exact original/restored readbacks and capture/v1 harvest verified; both jobs ended and GPU lease free. No numerical failure observed, no change to thermal criteria, no production qualification. Highest passed sustained offsets under this recipe: helper0 -75 and helper1 -125 mV; not a stability limit or production recommendation. Remaining gates include matched repeat/post-candidate reference, diverse instruction and real native kernel coverage, burst/thermal/resident coverage, verified factory and serving quality/phase energy.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -99,3 +101,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T01:03:50.950277+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T01:07:03.005446+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T01:08:56.936169+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T01:20:31.492037+00:00 (updated-by): Updated: section:notes
