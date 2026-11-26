@@ -1,5 +1,17 @@
 # Changelog
 
+## [2020.22.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.21.1...bc-radiance-2020.22.0) (2026-11-26)
+
+
+### New and changed
+
+* **radiance:** resolve kernel qualification from build groups ([#1644](https://github.com/audiagentic/bigcherry/issues/1644)) ([f29a806](https://github.com/audiagentic/bigcherry/commit/f29a806e86c646b88bdf3fb14ca804399e097908))
+
+
+### Fixes
+
+* **rsc14:** a plan mismatch the host cannot hold is a room refusal (exit 4), not drift ([#1668](https://github.com/audiagentic/bigcherry/issues/1668)) ([6b53745](https://github.com/audiagentic/bigcherry/commit/6b53745fcc0ff834ef3fa31c270234d01eba81d7))
+
 ## [2020.21.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.21.0...bc-radiance-2020.21.1) (2026-11-26)
 
 
