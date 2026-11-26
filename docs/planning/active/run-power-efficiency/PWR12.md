@@ -114,6 +114,8 @@ Native TP3 four-arm diagnostic: exact common 128-token response hash, all four t
 
 Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified GEMMs, 21490 MiB resident allocation per arm, one full sweep each, six exact candidate restores and both all-card snapshot checks; -125 estimated energy per GEMM 21.6%/21.8% below clock-only. Independent pressure complete for tested scope (8 sustained, 8 memory, 32 burst, 8 mixed); native thermal stops and incomplete driver health prevent production/long-soak qualification. All evidence retained, GPU free.
 
+2026-11-26: native short ABBA complete on installed 2020.22.0 Qwen27B IQ8R DFlash TP3. Named xtx-sclk2700-uv125 directly resolves both XTX, no site overrides. 16/16 requests completed, 12/12 matched comparisons against A1, exact restoration all arms; 77/65 C peak hotspot stock/candidate and 72/70 C memory. Four samples each: decode 125.312 to 123.879 tok/s (-1.14%), prefill 2453.205 to 2431.289 (-0.89%), decode TTFT 101.954 to 113.367 ms (+11.19%), 3-GPU energy 6.4521 to 5.2793 J/generated token (-18.18%), 0.28785 to 0.22858 J/prompt token (-20.59%). Short sensor windows estimate, not wall energy; no production promotion. Verified managed capture 20261126T080348Z-native-power-short-96c5fc86df13. Native sustained thermal and longer stability gates still open; new release requires matched requalification.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -147,3 +149,4 @@ Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified
 - 2026-11-26T07:15:20.394263+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:20:20.442976+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:29:05.129999+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:04:33.150303+00:00 (updated-by): Updated: section:notes
