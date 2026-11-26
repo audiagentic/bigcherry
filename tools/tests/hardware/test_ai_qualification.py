@@ -28,6 +28,10 @@ def test_platform_recipe_architecture_capabilities_and_memory():
         assert groups["dot2-signed"]["options"]["dtype"]==[a.PRECISION_CASES["dot2"] if arch=="gfx1100" else "dot2"]
         assert groups["hot"]["options"]["min_hotspot_c"]==60
         assert groups["hot"]["options"]["dtype"]==["fp32" if arch=="gfx1201" else "bf16"]
+        assert groups["hot"]["options"]["n"]==(1024 if arch=="gfx1030" else 768)
+        assert groups["hot"]["options"]["warmup_seconds"]==(60 if arch=="gfx1030" else 30)
+        assert groups["hot"]["options"]["seconds"]==60
+        assert groups["burst"]["options"]["n"]==768
         mem=groups["memory"]["options"]["memory_mib"]
         res=groups["resident"]["options"]["resident_mib"]
         assert mem==res==21*1024
@@ -247,3 +251,11 @@ def test_run_all_rejects_precision_before_launch(tmp_path):
          patch.object(cli,"_run_group") as run:
         assert cli.cmd_run(args)==2
         run.assert_not_called()
+
+
+@pytest.mark.parametrize("key,value",[("hot_n",0),("hot_n",True),("hot_warmup_seconds",3600)])
+def test_invalid_target_hot_geometry(key,value):
+    raw=q.load_recipe(RECIPE)
+    raw["target"]["gfx1030"][key]=value
+    with pytest.raises(a.ScreenError):
+        resolve("gfx1030",raw)
