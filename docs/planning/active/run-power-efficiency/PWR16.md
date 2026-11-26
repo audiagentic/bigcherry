@@ -59,6 +59,8 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 
 2026-11-26: expanded finalists complete. Both 300 W/-300/-125 and -400/-125 pass 90 s BF16, 4/4 including bracketed references, 1890656 GEMMs, two restores. -300/-125 selected on sustained energy and throughput (8.5% lower J/GEMM, +1.1% rate vs stock). Fresh matched 28546 MiB independent VRAM 2/2 pass (two full patterns each), 60 s mixed resident 2/2 pass (one full sweep each, -7.1% J/GEMM, +0.4% rate), 15 s x 4 burst 8/8 pass (-7.2% J/GEMM, +0.3% aggregate rate). Combined expanded cohort 80/80 cases, 3343488 verified GEMMs, 17 exact candidate restores. All captures harvested, all-card originals match, leases free. Retain -300/-125/300 W as supervised research finalist. Prior sustained FP32 thermal stop, missing driver log and native/extended/concurrent qualification still outstanding; installed 2020.23.0 predates PWR16, use a verified build containing 4eabbd6c7 or later. No production defaults changed.
 
+2026-11-27 closeout: Native 2020.23.1 comparison completed 16 matching inference requests. Exact 210 W R9700 candidate passed independent screen; native second XTX restore reported a write fault. All physical snapshots match originals but journal remains unresolved. Closing stock not run. Verified diagnostic capture 20261126T212407Z-native-power-cap-0cc14c765951 preserves 112 sources. Full metrics in power-tuning-evidence-2026-11.md. Keep plan active for native recovery, repeated comparison, driver health and extended stability. No production promotion.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
@@ -68,3 +70,4 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 - 2026-11-26T08:44:35.266324+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T08:58:07.547084+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T09:13:45.754693+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T21:26:10.842990+00:00 (updated-by): Updated: section:notes
