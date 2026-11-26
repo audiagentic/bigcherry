@@ -1377,51 +1377,6 @@ void quality_lab_experiment_file(Fixture& t) {
     }
 }
 
-void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
-    const auto no_snapshot = run_bc_serve({"--write-manifest", "unused.json"});
-    if (no_snapshot.exit_code != 2 ||
-        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos)
-        throw std::runtime_error("v3 writer accepted a missing sealed snapshot: " + no_snapshot.output);
-
-    for (const auto* flag : {"--measured-plan", "--rank-demand", "--helpers-resident-mib",
-                             "--engine-resident-mib", "--publish-v2-p1", "--publish-v2-live-room"}) {
-        const auto result = run_bc_serve({"--write-manifest", "unused.json", flag});
-        if (result.exit_code != 2 ||
-            result.output.find(std::string("unknown option ") + flag) == std::string::npos)
-            throw std::runtime_error(std::string("writer accepted removed option ") + flag + ": " +
-                                     result.output);
-    }
-
-    // A native v3 measured writer must accept the frozen-key guard too. Use an
-    // invalid descriptor so the CLI reaches sealed-snapshot loading without
-    // opening cache files or starting any process.
-    const fs::path configs_dir = fs::path(BC_CONFIGS_DIR);
-    const fs::path model = t.root / "v3-measured-key-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
-    const fs::path site = t.file("v3-measured-key-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                                   "\"\nradiance_home = \"/runtime\"\n");
-    const std::vector<std::string> measured_args = {
-        "--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
-        std::string(64, '0'), "--expected-owner-attempt", "native-test-attempt", "--plan-cache", "missing-cache",
-        "--engine-binary", "/missing/radiance", "--configs", configs_dir.string(),
-        "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
-        "--set", "layout.name=\"qwen27b-tp3\""};
-    const auto measured_key = run_bc_serve(measured_args);
-    if (measured_key.output.find("native writer descriptor must be a fully sealed memfd") == std::string::npos)
-        throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
-                                 measured_key.output);
-    std::vector<std::string> missing_owner_args = measured_args;
-    const auto owner_arg = std::find(missing_owner_args.begin(), missing_owner_args.end(), "--expected-owner-attempt");
-    missing_owner_args.erase(owner_arg, owner_arg + 2);
-    const auto missing_owner = run_bc_serve(missing_owner_args);
-    if (missing_owner.output.find("v3 measured cache reads require --expected-owner-attempt") == std::string::npos)
-        throw std::runtime_error("v3 measured writer did not require its owner attempt before snapshot access: " +
-                                 missing_owner.output);
-}
-
-
-
-
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
 #endif
@@ -1629,7 +1584,7 @@ void session_engine_plan(Fixture& t) {
         admission_hooks.wait = [](std::chrono::milliseconds) { return true; };
         admission_hooks.started = [&](ss::ChildKind kind, const std::string& role, pid_t,
                                       const fs::path&) {
-            assert(kind == ss::ChildKind::native_config_inspector || kind == ss::ChildKind::manifest_writer ||
+            assert(kind == ss::ChildKind::native_config_inspector ||
                    kind == ss::ChildKind::measuring_engine);
             inspector_roles.push_back(role);
         };
@@ -2705,7 +2660,6 @@ int main(int argc, char** argv) {
         measured_plan_cache(t);
         serve_has_no_lab_options();
         quality_lab_experiment_file(t);
-        v3_writer_cli_rejects_unowned_imports(t);
         build_tree_runtime_home(t);
         session_engine_plan(t);
         helper_vram_owner_graph(t);

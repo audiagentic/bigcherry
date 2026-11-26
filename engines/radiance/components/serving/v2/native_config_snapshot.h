@@ -18,12 +18,8 @@ class NativeConfigSnapshot final {
                                      const std::filesystem::path& resolution_root);
     static NativeConfigSnapshot admitted(std::string yaml, std::string sha256, std::string resolution_root);
     static NativeConfigSnapshot from_manifest(const nlohmann::json& field);
-    // Read the exact snapshot envelope from a fully sealed, bounded memfd.
-    // Used for owner-to-child handoff; callers retain ownership of `fd`.
-    static NativeConfigSnapshot from_sealed_fd(int fd);
     // The raw authored YAML bytes of a sealed memfd, under the execution root the caller holds (the process's own
-    // working directory). The owner-to-inspector handoff; the JSON-envelope form above stays only for the manifest
-    // writer (RSC02/RSC03 delete it with manifest_field).
+    // working directory). The owner-to-inspector handoff.
     static NativeConfigSnapshot from_raw_fd(int fd);
     static void verify(std::string_view yaml, std::string_view sha256, std::string_view resolution_root);
     nlohmann::json manifest_field() const;

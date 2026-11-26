@@ -62,8 +62,7 @@ struct BuiltManifest {
 /* Throws std::runtime_error with the failing step's message. */
 BuiltManifest build_manifest(const ManifestInputs& in);
 
-/* One manifest-writing step of a native start, as the owner and the --write-manifest CLI both run it: the inputs the writer
- * child used to receive through argv and a sealed descriptor. */
+/* One manifest-writing step of a native start, as the owner runs it in-process. */
 struct NativeWriterRequest {
     Options options;                      // the resolver options (site, profile, --set list, calibration cache, run dir, ...)
     InspectedConfig inspected;            // the config as the inspector parsed it from the same sealed YAML bytes

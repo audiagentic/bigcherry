@@ -677,7 +677,7 @@ void spawn_and_environment() {
     ss::Hooks hooks;
     hooks.wait = [](std::chrono::milliseconds) { return true; };
     hooks.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
-        assert(role == "manifest writer");
+        assert(role == "native config inspector");
         registered.push_back(pid);
     };
     hooks.ended = [&](pid_t pid) { verified.push_back(pid); };
@@ -1399,7 +1399,7 @@ void manifest_writer_before_durable_admission() {
     bool recorded = false;
     const Json recorded_session = c.record();
     for (const auto& p : recorded_session.at("processes")) {
-        if (p.value("role", std::string()) == "manifest writer") {
+        if (p.value("role", std::string()) == "native config inspector") {
             recorded = true;
             assert(p.value("exited", false) && gone(p.at("pid").get<pid_t>()));
         }
