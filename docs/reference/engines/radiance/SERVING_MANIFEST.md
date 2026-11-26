@@ -43,8 +43,7 @@ bc-serve explain CONFIG --native-config NAME.yaml --model-root DIR              
   sealed again under the current build without running a measuring engine, and the old build is recorded as `plan_carried_from`. With no stored
   manifest, or none that can be carried, it measures first: the helpers come up on their cards, the engine runs to the end of its memory
   plan (`--plan-memory FILE --plan-memory-ranks FILE` on an unmeasured manifest) and exits, and the owner writes the measured manifest from
-  that plan and stores it. An engine that does not come up on a stored plan drops the entry, so the next start measures. `start --manifest FILE
-  --run-dir DIR` replays one named file. Run a measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
+  that plan and stores it. An engine that does not come up on a stored plan drops the entry, so the next start measures. There is no command that replays an arbitrary manifest file. Run a measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
 - A serving start is production-only: it takes no lab experiment, live-policy override or calibration option. Only `bc-serve quality` takes a forced placement schedule (below).
 - A lab arm that changes a setting authors its own YAML (`tools/lab/radiance/arm_yaml.py` writes a copy of a config with targeted changes);
   see [Campaign arms](#campaign-arms).

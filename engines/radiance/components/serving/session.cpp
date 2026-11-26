@@ -181,6 +181,11 @@ std::filesystem::path EngineStart::execution_manifest() const {
     return pinned_manifest ? pinned_manifest->path() : manifest;
 }
 
+v2::Result<v2::Manifest> EngineStart::admitted_manifest() const {
+    if (admitted) return *admitted;
+    return v2::load_manifest(execution_manifest(), v2::PlanUse::serving);
+}
+
 namespace {
 // What an engine child is given instead of a manifest: the admitted raw YAML and the engine admission document (what the
 // owner derived, v2/engine_admission.h), both sealed and inherited. The manifest stays the owner's own record.
@@ -1421,7 +1426,8 @@ class Owner {
                 } catch (...) {
                     // The engine did not come up on a plan this start took from the store: the engine's own
                     // admission is the safety net, so the entry goes and the next start measures afresh.
-                    if (!plan_.reused_store.empty()) {
+                    // A room refusal says the host had less memory just now, not that the stored plan is wrong.
+                    if (!plan_.reused_store.empty() && !engine_refused_room_) {
                         std::error_code ignored;
                         fs::remove(plan_.reused_store, ignored);
                         std::cerr << "bc-serve: the engine did not start on the stored plan; the stored entry is "
@@ -1774,7 +1780,7 @@ class Owner {
     void recheck_native_host_room() {
         if (!plan_.native_launch || !plan_.pinned_manifest)
             throw PlanFailed("native serving pre-exec requires admitted launch inputs and a sealed manifest");
-        const auto manifest = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
+        const auto manifest = plan_.admitted_manifest();
         if (!manifest)
             throw PlanFailed(v2::render_human("native serving pre-exec", manifest.error()));
         const auto& admitted = manifest.value();
@@ -2003,8 +2009,7 @@ class Owner {
         // engine with manifest-declared heat. Measuring engines, standalone
         // engines and helpers never receive it; no ambient environment read.
         std::vector<std::string> argv = plan_.argv;
-        const fs::path execution_manifest = plan_.execution_manifest();
-        const auto manifest = v2::load_manifest(execution_manifest, v2::PlanUse::serving);
+        const auto manifest = plan_.admitted_manifest();
         const auto& native_launch = plan_.native_launch;
         if (!native_launch || !plan_.pinned_manifest || !plan_.config || !plan_.admission || !manifest)
             throw PlanFailed("native serving: missing admitted launch inputs, sealed manifest or sealed YAML");
@@ -2045,10 +2050,18 @@ class Owner {
             inputs.config->descriptor(), native_launch->root.descriptor(), {inputs.admission->descriptor()});
     }
 
+    // The engine refused its memory plan before loading weights: its structured room refusal exits with the typed
+    // admission-refused code (v2::exit_code_of) after printing needed/available/shortfall to its log. Memory moved since the
+    // owner admitted the plan (a build, the page cache); that is a resource refusal, not a launch failure.
+    static constexpr int kEngineRoomRefusalExit = 4;
+    bool engine_refused_room_ = false;
+
     std::optional<std::string> exited_child() {
         for (const auto& c : children_) {
             int st = 0;
             if (!running(c.pid, &st)) {
+                if (c.role == "engine" && WIFEXITED(st) && WEXITSTATUS(st) == kEngineRoomRefusalExit)
+                    engine_refused_room_ = true;
                 std::string how = WIFEXITED(st)     ? "exit " + std::to_string(WEXITSTATUS(st))
                                   : WIFSIGNALED(st) ? "signal " + std::to_string(WTERMSIG(st))
                                                     : "gone";
@@ -2058,16 +2071,24 @@ class Owner {
         return std::nullopt;
     }
 
+    [[noreturn]] void child_gone_in_health_gate(const std::string& gone) {
+        if (engine_refused_room_)
+            throw PlanFailed("the engine refused its host memory plan before loading weights (a resource refusal: memory "
+                             "changed since the owner admitted the plan; the engine log names needed, available and "
+                             "shortfall; the stored measurement is kept): a child exited during health gate: " + gone);
+        throw std::runtime_error("a child exited during health gate: " + gone);
+    }
+
     bool wait_health() {
         const auto deadline = Clock::now() + s_.timing.health_timeout;
         while (Clock::now() < deadline) {
             if (const auto gone = exited_child())
-                throw std::runtime_error("a child exited during health gate: " + *gone);
+                child_gone_in_health_gate(*gone);
             if (const auto reply =
                     http(plan_.port, "GET", "/health", "", std::min(s_.timing.health_interval, 5000ms)))
                 if (reply->status >= 200 && reply->status <= 299) {
                     if (const auto gone = exited_child())
-                        throw std::runtime_error("a child exited during health gate: " + *gone);
+                        child_gone_in_health_gate(*gone);
                     return true;
                 }
             if (!service(s_.timing.health_interval))
@@ -3728,6 +3749,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.manifest = measured_manifest;
         out.stored_sha256 = std::move(final_snapshot.sha256);
         out.pinned_manifest = std::move(final_snapshot.pinned);
+        out.admitted = std::make_shared<const v2::Manifest>(final_snapshot.parsed);
         {
             const EngineInputs inputs = engine_inputs(final_snapshot.parsed, false);
             out.config = inputs.config;
@@ -4019,6 +4041,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     out.manifest = stored;
     out.stored_sha256 = sha256_hex(bytes);
     out.pinned_manifest = std::move(pinned);
+    out.admitted = std::make_shared<const v2::Manifest>(accepted);
     out.port = int(accepted.spec.processes.engine.server.port);
     {
         const EngineInputs inputs = engine_inputs(accepted, false);

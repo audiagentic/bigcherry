@@ -72,8 +72,7 @@ void usage() {
            "signal or a\n"
            "         child's exit; every child stopped and verified gone before it returns. Select the config "
            "with\n"
-           "         positional CONFIG selects the RSC12 named config. `start --manifest FILE --run-dir DIR` "
-           "replays one named file; live checks and per-start receipts still run. Exit 0 stopped, "
+           "         positional CONFIG selects the RSC12 named config. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
            "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
            "  --work-root DIR     the platform's work root: holds the named-config store, so a start reuses the\n"
@@ -81,9 +80,6 @@ void usage() {
            "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
            "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
-           "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
-           "after current static/live/power checks; refuses changed build/model/devices, missing "
-           "attestation or gates; never rewrites FILE\n"
            "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
            "                 --kld-ref DIR --kld-out FILE [--lab-experiment FILE]   run a finite native KL score;\n"
            "                 the run writes owner-map.json (the helpers' initial experts) to its run dir; with\n"
@@ -100,7 +96,7 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root, lab_experiment_file;
+    fs::path run_dir, engine_binary, native_config, work_root, lab_experiment_file;
     std::string config_name;
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
@@ -151,8 +147,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             calibration_records = need();
         } else if (arg == "--set") {
             opts.sets.push_back(need());
-        } else if (arg == "--manifest") {
-            stored_manifest = need();
         } else if (arg == "--native-config") {
             native_config = need();
         } else if (arg == "--kld-ref" && quality && quality->reference.empty()) {
@@ -198,16 +192,12 @@ int session_command(const std::string& cmd, int argc, char** argv) {
                                  ": --run-dir DIR is required (the session's lock, socket, record, logs)");
     if (qualify_power && !allow_power_apply)
         throw std::runtime_error("--qualify-power is a lab apply: it needs --allow-power-apply (and a held gpu lease)");
-    if (!config_name.empty() && !stored_manifest.empty())
-        throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
     // Read and checked whole before any plan, so a bad schedule never costs a measurement.
     std::optional<bc::serving::LabPlacementExperiment> lab_experiment;
     if (!lab_experiment_file.empty())
         lab_experiment = bc::serving::read_lab_placement_experiment(lab_experiment_file);
     if (!config_name.empty())
         opts.sets.push_back("layout.name=" + Json(config_name).dump());
-    if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
-        throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
     // The engine identity is stored under the work root: a start of an unchanged runtime does not hash it again.
     if (!work_root.empty()) bc::serving::set_engine_identity_store(fs::absolute(work_root));
@@ -319,7 +309,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
         opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
     }
-    if (native_config.empty() && stored_manifest.empty() &&
+    if (native_config.empty() &&
         !config_name.empty() && (cmd == "serve" || cmd == "start")) {
         // A config is its YAML: NAME.yaml of the verified bundle, else of --configs / BIGCHERRY_CONFIGS.
         std::vector<fs::path> sources = opts.configs;
@@ -328,11 +318,11 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             native_config = found;
     }
     if (!native_config.empty()) {
-        if (config_name.empty() || !stored_manifest.empty() || opts.model_root.empty())
+        if (config_name.empty() || opts.model_root.empty())
             throw std::runtime_error("--native-config requires a named CONFIG and --model-root DIR");
         if (!fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
             throw std::runtime_error("--native-config and --model-root must name an existing file and directory");
-    } else if ((cmd == "serve" || cmd == "start") && stored_manifest.empty()) {
+    } else if (cmd == "serve" || cmd == "start") {
         throw std::runtime_error("serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
     }
     if (quality && step_phase_trace)
@@ -347,8 +337,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         if (scoring) quality->output = fs::absolute(quality->output);
         if (record_requested) quality->corpus = fs::canonical(quality->corpus);
     }
-    const bool installed_native_replay = prefix && !stored_manifest.empty();
-    if ((!config_name.empty() || installed_native_replay) && opts.configs.empty()) {
+    if (!config_name.empty() && opts.configs.empty()) {
         const char* env = std::getenv("BIGCHERRY_CONFIGS");
         if (!env || !*env) {
             if (!prefix)
@@ -368,7 +357,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     }
     ss::EnginePlanInputs inputs;
     inputs.options = opts;
-    inputs.stored_manifest = std::move(stored_manifest);
     inputs.named_config = config_name;
     inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
@@ -445,8 +433,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     session.plan = [inputs, power_site_yaml](const fs::path& rd, const ss::Hooks& given) {
         ss::Hooks hooks = given;
         hooks.power_site_yaml = power_site_yaml;
-        return inputs.stored_manifest.empty() ? ss::plan_engine_only(inputs, rd, hooks)
-                                              : ss::replay_stored_manifest(inputs, rd, hooks);
+        return ss::plan_engine_only(inputs, rd, hooks);
     };
     return ss::serve(session);
 }

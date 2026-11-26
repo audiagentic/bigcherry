@@ -32,7 +32,6 @@ Radiance settings in YAML. Relative YAML paths resolve under the model root.
 bc-serve start CONFIG --native-config fleet.yaml --model-root MODEL_DIR --run-dir RUN_DIR
 ```
 
-For an exact replay, use `bc-serve start --manifest MANIFEST --run-dir RUN_DIR`.
 It reads the YAML bytes and resolution root from the admitted manifest.
 
 ## RSC02 managed native entry (rad0070): how the owner starts every engine
@@ -57,7 +56,7 @@ flags. Clients that were not told a model ask `GET /v1/models` (`bigcherry.bench
 
 The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate
 the pre-measurement `v2::Manifest` with the strict reader and bind power to its
-ordered engine/helper PCI addresses. On a replay of a stored measured manifest (a named start that reuses one, or `start --manifest`), that manifest is
+ordered engine/helper PCI addresses. On a replay of a stored measured manifest (a named start that reuses one), that manifest is
 the initial power admission; on a miss, the unmeasured manifest is admitted
 **before** any helper or engine measuring process. Both are journaled and
 the final measured manifest is checked against the admitted role/address order,
@@ -310,12 +309,7 @@ entry so the next start measures. Without `--work-root` every start
 measures. The old `--set layout.name=...` serving path remains on its original
 planner.
 
-`bc-serve start --manifest FILE --run-dir DIR --configs FILE|DIR` replays a
-previously recorded strict manifest **without writing or normalising it**.
-A writer-produced manifest carries a separate atomic `FILE.replay-index.json`
-attestation (its original byte fingerprint, model stat identity
-and RSC12 static key); the manifest bytes remain immutable. The RSC12 config
-sources are needed for a fresh effective-settings and calibration check.
+A named start reuses the last measured manifest of its config from the work-root store after the same static, live and power checks (there is no command that replays an arbitrary manifest file); the stored manifest's bytes stay immutable, with a separate atomic `FILE.replay-index.json` attestation (its original byte fingerprint, model stat identity and RSC12 static key).
 A missing attestation or config source, changed input, changed build/model/
 selected device, invalid digest, stale calibration or insufficient current
 RAM/cgroup/memlock/pin/per-card VRAM stops before any GPU child. The owner

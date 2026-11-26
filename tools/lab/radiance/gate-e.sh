@@ -10,7 +10,7 @@
 #                    detached before the release is published. Without it, missing assets are an error.
 #   --wait-timeout   minutes to wait for the assets (default 240; only with --wait)
 #   --result FILE    also append the one-line result to FILE (the only thing kept; keep it next to the evidence)
-#   --keep           keep the temp directory and install root (default: both are deleted at the end, pass or fail)
+#   --keep           keep the temp directory and install root (default: deleted at the end when the run passes; a failed run always keeps them)
 #
 # Steps: wait for assets; download to a temp directory; check the archive's sha256; `bc-release install` into a fresh
 # root with the ROCm SDK; `bc-release verify`; then per layout, under `agent-lease acquire gpu`, a native
@@ -59,13 +59,14 @@ export HIP_PATH=$ROCM_PATH
 export LD_LIBRARY_PATH=/opt/ffmpeg6/lib:$ROCM_PATH/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 export PATH=$ROCM_PATH/bin:$PATH
 
+FAILS=()
 TMP=$(mktemp -d "${GATE_E_TMP:-$BC_WORK_ROOT}/gate-e.XXXXXX") || { echo "gate-e: cannot make a temp directory" >&2; exit 1; }
 cleanup() {
-  if [ "$KEEP" = 1 ]; then echo "gate-e: kept $TMP" >&2; else rm -rf -- "${TMP:?}"; fi
+  # A failed run keeps its temp directory (the logs are the only evidence of why); a passing one is deleted.
+  if [ "$KEEP" = 1 ] || [ "${#FAILS[@]}" -gt 0 ]; then echo "gate-e: kept $TMP" >&2; else rm -rf -- "${TMP:?}"; fi
 }
 trap cleanup EXIT
 
-FAILS=()
 fail() { FAILS+=("$1"); echo "gate-e: FAIL: $1" >&2; }
 
 # ---- 1. the three assets -------------------------------------------------------------------------------------------

@@ -157,6 +157,10 @@ struct EngineStart {
     // The exact strict document that was admitted and will be consumed by this role.
     // Stored replay and fresh launches use a sealed descriptor; manifest remains the durable public path.
     std::filesystem::path execution_manifest() const;
+    // The same document as a typed value: the one the owner admitted this run (no second read of its own file), or, for
+    // an EngineStart built without one, the strict read of execution_manifest().
+    std::shared_ptr<const v2::Manifest> admitted;
+    v2::Result<v2::Manifest> admitted_manifest() const;
 };
 
 struct Timing {
