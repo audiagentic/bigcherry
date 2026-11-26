@@ -1,12 +1,12 @@
 # Radiance
 
-The released **bc-radiance 2020.8.0** line incorporates upstream Radiance
+The released **bc-radiance 2020.x** line (see the release list for the current one) incorporates upstream Radiance
 **v2.2.0**. Older v1.17.0 measurements remain historical comparison evidence. The custom build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
 expert placement adapted to differing GPU memory and bandwidth.
 
 ## Patches and extensions at a glance
 
-BigCherry maintains **41 current engine patch packages** and **6 components** for Radiance.
+BigCherry maintains **43 current engine patch packages** and **7 components** for Radiance.
 Each description says what the package is for, not that it is enabled or
 performance-qualified. **Validated** means package-level evidence exists;
 **untested** means qualification is not established; **diagnostic** is for
