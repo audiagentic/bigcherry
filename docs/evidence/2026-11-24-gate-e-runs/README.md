@@ -1,4 +1,4 @@
-# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.23.0)
+# Gate E: install, verify, start, canary and stop of each radiance release (2020.8.1 to 2020.23.1)
 
 Gate E takes a published release, downloads its archive, checksum and receipt, installs it into an isolated root with the ROCm SDK (7.2.4),
 verifies the root, then starts, canaries and stops two production layouts under a short GPU lease: `flashnext-4gpu` and `qwen27b-tp3`.
@@ -39,6 +39,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.21.1 | 20e7c4ea | 181 s | 20 s | the dead `--write-manifest` mode and `start --manifest` command removed; the engine's early host-room refusal is named and keeps the stored plan |
 | 2020.22.0 | 3715e346 | 244 s | 21 s | the plan check reports a host-pressure mismatch as a room refusal (exit 4) and the owner keeps the stored plan; kernel qualification resolved from build groups |
 | 2020.23.0 | 0637ce74 | 230 s | 21 s | a KL quality start scores the trunk with speculative depth 0; native qualification scope bound to physical evidence |
+| 2020.23.1 | 60448148 | 231 s | 21 s | reversible RDNA4 shader offsets in both power owners |
 
 ## How to read this, and when Gate E need not be run again
 
