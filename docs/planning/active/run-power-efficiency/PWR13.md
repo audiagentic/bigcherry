@@ -59,6 +59,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26 mixed-residency slice: protocol 5/schema 6, explicit resident budget and full known allocation headroom, independent nonblocking memory stream, 4 MiB changed-chunk exact host checks, initial/final full verification and complete compute-time sweep required. Three offload targets and CPU self-test passed; 213 hardware tests passed, one skipped. Five observe-only cases passed (129 MiB partial-chunk smoke plus 20992/20992/29184/12800 MiB full cohort); 671744 verified GEMMs and 66035122176 resident words across full-size runs, unchanged controls, all captures harvested (IDs in AI_POWER_SCREEN.md). Job-monitor restart interrupted two queued launches, resubmitted only after lease/process check. No actual overlap, hot floor or serving proof. New review confirms distinct gfx1100/gfx1201 WMMA layouts, no native WMMA on gfx1030, historical gfx1030 fdot2 builtin issue. Remaining native matrix/vector/packed-dot, peer traffic, phase/transition/health and P0 owner recovery/matched finalist gates. No control or native owner edits.
 
+2026-11-26 tensor ISA slice: protocol 6/schema 7, vector FP, signed dot4/dot2, nonnegative dot2, FP16/BF16 WMMA signed/nonnegative, mixed IU8 WMMA. Three target code objects and CPU selftest passed; 222 hardware tests passed, one skipped. ISA proof as documented. Seventeen harvested observe-only captures: 70 passing cases, 7 strict mismatch cases, 28578021376 host-verified words in passing cases, all controls unchanged. gfx1100 both cards reproduce signed FP16/BF16 WMMA residue (0x3f7ffffa vs exact 1.0) and small signed dot2 discrepancies; nonnegative and mixed IU8 pass. gfx1201 passes signed and nonnegative; gfx1030 no native WMMA. Strict signed nonpasses retained; no tolerance or factory/production claim. Remaining recipe/transfer/phase/health/owner gates and separately reviewed precision contract.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -67,3 +69,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T03:02:56.388933+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:10:45.923234+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:21:55.716861+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T03:42:09.263099+00:00 (updated-by): Updated: section:notes
