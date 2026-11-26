@@ -179,7 +179,7 @@ Result<PowerSite> decode_power_site(const json &doc) {
         d.value().at("evidence").get<std::string>().empty())
       return bad(at, "needs settings and a non-empty evidence string");
     const json &settings = d.value().at("settings");
-    if (auto e = closed(settings, at + ".settings", {"vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "power_cap_w"}))
+    if (auto e = closed(settings, at + ".settings", {"vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "sclk_offset_mhz", "power_cap_w"}))
       return *e;
     if (settings.empty()) return bad(at + ".settings", "a device needs at least one setting");
     for (auto s = settings.begin(); s != settings.end(); ++s)
@@ -192,6 +192,9 @@ Result<PowerSite> decode_power_site(const json &doc) {
     value.sclk_max_mhz = optional("sclk_max_mhz");
     value.mclk_max_mhz = optional("mclk_max_mhz");
     value.power_cap_w = optional("power_cap_w");
+    value.sclk_offset_mhz = optional("sclk_offset_mhz");
+    if (value.sclk_offset_mhz && value.sclk_max_mhz)
+      return bad(at + ".settings.sclk_offset_mhz", "mutually exclusive shader controls");
     out.emplace(d.key(), value);
   }
   return out;

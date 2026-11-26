@@ -62,6 +62,7 @@ using bc::serving::power::Sample;
 using bc::serving::power::SelectedGpu;
 using bc::serving::power::SessionPower;
 using bc::serving::power::ShaderClock;
+using bc::serving::power::ShaderOffset;
 using bc::serving::power::Stage;
 using bc::serving::power::SysfsWrite;
 using bc::serving::power::Tuning;
@@ -142,6 +143,7 @@ struct SimulatedCard {
     int64_t max_shader = 3200, max_memory = 1500;
     std::string identity = "kernel=k1;amdgpu=v1;board=744c:1002:0e3b";
     std::optional<int64_t> staged_shader, staged_memory, staged_voltage;
+    bool signed_shader = false;
 };
 class SimulatedHardware final : public Hardware {
   public:
@@ -180,7 +182,10 @@ class SimulatedHardware final : public Hardware {
             snapshot.controls[static_cast<size_t>(id)] = Capability{current, min, max, simulated.writable};
         };
         fill(ControlId::voltage, simulated.voltage, -200, 0);
-        fill(ControlId::shader, simulated.shader, 2000, simulated.max_shader);
+        if (simulated.signed_shader)
+            fill(ControlId::shader_offset, simulated.shader, -500, 1000);
+        else
+            fill(ControlId::shader, simulated.shader, 2000, simulated.max_shader);
         fill(ControlId::memory, simulated.memory, 900, simulated.max_memory);
         fill(ControlId::board_cap, simulated.cap, 200000000, 350000000);
         return snapshot;
@@ -205,7 +210,7 @@ class SimulatedHardware final : public Hardware {
         std::visit(
             [&](const auto& value) {
                 using T = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<T, ShaderClock>) {
+                if constexpr (std::is_same_v<T, ShaderClock> || std::is_same_v<T, ShaderOffset>) {
                     simulated.staged_shader = value.value.value;
                 } else if constexpr (std::is_same_v<T, MemoryClock>) {
                     simulated.staged_memory = value.value.value;
@@ -492,6 +497,71 @@ void golden_parity() {
     }
 }
 
+void signed_offset_transaction() {
+    auto fixture = load_json(fs::path(__FILE__).parent_path() /
+        "testdata/power_qualified_inputs.json").at("cases").at(0);
+    auto plan = make_plan(fixture);
+    auto hardware = make_hardware(fixture);
+    plan.devices.resize(1);
+    auto& dev = plan.devices.front();
+    auto& card = hardware.card(dev.device.pci);
+    card.signed_shader = true;
+    card.shader = -25;
+    card.voltage = -10;
+    dev.tuning = {};
+    dev.tuning.shader_offset = Megahertz{-100};
+    dev.tuning.voltage_offset = Millivolts{-50};
+    Temporary t;
+    DiskRecords records(t.root / "j", t.root / "r");
+    SessionPower session(plan, "signed", hardware, records, [] { return true; }, [] { return true; });
+    expect(!session.begin(), "signed apply");
+    expect(card.shader == -100 && card.voltage == -50, "signed readback");
+    auto ops = hardware.operations();
+    expect(ops.size() == 4 && ops[0].value == "s -100" && ops[3].value == "c",
+           "RDNA4 signed command grammar");
+    const auto saved_journal = records.journal_path("signed");
+    const auto good = load_json(saved_journal);
+    auto missing = good;
+    missing["devices"][0]["before"].erase("sclk_offset_mhz");
+    write_text(saved_journal, missing.dump());
+    const auto writes = hardware.issued.size();
+    expect(bool(bc::serving::power::recover(saved_journal, hardware, records,
+           [] { return true; }, [] { return true; })), "missing signed original refuses");
+    expect(hardware.issued.size() == writes, "no writes on missing signed original");
+    write_text(saved_journal, good.dump());
+    const auto identity = card.identity;
+    card.identity = "changed board";
+    expect(bool(bc::serving::power::recover(saved_journal, hardware, records,
+           [] { return true; }, [] { return true; })), "changed physical identity refuses");
+    expect(hardware.issued.size() == writes, "no writes on changed signed identity");
+    card.identity = identity;
+    expect(!bc::serving::power::recover(records.journal_path("signed"), hardware, records,
+           [] { return true; }, [] { return true; }), "signed journal recovery");
+    expect(card.shader == -25 && card.voltage == -10, "exact original signed values");
+    Temporary t2;
+    DiskRecords records2(t2.root / "j", t2.root / "r");
+    hardware.fail_on = hardware.issued.size() + 2;
+    SessionPower fault(plan, "signed-fault", hardware, records2, [] { return true; }, [] { return true; });
+    expect(bool(fault.begin()), "signed staged write failure");
+    expect(card.shader == -25 && card.voltage == -10, "signed rollback after staged failure");
+    Temporary t3;
+    DiskRecords records3(t3.root / "j", t3.root / "r");
+    dev.tuning.shader_offset = Megahertz{0};
+    SessionPower zero(plan, "signed-zero", hardware, records3, [] { return true; }, [] { return true; });
+    expect(!zero.begin() && card.shader == 0, "explicit zero offset is not absent");
+    expect(!zero.finish() && card.shader == -25 && card.voltage == -10, "zero offset restores nonzero original");
+    bc::serving::v2::PowerSettings requested;
+    requested.sclk_offset_mhz = 0;
+    requested.vddgfx_offset_mv = -50;
+    expect(bc::serving::power::qualifying_receipt(t3.root / "r", card.pci, requested, card.identity).has_value(),
+           "exact signed receipt qualifies controls");
+    auto receipt = load_json(t3.root / "r/signed-zero.power.json");
+    receipt["observations"]["stop"]["cards"][0].erase("sclk_offset_mhz");
+    write_text(t3.root / "r/signed-zero.power.json", receipt.dump());
+    expect(!bc::serving::power::qualifying_receipt(t3.root / "r", card.pci, requested, card.identity),
+           "receipt missing signed restoration never qualifies");
+
+}
 void binding_and_preflight() {
     expect(!Role::parse("helper9999999999999999999999999999999"),
            "oversized helper index refused without integer wraparound");
@@ -515,8 +585,12 @@ void binding_and_preflight() {
     expect(!bc::serving::power::bind(manifest, selected),
            "power binder refuses different actual selected device");
     selected[0].pci = bdf("0000:03:00.0");
-    power.devices.front().settings.sclk_offset_mhz = 50;
-    expect(!bc::serving::power::bind(manifest, selected), "unreversible shader offset refuses");
+    power.devices.front().settings.sclk_offset_mhz = -100;
+    auto signed_plan = bc::serving::power::bind(manifest, selected);
+    expect(bool(signed_plan) && signed_plan.value().devices.front().tuning.shader_offset->value == -100,
+           "signed offset binds typed plan");
+    power.devices.front().settings.sclk_max_mhz = 2600;
+    expect(!bc::serving::power::bind(manifest, selected), "incompatible shader controls refuse");
     Temporary t;
     auto fixture =
         load_json(fs::path(__FILE__).parent_path() / "testdata/power_qualified_inputs.json").at("cases").at(0);
@@ -1157,6 +1231,15 @@ void diagnostics() {
                snapshot.value().at(ControlId::shader).current == 2600 &&
                snapshot.value().at(ControlId::memory).maximum == 1500,
            "Linux OverDrive probe uses hardware-reported controls");
+    write_text(device / "pp_od_clk_voltage",
+               "OD_SCLK_OFFSET:\n-25Mhz\nOD_MCLK:\n0: 97Mhz\n1: 1259MHz\n"
+               "OD_RANGE:\nSCLK_OFFSET: -500Mhz 1000Mhz\nMCLK: 97Mhz 1500Mhz\n"
+               "VDDGFX_OFFSET: -200mv 0mv\nOD_VDDGFX_OFFSET:\n-10mV\n");
+    snapshot = adapter.inspect(bdf("0000:03:00.0"));
+    expect(bool(snapshot) && !snapshot.value().at(ControlId::shader).current &&
+           snapshot.value().at(ControlId::shader_offset).current == -25 &&
+           snapshot.value().at(ControlId::shader_offset).minimum == -500,
+           "signed OverDrive table and range parsed independently of ceiling");
     fs::remove_all(device / "hwmon");
     fs::create_symlink("hwmon", device / "hwmon");
     auto invalid_monitor = adapter.inspect(bdf("0000:03:00.0"));
@@ -1435,6 +1518,7 @@ int main() {
     try {
         golden_parity();
         binding_and_preflight();
+        signed_offset_transaction();
         failures_and_recovery();
         predicate_exception_matrix();
         injected_interface_exception_matrix();

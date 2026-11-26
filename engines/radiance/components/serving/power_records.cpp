@@ -204,6 +204,8 @@ Json observed_json(const ObservedCard& card) {
                    {"sclk_max_mhz", field(ControlId::shader)},
                    {"mclk_max_mhz", field(ControlId::memory)},
                    {"power_cap_uw", field(ControlId::board_cap)}};
+    if (card.values.at(static_cast<size_t>(ControlId::shader_offset)))
+        result["sclk_offset_mhz"] = field(ControlId::shader_offset);
     if (!card.identity.empty())
         result["identity"] = card.identity;
     return result;
@@ -220,6 +222,8 @@ Json tuning_json(const Tuning& tuning, bool include_nulls) {
         tuning.voltage_offset ? std::optional<int64_t>(tuning.voltage_offset->value) : std::nullopt);
     put("sclk_max_mhz",
         tuning.shader_ceiling ? std::optional<int64_t>(tuning.shader_ceiling->value) : std::nullopt);
+    if (tuning.shader_offset)
+        put("sclk_offset_mhz", tuning.shader_offset->value);
     put("mclk_max_mhz",
         tuning.memory_ceiling ? std::optional<int64_t>(tuning.memory_ceiling->value) : std::nullopt);
     put("power_cap_w", tuning.board_cap ? std::optional<int64_t>(tuning.board_cap->value) : std::nullopt);
@@ -230,7 +234,7 @@ v2::Result<Tuning> parse_tuning(const Json& value) {
         return error(Code::invalid_format, "power.setting", "power settings are not an object");
     for (auto it = value.begin(); it != value.end(); ++it) {
         if (it.key() != "vddgfx_offset_mv" && it.key() != "sclk_max_mhz" && it.key() != "mclk_max_mhz" &&
-            it.key() != "power_cap_w")
+            it.key() != "power_cap_w" && it.key() != "sclk_offset_mhz")
             return error(Code::invalid_format, "power.setting", "unknown journal control");
     }
     const auto field = [&](const char* name) -> v2::Result<std::optional<int64_t>> {
@@ -245,12 +249,17 @@ v2::Result<Tuning> parse_tuning(const Json& value) {
     };
     auto voltage = field("vddgfx_offset_mv");
     auto shader = field("sclk_max_mhz");
+    auto offset = field("sclk_offset_mhz");
     auto memory = field("mclk_max_mhz");
     auto power = field("power_cap_w");
     if (!voltage)
         return voltage.error();
     if (!shader)
         return shader.error();
+    if (!offset)
+        return offset.error();
+    if (offset.value() && shader.value())
+        return error(Code::invalid_format, "power.setting", "mutually exclusive shader controls");
     if (!memory)
         return memory.error();
     if (!power)
@@ -263,6 +272,8 @@ v2::Result<Tuning> parse_tuning(const Json& value) {
         result.voltage_offset = Millivolts{voltage.value().value_or(0)};
     if (shader.value().has_value())
         result.shader_ceiling = Megahertz{shader.value().value_or(0)};
+    if (offset.value().has_value())
+        result.shader_offset = Megahertz{*offset.value()};
     if (memory.value().has_value())
         result.memory_ceiling = Megahertz{memory.value().value_or(0)};
     if (power.value().has_value())
@@ -279,6 +290,8 @@ Json original_json(const CardSnapshot& state) {
     field("sclk_max_mhz", ControlId::shader);
     field("mclk_max_mhz", ControlId::memory);
     field("power_cap_uw", ControlId::board_cap);
+    if (state.at(ControlId::shader_offset).current)
+        field("sclk_offset_mhz", ControlId::shader_offset);
     result["power_cap_default_uw"] = nullptr;
     return result;
 }
@@ -288,7 +301,10 @@ v2::Status load_original(CardSnapshot& snapshot, const Json& record) {
     for (auto [name, kind] : {std::pair{"vddgfx_offset_mv", ControlId::voltage},
                               {"sclk_max_mhz", ControlId::shader},
                               {"mclk_max_mhz", ControlId::memory},
-                              {"power_cap_uw", ControlId::board_cap}}) {
+                              {"power_cap_uw", ControlId::board_cap},
+                              {"sclk_offset_mhz", ControlId::shader_offset}}) {
+        if (kind == ControlId::shader_offset && !record.contains(name))
+            continue; // old journal: live signed control will refuse restoration
         if (!record.contains(name))
             return error(Code::invalid_format, "power.before", "missing original power field");
         if (record.at(name).is_null())
@@ -325,6 +341,8 @@ Json journal_json(const Journal& journal) {
                                           : Json(nullptr)},
              {"setting", tuning_json(saved.policy.tuning, true)},
              {"before", original_json(saved.before)}});
+        if (saved.before.at(ControlId::shader_offset).current)
+            cards.back()["identity"] = saved.before.identity;
     }
     Json touched = Json::array();
     for (const auto& pci : journal.touched)
@@ -426,6 +444,11 @@ v2::Result<Journal> parse_journal(const Json& raw, const fs::path& from) {
             }
             if (auto failure = load_original(before, entry.at("before")))
                 return *failure;
+            if (before.at(ControlId::shader_offset).current) {
+                before.identity = entry.value("identity", std::string());
+                if (before.identity.empty())
+                    return error(Code::invalid_format, from.string(), "signed shader journal lacks original identity");
+            }
             result.devices.push_back(
                 {DevicePolicy{{role.value(), pci.value()}, tuning.value()}, std::move(before)});
         }

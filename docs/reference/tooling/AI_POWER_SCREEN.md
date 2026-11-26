@@ -1397,3 +1397,78 @@ candidate restores and both all-card snapshot checks pass. Total
 Driver health remains incomplete; independent pressure is not
 production qualification. Both GPU leases released. Native thermal
 stops still block longer inference soak and matched phase comparisons.
+
+
+### R9700 independent cap and signed-offset screening (2026-11-26)
+
+R9700 exposes signed OD_SCLK_OFFSET, not absolute OD_SCLK. PWR16
+adds the signed control through the existing platform and native
+transaction owners. The upstream SMU14 driver accepts one signed
+shader argument, not an absolute table index (Linux
+smu_v14_0_2_od_edit_dpm_table, commit 058f2c4b7533365d99d4868fb29a68a5b62ecf5a).
+Actual platform readback and restoration below confirm the grammar
+on this device; no raw sysfs fallback. Original signed offset/voltage
+zero, cap 300 W, memory 1259 MHz. Memory unchanged. Fresh per-card
+observed references, hipBLASLt BF16/FP32 768 square, batch32, 3 s
+each with 0/2 ms pauses, 512 MiB reserved headroom, 80 C ceilings,
+no temperature floor. Offset cohort adds fixed 10 s rest per arm.
+All arms under lease, idle and known-journal audit; all-card exact
+restoration. Driver health incomplete. An earlier cap cohort
+reference was stopped thermally before apply
+(20261126T081626Z-gpu-ai-screen-44386c18a622); retained, not counted
+as a pass. Fresh cooled references passed.
+
+| Cap W / shader offset MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 300/0/0 (A1) | 41056 | 12.009 | 1303.88 | 108.579 | 31.759 | 65 | 20261126T081847Z-gpu-ai-screen-1a3955ea76d8 |
+| 270/0/0 | 40032 | 12.036 | 1212.798 | 100.765 | 30.296 | 67 | 20261126T081901Z-gpu-ai-screen-2456c85b7834 |
+| 240/0/0 | 41024 | 12.014 | 1341.823 | 111.689 | 32.708 | 70 | 20261126T081916Z-gpu-ai-screen-25cb43daeac5 |
+| 210/0/0 | 40352 | 12.01 | 1335.642 | 111.207 | 33.1 | 71 | 20261126T081931Z-gpu-ai-screen-fbcc80315c11 |
+| 300/0/0 (A2) | 40864 | 12.019 | 1370.389 | 114.017 | 33.535 | 73 | 20261126T081946Z-gpu-ai-screen-8934f3aa96d5 |
+
+Cap-only: 20/20 pass, 203328 GEMMs, 3/3 restores.
+Draw mostly below the cap; no convincing cap-only efficiency winner.
+
+| Cap W / shader offset MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---:|---|
+| 300/0/0 (A1) | 41024 | 12.03 | 1322.823 | 109.959 | 32.245 | 68 | 20261126T082105Z-gpu-ai-screen-99f57025ecdf |
+| 300/-100/0 | 40416 | 12.018 | 1296.706 | 107.895 | 32.084 | 67 | 20261126T082130Z-gpu-ai-screen-36891b33ba02 |
+| 300/-200/0 | 40640 | 12.03 | 1230.259 | 102.264 | 30.272 | 67 | 20261126T082155Z-gpu-ai-screen-34bc86dcfb9f |
+| 300/-200/-25 | 40160 | 12.018 | 1192.983 | 99.266 | 29.706 | 65 | 20261126T082220Z-gpu-ai-screen-2ff299c51d3d |
+| 300/-200/-50 | 41024 | 12.017 | 1204.121 | 100.205 | 29.352 | 66 | 20261126T082245Z-gpu-ai-screen-39fbe74cbd13 |
+| 300/-200/-75 | 38912 | 12.013 | 1140.557 | 94.94 | 29.311 | 64 | 20261126T082310Z-gpu-ai-screen-6d062b3e5983 |
+| 210/-200/-75 | 39872 | 12.025 | 1068.364 | 88.847 | 26.795 | 65 | 20261126T082335Z-gpu-ai-screen-a78c6ec7b6a3 |
+| 300/0/0 (A2) | 41056 | 12.025 | 1340.489 | 111.479 | 32.65 | 71 | 20261126T082400Z-gpu-ai-screen-1ce3e2aa29dd |
+
+Offset cohort: 32/32 pass, 323104 GEMMs, 6/6 restores.
+The 300/-200/-50 arm is about 9.5% lower estimated J/GEMM, aggregate
+rate essentially unchanged versus bracketed observed reference.
+210/-200/-75 is about 17.4% lower J/GEMM and 2.8% lower aggregate
+rate. Retain both for pressure screening, not a stable named profile.
+Independent short GEMM measurements do not establish model-run
+performance, full instruction coverage or long-duration stability.
+Native implementation has card-free transaction acceptance, not a
+physical native owner or release build qualification. Existing XTX
+profile and production defaults unchanged.
+
+The first 30+60 s FP32 sustained reference reached the 80 C hotspot
+ceiling after about 33 s (20261126T083443Z-gpu-ai-screen-c566b175881a).
+No candidate applied; all four original snapshots matched. This
+thermal nonpass remains part of the evidence. BF16 sustained cohort
+uses fresh references and identical safety ceilings; it does not
+replace or clear the FP32 result.
+
+90-second continuous BF16 pressure (768 square, batch32, 30+60 s,
+no pause; identical 80 C ceilings). All four cases passed:
+
+| Cap W / shader offset MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 300/0/0 (A1) | 468608 | 90.002 | 7481.768 | 83.128 | 15.966 | 58 | 20261126T083723Z-gpu-ai-screen-d36bf3085105 |
+| 300/-200/-50 | 473344 | 90.004 | 7491.458 | 83.235 | 15.827 | 61 | 20261126T083904Z-gpu-ai-screen-9cd5d353beff |
+| 210/-200/-75 | 474208 | 90.003 | 7436.050 | 82.620 | 15.681 | 62 | 20261126T084046Z-gpu-ai-screen-3f86eadc8929 |
+| 300/0/0 (A2) | 468480 | 90.003 | 7626.687 | 84.738 | 16.280 | 64 | 20261126T084228Z-gpu-ai-screen-ea69bf51f2da |
+
+Both candidate restores passed, all four original card snapshots matched,
+lease released. Driver health incomplete. This is sustained BF16 only;
+FP32 thermal nonpass, VRAM/burst/mixed pressure, native physical owner
+and matched model inference remain separate gates. No profile promotion.

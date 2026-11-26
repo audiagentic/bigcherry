@@ -185,10 +185,6 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
     if (in.mode == PowerMode::kObserve) {
       dev.settings = {};
     } else if (populated(dev.settings)) {
-      // The PowerTransaction backend does not implement SCLK offsets yet.
-      if (dev.settings.sclk_offset_mhz)
-        return fail(ConfigErrorCode::invalid_value, "spec.plan.power.devices",
-                    "SCLK offset has no transaction/restore backend");
       if (!in.power.probe)
         return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices", "apply needs a device probe");
       const auto probed = in.power.probe.invoke("s10.power.probe", dev.bdf);
@@ -320,9 +316,6 @@ Status validate_s10_power_plan(const Manifest &m) {
     if (target.arch == "gfx1100" && dev.settings.vddgfx_offset_mv && !dev.settings.sclk_max_mhz)
       return fail(ConfigErrorCode::invalid_value, at + ".settings",
                   "gfx1100 VDDGFX offset requires a paired SCLK maximum");
-    if (dev.settings.sclk_offset_mhz)
-      return fail(ConfigErrorCode::invalid_value, at + ".settings",
-                  "SCLK offset has no transaction/restore backend");
   }
   return std::nullopt;
 }
