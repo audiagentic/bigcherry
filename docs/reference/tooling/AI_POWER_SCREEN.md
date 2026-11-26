@@ -378,14 +378,17 @@ not concurrent model residency or hot GEMM/VRAM coverage.
 | gfx1100 helper1 | observed | 20992 | 2 | pass | 20261125T234346Z-gpu-ai-screen-abca1fd9f379 |
 | gfx1100 helper1 | 2700/0 | 20992 | 2 | pass | 20261125T234413Z-gpu-ai-screen-d570544c6a49 |
 | gfx1201 engine | observed | 29184 | 2 | pass | 20261125T234444Z-gpu-ai-screen-bfcef0f1a2c2 |
+| gfx1030 helper2 | observed | 12800 | 2 | pass | 20261125T234829Z-gpu-ai-screen-97b163609ed5 |
+| gfx1030 helper2 | 272 W cap | 12800 | 2 | pass | 20261125T234916Z-gpu-ai-screen-64226fcb1beb |
 
 The two XTX arms restored exactly and each allocation left about
 3522 MiB available after allocation. The R9700 left about 3364 MiB;
-the thermally stopped candidate was not repeated. The gfx1030 12800 MiB
-reference/candidate pair was queued behind the separate release Gate E
-GPU lease and is not part of the verified results above.
+the thermally stopped candidate was not repeated. The gfx1030 reference
+and 272 W cap pair completed after Gate E, each leaving about 3532 MiB
+free after allocation; the candidate restored exact original controls.
+Sample mean board power was 48.36/48.44 W, respectively, showing no saving.
 
-The managed capture/v1 harvest verified all 36 completed screen bundles
+The managed capture/v1 harvest verified all 38 completed screen bundles
 including nonpasses, plus the separately managed candidate input. Raw
 receipts and verified evidence-hold copies retain native results,
 reference links, original/restored controls and transaction journals;
@@ -394,3 +397,61 @@ qualification is implied. Factory verification, extended thermal and
 burst coverage, actual production kernel/replay quality, driver health,
 and measured phase energy/throughput remain outstanding under PWR12
 and its existing PWR10/PWR02 ownership boundary.
+
+## Extended observed-reference BF16 research (2026-11-26)
+
+Both gfx1100 helpers ran rocBLAS BF16, N=768, batch 32, 30 s warmup and
+60 s measurement per pattern (0/2 ms pause). The required in-load junction
+floor remained 60 C and the junction/memory ceilings remained 80 C.
+
+| Card | Sustained clean GEMMs | Verified sustained junction C | Burst clean GEMMs | Overall | Managed run ID |
+|---|---:|---|---:|---|---|
+| gfx1100 helper0 | 669120 | 72–75 | 418624 | inconclusive | 20261126T003601Z-gpu-ai-screen-f853a264fda9 |
+| gfx1100 helper1 | 678784 | 75–78 | 416928 | inconclusive | 20261126T003902Z-gpu-ai-screen-1a5e1e347d28 |
+
+Both sustained cases passed; burst cases were numerically clean but failed
+the continuous hot-window requirement. No controls changed. The full receipts
+and an initial pre-launch lease-verification refusal
+(20261126T003525Z-gpu-ai-screen-835df6a9a21e) were harvested using capture/v1.
+The refusal was not a GPU workload. A combined inconclusive reference cannot
+authorize candidate application. Separate sustained-only research uses the
+same thermal bounds; this does not replace the missing burst coverage or
+factory/production qualification.
+
+### Separate sustained-only matched clock comparison
+
+Same provider, BF16, N=768, batch 32, 30 s warmup / 60 s final, 60 C
+junction floor and 80 C junction/memory ceilings; 0 ms pause only.
+The 2700 MHz candidate used zero voltage offset, not an undervolt.
+
+| Card | Profile | Clean GEMMs | Mean sampled W | Verified junction C | Managed run ID |
+|---|---|---:|---:|---|---|
+| gfx1100 helper0 | observed | 667328 | 207.60 | 74–76 | 20261126T004204Z-gpu-ai-screen-6a482ae0c172 |
+| gfx1100 helper0 | 2700 MHz / 0 mV | 635616 | 168.78 | 66–67 | 20261126T004508Z-gpu-ai-screen-ca59ff2a7abe |
+| gfx1100 helper1 | observed | 679680 | 242.52 | 75–78 | 20261126T004335Z-gpu-ai-screen-4310f902d81b |
+| gfx1100 helper1 | 2700 MHz / 0 mV | 635648 | 177.32 | 65–66 | 20261126T004640Z-gpu-ai-screen-acf831cdd992 |
+
+All four passed; both candidate applications restored original controls
+exactly. Mean sampled board power fell 18.7% and 26.9%, while completed
+GEMMs fell 4.8% and 6.5%, respectively. These are synthetic fixed-duration
+screen counts and sampled power, not phase-integrated energy or serving
+throughput. All four receipts were harvested. Matched post-candidate observations follow.
+Burst thermal coverage remains inconclusive.
+No factory reference assertion or production qualification.
+
+### Post-candidate matched observed references
+
+| Card | Clean GEMMs | Mean sampled W | Verified junction C | Managed run ID |
+|---|---:|---:|---|---|
+| gfx1100 helper0 | 668864 | 207.40 | 73–75 | 20261126T004812Z-gpu-ai-screen-e7610fe49260 |
+| gfx1100 helper1 | 679584 | 240.49 | 74–77 | 20261126T004944Z-gpu-ai-screen-553b88ebbb82 |
+
+Both post-candidate observed references passed and were harvested. Pre/post
+request, full start and stop controls and device identity matched for each
+card; candidate original/restored controls matched exactly. Against the
+midpoint of the two observed arms, mean sampled board power fell 18.7%
+and 26.6%, with 4.9% and 6.5% fewer completed GEMMs, respectively.
+The observed-candidate-observed sustained research is complete. This is not
+factory-stock confirmation, a hot burst pass, production-role replay or
+phase-integrated energy/throughput qualification. No production profile
+was changed or promoted.
