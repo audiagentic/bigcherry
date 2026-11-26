@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.21.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.21.0...bc-radiance-2020.21.1) (2026-11-26)
+
+
+### Fixes
+
+* **rsc14:** name the engine's early host-room refusal and keep the stored plan it did not invalidate ([#1658](https://github.com/audiagentic/bigcherry/issues/1658)) ([90800d9](https://github.com/audiagentic/bigcherry/commit/90800d93574d8f9a72ca75948def5c557f4aa67c))
+
 ## [2020.21.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.20.0...bc-radiance-2020.21.0) (2026-11-26)
 
 
