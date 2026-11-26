@@ -22,6 +22,9 @@ from .power_transaction import PowerFailed, PowerRefused, PowerTransaction
 DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8", "memory")
 PROVIDERS = ("hipblaslt", "rocblas")
 POLL_SECONDS = 0.25
+NATIVE_PROTOCOL = 2
+SCREEN_SCHEMA = 3
+CORPUS_COUNT = 3
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 ARCH = re.compile(r"^gfx[0-9a-f]+$")
 
@@ -216,6 +219,17 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
 
 
 
+def verify_probe_protocol(binary: Path) -> None:
+    """Reject a stale native executable before any candidate mutation."""
+    try:
+        result = subprocess.run([str(binary), "--protocol-version"], capture_output=True,
+                                text=True, timeout=10, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise ScreenError("native probe protocol unavailable") from exc
+    if result.returncode or result.stdout.strip() != str(NATIVE_PROTOCOL):
+        raise ScreenError("incompatible native probe protocol; rebuild probe")
+
+
 def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                     provider: str, duration: int, setup_timeout: int,
                     headroom_mib: int, *, launch_ns: int | None = None, batch: int = 1) -> None:
@@ -225,10 +239,11 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                        (bool(re.fullmatch("[0-9a-f]{32}", payload["algorithm"])) if provider == "hipblaslt"
                         else payload["algorithm"] == {"rocblas": "rocblas-default-no-atomics",
                                                       "hip-memory": "address-pattern-v1"}.get(provider)))
-    if (not valid_algorithm or payload.get("status") != "pass" or
+    if (not valid_algorithm or type(payload.get("protocol_version")) is not int or
+            payload["protocol_version"] != NATIVE_PROTOCOL or payload.get("status") != "pass" or
             payload.get("bdf") != bdf or payload.get("arch") != arch or
             payload.get("dtype") != dtype or payload.get("n") != n or
-            payload.get("provider") != provider or payload.get("batch") != batch or
+            payload.get("provider") != provider or type(payload.get("batch")) is not int or payload.get("batch") != batch or
             not isinstance(payload.get("library_version"), str) or not payload["library_version"] or
             type(payload.get("iterations")) is not int or payload["iterations"] < 2 or
             type(payload.get("elapsed_s")) not in (int, float) or
@@ -241,8 +256,26 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
             payload["end_ns"] - payload["start_ns"] < duration * 1e9):
         raise ScreenError("probe result identity or coverage mismatch")
     if dtype != "memory":
-        if (payload["iterations"] % batch or type(payload.get("host_checks")) is not int or
-                payload["host_checks"] != payload["iterations"] // batch):
+        launches = payload["iterations"]
+        rounds, remainder = divmod(launches, batch)
+        q, r = divmod(launches, CORPUS_COUNT)
+        want_launches = [q + int(i < r) for i in range(CORPUS_COUNT)]
+        # Rotation touches each corpus once per launch for small batches,
+        # or all corpora once per batch for larger batches.
+        want_checks = want_launches if batch < CORPUS_COUNT else [rounds] * CORPUS_COUNT
+        def exact_counts(key, expected):
+            value = payload.get(key)
+            return (isinstance(value, list) and all(type(v) is int for v in value)
+                    and value == expected)
+        def exact_count(key, expected):
+            return type(payload.get(key)) is int and payload[key] == expected
+        host_checks = sum(want_checks)
+        if (remainder or min(want_launches) < 1 or
+                not exact_counts("corpus_iterations", want_launches) or
+                not exact_counts("corpus_host_checks", want_checks) or
+                not exact_count("host_checks", host_checks) or
+                not exact_count("host_elements_checked", host_checks * n * n) or
+                not exact_count("device_elements_checked", launches * n * n if batch > 1 else 0)):
             raise ScreenError("matrix verification coverage mismatch")
     if dtype == "memory":
         if (payload.get("allocated_bytes") != n * 2**20 or
@@ -255,7 +288,7 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
 def case_identity(case: dict) -> tuple:
     native = case["native"]
     return tuple(case[k] for k in ("dtype", "n", "pause_ms", "requested_seconds", "warmup_seconds", "batch")) + tuple(
-        native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm"))
+        native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm", "protocol_version"))
 
 
 def screen_receipt(run_id: str, result: dict):
@@ -310,11 +343,15 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     if cancelled():
         raise ScreenError("screen interrupted", "cancelled")
     binary = args.probe.resolve(strict=True)
-    if "probe" in input_digests and digest(binary) != input_digests["probe"]:
+    probe_digest = digest(binary)
+    if "probe" in input_digests and probe_digest != input_digests["probe"]:
         raise ScreenError("probe changed since run creation")
+    verify_probe_protocol(binary)
+    if digest(binary) != probe_digest:
+        raise ScreenError("probe changed during protocol verification")
     request = {"bdf": args.bdf, "arch": args.arch, "role": args.role,
                "profile": profile.name, "profile_digest": profile.source_digest,
-               "settings": settings, "probe_digest": digest(binary), "kernel": os.uname().release,
+               "settings": settings, "probe_digest": probe_digest, "kernel": os.uname().release,
                "dtypes": args.dtype, "n": args.n, "seconds": args.seconds,
                "pause_ms": args.pause_ms, "max_hotspot_c": args.max_hotspot_c,
                "provider": args.provider, "batch": args.batch, "memory_mib": args.memory_mib, "headroom_mib": args.headroom_mib,
@@ -334,7 +371,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         keys = ("bdf", "arch", "role", "probe_digest", "kernel", "dtypes", "n", "seconds", "pause_ms", "max_hotspot_c",
                 "provider", "batch", "memory_mib", "headroom_mib", "warmup_seconds", "min_hotspot_c", "max_memory_c",
                 "setup_timeout")
-        if (not isinstance(reference, dict) or reference.get("kind") != "ai-power-screen" or reference.get("schema_version") != 2 or reference.get("status") != "pass" or
+        if (not isinstance(reference, dict) or reference.get("kind") != "ai-power-screen" or reference.get("schema_version") != SCREEN_SCHEMA or reference.get("status") != "pass" or
                 reference["request"]["profile"] != "stock" or
                 reference["request"]["stock_confirmed"] is not (not args.observe_current) or
                 reference["request"]["observe_current"] is not args.observe_current or
@@ -379,7 +416,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     if reference is not None and (reference["thermal_ceiling_mc"] != limit or
                                   reference["memory_ceiling_mc"] != mem_limit):
         raise ScreenError("thermal limit differs from stock reference")
-    result = {"kind": "ai-power-screen", "schema_version": 2, "request": request,
+    result = {"kind": "ai-power-screen", "schema_version": SCREEN_SCHEMA, "request": request,
               "before": before, "reference_digest": ("sha256:" + hashlib.sha256(reference_bytes).hexdigest()
                                    if reference_bytes is not None else None),
               "reference_basis": ("observed" if args.observe_current else "factory_confirmed") if reference else None,

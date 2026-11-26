@@ -10,6 +10,7 @@ import pytest
 
 from bigcherry.hardware import ai_probe as a
 
+verify_probe_protocol = a.verify_probe_protocol
 ROOT = Path(__file__).resolve().parents[3]
 BDF = "0000:ab:00.0"
 STOCK = {"identity": {"vendor": "0x1002", "device": "0x744c", "unique_id": "fixture"},
@@ -17,6 +18,13 @@ STOCK = {"identity": {"vendor": "0x1002", "device": "0x744c", "unique_id": "fixt
                       "mclk_max_mhz": 1250, "power_cap_w": 303000000},
          "default_cap_uw": 303000000}
 TUNED = STOCK | {"controls": STOCK["controls"] | {"vddgfx_offset_mv": -125, "sclk_max_mhz": 2700}}
+
+
+@pytest.fixture(autouse=True)
+def mock_native_protocol():
+    # Most tests exercise receipt/transaction handling without an executable.
+    with patch.object(a, "verify_probe_protocol", autospec=True) as verify:
+        yield verify
 
 
 def args(tmp_path, **kwargs):
@@ -41,7 +49,10 @@ def case(pause, algorithm="00"*16, status="pass"):
     return {"dtype": "fp16", "n": 768, "pause_ms": pause, "requested_seconds": 1, "warmup_seconds": 0, "batch": 1,
             "status": status, "native": {"status": status, "bdf": BDF, "arch": "gfx1100", "dtype": "fp16", "n": 768,
               "hip": 70200, "driver": 70200, "provider": "hipblaslt", "library_version": "100202", "workspace": 0,
-              "algorithm": algorithm, "iterations": 2, "host_checks": 2, "batch": 1, "elapsed_s": 1.0,
+              "algorithm": algorithm, "protocol_version": a.NATIVE_PROTOCOL,
+              "iterations": 3, "host_checks": 3, "batch": 1, "elapsed_s": 1.0,
+              "corpus_iterations": [1, 1, 1], "corpus_host_checks": [1, 1, 1],
+              "host_elements_checked": 3*768*768, "device_elements_checked": 0,
               "start_ns": 1_000_000_000, "end_ns": 2_000_000_000}}
 
 
@@ -465,7 +476,80 @@ def test_cli_managed_capture_receipt_and_reference(tmp_path):
 
 
 def test_batched_coverage_refuses_missing_host_checks():
-    payload = case(0)["native"] | {"batch": 32, "iterations": 64, "host_checks": 2}
+    payload = case(0)["native"] | {"batch": 32, "iterations": 64, "host_checks": 6,
+        "corpus_iterations": [22, 21, 21], "corpus_host_checks": [2, 2, 2],
+        "host_elements_checked": 6*768*768, "device_elements_checked": 64*768*768}
     a.validate_native(payload, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512, batch=32)
     with pytest.raises(a.ScreenError, match="verification coverage"):
         a.validate_native(payload | {"host_checks": 1}, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512, batch=32)
+
+@pytest.mark.parametrize("bad", [
+    {"protocol_version": 1}, {"protocol_version": True},
+    {"corpus_iterations": [2, 1, 0]}, {"corpus_iterations": [True, 1, 1]},
+    {"corpus_host_checks": [1, 0, 2]}, {"host_elements_checked": 1},
+    {"device_elements_checked": 1}, {"iterations": 2},
+])
+def test_rotating_corpus_coverage_rejects_bad_counts(bad):
+    payload = case(0)["native"] | bad
+    with pytest.raises(a.ScreenError, match="coverage"):
+        a.validate_native(payload, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512)
+
+
+def test_two_launch_batch_covers_all_corpora():
+    payload = case(0)["native"] | {
+        "batch": 2, "iterations": 4, "host_checks": 4,
+        "corpus_iterations": [2, 1, 1], "corpus_host_checks": [2, 1, 1],
+        "host_elements_checked": 4*768*768, "device_elements_checked": 4*768*768,
+    }
+    a.validate_native(payload, BDF, "gfx1100", "fp16", 768, "hipblaslt", 1, 2, 512, batch=2)
+
+
+def test_protocol_refusal_precedes_mutation(tmp_path, mock_native_protocol):
+    ref = stock_reference(tmp_path)
+    mock_native_protocol.side_effect = a.ScreenError("incompatible native probe protocol")
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, apply_profile=True, confirm_idle=True)
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError, match="protocol"):
+            a.screen(ns, journal_dir=tmp_path)
+    tx.assert_not_called()
+
+
+def test_old_screen_schema_cannot_be_reference(tmp_path):
+    ref = stock_reference(tmp_path)
+    doc = json.loads(ref.read_text())
+    doc["observations"]["ai_screen"]["schema_version"] = 2
+    ref.write_text(json.dumps(doc))
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, apply_profile=True, confirm_idle=True)
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(STOCK, tmp_path)), \
+            patch.object(a, "PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError, match="stock screen"):
+            a.screen(ns, journal_dir=tmp_path)
+    tx.assert_not_called()
+
+@pytest.mark.parametrize("exit_code, stdout", [(0, "1"), (1, "2"), (0, "2 extra"), (0, "")])
+def test_native_protocol_handshake_refuses_invalid_output(tmp_path, exit_code, stdout):
+    from subprocess import CompletedProcess
+    with patch.object(a.subprocess, "run", return_value=CompletedProcess([], exit_code, stdout, "")):
+        with pytest.raises(a.ScreenError, match="protocol"):
+            verify_probe_protocol(tmp_path / "probe")
+
+
+def test_native_protocol_handshake_accepts_version(tmp_path):
+    from subprocess import CompletedProcess
+    with patch.object(a.subprocess, "run", return_value=CompletedProcess([], 0, "2\n", "")) as run:
+        verify_probe_protocol(tmp_path / "probe")
+    assert run.call_args.args[0] == [str(tmp_path / "probe"), "--protocol-version"]
+
+
+def test_probe_changed_during_handshake_refuses(tmp_path, mock_native_protocol):
+    ns = args(tmp_path)
+    mock_native_protocol.side_effect = lambda b: b.write_bytes(b"changed")
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot") as snapshot:
+        with pytest.raises(a.ScreenError, match="changed during protocol"):
+            a.screen(ns)
+    snapshot.assert_not_called()

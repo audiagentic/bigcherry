@@ -7,6 +7,7 @@
 #include <rocblas/rocblas.h>
 #include <time.h>
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -20,6 +21,9 @@
 #include <vector>
 
 namespace {
+constexpr int protocol_version = 2;
+constexpr size_t corpus_count = 3;
+constexpr size_t guard_bytes = 256;
 struct Failure : std::runtime_error {
     int code;
     Failure(int c, const std::string& s) : std::runtime_error(s), code(c) {}
@@ -152,6 +156,7 @@ uint16_t exact_half(int sum) {
     return uint16_t((sum < 0 ? 0x8000 : 0) | ((p + 7) << 10) | (sig & 1023));
 }
 void encode(std::vector<uint8_t>& v, size_t i, int sign, const std::string& dtype) {
+    if (sign == 0) return; // value-initialized corpus buffers
     if (dtype == "fp16") store(v, i, uint16_t(sign < 0 ? 0xac00 : 0x2c00));
     else if (dtype == "bf16") store(v, i, uint16_t(sign < 0 ? 0xbd80 : 0x3d80));
     else if (dtype == "fp8") store(v, i, uint8_t(sign < 0 ? 0x98 : 0x18)); // E4M3, not FNUZ
@@ -164,20 +169,30 @@ int sign(uint64_t& seed) {
 }
 struct Corpus {
     std::vector<uint8_t> a, b, expected;
-    Corpus(int n, const std::string& dtype, Format f)
+    Corpus(int n, const std::string& dtype, Format f, size_t pattern)
         : a(size_t(n)*n*f.in_bytes), b(a.size()), expected(size_t(n)*n*f.out_bytes) {
         std::vector<int8_t> x(size_t(n)*n), y(x.size());
-        uint64_t seed = 7;
+        if (pattern >= corpus_count) throw Failure(3, "invalid corpus pattern");
+        uint64_t seed = 7 + pattern * 0x9e3779b97f4a7c15ULL;
         for (size_t i = 0; i < x.size(); ++i) {
             x[i] = sign(seed); y[i] = sign(seed);
+            if (pattern == 1) {
+                if (i % 5 < 2) x[i] = 0;
+                if (i % 7 < 3) y[i] = 0;
+            } else if (pattern == 2) {
+                x[i] = i % n == i / n ? ((i / n) % 2 ? -1 : 1) : 0;
+            }
             encode(a, i, x[i], dtype); encode(b, i, y[i], dtype);
         }
         // Column-major C = A B. Cache-friendly independent integer oracle.
         std::vector<int> sums(x.size(), 0);
         for (int j = 0; j < n; ++j)
-            for (int k = 0; k < n; ++k)
-                for (int i = 0; i < n; ++i)
-                    sums[i+j*n] += x[i+k*n] * y[k+j*n];
+            for (int k = 0; k < n; ++k) {
+                const int v = y[k+j*n];
+                if (v == 0) continue;
+                if (pattern == 2) sums[k+j*n] = x[k+k*n] * v;
+                else for (int i = 0; i < n; ++i) sums[i+j*n] += x[i+k*n] * v;
+            }
         for (size_t i = 0; i < sums.size(); ++i) {
             if (dtype == "fp16") store(expected, i, exact_half(sums[i]));
             else if (dtype == "int8") store(expected, i, int32_t(sums[i]));
@@ -212,7 +227,7 @@ void memory_screen(const std::string& bdf, const std::string& arch, int hip_vers
         throw Failure(3, "memory headroom not preserved after allocation");
     const size_t chunk = std::min(words, size_t(1) << 20);
     std::vector<uint32_t> host(chunk);
-    std::cout << "{\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
+    std::cout << "{\"protocol_version\":" << protocol_version << ",\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
               << "\",\"dtype\":\"memory\",\"n\":" << mib
               << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
               << ",\"provider\":\"hip-memory\",\"library_version\":\"" << hip_version
@@ -266,16 +281,27 @@ int parse_int(const char* s, int lo, int hi) {
 // Exit 0 = screen passed; 2 = numerical mismatch; 3 = unavailable/invalid; 4 = device/runtime failure.
 int main(int argc, char** argv) {
     try {
+        if (argc == 2 && std::string(argv[1]) == "--protocol-version") {
+            std::cout << protocol_version << '\n';
+            return 0;
+        }
         if (argc == 2 && std::string(argv[1]) == "--self-test") {
             // Exact small CPU oracle and conversion tests, with no HIP calls.
             if (exact_half(1) != 0x1c00 || exact_half(-256) != 0xbc00 ||
                 exact_half(2048) != 0x4800 || exact_half(0) != 0) return 2;
             auto f = format("int8");
-            Corpus c(16, "int8", f);
-            int32_t first = 0; std::memcpy(&first, c.expected.data(), sizeof(first));
-            int32_t manual = 0;
-            for (int k=0;k<16;++k) manual += int8_t(c.a[k*16])*int8_t(c.b[k]);
-            if (first != manual) return 2;
+            std::vector<uint8_t> previous;
+            for (size_t pattern = 0; pattern < corpus_count; ++pattern) {
+                Corpus c(17, "int8", f, pattern);
+                if (c.expected == previous) return 2;
+                previous = c.expected;
+                for (int j=0;j<17;++j) for (int i=0;i<17;++i) {
+                    int32_t want = 0, got = 0;
+                    for (int k=0;k<17;++k) want += int8_t(c.a[i+k*17])*int8_t(c.b[k+j*17]);
+                    std::memcpy(&got, c.expected.data()+(i+j*17)*sizeof(got), sizeof(got));
+                    if (want != got) return 2;
+                }
+            }
             uint16_t pos = 0, neg = 0x8000, nonzero = 1;
             if (!equal_element(reinterpret_cast<uint8_t*>(&pos), reinterpret_cast<uint8_t*>(&neg), 2, false) ||
                 equal_element(reinterpret_cast<uint8_t*>(&pos), reinterpret_cast<uint8_t*>(&nonzero), 2, false)) return 2;
@@ -321,7 +347,6 @@ int main(int argc, char** argv) {
         }
         if (provider != "hipblaslt" && provider != "rocblas") throw Failure(3, "unknown provider");
         Format f = format(dtype);
-        Corpus c(n, dtype, f);
         Handles h;
         RocHandle r;
         std::string version, algorithm;
@@ -361,24 +386,34 @@ int main(int argc, char** argv) {
             // default dispatch, not an invented exact kernel identity.
             algorithm = "rocblas-default-no-atomics";
         }
-        Buffer a(c.a.size()), b(c.b.size()), out(c.expected.size()), ws(std::max(size_t(1), workspace));
-        HIP(hipMemcpy(a.p, c.a.data(), c.a.size(), hipMemcpyHostToDevice));
-        HIP(hipMemcpy(b.p, c.b.data(), c.b.size(), hipMemcpyHostToDevice));
-        std::vector<uint8_t> actual(c.expected.size());
+        struct Slot {
+            Corpus c;
+            Buffer a, b, out, expected;
+            int64_t launches = 0, checks = 0;
+            Slot(int n, const std::string& dtype, Format f, size_t pattern)
+                : c(n, dtype, f, pattern), a(c.a.size()), b(c.b.size()),
+                  out(c.expected.size()+2*guard_bytes), expected(c.expected.size()) {
+                HIP(hipMemcpy(a.p, c.a.data(), c.a.size(), hipMemcpyHostToDevice));
+                HIP(hipMemcpy(b.p, c.b.data(), c.b.size(), hipMemcpyHostToDevice));
+                HIP(hipMemcpy(expected.p, c.expected.data(), c.expected.size(), hipMemcpyHostToDevice));
+                HIP(hipMemset(out.p, 0xa5, c.expected.size()+2*guard_bytes));
+            }
+            void* data() { return static_cast<uint8_t*>(out.p)+guard_bytes; }
+        };
+        std::vector<std::unique_ptr<Slot>> slots;
+        for (size_t i=0;i<corpus_count;++i)
+            slots.push_back(std::make_unique<Slot>(n,dtype,f,i));
+        Buffer ws(std::max(size_t(1), workspace));
+        std::vector<uint8_t> actual(slots[0]->c.expected.size());
         float alpha = 1, beta = 0;
         int32_t ia = 1, ib = 0;
         const void* pa = dtype == "int8" ? static_cast<void*>(&ia) : static_cast<void*>(&alpha);
         const void* pb = dtype == "int8" ? static_cast<void*>(&ib) : static_cast<void*>(&beta);
         const size_t elements = size_t(n) * n;
         const bool integer = dtype == "int8";
-        std::unique_ptr<Buffer> expected, counters;
-        // Only the explicit batched mode uses the device-side verifier.
-        // With batch <= 256 and n <= 2048, counters cannot overflow.
-        if (batch > 1) {
-            expected = std::make_unique<Buffer>(c.expected.size());
-            counters = std::make_unique<Buffer>(2 * sizeof(unsigned));
-            HIP(hipMemcpy(expected->p, c.expected.data(), c.expected.size(), hipMemcpyHostToDevice));
-        }
+        std::unique_ptr<Buffer> counters;
+        // With batch <= 256 and n <= 2048, per-batch counters cannot overflow.
+        if (batch > 1) counters = std::make_unique<Buffer>(2 * sizeof(unsigned));
         auto verify_counts = [&](unsigned want_seen, unsigned want_bad) {
             unsigned counts[2] = {};
             HIP(hipDeviceSynchronize());
@@ -390,36 +425,55 @@ int main(int argc, char** argv) {
         };
         auto verifier_selfcheck = [&]() {
             if (batch == 1) return;
-            // Exercise the same comparator with a known one-element error.
-            HIP(hipMemcpy(out.p, c.expected.data(), c.expected.size(), hipMemcpyHostToDevice));
-            uint8_t flipped = c.expected[0] ^ 1;
-            HIP(hipMemcpy(out.p, &flipped, 1, hipMemcpyHostToDevice));
-            HIP(hipMemsetAsync(counters->p, 0, 2 * sizeof(unsigned)));
-            check_matrix_on_device(out.p, expected->p, elements, f.out_bytes, integer, counters->p);
-            verify_counts(unsigned(elements), 1);
-        };
-        auto compare_host = [&](int64_t iterations) {
-            HIP(hipMemcpy(actual.data(), out.p, actual.size(), hipMemcpyDeviceToHost));
-            if (actual == c.expected) return;
-            size_t mismatches = 0;
-            for (size_t i = 0; i < actual.size(); i += f.out_bytes) {
-                if (!equal_element(actual.data()+i, c.expected.data()+i, f.out_bytes, integer)) {
-                    if (mismatches < 4) {
-                        uint32_t a_bits = 0, e_bits = 0;
-                        std::memcpy(&a_bits, actual.data()+i, f.out_bytes);
-                        std::memcpy(&e_bits, c.expected.data()+i, f.out_bytes);
-                        std::cerr << "index " << i/f.out_bytes << ": observed 0x" << std::hex << a_bits
-                                  << " expected 0x" << e_bits << std::dec << '\n';
-                    }
-                    ++mismatches;
+            for (auto& ptr : slots) {
+                auto& s = *ptr;
+                for (size_t i : {size_t(0), elements/2, elements-1}) {
+                    HIP(hipMemcpy(s.data(), s.c.expected.data(), actual.size(), hipMemcpyHostToDevice));
+                    HIP(hipMemsetAsync(counters->p, 0, 2 * sizeof(unsigned)));
+                    check_matrix_on_device(s.data(), s.expected.p, elements, f.out_bytes, integer, counters->p);
+                    verify_counts(unsigned(elements), 0);
+                    size_t off = i*f.out_bytes;
+                    uint8_t flipped = s.c.expected[off] ^ 1;
+                    HIP(hipMemcpy(static_cast<uint8_t*>(s.data())+off, &flipped, 1, hipMemcpyHostToDevice));
+                    HIP(hipMemsetAsync(counters->p, 0, 2 * sizeof(unsigned)));
+                    check_matrix_on_device(s.data(), s.expected.p, elements, f.out_bytes, integer, counters->p);
+                    verify_counts(unsigned(elements), 1);
                 }
             }
-            if (mismatches)
-                throw Failure(2, "exact CPU oracle mismatch: " + std::to_string(mismatches) +
-                                 " elements after " + std::to_string(iterations) + " clean iterations");
         };
+        auto check_bytes = [&](void* device, const std::vector<uint8_t>& want, const char* what) {
+            std::vector<uint8_t> got(want.size());
+            HIP(hipMemcpy(got.data(), device, got.size(), hipMemcpyDeviceToHost));
+            if (got != want) throw Failure(2, what);
+        };
+        auto check_inputs = [&](Slot& s) {
+            check_bytes(s.a.p, s.c.a, "input A changed");
+            check_bytes(s.b.p, s.c.b, "input B changed");
+            check_bytes(s.expected.p, s.c.expected, "GPU reference buffer changed");
+        };
+        auto compare_host = [&](Slot& s, int64_t iterations) {
+            std::array<uint8_t, guard_bytes> guard{};
+            for (size_t off : {size_t(0), guard_bytes+actual.size()}) {
+                HIP(hipMemcpy(guard.data(), static_cast<uint8_t*>(s.out.p)+off,
+                              guard.size(), hipMemcpyDeviceToHost));
+                if (!std::all_of(guard.begin(), guard.end(), [](uint8_t b){return b==0xa5;}))
+                    throw Failure(2, "output guard changed");
+            }
+            HIP(hipMemcpy(actual.data(), s.data(), actual.size(), hipMemcpyDeviceToHost));
+            if (actual != s.c.expected) {
+                size_t mismatches = 0;
+                for (size_t i = 0; i < actual.size(); i += f.out_bytes)
+                    if (!equal_element(actual.data()+i, s.c.expected.data()+i, f.out_bytes, integer))
+                        ++mismatches;
+                if (mismatches) throw Failure(2, "exact CPU oracle mismatch: " + std::to_string(mismatches) +
+                                                  " elements after " + std::to_string(iterations) + " clean iterations");
+            }
+            check_bytes(s.expected.p, s.c.expected, "GPU reference buffer changed");
+            ++s.checks;
+        };
+        for (auto& s : slots) check_inputs(*s);
         verifier_selfcheck();
-        std::cout << "{\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
+        std::cout << "{\"protocol_version\":" << protocol_version << ",\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
                   << "\",\"dtype\":\"" << dtype << "\",\"n\":" << n
                   << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
                   << ",\"provider\":\"" << provider << "\",\"library_version\":\"" << version
@@ -428,35 +482,44 @@ int main(int argc, char** argv) {
         auto start = mono_ns();
         int64_t iterations = 0, host_checks = 0;
         do {
+            std::array<bool, corpus_count> used{};
             if (batch > 1) HIP(hipMemsetAsync(counters->p, 0, 2 * sizeof(unsigned)));
             for (int j=0; j<batch; ++j) {
-                // All operations use the same default stream, in issue order.
-                HIP(hipMemsetAsync(out.p, 0xff, actual.size()));
+                const size_t index = size_t(iterations+j) % corpus_count;
+                auto& s = *slots[index];
+                used[index] = true;
+                HIP(hipMemsetAsync(s.data(), integer ? 0x80 : 0xff, actual.size()));
                 if (provider == "hipblaslt") {
-                    LT(hipblasLtMatmul(h.h, h.desc, pa, a.p, h.in, b.p, h.in, pb,
-                                      out.p, h.out, out.p, h.out, &algo.algo, ws.p, workspace, nullptr));
+                    LT(hipblasLtMatmul(h.h, h.desc, pa, s.a.p, h.in, s.b.p, h.in, pb,
+                                      s.data(), h.out, s.data(), h.out, &algo.algo, ws.p, workspace, nullptr));
                 } else {
                     RB(rocblas_gemm_ex(r.h, rocblas_operation_none, rocblas_operation_none,
-                                      n,n,n,pa,a.p,rin,n,b.p,rin,n,pb,out.p,rout,n,out.p,rout,n,
+                                      n,n,n,pa,s.a.p,rin,n,s.b.p,rin,n,pb,s.data(),rout,n,s.data(),rout,n,
                                       rcompute,rocblas_gemm_algo_standard,0,0));
                 }
                 if (batch > 1)
-                    check_matrix_on_device(out.p, expected->p, elements, f.out_bytes, integer, counters->p);
+                    check_matrix_on_device(s.data(), s.expected.p, elements, f.out_bytes, integer, counters->p);
+                ++s.launches;
             }
             if (batch > 1) verify_counts(unsigned(elements * batch), 0);
             else HIP(hipDeviceSynchronize());
-            compare_host(iterations);
-            if (batch > 1) {
-                HIP(hipMemcpy(actual.data(), expected->p, actual.size(), hipMemcpyDeviceToHost));
-                if (actual != c.expected) throw Failure(2, "GPU reference buffer changed");
+            for (size_t i=0;i<corpus_count;++i) if (used[i]) {
+                compare_host(*slots[i], iterations);
+                ++host_checks;
             }
             iterations += batch;
-            ++host_checks;
             if (pause) std::this_thread::sleep_for(std::chrono::milliseconds(pause));
-        } while (iterations < 2 || mono_ns()-start < int64_t(seconds)*1000000000);
+        } while (iterations < int64_t(corpus_count) || mono_ns()-start < int64_t(seconds)*1000000000);
         int64_t end = mono_ns();
+        for (auto& s : slots) check_inputs(*s);
         verifier_selfcheck();
         std::cout << ",\"iterations\":" << iterations << ",\"host_checks\":" << host_checks
+                  << ",\"corpus_iterations\":[";
+        for (size_t i=0;i<corpus_count;++i) std::cout << (i ? "," : "") << slots[i]->launches;
+        std::cout << "],\"corpus_host_checks\":[";
+        for (size_t i=0;i<corpus_count;++i) std::cout << (i ? "," : "") << slots[i]->checks;
+        std::cout << "],\"device_elements_checked\":" << (batch>1 ? uint64_t(iterations)*elements : 0)
+                  << ",\"host_elements_checked\":" << uint64_t(host_checks)*elements
                   << ",\"elapsed_s\":" << std::setprecision(9) << double(end-start)/1e9
                   << ",\"start_ns\":" << start << ",\"end_ns\":" << end << ",\"status\":\"pass\"}\n";
         return 0;
