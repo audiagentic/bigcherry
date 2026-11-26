@@ -78,6 +78,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 first matched voltage arms completed: 2700 MHz / -25 mV sustained BF16 helper0 passed 621888 clean GEMMs, 154.52 W mean sampled board power, 62–64 C verified junction, run 20261126T010017Z-gpu-ai-screen-bb063285fb11; helper1 passed 635488, 166.08 W, 63–64 C, run 20261126T010148Z-gpu-ai-screen-9a8a4492b230. Both original/restored controls matched exactly and managed receipts were harvested and hash-verified. Relative to the prior 2700 MHz / 0 mV arms, sampled watts fell 8.5% and 6.3%; iteration counts fell 2.2% and 0.03%. Synthetic results only. Both -50 mV arms are next in the separate lease queue. No production promotion or Radiance kernel pass is implied.
 
+2026-11-26 next matched voltage arms: 2700 MHz / -50 mV sustained BF16 helper0 passed 635680 clean GEMMs, 145.91 W mean sampled board power, 61–63 C verified junction, run 20261126T010333Z-gpu-ai-screen-7585383d5229; helper1 passed 636864, 158.10 W, 63–65 C, run 20261126T010505Z-gpu-ai-screen-7ec9b6af2691. Both restored exactly and receipts were harvested and hash-verified. Relative to 2700 MHz / 0 mV, sampled board power fell 13.6% and 10.8%, while GEMM counts changed +0.01% and +0.19%; these are synthetic screens, not serving measurements. Both -75 mV arms are next.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -93,3 +95,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T00:51:43.453278+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T01:00:44.850238+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T01:03:50.950277+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T01:07:03.005446+00:00 (updated-by): Updated: section:notes
