@@ -1472,3 +1472,61 @@ Both candidate restores passed, all four original card snapshots matched,
 lease released. Driver health incomplete. This is sustained BF16 only;
 FP32 thermal nonpass, VRAM/burst/mixed pressure, native physical owner
 and matched model inference remain separate gates. No profile promotion.
+
+
+### R9700 expanded voltage-only screen (2026-11-26)
+
+Original shader offset 0, cap 300 W, original memory; signed voltage
+offset in 25 mV steps. Same BF16/FP32 768-square batch32, 3 s and
+0/2 ms pause cases as previous cohort. Fixed 10 s rest before each
+arm, fresh bracketed observed reference, fail-fast on any nonpass,
+80 C ceilings, no temperature floor. All four cards restored.
+
+| Voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 0 | 40992 | 12.02 | 1291.355 | 107.438 | 31.503 | 60 | 20261126T085021Z-gpu-ai-screen-a23ec25289b9 |
+| -25 | 41184 | 12.022 | 1272.244 | 105.824 | 30.892 | 62 | 20261126T085046Z-gpu-ai-screen-3caebd596b65 |
+| -50 | 41248 | 12.023 | 1250.837 | 104.039 | 30.325 | 62 | 20261126T085111Z-gpu-ai-screen-47619dd35c74 |
+| -75 | 41376 | 12.013 | 1216.19 | 101.237 | 29.394 | 62 | 20261126T085136Z-gpu-ai-screen-91f9b651d947 |
+| -100 | 41440 | 12.027 | 1191.739 | 99.093 | 28.758 | 62 | 20261126T085201Z-gpu-ai-screen-32f62cb1bea6 |
+| -125 | 41472 | 12.013 | 1153.883 | 96.054 | 27.823 | 62 | 20261126T085226Z-gpu-ai-screen-d8eb7f6e0b9d |
+| -150 | 41568 | 12.033 | 1125.055 | 93.497 | 27.065 | 62 | 20261126T085251Z-gpu-ai-screen-631053e4ecfc |
+| 0 | 40992 | 12.015 | 1317.006 | 109.614 | 32.128 | 67 | 20261126T085317Z-gpu-ai-screen-d3a4e5aa4d1a |
+
+32/32 numerical cases pass, 330272 verified GEMMs, six exact
+candidate restorations. At -150 mV estimated J/GEMM falls 14.9%
+versus bracketed stock, aggregate throughput rises about 1.3%.
+-125 mV falls 12.5% with about 1.2% higher rate. No failing voltage
+boundary found; -150 mV is a short screen point, not stable proof.
+Use -125 mV for clock sweep, leaving 25 mV relative to the deepest
+tested point; not a demonstrated failure-boundary margin. Driver
+health incomplete. Do not alter production settings.
+
+
+### R9700 clock screen at -125 mV (2026-11-26)
+
+Same bounded four-case workload and preflight/rest/safety as voltage
+screen. Fresh bracketed stock references, explicit voltage control,
+clock offsets 0 through -400 MHz in 100 MHz steps; additional
+210 W cap at -200 MHz. All physical snapshots exactly restored.
+
+| Cap W / clock MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 300/0/0 A1 | 41152 | 12.015 | 1318.266 | 109.722 | 32.034 | 66 | 20261126T085405Z-gpu-ai-screen-8773f80ec793 |
+| 300/0/-125 | 41472 | 12.021 | 1156.159 | 96.178 | 27.878 | 63 | 20261126T085430Z-gpu-ai-screen-925f4b60f657 |
+| 300/-100/-125 | 41280 | 12.016 | 1120.847 | 93.281 | 27.152 | 63 | 20261126T085455Z-gpu-ai-screen-a2526a7520f7 |
+| 300/-200/-125 | 41120 | 12.017 | 1094.753 | 91.098 | 26.623 | 61 | 20261126T085520Z-gpu-ai-screen-93b2f02878bf |
+| 300/-300/-125 | 40992 | 12.026 | 1056.113 | 87.82 | 25.764 | 60 | 20261126T085545Z-gpu-ai-screen-126101c3093f |
+| 300/-400/-125 | 40672 | 12.013 | 1016.44 | 84.615 | 24.991 | 59 | 20261126T085611Z-gpu-ai-screen-e176b3225009 |
+| 210/-200/-125 | 41120 | 12.029 | 1082.786 | 90.018 | 26.332 | 62 | 20261126T085636Z-gpu-ai-screen-9232acec4bbe |
+| 300/0/0 A2 | 41056 | 12.016 | 1329.515 | 110.643 | 32.383 | 69 | 20261126T085701Z-gpu-ai-screen-4119a24cc60c |
+
+32/32 cases pass, 328864 verified GEMMs, six exact candidate
+restores. Bracketed stock 32.208 J/1000 GEMMs and 3420.915 GEMMs/s.
+-300/-125/300 W: -20.0% energy/GEMM, -0.36% aggregate rate;
+-400/-125/300 W: -22.4%, -1.03% rate. These two finalists go to
+fresh 90 s BF16 sustained pressure. No failure boundary located;
+no stable or model-performance claim from short screen. Driver
+health incomplete. Native backend merged in PR 1685, but live native
+qualification requires a release that contains it; never substitute
+a platform writer under the native owner.

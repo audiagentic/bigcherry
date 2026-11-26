@@ -55,6 +55,8 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 
 2026-11-26: 30+60 s FP32 reference 20261126T083443Z-gpu-ai-screen-c566b175881a thermal nonpass at 80 C after ~33 s; no candidate applied, all original snapshots matched. Fresh 30+60 s BF16 bracket passed 4/4: stock A1 468608 GEMMs/7481.768 J/58 C; 300W/-200MHz/-50mV 473344/7491.458 J/61 C; 210W/-200MHz/-75mV 474208/7436.050 J/62 C; stock A2 468480/7626.687 J/64 C. Both restores and all-card exact snapshot pass, lease free. BF16 energy savings ~1.8%/2.7% against stock aggregate; not inference. CI first pass 39/40 serving tests, bc_manifest_power_test fake populated mutually exclusive shader capabilities. Corrected fixture in 1381502de without changing admission; rerun pending. Driver health incomplete. Native live owner, VRAM/burst/mixed pressure and model ABBA pending; do not promote profiles.
 
+2026-11-26 expanded voltage-only and clock screens complete: 64/64 cases, 659136 verified GEMMs, 12/12 candidate restores and all-card exact snapshots. Original clock 300 W through -150 mV passed, -14.9% estimated energy/GEMM and +1.3% rate. At -125 mV, offsets 0/-100/-200/-300/-400 MHz all pass; 210 W/-200 also passes. 300 W/-300/-125 saves 20.0% energy/GEMM at -0.36% rate, 300 W/-400/-125 saves 22.4% at -1.03% rate. Capture IDs in AI_POWER_SCREEN.md. Fresh 90 s BF16 sustained finalists selected from evidence; no measured failure boundary, driver health incomplete, no default changes. Native owner release and further pressure remain required.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
@@ -62,3 +64,4 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 - 2026-11-26T08:32:54.215371+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T08:32:59.239311+00:00 (state-transition): State: pending → in_progress
 - 2026-11-26T08:44:35.266324+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:58:07.547084+00:00 (updated-by): Updated: section:notes
