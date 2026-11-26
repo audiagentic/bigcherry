@@ -56,7 +56,10 @@ serving manifest for engine kernel switches (status vocabulary:
 `docs/archive/radiance/PLATFORM_DESIGN.md` decision 2 for why this is
 a component rather than a patch. Native rewrite rules check exact source anchors at the revision
 declared in `component.toml`. `R3_NATIVE=OFF` compiles through `r3_compat.h` alone.
-The selected gfx1100 provider remains BigCherry's libr3. RCS15–18 track qualification of
+The selected gfx1100 provider remains BigCherry's libr3. The IQR embedding gather, the IQR vocabulary head and the IQR GEMM family
+(with the fused single-band tile) are no longer built here: they are owned by the `bc-iqr` overlay plugin, listed ahead of libr3 and libr4d
+in the kernels line of every serving config that serves an IQR container (`exclude.txt` names the three units, their rewrites are in
+`native-shelved/`, and the 8 shared prefill-header rewrites stay). RCS15–18 track qualification of
 upstream's native libr3d. The grouped canonical MXFP4 MoE row was removed upstream in 2.0,
 so its old override is in `native-shelved/`. The dense MXFP4 decode and prefill rows remain active. Evidence for each setting lives in the dated entries of
 `docs/archive/radiance/LAB_HISTORY.md` (the lab log).
