@@ -148,7 +148,7 @@ fence before any restore or new mutation.
 ## Managed evidence and retention
 
 Every screen creates an existing WSL01 capture run at
-`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR12,
+`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR13 when any instruction case is requested, otherwise PWR12,
 engine none). The usual `run.manifest.json` records lifecycle, source and
 input digests, exit code, and a typed reference to the stock run for candidates.
 The single `<run-id>.power.json` uses the existing platform Receipt v1
@@ -169,6 +169,43 @@ reference as described above). Retain the typed run reference and digest
 of its exact receipt. The old arbitrary --output argument is removed.
 No engine runs or hardware settings are changed by this output alignment.
 
+## Independent direct instruction cases (PWR13)
+
+Use the same command, leased and observe-only, with
+`--dtype alu wave lds --n 256 --seconds "$SCREEN_SECONDS" --pause-ms 0 2`
+and explicit safe thermal ceilings. Here `--n` is the number of workgroups,
+each with 256 lanes, rather than matrix size; provider is resolved to
+hip-native and batch to 1. The matrix provider/batch options apply only to
+matrix cases. No new writer, engine dependency, or qualification store.
+New cases refuse --apply-profile pending cross-owner recovery hardening.
+
+Each launch changes an epoch seed. Each lane produces four independently
+CPU-computed uint32 words. ALU checks unsigned wrapping multiply-add,
+multiply-high, rotate/xor and byte extraction; wave checks runtime-width
+lane permutation, xor shuffle and ballot mask; LDS uses two cross-lane
+exchanges separated by barriers, including a cross-wave read. The CPU
+reference constructs lane maps independently, and checks every output
+and both guard regions after each launch. Inputs are read back before and
+after load. Recorded width (32 or 64), group geometry, exact positive
+launch/lane/word/guard/input counts and allocation/headroom are mandatory.
+CPU-side self-test covers wave32/wave64 boundary lanes and exact golden
+ALU/LDS values. Host readback limits intensity: these are instruction
+correctness tests, not proof of sustained GPU saturation or hot coverage.
+
+Build all actual targets with explicit offload-arch flags. For a new
+compiler/build, inspect each embedded code object rather than assuming
+the HIP intrinsic name proves native coverage. With the SDK's llvm-objdump
+in scratch, extract the binary's offload bundles using `--offloading` and
+disassemble each target using `-d --demangle`. Within instruction_alu,
+require multiply-high/low and bit extraction/rotate; within
+instruction_wave, require the lane permutation operation and predicate
+comparison; within instruction_lds, require explicit LDS read/write
+and barrier instructions. This inspection is a build validation step,
+not an automatic runtime ISA attestation. The managed receipt binds the
+actual executable digest. See evidence below for the tested code objects.
+The direct cases do not yet prove explicit WMMA/MFMA, masked partial-wave
+semantics, packed dot or general vector-FP coverage.
+
 ## Numerical and identity contract
 
 The native probe uses actual HIP-visible PCI identity and validates the
@@ -176,8 +213,8 @@ expected architecture before allocation. It selects a hipBLASLt heuristic or exp
 public default GEMM dispatch with atomics disabled. It records provider and
 library versions; hipBLASLt also records opaque algorithm bytes, while
 rocBLAS honestly records default dispatch, not an exact internal solution ID. It
-checks every active HIP/library operation. Native protocol 2 / screen
-observations schema 3 rotates three deterministic operand corpora: dense
+checks every active HIP/library operation. Native protocol 3 / screen
+observations schema 4 retains protocol-2 matrix semantics and rotates three deterministic operand corpora: dense
 signed, sparse signed, and signed-diagonal A times dense B. Floating
 inputs are exactly representable 0 or +/-1/16, integer inputs 0 or +/-1.
 The CPU integer dot sum is exact over the supported dimension range. The
@@ -195,7 +232,7 @@ compared elements, are required in the receipt. All three corpora must
 execute, plus the elapsed duration. Memory retains batch 1 and at least
 two full passes. Positive pause is between batches. This is a stronger
 correctness workload, not a comparable throughput benchmark for old probes.
-Old schema-2 receipts are preserved as historical diagnostics; the
+Old schema-2 and schema-3 receipts are preserved as historical diagnostics; the
 protocol handshake refuses old native binaries before any transaction,
 and the new validator refuses an old reference.
 
@@ -536,3 +573,34 @@ All six receipts harvested. No production qualification, no voltage/clock
 change. Exact instruction classes, mixed residency, varied shapes,
 transitions/thermal soak, cross-owner transaction hardening and native
 role/serving tests remain separate gates. No reused schema-2 reference.
+
+### PWR13 direct instruction evidence (2026-11-26)
+
+ROCm 7.2.4 built gfx1030/gfx1100/gfx1201 with explicit offload targets;
+CPU golden self-test and 202 hardware tests passed (one skipped). The
+initial volatile shared declaration lowered to flat accesses; the final
+nonvolatile shared storage and full-group barriers emit the intended LDS
+instructions. Extracted code objects were inspected for each target:
+
+| Architecture | Integer | Wave | LDS |
+| --- | --- | --- | --- |
+| gfx1030 | v_mul_hi_u32, v_mul_lo_u32, v_bfe_u32, v_lshl_or_b32 | ds_bpermute_b32, predicate compare | ds_read_b32, ds_write_b32, s_barrier |
+| gfx1100 | same integer instructions | ds_bpermute_b32, predicate compare | ds_load_b32, ds_store_b32, s_barrier |
+| gfx1201 | same integer instructions | ds_bpermute_b32, predicate compare | ds_load_b32, ds_store_b32, s_barrier_signal/wait |
+
+Separate named leases, observe-only, 256 groups of 256 lanes, actual
+wave32 on all four cards, 5 s sustained and 5 s with 2 ms gap for each
+case. All 24 cases passed. Entries are checked launches (sustained/burst),
+not inference throughput.
+
+| Role | ALU | Wave | LDS | Host-verified words | Managed run ID |
+| --- | ---: | ---: | ---: | ---: | --- |
+| gfx1100 helper0 | 12658/1472 | 12443/1428 | 13227/1470 | 11193024512 | 20261126T030010Z-gpu-ai-screen-06054a43468d |
+| gfx1100 helper1 | 12607/1458 | 12447/1443 | 13104/1513 | 11159994368 | 20261126T030043Z-gpu-ai-screen-ecde5445c70e |
+| gfx1201 engine | 10569/1461 | 10392/1459 | 10767/1501 | 9476243456 | 20261126T030117Z-gpu-ai-screen-8df0f8658a21 |
+| gfx1030 helper2 | 8520/1418 | 8376/1373 | 8638/1454 | 7806386176 | 20261126T030151Z-gpu-ai-screen-b69a4bec4e03 |
+
+Total 39635648512 checked words, no mismatch; all four captures harvested
+and unchanged start/stop controls and identities verified. These are
+host-readback-limited smoke tests, not hot soak, saturation, matrix
+instruction coverage, or production qualification. No power changes.

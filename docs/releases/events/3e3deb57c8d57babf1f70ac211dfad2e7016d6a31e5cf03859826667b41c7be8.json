@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_030334_gpu-stability-screens-now-dire_5752",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/design/gpu-qualification-code-guide.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add exact independent integer, full-wave exchange and cross-wave LDS/barrier cases with changing epochs, complete CPU readback, guarded output, input checks and strict geometry/coverage/headroom validation. All 24 observe-only cases passed across four cards; target code-object inspection confirmed native instructions. Protocol 3/schema 4; new cases refuse profile application pending owner recovery hardening.",
+  "timestamp-utc": "2026-11-26T03:03:34.406699Z",
+  "user-summary-candidate": "GPU stability screens now directly exercise integer arithmetic, wave exchange and shared memory barriers, independently of matrix libraries."
+}
