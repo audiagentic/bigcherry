@@ -45,7 +45,7 @@ void bc_serving_managed_mark();
 const bc::serving::EngineAdmission* bc_serving_managed_admission();
 int bc_serving_managed_admission_fd();   /* the inherited descriptor the admission came from */
 
-/* Defined beside the getters it fills (bc_serving_manifest.cpp). */
+/* Defined beside the getters it fills (bc_serving_engine.cpp). */
 void bc_serving_install_engine_state(const bc::serving::EngineAdmission& admission, const std::string& heat_nonce,
                                      const std::string& step_phase_dir);
 

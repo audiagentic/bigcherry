@@ -1,5 +1,13 @@
 # Changelog
 
+## [2020.21.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.20.0...bc-radiance-2020.21.0) (2026-11-26)
+
+
+### New and changed
+
+* **rsc02:** archive rad0009, delete the manifest entry, engine entry owned by rad0070 (B2) ([#1652](https://github.com/audiagentic/bigcherry/issues/1652)) ([0480e91](https://github.com/audiagentic/bigcherry/commit/0480e9144ed9afcaae1a35e9737a81cb3e577f1a))
+* **rsc02:** owner starts every engine on --config and a sealed admission (B) ([#1639](https://github.com/audiagentic/bigcherry/issues/1639)) ([38e0572](https://github.com/audiagentic/bigcherry/commit/38e05727400a4e9f6a7c09399b5d10147adb340a))
+
 ## [2020.20.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.19.0...bc-radiance-2020.20.0) (2026-11-25)
 
 

@@ -191,11 +191,19 @@ Result<PowerPlan> power(const Manifest &m, const S10Inputs &in,
                     "SCLK offset has no transaction/restore backend");
       if (!in.power.probe)
         return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices", "apply needs a device probe");
-      const S10DeviceProbe probe = in.power.probe(dev.bdf);
+      const auto probed = in.power.probe.invoke("s10.power.probe", dev.bdf);
+      if (!probed) return probed.error();
+      const S10DeviceProbe &probe = probed.value();
       if (probe.bdf != dev.bdf || probe.driver != "amdgpu")
         return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices",
                     dev.bdf + ": no amdgpu power backend for this card");
-      if (!in.power.qualify && !(in.power.qualified_by && in.power.qualified_by(dev.bdf, dev.settings)))
+      bool qualified = in.power.qualify;
+      if (!qualified && in.power.qualified_by) {
+        const auto matched = in.power.qualified_by.invoke("s10.power.qualified_by", dev.bdf, dev.settings);
+        if (!matched) return matched.error();
+        qualified = matched.value().has_value();
+      }
+      if (!qualified)
         return fail(ConfigErrorCode::calibration_invalid, "spec.plan.power.devices",
                     dev.bdf + ": no verified apply, readback and restore receipt for these settings on this board "
                               "and driver; qualify them with a lab apply (--allow-power-apply --qualify-power)");

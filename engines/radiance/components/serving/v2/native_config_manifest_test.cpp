@@ -188,12 +188,20 @@ int main(int argc, char** argv) {
         const auto applied = v3::resolve_s10(mixed, apply);
         check(applied.ok() && applied.value().spec.plan.power.mode == v3::PowerMode::kApply, "a qualified apply was refused");
         v3::S10Inputs qualifying = apply;
-        qualifying.power.qualified_by = nullptr;
+        qualifying.power.qualified_by = {};
         qualifying.power.qualify = true;
         check(v3::resolve_s10(mixed, qualifying).ok(), "the qualifying apply was refused without a receipt");
         v3::S10Inputs out_of_range = qualifying;
+        const auto base_probe = [&](const std::string& bdf) {
+            v3::S10DeviceProbe probe;
+            probe.bdf = bdf; probe.driver = "amdgpu";
+            probe.controls["vddgfx_offset_mv"] = control(-500, 0);
+            probe.controls["sclk_max_mhz"] = control(500, 5000);
+            probe.controls["power_cap_w"] = control(1000000, 400000000);
+            return probe;
+        };
         out_of_range.power.probe = [&](const std::string& bdf) {
-            auto probe = apply.power.probe(bdf);
+            auto probe = base_probe(bdf);
             probe.controls["power_cap_w"] = control(1000000, 100000000);   // 200 W is above this card's cap range
             return probe;
         };

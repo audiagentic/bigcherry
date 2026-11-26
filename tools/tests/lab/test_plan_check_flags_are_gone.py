@@ -2,7 +2,7 @@
 
 `--plan-check FILE --plan-check-floor-ppm N` (rad0011) and bc-serve's `--plan-check-args`, `--plan-store`, `--plan-key` existed only
 until the engine read its expected plan and floor from a v1 manifest. The engine now takes both from the measured manifest it is
-started from (rad0009's bc_serving_expected_plan, from engine_view), bc-serve writes the measured manifest from a measuring
+started from (rad0070's bc_serving_expected_plan, from the owner's admission), bc-serve writes the measured manifest from a measuring
 start's session-owned plan cache, and no flag can hand the engine a plan. This test fails if any of the
 retired names reappears in the code that produced or consumed them: no shim, no parallel path.
 """
@@ -26,7 +26,7 @@ CODE = (
     *(REPO / "tools" / "bigcherry").rglob("*.py"),
 )
 # the card-free tests name the retired flags to show they are refused; the contract examples never carry them
-ALLOWED_MENTIONS = {"plan_flags_test.cpp", "manifest_argv_test.cpp"}
+ALLOWED_MENTIONS = {"plan_flags_test.cpp"}
 
 
 class PlanCheckFlagsAreGoneTests(unittest.TestCase):
@@ -36,11 +36,12 @@ class PlanCheckFlagsAreGoneTests(unittest.TestCase):
         self.assertEqual(survivors, [])
 
     def test_the_engine_checks_the_plan_its_manifest_carries(self) -> None:
-        component = (REPO / "engines/radiance/components/serving/bc_serving_manifest.cpp").read_text(encoding="utf-8")
+        component = (REPO / "engines/radiance/components/serving/bc_serving_engine.cpp").read_text(encoding="utf-8")
+        admission = (REPO / "engines/radiance/components/serving/v2/engine_admission.cpp").read_text(encoding="utf-8")
         rad0011 = (REPO / "engines/radiance/patches/rad0011_plan_memory/patch.py").read_text(encoding="utf-8")
         # The owned component admits the manifest and publishes its measured plan; rad0011 checks the engine's plan against it.
         self.assertIn("bool bc_serving_expected_plan(", component)
-        self.assertRegex(component, r"v2::engine_view\(manifest\.value\(\)\)")
+        self.assertRegex(admission, r"v2::engine_view\(m\)")
         self.assertIn("bc_serving_expected_plan(&expected, &floor_ppm)", rad0011)
 
     def test_the_guard_can_fail(self) -> None:
