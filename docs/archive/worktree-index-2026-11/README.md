@@ -92,3 +92,25 @@ Everything else in this part is shipped on main or preserved in `experiments/rad
 
 - Local tags (`archive/wt-*-20261124`) and branches live only in this repository's object store; none is pushed. Removing a worktree does not drop commits, but pruning branches or objects would. Pushing the tags, or committing the archives above, removes that single point of failure.
 - Statements "on main" were checked by symbol or path grep on `origin/main` today; squash merges mean subject matching alone was not used.
+
+## Full audit of the 20 "safe to finish" worktrees (2026-11-27)
+
+Method: every line each branch's own commits added (merge base to tip, lines of 12 characters or more) was looked up among all lines of every tracked text file on main. A line not found anywhere on main was then traced: deleted on purpose by later work, moved, superseded by a different implementation, or genuinely missing.
+
+| Worktree | Added lines | Not found on main | What those lines are | Preserve or continue? |
+|---|---:|---:|---|---|
+| converter-build | 0 | 0 | nothing | no |
+| fix-1323-links | 36 | 0 | all on main | no |
+| fix-moe-hook-test | 14 | 0 | all on main | no |
+| release-series-evidence | 55 | 0 | all on main | no |
+| rum15-compact-factors | 24 | 1 | one plan-note sentence; both evidence pages are on main | no |
+| libr3-family-builds | 152 | 2 | an earlier form of two lines of the family targets (#1545 landed a revised version) | no |
+| build-gc-v3-manifests | 12 | 8 | a differently worded test of the same fix (#1524 on main) | no |
+| serving-explain-owner-map | 124 | 9 | patch-footprint counts of that day | no |
+| vtp58-tall-tile | 69 | 49 | the rejected 64 x 256 tile; archived with its measurement in docs/archive/unmerged-candidates-2026-11 | no |
+| fused-gfx1201-ship, iqr-fused-gfx1201 | 310, 290 | 94, 91 | an earlier text of rad0065 (now archived unchanged under engines/radiance/patches/archive after the bc-iqr overlay took the unit) and its old test | no |
+| rum05-reuse-text | 352 | 50 (and 4 uncommitted files) | a first form of the stored-plan reuse; main has the shipped form | no |
+| model-identity-cache, rum02-archive-superseded, rum05-planner-room, rum06-build-iq8r, rum06-qwen27b-tp2, rum09-build-c3bf87fcd, rum11-e4m3-page16 (one stacked line) | about 31,700 to 39,400 each | about 2,500 to 2,800 each, in about 110 files | about two thirds in files main deleted on purpose (rad0009 and the manifest launch path, the v2 generated codec, the manifest engine tests, the Python manifest adapter, the int8-556 configs retired when the configs moved to IQ8R in #1167, plan items since moved to completed); the rest are earlier versions of files main has since rewritten (session, serving tests, patch packages). The two pieces of design not on main, the shared model-identity cache and the plain MXFP4 admission patch (rad0055_qwen35_plain_mxfp4), are preserved as inert patches in experiments/radiance/2026-11-25-branch-recovery | no |
+| rum06-clean-cancel | 19,058 | 115 | mostly an earlier form of the remote-MoE close and cancellation that main carries in a revised design (a Cancelled result in the admission ledger, retire cancels and drains borrowers). One possible gap: the branch also refuses to run the bootstrap work for a rank that is already ready once the close has asked for cancellation (`with_bootstrap_rank_lock` in moe-remote/owner_generation.h); main checks cancellation only while waiting for a rank that is not yet ready | finish after one check: whether main needs that early cancellation check |
+
+Conclusion: nothing in these 20 needs preserving beyond what is already archived; one item (the early cancellation check) is worth a short look before rum06-clean-cancel is finished.
