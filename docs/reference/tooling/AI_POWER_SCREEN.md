@@ -417,3 +417,24 @@ The refusal was not a GPU workload. A combined inconclusive reference cannot
 authorize candidate application. Separate sustained-only research uses the
 same thermal bounds; this does not replace the missing burst coverage or
 factory/production qualification.
+
+### Separate sustained-only matched clock comparison
+
+Same provider, BF16, N=768, batch 32, 30 s warmup / 60 s final, 60 C
+junction floor and 80 C junction/memory ceilings; 0 ms pause only.
+The 2700 MHz candidate used zero voltage offset, not an undervolt.
+
+| Card | Profile | Clean GEMMs | Mean sampled W | Verified junction C | Managed run ID |
+|---|---|---:|---:|---|---|
+| gfx1100 helper0 | observed | 667328 | 207.60 | 74–76 | 20261126T004204Z-gpu-ai-screen-6a482ae0c172 |
+| gfx1100 helper0 | 2700 MHz / 0 mV | 635616 | 168.78 | 66–67 | 20261126T004508Z-gpu-ai-screen-ca59ff2a7abe |
+| gfx1100 helper1 | observed | 679680 | 242.52 | 75–78 | 20261126T004335Z-gpu-ai-screen-4310f902d81b |
+| gfx1100 helper1 | 2700 MHz / 0 mV | 635648 | 177.32 | 65–66 | 20261126T004640Z-gpu-ai-screen-acf831cdd992 |
+
+All four passed; both candidate applications restored original controls
+exactly. Mean sampled board power fell 18.7% and 26.9%, while completed
+GEMMs fell 4.8% and 6.5%, respectively. These are synthetic fixed-duration
+screen counts and sampled power, not phase-integrated energy or serving
+throughput. All four receipts were harvested; matched post-candidate
+observations are pending. Burst thermal coverage remains inconclusive.
+No factory reference assertion or production qualification.

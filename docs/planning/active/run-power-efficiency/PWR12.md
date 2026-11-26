@@ -70,6 +70,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 extended observed-reference BF16 diagnostic: both gfx1100 helpers used the same batched N=768, 30 s warmup + 60 s final per pattern, sustained and 2 ms burst, junction floor 60 C and junction/memory ceiling 80 C. Helper0 sustained pass 669120 clean GEMMs, verified hot window 72–75 C; burst 418624 clean GEMMs but no full hot window. Helper1 sustained pass 678784 clean GEMMs, 75–78 C; burst 416928 clean GEMMs but no full hot window. Both overall inconclusive, observed controls unchanged, no candidate mutation. Harvested run IDs 20261126T003601Z-gpu-ai-screen-f853a264fda9 and 20261126T003902Z-gpu-ai-screen-1a5e1e347d28; separate initial lease refusal 20261126T003525Z-gpu-ai-screen-835df6a9a21e also harvested, no GPU launch. Do not reuse an overall inconclusive receipt as a candidate reference. Separate sustained-only matching research arms are the next gate, without weakening thermal criteria. Factory and production qualification remain outstanding.
 
+2026-11-26 separate sustained-only matched research (same N=768 BF16 rocBLAS, batch 32, 30 s warmup/60 s final, 60 C floor/80 C junction and memory ceilings): helper0 observed reference 667328 clean GEMMs, 207.60 W sample mean, 74–76 C, run 20261126T004204Z-gpu-ai-screen-6a482ae0c172; matched 2700 MHz / 0 mV candidate 635616, 168.78 W, 66–67 C, run 20261126T004508Z-gpu-ai-screen-ca59ff2a7abe. Helper1 observed reference 679680, 242.52 W, 75–78 C, run 20261126T004335Z-gpu-ai-screen-4310f902d81b; matched candidate 635648, 177.32 W, 65–66 C, run 20261126T004640Z-gpu-ai-screen-acf831cdd992. All four passed; both candidate transactions restored exact original readback; all harvested. Sample mean board power reduced 18.7% and 26.9%, but completed GEMM counts decreased 4.8% and 6.5%; no phase-integrated energy, factory stock assertion, or production qualification. Burst thermal nonpasses remain; do not treat sustained-only results as full qualification. Post-candidate matched observed references pending.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -81,3 +83,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-25T23:46:49.293197+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T00:36:29.997424+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T00:42:36.050989+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T00:48:59.954682+00:00 (updated-by): Updated: section:notes
