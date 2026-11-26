@@ -25,7 +25,6 @@ UNIT_FILE = re.compile(r"^libr4d/([A-Za-z0-9_]+)\.hip$")
 SHARING_FILE = "unit-sharing.toml"
 EXCEPTIONS_FILE = "naming-exceptions.toml"
 RULES_FILE = "naming-rules.toml"
-REWRITE_LAYER = "rewrite:libr3"
 
 
 def _patches_root(engine: str) -> Path:
@@ -65,7 +64,7 @@ def rewrite_units(engine: str) -> dict[str, list[str]]:
     out: dict[str, list[str]] = {}
     for path in rewrite_files(engine):
         if path.name.endswith(".hip.rw"):
-            out.setdefault(path.name[: -len(".hip.rw")], []).append(REWRITE_LAYER)
+            out.setdefault(path.name[: -len(".hip.rw")], []).append(f"rewrite:{path.parent.parent.name}")
     return out
 
 
@@ -217,23 +216,53 @@ def introduced(engine: str) -> list[tuple[str, str, str]]:
     for path in rewrite_files(engine):
         for find, replace in _rewrite_blocks(path):
             for name in sorted(introduced_names(replace, find)):
-                out.append((REWRITE_LAYER, path.name, name))
+                out.append((f"rewrite:{path.parent.parent.name}", path.name, name))
     return out
 
 
 def rules(engine: str) -> dict:
-    """The accepted suffix patterns per layer kind (``naming-rules.toml``): ``{arch}`` is gfx<digits>, ``{id}`` the patch id."""
-    return _data(engine, RULES_FILE)
+    """Load naming policy and architecture tokens from existing engine metadata."""
+    policy = _data(engine, RULES_FILE)
+    arch_path = paths.REPO_ROOT / "engines" / engine / "archs.toml"
+    architectures = tomllib.loads(arch_path.read_text(encoding="utf-8"))["arch"]
+    aliases = policy.get("architecture_aliases", {})
+    if set(aliases) - architectures.keys():
+        raise ValueError("naming architecture aliases refer to an unknown architecture")
+    policy["arch_tokens"] = sorted(set(architectures) | {alias for values in aliases.values() for alias in values})
+    validate_rules(policy)
+    return policy
+
+
+def validate_rules(policy: dict) -> None:
+    """Reject malformed templates even when no declaration uses them."""
+    import string
+    for patterns, fields in [(policy["patch"]["suffixes"], {"arch", "id"})] + [
+        (entry["suffixes"], set()) for entry in policy["rewrite"].values()
+    ]:
+        if not patterns or not isinstance(patterns, list):
+            raise ValueError("naming suffixes must be a nonempty list")
+        for pattern in patterns:
+            if not pattern.startswith("_"):
+                raise ValueError(f"invalid naming suffix {pattern!r}")
+            for literal, field, spec, conversion in string.Formatter().parse(pattern):
+                if not re.fullmatch(r"[A-Za-z0-9_]*", literal) or (field is not None and field not in fields) or spec or conversion:
+                    raise ValueError(f"invalid naming suffix template {pattern!r}")
+    if not all(re.fullmatch(r"gfx[0-9]+", token) for token in policy.get("arch_tokens", [])):
+        raise ValueError("invalid naming architecture token")
 
 
 def suffix_ok(layer: str, name: str, rules_: dict) -> bool:
-    if layer == REWRITE_LAYER:
-        patterns = rules_.get("rewrite", {}).get("suffixes", [])
-        return any(re.search(re.escape(p) + "$", name) for p in patterns)
-    patch_id = layer.split(":", 1)[1].split("_", 1)[0]
+    kind, _, owner = layer.partition(":")
+    if kind == "rewrite":
+        return any(name.endswith(p) for p in rules_.get("rewrite", {}).get(owner, {}).get("suffixes", []))
+    if kind != "patch" or not owner:
+        return False
+    patch_id = owner.split("_", 1)[0]
     patterns = rules_.get("patch", {}).get("suffixes", [])
-    return any(re.search(re.escape(p).replace(r"\{arch\}", r"gfx\d+").replace(r"\{id\}", re.escape(patch_id)) + "$", name)
-               for p in patterns)
+    if re.search(r"_gfx[0-9]+_" + re.escape(patch_id) + r"$", name):
+        patterns = [p for p in patterns if "{arch}" in p]
+    return any(name.endswith(p.format(arch=arch, id=patch_id))
+               for p in patterns for arch in (rules_.get("arch_tokens", []) if "{arch}" in p else [""]))
 
 
 # ---------------------------------------------------------------------------------------------------- problems

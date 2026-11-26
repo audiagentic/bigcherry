@@ -29,3 +29,55 @@ endfunction()
 
 set(R3_KERNEL_GROUPS
   core gemm_quant gemm_dense attention moe speculation multimodal collectives)
+
+function(r3_read_unit_lines upstream out)
+  # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`.
+  file(STRINGS "${upstream}/libr4d/CMakeLists.txt" unit_lines REGEX "^  \"r4d_[A-Za-z0-9_]+\\|")
+  # Unit names have capitals (r4d_ar_oneshot_Nrank_exact): a lowercase-only pattern once dropped the 3/4/8-rank
+  # all-reduce units without a word, and their entry points became stubs. Every unit line must parse.
+  file(STRINGS "${upstream}/libr4d/CMakeLists.txt" all_unit_lines REGEX "^  \"r4d_")
+  list(LENGTH unit_lines n_parsed)
+  list(LENGTH all_unit_lines n_listed)
+  if(NOT n_parsed EQUAL n_listed OR n_parsed EQUAL 0)
+    message(FATAL_ERROR "libr3: parsed ${n_parsed} of libr4d's ${n_listed} unit lines; fix the unit pattern")
+  endif()
+  set(${out} "${unit_lines}" PARENT_SCOPE)
+endfunction()
+
+function(r3_unit_fields line unit_out flags_out)
+  string(REGEX MATCH "\"(r4d_[A-Za-z0-9_]+)\\|([^\"]*)\"" _ "${line}")
+  set(unit ${CMAKE_MATCH_1})
+  set(flags "${CMAKE_MATCH_2}")
+  if(NOT unit)
+    message(FATAL_ERROR "libr3: invalid unit line: ${line}")
+  endif()
+  set(${unit_out} "${unit}" PARENT_SCOPE)
+  set(${flags_out} "${flags}" PARENT_SCOPE)
+endfunction()
+
+# Read-only canonical classification of every upstream unit, including units
+# excluded from a particular component build. The build's r3_groups.tsv still
+# describes only the actual configured objects. Use the same TSV format and
+# classifier; do not create a second taxonomy.
+if(DEFINED CMAKE_SCRIPT_MODE_FILE AND CMAKE_SCRIPT_MODE_FILE STREQUAL CMAKE_CURRENT_LIST_FILE)
+  cmake_minimum_required(VERSION 3.21)
+  if(NOT DEFINED R3_GROUP_SOURCE OR NOT DEFINED R3_GROUP_OUTPUT)
+    message(FATAL_ERROR "Set R3_GROUP_SOURCE and R3_GROUP_OUTPUT for the inventory")
+  endif()
+  r3_read_unit_lines("${R3_GROUP_SOURCE}" lines)
+  set(seen "")
+  set(manifest "group\tunit\n")
+  foreach(line IN LISTS lines)
+    r3_unit_fields("${line}" unit flags)
+    if(unit IN_LIST seen)
+      message(FATAL_ERROR "Duplicate upstream unit: ${unit}")
+    endif()
+    list(APPEND seen "${unit}")
+    r3_kernel_group("${unit}" group)
+    if(NOT group IN_LIST R3_KERNEL_GROUPS)
+      message(FATAL_ERROR "Unknown group: ${group}")
+    endif()
+    string(APPEND manifest "${group}\t${unit}\n")
+  endforeach()
+  file(WRITE "${R3_GROUP_OUTPUT}" "${manifest}")
+endif()

@@ -3,7 +3,7 @@ import unittest
 
 from bigcherry.patch import unit_ownership as u
 
-RULES = {"patch": {"suffixes": ["_{arch}_{id}", "_{id}"]}, "rewrite": {"suffixes": ["_gfx11_r3"]}}
+RULES = {"patch": {"suffixes": ["_{arch}_{id}", "_{id}"]}, "rewrite": {"libr3": {"suffixes": ["_gfx11_r3"]}}, "arch_tokens": ["gfx12"]}
 
 
 class OwnershipTests(unittest.TestCase):
@@ -39,6 +39,14 @@ class NamingTests(unittest.TestCase):
         self.assertTrue(u.suffix_ok(layer, "IqrFusedPre_gfx12_rad0065", rules))
         self.assertTrue(u.suffix_ok(layer, "IqrFusedPre_rad0065", rules))          # arch-neutral code
         self.assertFalse(u.suffix_ok(layer, "IqrFused12Pre", rules))
+        self.assertFalse(u.suffix_ok(layer, "Tile_gfx9999_rad0065", rules))
+        self.assertFalse(u.suffix_ok("rewrite:unknown", "kTile_gfx11_r3", rules))
+        synthetic = {**RULES, "rewrite": {"future": {"suffixes": ["_future"]}}, "arch_tokens": ["gfx1300"]}
+        u.validate_rules(synthetic)
+        self.assertTrue(u.suffix_ok("rewrite:future", "kTile_future", synthetic))
+        self.assertTrue(u.suffix_ok(layer, "Tile_gfx1300_rad0065", synthetic))
+        with self.assertRaises(ValueError):
+            u.validate_rules({**RULES, "patch": {"suffixes": ["_{unknown}"]}})
         self.assertFalse(u.suffix_ok(layer, "Tile_gfx12_rad0064", rules))          # another patch's id
         self.assertTrue(u.suffix_ok("rewrite:libr3", "kTile_gfx11_r3", rules))
         self.assertFalse(u.suffix_ok("rewrite:libr3", "kTile_gfx12_rad0065", rules))

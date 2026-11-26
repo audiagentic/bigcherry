@@ -1,7 +1,12 @@
-# Suffix patterns for the names a layer introduces (tools/bigcherry/patch/unit_ownership.py). {arch} is gfx<digits>, {id} is
-# the patch's id (rad0042). A patch's code that builds for every architecture uses the second pattern.
+# Naming only: architecture tokens come from archs.toml, and aliases below
+# preserve the existing family spelling. They do not assert build support.
 [patch]
 suffixes = ["_{arch}_{id}", "_{id}"]
 
-[rewrite]
+[architecture_aliases]
+gfx1030 = ["gfx10"]
+gfx1100 = ["gfx11"]
+gfx1201 = ["gfx12"]
+
+[rewrite.libr3]
 suffixes = ["_gfx11_r3"]

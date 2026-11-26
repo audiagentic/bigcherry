@@ -10,7 +10,7 @@ with the other units left out), in minutes instead of a lane build, then checks 
              removed, changed (no card);
   hash       the output bytes of the family's selftest case over its own matrix and a list of trunk shapes and row counts
              (tails and ragged N), the same selftest binary driving both plugins (card);
-  replay     a cold replay (256 MiB flush) of only the rows whose kernels changed, the two plugins in ABBA order in
+  replay     a cold replay (256 MiB flush) of the configured rows, the two plugins in ABBA order in
              separate processes, in windows until two medians agree (card);
   selftest   the failures of the case's own oracle checks on the new plugin (card).
 
@@ -18,6 +18,7 @@ The card stages hold the `gpu` lease: `run` takes it for them (`agent-lease acqu
 resource check never hold it. The selftest binary does not depend on the units, so it is built once per selftest source
 and architecture and kept in the work root.
 
+  unit_harness.py plan ...      resolve build groups into configured routes without a card
   unit_harness.py build ...     only build and the resource check
   unit_harness.py measure OUT   the card stages, on a build made by `build` (what `run` calls under the lease)
 """
@@ -108,6 +109,172 @@ def release_plugin(tag: str | None, arch: str) -> Path:
     if not path.is_file():
         raise HarnessError(f"{path} is missing")
     return path
+
+
+# ------------------------------------------------------------------------------------------------------- group planning
+
+def read_group_manifest(path: Path) -> dict[str, str]:
+    """Read the existing CMake TSV as unit -> group, refusing ambiguous inventory."""
+    rows = path.read_text(encoding="utf-8").splitlines()
+    if not rows or rows[0] != "group\tunit":
+        raise HarnessError(f"invalid group manifest header: {path}")
+    result = {}
+    for line in rows[1:]:
+        fields = line.split("\t")
+        if len(fields) != 2:
+            raise HarnessError(f"invalid group manifest row: {line!r}")
+        group, unit = fields
+        if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", group) or not re.fullmatch(r"r4d_[A-Za-z0-9_]+", unit):
+            raise HarnessError(f"invalid group/unit: {line!r}")
+        if unit in result:
+            raise HarnessError(f"duplicate group assignment: {unit}")
+        result[unit] = group
+    if not result:
+        raise HarnessError("empty group inventory")
+    return result
+
+
+def canonical_groups(tree: Path, component: Path) -> dict[str, str]:
+    """Ask the build's existing classifier, including units excluded from libr3."""
+    with tempfile.TemporaryDirectory(prefix="r3-group-plan-", dir=work_root()) as tmp:
+        manifest = Path(tmp) / "r3_groups.tsv"
+        done = subprocess.run(["cmake", f"-DR3_GROUP_SOURCE={tree}", f"-DR3_GROUP_OUTPUT={manifest}",
+                               "-P", str(component / "r3_groups.cmake")],
+                              capture_output=True, text=True, check=False)
+        if done.returncode != 0:
+            raise HarnessError(f"group inventory failed: {done.stderr}")
+        return read_group_manifest(manifest)
+
+
+def excluded_units(component: Path, arch: str, inventory: dict[str, str]) -> set[str]:
+    meta = tomllib.loads((component / "component.toml").read_text(encoding="utf-8"))
+    if arch not in meta["targets"]:
+        return set()
+    entries = [line for line in (component / "exclude.txt").read_text(encoding="utf-8").splitlines()
+               if line.startswith("r4d_")]
+    if len(entries) != len(set(entries)) or not set(entries) <= inventory.keys():
+        raise HarnessError("invalid or stale component exclusions")
+    return set(entries)
+
+
+def verify_group_manifest(actual: dict[str, str], inventory: dict[str, str], excluded: set[str]) -> None:
+    expected = {unit: group for unit, group in inventory.items() if unit not in excluded}
+    missing = sorted(expected.keys() - actual.keys())
+    extra = sorted(actual.keys() - expected.keys())
+    wrong = sorted(unit for unit in actual.keys() & expected.keys() if actual[unit] != expected[unit])
+    if missing or extra or wrong:
+        raise HarnessError(f"not a full matching group inventory: missing={missing}; extra={extra}; wrong={wrong}")
+
+
+def overlay_origins(tree: Path, components: Path, arch: str, inventory: dict[str, str], specs: dict) -> dict:
+    """Map qualification cases to origins, not to another hand-maintained unit roster."""
+    from bigcherry.patch import compose_check
+
+    result = {}
+    for name, spec in sorted(specs.items()):
+        component = components / spec["component"]
+        meta = tomllib.loads((component / "component.toml").read_text(encoding="utf-8"))
+        if arch not in meta["targets"]:
+            continue
+        if f"kernels/{spec['plugin']}.so" not in meta["outputs"]:
+            raise HarnessError(f"overlay {name}: plugin not declared by component")
+        units = tomllib.loads((component / "origins.toml").read_text(encoding="utf-8"))["unit"]
+        origins = [u for u in units if spec["case"] in u.get("base-rows", ()) and arch in u.get("architectures", ())]
+        if len(origins) != 1:
+            raise HarnessError(f"overlay {name}: expected one target origin for case {spec['case']}")
+        origin = origins[0]
+        base_rows, overlay_rows = origin["base-rows"], origin["overlay-rows"]
+        if len(base_rows) != len(overlay_rows) or len(set(base_rows)) != len(base_rows) or len(set(overlay_rows)) != len(overlay_rows):
+            raise HarnessError(f"overlay {name}: ambiguous origin row mapping")
+        if not (component / origin["owned-source"]).is_file():
+            raise HarnessError(f"overlay {name}: owned source absent")
+        # The same include-closure helper used by compose_check includes wrappers
+        # (e.g. part units) without guessing their names. A header origin alone
+        # cannot stand for runtime row ownership.
+        related = set(compose_check.affected_units(tree, [origin["upstream-path"]]))
+        if origin["name"] not in related or not related <= inventory.keys():
+            raise HarnessError(f"overlay {name}: origin not in composed unit inventory")
+        result[name] = {"units": sorted(related), "base_rows": base_rows, "overlay_rows": overlay_rows,
+                        "selftest_case": spec["case"]}
+    return result
+
+
+def resolve_group_plan(inventory: dict[str, str], excluded: set[str], family_specs: dict, origin_specs: dict,
+                       groups: list[str], units: list[str]) -> dict:
+    """Resolve the selection. Coverage means a configured test route, never a pass."""
+    if not groups and not units:
+        raise HarnessError("select at least one group or unit")
+    unknown_groups = set(groups) - set(inventory.values())
+    unknown_units = set(units) - inventory.keys()
+    if unknown_groups or unknown_units:
+        raise HarnessError(f"unknown groups={sorted(unknown_groups)}; units={sorted(unknown_units)}")
+    selected = set(units) | {u for u, g in inventory.items() if g in groups}
+    covered = set()
+    runs = []
+    for name, spec in sorted(family_specs.items()):
+        primary = set(spec["units"])
+        support = set(spec.get("support_units", ()))
+        if not primary or primary & support:
+            raise HarnessError(f"family {name}: invalid primary/support units")
+        if not primary & selected:
+            continue
+        if (primary | support) - inventory.keys():
+            raise HarnessError(f"family {name}: stale configured unit")
+        # Do not compile an excluded base in place of the production overlay.
+        if (primary | support) & excluded:
+            continue
+        runs.append({"kind": "family", "name": name, "units": sorted(primary),
+                     "support_units": sorted(support), "selftest_case": spec["case"]})
+        covered.update(primary)
+    for name, origin in sorted(origin_specs.items()):
+        primary = set(origin["units"])
+        if not primary & selected:
+            continue
+        runs.append({"kind": "overlay", "name": name, **origin,
+                     "other_rows_need_evidence": sorted(set(origin["base_rows"]) - {origin["selftest_case"]})})
+        covered.update(primary & excluded)
+    return {"selected_units": sorted(selected), "excluded_from_base": sorted(selected & excluded),
+            "runs": runs, "uncovered_units": sorted(selected - covered)}
+
+
+def stage_plan(args) -> int:
+    tree = Path(args.tree).resolve(strict=True)
+    components = ROOT / "engines" / ENGINE / "components"
+    component = components / "libr3"
+    inventory = canonical_groups(tree, component)
+    excluded = excluded_units(component, args.arch, inventory)
+    if args.manifest:
+        targets = tomllib.loads((component / "component.toml").read_text(encoding="utf-8"))["targets"]
+        if args.arch not in targets:
+            raise HarnessError("r3_groups.tsv is only an actual build inventory for the libr3 component's targets")
+        verify_group_manifest(read_group_manifest(Path(args.manifest)), inventory, excluded)
+    # The reference must exist for the requested architecture. A plan is not
+    # proof of matched compiler flags or source/build identities.
+    release_plugin(args.release, args.arch)
+    origins = overlay_origins(tree, components, args.arch, inventory, overlays())
+    result = resolve_group_plan(inventory, excluded, families(), origins, args.group or [], args.unit or [])
+    result.update(arch=args.arch, release=args.release, tree=str(tree), inventory_units=len(inventory),
+                  inventory_kind="matching_libr3_membership" if args.manifest else "canonical_source_only",
+                  outcome="diagnostic", qualification="not_run")
+    for item in result["runs"]:
+        common = ["--arch", args.arch, "--tree", str(tree), "--release", args.release]
+        if item["kind"] == "family":
+            item["build_args"] = ["build", "--family", item["name"], *common]
+            item["measure_args"] = ["measure", "<build-output>"]
+        else:
+            # The installed base can intentionally omit the overlay's rows.
+            # Require an explicit compatible base reference for these cases.
+            if set(item["units"]) & excluded:
+                item["reference_required"] = True
+                if args.overlay_reference:
+                    item["reference_required"] = False
+                    common += ["--reference", str(Path(args.overlay_reference).resolve(strict=True))]
+                else:
+                    common += ["--reference", "<compatible-base-plugin>"]
+            item["build_args"] = ["overlay-build", "--overlay", item["name"], *common]
+            item["measure_args"] = ["overlay-measure", "<build-output>"]
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 1 if result["uncovered_units"] or any(r.get("other_rows_need_evidence") or r.get("reference_required") for r in result["runs"]) else 0
 
 
 # ------------------------------------------------------------------------------------------------------- composition
@@ -522,7 +689,10 @@ def selftest_env(arch: str, device: str, extra: dict | None = None) -> dict:
 
 def run_selftest(binary: Path, plugin: Path, args: list[str], env: dict, timeout: int) -> str:
     done = subprocess.run([str(binary), str(plugin), *args], env=env, capture_output=True, text=True, timeout=timeout, check=False)
-    return done.stdout + done.stderr
+    text = done.stdout + done.stderr
+    if done.returncode:
+        text += f"\nFAIL selftest process exit {done.returncode}\n"
+    return text
 
 
 def parse_hashes(text: str) -> tuple[dict[str, str], list[str]]:
@@ -559,8 +729,8 @@ def point_time(binary: Path, plugin: Path, arch: str, device: str, spec: dict, p
     label = spec["label"].format(**point)
     text = run_selftest(binary, plugin, args, selftest_env(arch, device, {"R4D_PERF_ONLY": row, **(extra_env or {})}), timeout=900)
     values = [float(m.group(1)) for line in text.splitlines() if label in line for m in re.finditer(r"(\d+(?:\.\d+)?)\s+us", line)]
-    if not values:
-        raise HarnessError(f"no time for {label} {point}: {text[-300:]}")
+    if parse_hashes(text)[1] or not values or values[-1] <= 0:
+        raise HarnessError(f"no valid time for {label} {point}: {text[-300:]}")
     return values[-1]
 
 
@@ -600,12 +770,14 @@ def stage_build(args) -> Path:
     if not units:
         raise HarnessError("name a --family or --unit")
     out = Path(args.out) if args.out else work_root() / "unit-harness" / f"{args.family or 'units'}-{args.arch}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+    if (out / "measure.json").exists() or (out / "measure-replay.json").exists():
+        raise HarnessError("output already contains measurement evidence; select a new --out")
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
     tree_key = out / "tree"
     tree_key.write_text(str(tree), encoding="utf-8")
-    ref_plugin = Path(args.reference) if args.reference else release_plugin(args.release, args.arch)
+    ref_plugin = Path(args.reference).resolve(strict=True) if args.reference else release_plugin(args.release, args.arch)
     plugin = build_plugin(args.arch, tree, units + [u for u in (fam or {}).get("support_units", []) if u not in units], out, ref_plugin,
                          Path(args.libr3) if args.libr3 else None)
     built = time.monotonic() - started
@@ -615,7 +787,7 @@ def stage_build(args) -> Path:
     pattern = re.compile(fam["kernels"]) if fam else None
     diff = diff_records(ref, cand, pattern)
     state = {"family": args.family, "units": units, "arch": args.arch, "plugin": str(plugin), "selftest": str(binary),
-             "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + ref_plugin.parts[-5], "reference_plugin": str(ref_plugin), "resources": diff,
+             "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + str(ref_plugin), "reference_plugin": str(ref_plugin), "resources": diff,
              "build_seconds": round(built, 1)}
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built {', '.join(units)} for {args.arch} in {built:.0f} s (selftest {'cached' if built < 5 else 'ready'}): {plugin}")
@@ -625,6 +797,8 @@ def stage_build(args) -> Path:
 
 def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_windows: int = 14, verdict_tol: float = 0.04, skip_replay: bool = False,
                   skip_hash: bool = False, bits: list[int] | None = None, rows: list[int] | None = None) -> dict:
+    if (out / "measure.json").exists():
+        raise HarnessError("measurement already exists; use a new build output")
     state = json.loads((out / "build.json").read_text(encoding="utf-8"))
     fam = families().get(state["family"]) if state["family"] else None
     if not fam:
@@ -646,8 +820,8 @@ def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_
     result["selftest_failures"] = {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}
     print(f"hash: {result['hash']['compared']} compared, {len(result['hash']['differ'])} differ, "
           f"{len(result['hash']['missing_in_candidate'])} missing in the candidate; selftest failures: ref {len(ref_fail)}, candidate {len(cand_fail)}")
-    changed_rows = [row for row in fam["replay"]["rows"]] if (state["resources"]["added"] or state["resources"]["changed"]
-                                                              or state["resources"]["removed"]) else []
+    changed_rows = list(fam["replay"]["rows"])
+    result["required_replay"] = [{"row": row, **point} for row in changed_rows for point in replay_points(fam["replay"])]
     result["replay"] = []
     if changed_rows and not skip_replay:
         spec = fam["replay"]
@@ -661,15 +835,49 @@ def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_
                       f"{got['ref_us']} -> {got['cand_us']} us ({got['ratio']}) {got['verdict']}"
                       f"{'' if got['converged'] else ' UNCONVERGED'}", flush=True)
     elif not changed_rows:
-        print("replay: no row changed, nothing replayed")
+        print("replay: no rows configured")
     (out / "measure.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
+
+
+def configured_measurement_outcome(measure: dict) -> tuple[str, list[str]]:
+    """Verdict on the discrete harness checks, not on any production/power profile."""
+    h = measure["hash"]
+    failures = measure["selftest_failures"]
+    rejected, incomplete = [], []
+    if failures["ref"]:
+        incomplete.append("reference selftest failed")
+    if failures["cand"]:
+        rejected.append("candidate selftest failed")
+    if h["differ"] or h["missing_in_candidate"]:
+        rejected.append("candidate output differs or is missing")
+    if h["compared"] <= 0 or h["only_in_candidate"]:
+        incomplete.append("no positive matching hash coverage")
+    def key(point):
+        return tuple(point[k] for k in ("row", "N", "K", "M", "B"))
+    required = measure.get("required_replay", [])
+    actual = measure["replay"]
+    if not required or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
+        incomplete.append("configured replay coverage incomplete")
+    if any(not p["converged"] for p in actual):
+        incomplete.append("replay did not converge")
+    if any(p["converged"] and p["verdict"] == "regress" for p in actual):
+        rejected.append("converged replay regression")
+    # A failed reference cannot establish a comparison, even if the candidate
+    # also failed. Keep both reasons, but do not certify a regression.
+    if failures["ref"]:
+        return "inconclusive", incomplete + rejected
+    if rejected:
+        return "rejected", rejected + incomplete
+    if incomplete:
+        return "inconclusive", incomplete
+    return "checks_passed", []
 
 
 def summary(out: Path) -> tuple[str, bool]:
     build = json.loads((out / "build.json").read_text(encoding="utf-8"))
     measure_path = out / "measure.json"
-    ok = not build["resources"]["removed"]
+    outcome, reasons = "diagnostic", ["measurement not run"]
     lines = [f"unit harness: {build['family'] or ','.join(build['units'])} on {build['arch']} against {build['release']}"]
     res = build["resources"]
     lines.append(f"resources: {len(res['added'])} added, {len(res['changed'])} changed, {len(res['removed'])} removed, {res['unchanged']} unchanged")
@@ -678,11 +886,13 @@ def summary(out: Path) -> tuple[str, bool]:
     if measure_path.exists():
         measure = json.loads(measure_path.read_text(encoding="utf-8"))
         h = measure["hash"]
-        bad_hash = bool(h["differ"] or h["missing_in_candidate"])
-        ok = ok and not bad_hash and not measure["selftest_failures"]["cand"]
+        outcome, reasons = configured_measurement_outcome(measure)
+        if build["resources"]["removed"]:
+            outcome = "inconclusive" if outcome == "checks_passed" else outcome
+            reasons.append("removed resource records require review")
         lines.append(f"hash: {h['compared']} compared, {len(h['differ'])} differ"
                      + (f"; first {h['differ'][0]}" if h["differ"] else ""))
-        lines.append(f"selftest failures (candidate): {measure['selftest_failures']['cand']}")
+        lines.append(f"selftest failures: reference {measure['selftest_failures']['ref']}, candidate {measure['selftest_failures']['cand']}")
         rep = measure["replay"]
         if rep:
             regress = [r for r in rep if r["verdict"] == "regress"]
@@ -691,10 +901,9 @@ def summary(out: Path) -> tuple[str, bool]:
                          f"{sum(1 for r in rep if r['verdict'] == 'same')} same, {sum(1 for r in rep if not r['converged'])} unconverged")
             for r in regress:
                 lines.append(f"  REGRESS {r['row']} N={r['N']} K={r['K']} M={r['M']} B={r['B']}: {r['ref_us']} -> {r['cand_us']} us ({r['ratio']})")
-            ok = ok and not regress
-    verdict = "PASS" if ok else "FAIL"
-    lines.append(f"unit harness: {verdict}")
-    return "\n".join(lines), ok
+    lines.extend(f"  {reason}" for reason in reasons)
+    lines.append(f"unit harness: {outcome} (configured checks only; not profile qualification)")
+    return "\n".join(lines), outcome == "checks_passed"
 
 
 # ------------------------------------------------------------------------------------------------------------ overlays
@@ -716,10 +925,12 @@ def stage_overlay_build(args) -> Path:
     if not ov:
         raise HarnessError(f"unknown overlay {args.overlay!r} in unit_families.toml")
     out = Path(args.out) if args.out else work_root() / "unit-harness" / f"overlay-{args.overlay}-{args.arch}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
+    if (out / "measure.json").exists() or (out / "measure-replay.json").exists():
+        raise HarnessError("output already contains measurement evidence; select a new --out")
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
-    ref_plugin = Path(args.reference) if args.reference else release_plugin(args.release, args.arch)
+    ref_plugin = Path(args.reference).resolve(strict=True) if args.reference else release_plugin(args.release, args.arch)
     # The base the overlay runs over is a minimal build of the same source (one unit; every other row's entry point is a stub, the
     # embed launch included), so a launch that reaches the base's kernel fails and a hash that matches the real base's proves
     # that the overlay's own kernel ran.
@@ -737,7 +948,7 @@ def stage_overlay_build(args) -> Path:
     cand = {k: v for k, v in kernel_records(staged, args.arch).items() if pattern.search(k)}
     diff = diff_records(ref, cand, None)   # what the base has beyond the overlay is not "removed": the overlay owns a part
     state = {"overlay": args.overlay, "arch": args.arch, "plugin": str(staged), "base_stage": str(stage / PLUGIN[args.arch]), "selftest": str(binary), "reference_plugin": str(ref_plugin),
-             "release": ref_plugin.parts[-4], "resources": diff, "kernels_compared": len(cand), "build_seconds": round(time.monotonic() - started, 1)}
+             "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + str(ref_plugin), "resources": diff, "kernels_compared": len(cand), "build_seconds": round(time.monotonic() - started, 1)}
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built overlay {ov['plugin']} for {args.arch}: {len(cand)} kernels matching {ov['kernels']!r}; against {state['release']}: "
           f"{len(diff['added'])} added, {len(diff['changed'])} changed, {len(diff['removed'])} removed, {diff['unchanged']} identical records")
@@ -746,11 +957,26 @@ def stage_overlay_build(args) -> Path:
     return out
 
 
+def consistent_round_hashes(texts: list[str]) -> tuple[dict[str, str], list[str]]:
+    """Every measured round must agree, not only the first."""
+    first, failures = parse_hashes(texts[0] if texts else "")
+    for idx, text in enumerate(texts[1:], 2):
+        hashes, errors = parse_hashes(text)
+        failures.extend(errors)
+        if hashes != first:
+            failures.append(f"round {idx}: hash coverage or values differ from first round")
+    return first, failures
+
+
 def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: bool = False, rows: list[int] | None = None,
                           bits: list[int] | None = None, shape: int | None = None) -> dict:
+    if (out / ("measure-replay.json" if replay_only else "measure.json")).exists():
+        raise HarnessError("measurement already exists; use a new build output")
     state = json.loads((out / "build.json").read_text(encoding="utf-8"))
     ov = overlays()[state["overlay"]]
-    rounds = rounds or ov.get("rounds", 4)
+    rounds = ov.get("rounds", 4) if rounds is None else rounds
+    if rounds <= 0:
+        raise HarnessError("rounds must be positive")
     arch = state["arch"]
     device = device_index(arch)
     binary, cand_plugin, ref_plugin = Path(state["selftest"]), Path(state["plugin"]), Path(state["reference_plugin"])
@@ -768,8 +994,8 @@ def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: boo
             texts[arm].append(run_selftest(binary, plugin, ["--case", ov["case"]], selftest_env(arch, device, {**env_base, **extra}), timeout=3 * 3600))
     (out / "overlay-ref.log").write_text("\n".join(texts["ref"]), encoding="utf-8")
     (out / "overlay-cand.log").write_text("\n".join(texts["cand"]), encoding="utf-8")
-    ref_hashes, ref_fail = parse_hashes(texts["ref"][0] if texts["ref"] else "")
-    cand_hashes, cand_fail = parse_hashes(texts["cand"][0] if texts["cand"] else "")
+    ref_hashes, ref_fail = consistent_round_hashes(texts["ref"])
+    cand_hashes, cand_fail = consistent_round_hashes(texts["cand"])
     times: dict[str, dict[str, float]] = {"ref": {}, "cand": {}}
     for arm in times:
         for text in texts[arm]:
@@ -822,6 +1048,14 @@ def add_build_arguments(sp) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
+    plan_p = commands.add_parser("plan", help="resolve existing build groups into configured qualification routes (no GPU)")
+    plan_p.add_argument("--tree", required=True, help="the actual composed Radiance source tree")
+    plan_p.add_argument("--manifest", help="verify a full configured libr3 r3_groups.tsv against the source and exclusions")
+    plan_p.add_argument("--arch", required=True, choices=sorted(PLUGIN))
+    plan_p.add_argument("--release", required=True, help="explicit installed reference release")
+    plan_p.add_argument("--overlay-reference", help="explicit compatible base plugin for excluded overlay rows; not a qualification proof")
+    plan_p.add_argument("--group", action="append", help="select a build group; repeat to select several")
+    plan_p.add_argument("--unit", action="append", help="select an affected upstream unit; repeat as needed")
     build_p = commands.add_parser("build", help="build the units and check resource records (no card)")
     add_build_arguments(build_p)
     measure_p = commands.add_parser("measure", help="hash and replay on a build (holds the card: run under the gpu lease)")
@@ -850,6 +1084,8 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--no-replay", action="store_true")
     args = parser.parse_args(argv)
     try:
+        if args.command == "plan":
+            return stage_plan(args)
         if args.command == "build":
             stage_build(args)
             return 0
@@ -860,16 +1096,18 @@ def main(argv: list[str] | None = None) -> int:
             result = stage_overlay_measure(Path(args.out), args.rounds, args.replay_only, args.rows, args.bits, args.shape)
             h = result["hash"]
             if args.replay_only:
-                bad = [r for r in result["replay"] if r["verdict"] == "regress"]
-                print("unit harness overlay replay: " + ("PASS" if not bad else "FAIL"))
-                return 0 if not bad else 1
+                print("unit harness overlay replay: diagnostic (replay-only is not qualification)")
+                return 1
             lay = result["plain_bf16_layout_rc"]
             regress = [r for r in result["replay"] if r["verdict"] == "regress"]
             for r in regress:
                 print(f"  REGRESS {r['row']} N={r['N']} K={r['K']} M={r['M']} B={r['B']}: {r['ref_us']} -> {r['cand_us']} us ({r['ratio']})")
-            ok = (not h["differ"] and not h["missing_in_candidate"] and not result["selftest_failures"]["cand"] and h["compared"] > 0
-                  and lay["ref"] == lay["cand"] and lay["cand"] and lay["cand"] != ["0"] and not regress)
-            print("unit harness overlay: " + ("PASS" if ok else "FAIL"))
+            partial = args.rows is not None or args.bits is not None or args.shape is not None or args.rounds is not None
+            ok = (not partial and not h["differ"] and not h["missing_in_candidate"] and not h["only_in_candidate"]
+                  and not any(result["selftest_failures"][arm] for arm in ("ref", "cand")) and h["compared"] > 0
+                  and lay["ref"] == lay["cand"] and lay["cand"] and "0" not in lay["cand"] and not regress
+                  and all(r["converged"] for r in result["replay"]))
+            print("unit harness overlay: " + ("checks_passed (not profile qualification)" if ok else "nonpass"))
             return 0 if ok else 1
         if args.command == "measure":
             stage_measure(Path(args.out), replay_iters=args.iters, tol=args.tolerance, max_windows=args.max_windows,
@@ -882,10 +1120,12 @@ def main(argv: list[str] | None = None) -> int:
         lease = ["agent-lease", "acquire", "gpu", "--ttl", args.ttl, "--est", args.est, "--wait",
                  "--purpose", f"unit harness {args.family or 'units'} {args.arch}", "--", *command]
         code = subprocess.run(lease, check=False).returncode
+        if code != 0:
+            return 1
         text, ok = summary(out)
         print(text)
         return 0 if ok and code == 0 else 1
-    except HarnessError as error:
+    except (HarnessError, OSError, ValueError, KeyError) as error:
         print(f"unit harness: {error}", file=sys.stderr)
         return 2
 
