@@ -222,3 +222,18 @@ mixed residency, further instruction coverage (including actual matrix
 instructions), phase telemetry and transition recipes, then qualified
 native/production owner integration. No historical hot nonpass is
 reclassified and no production setting is promoted.
+
+## 14. Implementation update: geometry and rejected results
+
+Protocol 4/schema 5 adds explicit M,N,K,LDA,LDB,LDC column-major NN
+geometry, exact logical and padding coverage and separate provider
+layouts. Legacy square requests resolve to the same geometry type.
+Explicit shape requests are observe-only pending recovery hardening.
+The first actual cohort exposed a missing native geometry field; the
+strict receipt validator correctly refused all four runs. Rejected native
+results are now retained in the per-case record, including the diagnostic
+(or a bounded raw tail for malformed JSON). Keep integration-level
+hardware tests in addition to synthetic payload fixtures: the latter
+alone could not catch the native serialization omission. Transpose,
+nonzero beta, richer magnitudes and actual tensor instructions remain
+independent coverage extensions.

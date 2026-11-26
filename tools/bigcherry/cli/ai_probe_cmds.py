@@ -37,6 +37,8 @@ def register(sub) -> None:
     p.add_argument("--max-memory-c", type=int, help="optional explicit memory temperature ceiling")
     p.add_argument("--batch", type=int, default=1, help="matrix launches per host check; every output checked on-device for batch > 1")
     p.add_argument("--n", type=int, default=768, help="square matrix dimension, or block count for alu/wave/lds")
+    p.add_argument("--matrix-shape", type=int, nargs=6, metavar=("M", "N", "K", "LDA", "LDB", "LDC"),
+                   help="explicit column-major NN matrix geometry; overrides --n for matrix cases only")
     p.add_argument("--seconds", type=int, required=True, help="per dtype and load pattern")
     p.add_argument("--pause-ms", nargs="+", type=int, default=[0, 2], help="0 sustained, positive burst gap")
     p.add_argument("--setup-timeout", type=int, default=60, help="extra seconds allowed for SDK setup/oracle")
@@ -61,6 +63,14 @@ def cmd_screen(args: argparse.Namespace) -> int:
             not all(0 <= x <= 1000 for x in args.pause_ms) or
             len(set(args.dtype)) != len(args.dtype) or len(set(args.pause_ms)) != len(args.pause_ms)):
         print("gpu-ai-screen: invalid device, bounds or duplicate test cases", file=sys.stderr)
+        return 2
+    try:
+        if args.matrix_shape is not None:
+            if not any(dtype in ai_probe.MATRIX_DTYPES for dtype in args.dtype):
+                raise ai_probe.ScreenError("matrix shape requires a matrix case")
+            ai_probe.matrix_geometry(args.n, args.matrix_shape)
+    except ai_probe.ScreenError as exc:
+        print(f"gpu-ai-screen: {exc}", file=sys.stderr)
         return 2
     # Use the existing WSL01 capture run and capture/v1 harvest recipe.
     # Profile is already reserved for profiler CSV evidence.
@@ -88,7 +98,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
         for role, path in (("probe", args.probe), ("profiles", args.profiles)):
             inputs.append({"role": role, "uri": str(path.resolve()), "sha256": ai_probe.digest(path).removeprefix("sha256:")})
         args.input_digests = {i["role"]: "sha256:" + i["sha256"] for i in inputs}
-        plan_item = "PWR13" if any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
+        plan_item = "PWR13" if args.matrix_shape is not None or any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
         run = workspace.create_run(root, "capture", "gpu-ai-screen", plan_item=plan_item, engine="none",
                                    argv=sys.argv[:], purpose="Independent GPU power-profile screen",
                                    inputs=inputs, references=refs, subkind="gpu-ai-screen", repo=paths.REPO_ROOT)

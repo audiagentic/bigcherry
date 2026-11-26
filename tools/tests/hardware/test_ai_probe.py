@@ -33,7 +33,7 @@ def args(tmp_path, **kwargs):
     base = Namespace(profiles=ROOT / "engines/radiance/power-profiles.yaml",
                      profile="stock", role="engine", arch="gfx1100", bdf=BDF,
                      stock_confirmed=True, reference=None, probe=binary,
-                     dtype=["fp16"], n=768, seconds=1, pause_ms=[0, 2],
+                     dtype=["fp16"], n=768, matrix_shape=None, seconds=1, pause_ms=[0, 2],
                      setup_timeout=2, max_hotspot_c=85, output=tmp_path / "result.json",
                      provider="hipblaslt", memory_mib=None, headroom_mib=None, batch=1,
                      warmup_seconds=0, min_hotspot_c=None, max_memory_c=None,
@@ -53,6 +53,7 @@ def case(pause, algorithm="00"*16, status="pass"):
               "iterations": 3, "host_checks": 3, "batch": 1, "elapsed_s": 1.0,
               "corpus_iterations": [1, 1, 1], "corpus_host_checks": [1, 1, 1],
               "host_elements_checked": 3*768*768, "device_elements_checked": 0,
+              "matrix_geometry": [768]*6, "host_padding_checked": 0, "device_padding_checked": 0,
               "start_ns": 1_000_000_000, "end_ns": 2_000_000_000}}
 
 
@@ -201,8 +202,10 @@ def test_native_result_must_have_real_coverage(tmp_path):
         result = a.run_case(ns.probe, BDF, "gfx1100", "fp16", 768, 1, 0, 2, sensor, 85000, tmp_path)
         assert result["status"] == "pass"
         payload["iterations"] = 1
-        with pytest.raises(a.ScreenError, match="coverage"):
-            a.run_case(ns.probe, BDF, "gfx1100", "fp16", 768, 1, 0, 2, sensor, 85000, tmp_path)
+        rejected = a.run_case(ns.probe, BDF, "gfx1100", "fp16", 768, 1, 0, 2, sensor, 85000, tmp_path)
+        assert rejected["status"] == "inconclusive"
+        assert "coverage" in rejected["diagnostic"]
+        assert rejected["native"]["iterations"] == 1
 
 
 def test_lost_lease_kills_and_reaps_probe(tmp_path):
@@ -608,3 +611,54 @@ def test_instruction_apply_refused_before_transaction(tmp_path):
         with pytest.raises(a.ScreenError, match="observe-only"):
             a.screen(ns, journal_dir=tmp_path)
     tx.assert_not_called()
+
+@pytest.mark.parametrize("shape", [[0,16,16,16,16,16], [16,16,16,15,16,16],
+                                  [16,16,16,273,16,16], [16,16,2049,16,2049,16],
+                                  [True,16,16,16,16,16]])
+def test_matrix_geometry_rejects_invalid(shape):
+    with pytest.raises(a.ScreenError, match="matrix"):
+        a.matrix_geometry(16, shape)
+
+
+def test_matrix_geometry_padding_and_identity():
+    g = [15, 19, 7, 18, 11, 21]
+    payload = case(0)["native"] | {
+        "n": 19, "matrix_geometry": g, "host_elements_checked": 3*15*19,
+        "host_padding_checked": 3*(21-15)*19,
+    }
+    a.validate_native(payload, BDF, "gfx1100", "fp16", 19, "hipblaslt", 1, 2, 512, geometry=g)
+    for bad in ({"matrix_geometry": [19]*6}, {"host_padding_checked": 0},
+                {"host_elements_checked": 3*21*19}, {"device_padding_checked": 1}):
+        with pytest.raises(a.ScreenError, match="coverage"):
+            a.validate_native(payload | bad, BDF, "gfx1100", "fp16", 19, "hipblaslt", 1, 2, 512, geometry=g)
+
+
+def test_rectangular_recipe_refuses_application(tmp_path):
+    ref = stock_reference(tmp_path)
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, apply_profile=True, confirm_idle=True,
+              matrix_shape=[15,19,7,18,11,21])
+    with patch.object(a, "PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError, match="observe-only"):
+            a.screen(ns, journal_dir=tmp_path)
+    tx.assert_not_called()
+
+
+def test_explicit_geometry_resolves_mixed_case_n_and_provider(tmp_path):
+    from bigcherry.cli.ai_probe_cmds import cmd_screen
+    from bigcherry.core import run_manifest as rm
+    ns = args(tmp_path, dtype=["fp16", "wave"], pause_ms=[0],
+              matrix_shape=[15,19,7,18,11,21], stock_confirmed=False, observe_current=True)
+    ns.work_root = tmp_path / "work"
+    calls = []
+    def run(*pos, **kw):
+        calls.append((pos[3], pos[4], kw["geometry"], kw["provider"]))
+        return case(0) | {"dtype": pos[3], "n": pos[4]}
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(STOCK, tmp_path)), \
+            patch.object(a, "thermal_sensor", return_value=(tmp_path/"temp2_input", 85000)), \
+            patch.object(a, "run_case", side_effect=run):
+        assert cmd_screen(ns) == 0
+    assert calls == [("fp16", 19, [15,19,7,18,11,21], "hipblaslt"),
+                     ("wave", 768, None, "hip-native")]
+    assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR13"

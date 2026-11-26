@@ -148,7 +148,7 @@ fence before any restore or new mutation.
 ## Managed evidence and retention
 
 Every screen creates an existing WSL01 capture run at
-`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR13 when any instruction case is requested, otherwise PWR12,
+`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR13 when an instruction case or explicit matrix shape is requested, otherwise PWR12,
 engine none). The usual `run.manifest.json` records lifecycle, source and
 input digests, exit code, and a typed reference to the stock run for candidates.
 The single `<run-id>.power.json` uses the existing platform Receipt v1
@@ -206,6 +206,27 @@ actual executable digest. See evidence below for the tested code objects.
 The direct cases do not yet prove explicit WMMA/MFMA, masked partial-wave
 semantics, packed dot or general vector-FP coverage.
 
+## Explicit rectangular and padded matrices (PWR13)
+
+The same command accepts `--matrix-shape M N K LDA LDB LDC` for
+column-major NN GEMMs. Dimensions may be 12048, each leading dimension
+between its logical row count and that count plus 256. Without the option,
+all six values resolve to the existing square `--n`. With it, only matrix
+cases use the explicit geometry; memory and direct instruction cases retain
+their own size. No implicit fallback or provider change. Explicit geometry
+cases are observe-only pending recovery hardening.
+
+Separate BLAS layouts and actual strides reach the provider. The CPU
+reference handles rectangular dense, sparse and diagonal inputs; padded
+input bytes are distinct sentinels, padding in the output is pre-poisoned
+and must stay untouched. The full stored output including padding is
+checked before reuse by the device comparator (when batched) and at each
+host audit; logical and padding comparison counts are recorded separately.
+Exact geometry is part of the receipt and reference identity. The K bound
+preserves exact FP16 output representability and the bounded stored span
+times batch fits the device verification counter. Unsupported provider
+shapes remain nonpasses. No transpose or nonzero-beta coverage yet.
+
 ## Numerical and identity contract
 
 The native probe uses actual HIP-visible PCI identity and validates the
@@ -213,8 +234,8 @@ expected architecture before allocation. It selects a hipBLASLt heuristic or exp
 public default GEMM dispatch with atomics disabled. It records provider and
 library versions; hipBLASLt also records opaque algorithm bytes, while
 rocBLAS honestly records default dispatch, not an exact internal solution ID. It
-checks every active HIP/library operation. Native protocol 3 / screen
-observations schema 4 retains protocol-2 matrix semantics and rotates three deterministic operand corpora: dense
+checks every active HIP/library operation. Native protocol 4 / screen
+observations schema 5 retains the three-corpus check and rotates three deterministic operand corpora: dense
 signed, sparse signed, and signed-diagonal A times dense B. Floating
 inputs are exactly representable 0 or +/-1/16, integer inputs 0 or +/-1.
 The CPU integer dot sum is exact over the supported dimension range. The
@@ -232,7 +253,7 @@ compared elements, are required in the receipt. All three corpora must
 execute, plus the elapsed duration. Memory retains batch 1 and at least
 two full passes. Positive pause is between batches. This is a stronger
 correctness workload, not a comparable throughput benchmark for old probes.
-Old schema-2 and schema-3 receipts are preserved as historical diagnostics; the
+Old schema-2, schema-3 and schema-4 receipts are preserved as historical diagnostics; the
 protocol handshake refuses old native binaries before any transaction,
 and the new validator refuses an old reference.
 
@@ -604,3 +625,35 @@ Total 39635648512 checked words, no mismatch; all four captures harvested
 and unchanged start/stop controls and identities verified. These are
 host-readback-limited smoke tests, not hot soak, saturation, matrix
 instruction coverage, or production qualification. No power changes.
+
+### PWR13 rectangular geometry evidence (2026-11-26)
+
+Protocol 4/schema 5, ROCm 7.2.4, three explicit offload targets and CPU
+golden self-test. 210 hardware tests passed (one skipped). An initial
+serialization defect omitted matrix_geometry in the native result; four
+runs were inconclusive, not numerical passes. Retained and harvested:
+20261126T030657Z-gpu-ai-screen-f116c6b3b977,
+20261126T030703Z-gpu-ai-screen-146c3fb219d5,
+20261126T030709Z-gpu-ai-screen-7b7bfe41cfe3,
+20261126T030714Z-gpu-ai-screen-fdb488b188c8.
+Fixed the serializer and changed rejection handling to retain a parsed
+native result and diagnostic rather than losing the case on coverage
+failure; malformed JSON retains a bounded output tail.
+
+Final matched observe-only repeats: shape A=(64,96,128,80,144,80),
+shape B=(65,33,63,72,64,72), 4 s sustained per case, batch 32,
+junction/memory ceiling 80 C. Entries are verified GEMM launches.
+
+| Role | Shape | Provider | FP16 | BF16 | FP32 | INT8 | FP8 | Managed run ID |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| gfx1100 helper0 | A | rocBLAS | 191200 | 160928 | 150688 | 197312 | not run | 20261126T030830Z-gpu-ai-screen-3bdb98246035 |
+| gfx1100 helper1 | B | rocBLAS | 195040 | 185920 | 189472 | not run | not run | 20261126T030848Z-gpu-ai-screen-f2d4aa324f6f |
+| gfx1201 engine | A | hipBLASLt | 183008 | 93280 | 76736 | 69664 | 90784 | 20261126T030903Z-gpu-ai-screen-aa8790a4cd8a |
+| gfx1030 helper2 | B | rocBLAS | 149504 | 93696 | 131328 | not run | not run | 20261126T030929Z-gpu-ai-screen-e8f5ac430825 |
+
+All 15 requested cases passed: 2158560 clean GEMMs, 2082375360
+device-side padding and 195222690 host-side padding comparisons.
+Eight captures harvested including the initial nonpasses. All final
+start/stop identities and controls matched; no writes, no hot/production
+claim. The deliberately different shapes are coverage samples rather than
+a complete per-card Cartesian product.
