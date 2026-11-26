@@ -341,3 +341,41 @@ The six physical pairs in the initial allocation all reported both
 directional capabilities false. All six managed captures are unavailable,
 not passing; no copy was launched. Driver log coverage was also unavailable.
 A peer-capable allocation is required for actual data-path qualification.
+
+
+## 20. Scoped RDNA3 numerical exception and alternatives
+
+Protocol 7/schema 8 and recipe schema 2 retain strict signed oracles
+and add gfx1100-only precision-reference variants for dot2 and FP16/BF16
+WMMA. The eight-epoch fixed corpus checks exact mathematical lattice,
+a conservative independent finite-error budget, and full byte
+repeatability. A native observation alone is a nonpass. Explicitly
+reviewed, two prior verified same-physical-card managed captures and a
+later byte-fingerprint match under the same plan can produce
+allowed_precision, never a generic numerical pass or a production
+qualification. No tolerance is added to any other case. All three
+observed signatures matched across both cards and both complete
+independent screen reports pass with precisely these exceptions.
+No candidate writes.
+
+Two tested alternatives retain the exact mathematical oracle: vector
+FP32 FMA for packed dot, and a bounded nonnegative WMMA operand shift
+with algebraic row/column correction. Both passed all 12 gfx1100
+workaround cases; generated ISA proves the intended native WMMA.
+This is not a general arbitrary-float rewrite. A future native
+optimization may investigate sign-split four-product WMMA, compensated
+accumulation or exact integer quantized paths, with resource and
+performance gates under RCS27/28 and kernel-family ownership.
+Keep the existing serving kernels until real-model quality warrants
+an alternative. A reusable candidate precision receipt must bind
+the same reviewed stock reference and exact executable/runtime
+identity through existing PWR08/RSC02/PWR10 admission and restore
+gates; it is not enabled by this observe-only implementation.
+
+The remaining work is operational hot/transition runs under the
+existing lease, peer-capable transfer evidence (unavailable on the
+current allocation), verified driver health (both kmsg and journal
+lack readable kernel records), native scope integration and matched
+factory-confirmed production finalists. Do not close PWR13 as full
+qualification until these gaps are resolved or explicitly scoped
+out by the owner.

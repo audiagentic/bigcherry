@@ -36,6 +36,8 @@ def register(sub):
     report = sp.add_parser("report", help="aggregate explicit managed group receipts; missing/nonpassing work stays visible")
     report.add_argument("--plan",required=True)
     report.add_argument("--result",action="append",default=[])
+    report.add_argument("--precision-reference",action="append",default=[],
+                        help="explicit previously reviewed RDNA3 observation run IDs; two per group")
     report.set_defaults(func=cmd_report)
     from .ai_peer_cmds import register as register_peer
     register_peer(sp)
@@ -162,16 +164,33 @@ def cmd_run(args):
         return 2
 
 
+def precision_match(refs, results):
+    """Two prior distinct managed reference runs plus a new exact match.
+
+    Each entry is (signature, started_at, ended_at). The caller has already
+    revalidated the plan binding, physical state, recipe and native counts.
+    """
+    return (len(refs)>=2 and bool(results) and
+            all(r[0]==refs[0][0] for r in refs+results) and
+            all(isinstance(r[1],str) and isinstance(r[2],str) and r[1]<=r[2]
+                for r in refs+results) and
+            max(r[2] for r in refs)<=min(r[1] for r in results))
+
+
 def cmd_report(args):
     try:
         root=resolve_work_root(args.work_root)
         doc,plan_path=_plan(root,args.plan)
         groups={name:{"status":g["status"] if g["status"]=="not_applicable" else "not_run","runs":[]}
                 for name,g in doc["groups"].items()}
-        q._need(len(args.result)==len(set(args.result)),"duplicate result run ID")
+        reference_ids=getattr(args,"precision_reference",[])
+        all_ids=[*args.result,*reference_ids]
+        q._need(len(all_ids)==len(set(all_ids)),"duplicate result/reference run ID")
+        precision_refs={}
+        precision_results={}
         inputs=[_source(plan_path,"qualification-plan")]
         refs=[{"type":"run","id":args.plan,"role":"qualification-plan"}]
-        for rid in args.result:
+        for rid in all_ids:
             m,path=_verified(root,rid,"gpu-ai-screen",rid+".power.json")
             receipt=json.loads(path.read_text())
             q._need(receipt.get("run_id")==rid,"receipt run identity mismatch")
@@ -186,7 +205,13 @@ def cmd_report(args):
             g=doc["groups"][name]["options"]
             s=receipt["observations"]["ai_screen"]
             status=s["status"]
-            if status=="pass":
+            is_reference=rid in reference_ids
+            if is_reference:
+                q._need(status=="precision_observed","precision reference must be a completed observation")
+            if status in ("pass","precision_observed"):
+                precision=status=="precision_observed"
+                q._need(precision==all(d in a.PRECISION_DTYPES for d in g["dtype"]),
+                        "precision exception is restricted to named RDNA3 reference cases")
                 for key in ("provider","n","seconds","warmup_seconds","min_hotspot_c","max_hotspot_c",
                             "max_memory_c","pause_ms","setup_timeout","memory_mib","resident_mib","headroom_mib","batch"):
                     q._need(request[key]==g[key],"receipt recipe mismatch: "+key)
@@ -197,7 +222,7 @@ def cmd_report(args):
                         and request["apply_profile"] is False and request["stock_confirmed"] is False and
                         request["probe_digest"]=="sha256:"+doc["sources"]["probe"]["sha256"]
                         and request["profile_digest"]==doc["profile_digest"],"receipt identity mismatch")
-                q._need(m["state"]=="completed" and m["execution"]["exit_code"]==0
+                q._need(m["state"]==("failed" if precision else "completed") and m["execution"]["exit_code"]==(2 if precision else 0)
                         and s["schema_version"]==a.SCREEN_SCHEMA and s["production_qualified"] is False
                         and receipt["observations"]["start"]==doc["snapshot"]==receipt["observations"]["stop"]
                         and receipt["transaction"]["state"]=="not_requested",
@@ -209,7 +234,7 @@ def cmd_report(args):
                     dtype=c["dtype"]
                     shape=a.matrix_geometry(g["n"],g["matrix_shape"]) if dtype in a.MATRIX_DTYPES else None
                     n=g["memory_mib"] if dtype=="memory" else shape[1] if shape else g["n"]
-                    q._need(c["status"]=="pass" and c["n"]==n,"passing receipt has nonpassing case")
+                    q._need(c["status"]==status and c["n"]==n,"passing receipt has nonpassing case")
                     a.validate_native(c["native"],doc["target"]["bdf"],doc["target"]["arch"],dtype,n,
                         a.case_provider(dtype,g["provider"]),g["seconds"]+g["warmup_seconds"],g["setup_timeout"],
                         g["headroom_mib"] or 512,batch=a.case_batch(dtype,g["batch"]),geometry=shape,
@@ -218,13 +243,39 @@ def cmd_report(args):
                         q._need(c.get("hot_window_verified") is True and a.hot_window(c["junction_samples"],
                             c["native"]["start_ns"],c["native"]["end_ns"],g["seconds"],g["min_hotspot_c"]*1000)==c.get("hot_window")
                             and c.get("hot_window") is not None,"missing hot coverage")
-            groups[name]["runs"].append({"run_id":rid,"status":status})
+                if precision:
+                    q._need(doc["target"]["arch"]=="gfx1100" and isinstance(request["kernel"],str) and bool(request["kernel"])
+                            and receipt["observations"]["start"]["controls"].get("vddgfx_offset_mv")==0,
+                            "precision reference requires zero-offset observed gfx1100")
+                    # Compare every epoch fingerprint, native runtime identity,
+                    # and exact CPU error across separately captured observations.
+                    signature=(request["kernel"],tuple((a.case_identity(c),
+                        tuple(c["native"]["precision_fingerprints"]),
+                        c["native"]["precision_max_abs_error"]) for c in s["cases"]))
+                    # Timing/load-gap changes cannot acquire different allowed
+                    # bytes for the same input corpus.
+                    by_dtype={}
+                    for c in s["cases"]:
+                        observed=(tuple(c["native"]["precision_fingerprints"]),
+                                  c["native"]["precision_max_abs_error"])
+                        q._need(by_dtype.setdefault(c["dtype"],observed)==observed,
+                                "RDNA3 reference differs between load patterns")
+                    (precision_refs if is_reference else precision_results).setdefault(name,[]).append(
+                        (signature,m["started_at"],m["ended_at"]))
+            if not is_reference:
+                groups[name]["runs"].append({"run_id":rid,"status":status})
+            else:
+                groups[name].setdefault("precision_references",[]).append(rid)
             inputs.append(_source(path,"screen"))
-            refs.append({"type":"run","id":rid,"role":"screen"})
-        for group in groups.values():
+            refs.append({"type":"run","id":rid,"role":"precision-reference" if is_reference else "screen"})
+        for name,group in groups.items():
             if group["runs"]:
                 group["status"]="pass" if all(r["status"]=="pass" for r in group["runs"]) else "nonpass"
-        passed=all(g["status"] in ("pass","not_applicable") for g in groups.values())
+                matches=precision_results.get(name,[])
+                references=precision_refs.get(name,[])
+                if len(matches)==len(group["runs"]) and precision_match(references,matches):
+                    group["status"]="allowed_precision"
+        passed=all(g["status"] in ("pass","not_applicable","allowed_precision") for g in groups.values())
         payload={"schema":1,"plan":args.plan,"groups":groups,"independent_pass":passed,
                  "native_scope":doc["native_scope"],"production_qualified":False}
         rid=_capture(root,"gpu-ai-qualification-report",payload,inputs,refs,passed)

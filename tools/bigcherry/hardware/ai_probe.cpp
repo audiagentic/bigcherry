@@ -20,9 +20,12 @@
 #include <thread>
 #include <vector>
 #include <type_traits>
+#include <cmath>
+#include <openssl/sha.h>
 
 namespace {
-constexpr int protocol_version = 6;
+constexpr int protocol_version = 7;
+constexpr unsigned precision_epochs = 8;
 constexpr size_t corpus_count = 3;
 constexpr size_t guard_bytes = 256;
 struct Failure : std::runtime_error {
@@ -367,13 +370,16 @@ struct Words {
     uint32_t a, b, c, d;
 };
 static_assert(sizeof(Words) == 4*sizeof(uint32_t));
-enum class Instruction { alu, wave, lds, fp, dot4, wmma_fp16, wmma_bf16, wmma_fp16_pos, wmma_bf16_pos, dot2, dot2_pos, wmma_iu8 };
+enum class Instruction { alu, wave, lds, fp, dot4, wmma_fp16, wmma_bf16, wmma_fp16_pos, wmma_bf16_pos, dot2, dot2_pos, wmma_iu8, dot2_exact, wmma_fp16_bias, wmma_bf16_bias };
 bool is_wmma(Instruction k) { return k==Instruction::wmma_fp16 || k==Instruction::wmma_bf16 ||
-           k==Instruction::wmma_fp16_pos || k==Instruction::wmma_bf16_pos || k==Instruction::wmma_iu8; }
+           k==Instruction::wmma_fp16_pos || k==Instruction::wmma_bf16_pos || k==Instruction::wmma_iu8 ||
+           k==Instruction::wmma_fp16_bias || k==Instruction::wmma_bf16_bias; }
 bool is_instruction(const std::string& name) {
     return name=="alu" || name=="wave" || name=="lds" || name=="vector-fp" ||
            name=="dot4" || name=="dot2" || name=="dot2-pos" || name=="wmma-iu8" || name=="wmma-fp16" || name=="wmma-bf16" ||
-           name=="wmma-fp16-pos" || name=="wmma-bf16-pos";
+           name=="wmma-fp16-pos" || name=="wmma-bf16-pos" || name=="dot2-exact" ||
+           name=="wmma-fp16-bias" || name=="wmma-bf16-bias" ||
+           name=="dot2-rdna3-reference" || name=="wmma-fp16-rdna3-reference" || name=="wmma-bf16-rdna3-reference";
 }
 Instruction instruction_kind(const std::string& name) {
     if (name=="alu") return Instruction::alu;
@@ -381,11 +387,14 @@ Instruction instruction_kind(const std::string& name) {
     if (name=="lds") return Instruction::lds;
     if (name=="vector-fp") return Instruction::fp;
     if (name=="dot4") return Instruction::dot4;
-    if (name=="dot2") return Instruction::dot2;
+    if (name=="dot2" || name=="dot2-rdna3-reference") return Instruction::dot2;
+    if (name=="dot2-exact") return Instruction::dot2_exact;
     if (name=="dot2-pos") return Instruction::dot2_pos;
     if (name=="wmma-iu8") return Instruction::wmma_iu8;
-    if (name=="wmma-fp16") return Instruction::wmma_fp16;
-    if (name=="wmma-bf16") return Instruction::wmma_bf16;
+    if (name=="wmma-fp16" || name=="wmma-fp16-rdna3-reference") return Instruction::wmma_fp16;
+    if (name=="wmma-fp16-bias") return Instruction::wmma_fp16_bias;
+    if (name=="wmma-bf16" || name=="wmma-bf16-rdna3-reference") return Instruction::wmma_bf16;
+    if (name=="wmma-bf16-bias") return Instruction::wmma_bf16_bias;
     if (name=="wmma-fp16-pos") return Instruction::wmma_fp16_pos;
     if (name=="wmma-bf16-pos") return Instruction::wmma_bf16_pos;
     throw Failure(3,"unknown instruction case");
@@ -399,6 +408,9 @@ const char* instruction_algorithm(Instruction kind) {
     case Instruction::dot4: return "signed-dot4-v1";
     case Instruction::dot2: return "half-dot2-v1";
     case Instruction::dot2_pos: return "half-dot2-nonnegative-v1";
+    case Instruction::dot2_exact: return "half-dot2-vector-fma-v1";
+    case Instruction::wmma_fp16_bias: return "wmma-fp16-biased-corpus-v1";
+    case Instruction::wmma_bf16_bias: return "wmma-bf16-biased-corpus-v1";
     case Instruction::wmma_iu8: return "wmma-iu8-mixed-tile-v1";
     case Instruction::wmma_fp16: return "wmma-fp16-tile-v1";
     case Instruction::wmma_bf16: return "wmma-bf16-tile-v1";
@@ -497,9 +509,20 @@ template<bool Positive> __global__ void instruction_dot2(const uint32_t* input,W
             canonical_float(native_dot2(pack_halves(y,x),cd,0.0f)),
             canonical_float(native_dot2(ab,pack_halves(Positive?z:-z,Positive?w:-w),1.0f))};
 }
+// Workaround experiment: FP32 multiply-add on the same signed dyadic inputs.
+// This does not claim native packed-dot coverage.
+__global__ void instruction_dot2_exact(const uint32_t* input,Words* out,uint32_t seed) {
+    const unsigned i=blockIdx.x*blockDim.x+threadIdx.x;
+    const uint32_t a=input[i]^seed,b=input[i^1u]+seed;
+    const float x=(int(a&31u)-15)/16.0f,y=(int((a>>8)&31u)-15)/16.0f;
+    const float z=(int(b&31u)-15)/16.0f,w=(int((b>>8)&31u)-15)/16.0f;
+    const float d=__builtin_fmaf(x,z,y*w);
+    out[i]={canonical_float(d),canonical_float(__builtin_fmaf(x,z,__builtin_fmaf(y,w,d))),
+            canonical_float(__builtin_fmaf(y,z,x*w)),canonical_float(__builtin_fmaf(-x,z,__builtin_fmaf(-y,w,1.0f)))};
+}
 // One independent 16x16 tile per wave. Input words encode 16 signed
 // two-bit coefficients per row/column. Native fragment layouts differ.
-template<bool BF, bool Positive> __global__ void instruction_wmma(const uint32_t* input, Words* out, uint32_t seed) {
+template<bool BF, bool Positive, bool Bias=false> __global__ void instruction_wmma(const uint32_t* input, Words* out, uint32_t seed) {
 #if defined(__gfx1100__) || defined(__gfx1201__)
     using F = __attribute__((ext_vector_type(8))) float;
     const unsigned i=blockIdx.x*blockDim.x+threadIdx.x, lane=threadIdx.x%32;
@@ -522,8 +545,8 @@ template<bool BF, bool Positive> __global__ void instruction_wmma(const uint32_t
 #else
         const unsigned k=(j/4)*8+(lane/16)*4+j%4;
 #endif
-        av[j]=int((a>>(2*k))&3u)-(Positive?0:1);
-        bv[j]=int((b>>(2*k))&3u)-(Positive?0:1);
+        av[j]=int((a>>(2*k))&3u)-((Positive || Bias)?0:1);
+        bv[j]=int((b>>(2*k))&3u)-((Positive || Bias)?0:1);
     }
     F acc;
     for(unsigned j=0;j<8;++j) {
@@ -532,7 +555,7 @@ template<bool BF, bool Positive> __global__ void instruction_wmma(const uint32_t
 #else
         const unsigned row=8*(lane/16)+j;
 #endif
-        acc[j]=float(Positive?int(row+col):int(row)-int(col));
+        acc[j]=Bias?0.0f:float(Positive?int(row+col):int(row)-int(col));
     }
 #if defined(__gfx1100__)
     if constexpr(BF) acc=__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32(av,bv,acc);
@@ -541,6 +564,21 @@ template<bool BF, bool Positive> __global__ void instruction_wmma(const uint32_t
     if constexpr(BF) acc=__builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12(av,bv,acc);
     else acc=__builtin_amdgcn_wmma_f32_16x16x16_f16_w32_gfx12(av,bv,acc);
 #endif
+    // (A+1)(B+1) - sum(A+1) - sum(B+1) + 16 + C.
+    // Exact on this bounded integer-valued FP16/BF16 corpus, not a general FP rewrite.
+    if constexpr(Bias) {
+        for(unsigned j=0;j<8;++j) {
+#if defined(__gfx1100__)
+            const unsigned row=2*j+lane/16;
+#else
+            const unsigned row=8*(lane/16)+j;
+#endif
+            const uint32_t ar=input[base+row]^seed;
+            int sa=0,sb=0;
+            for(unsigned k=0;k<16;++k) { sa+=(ar>>(2*k))&3u; sb+=(b>>(2*k))&3u; }
+            acc[j] += float(16-sa-sb+int(row)-int(col));
+        }
+    }
     out[2*i]={canonical_float(acc[0]),canonical_float(acc[1]),canonical_float(acc[2]),canonical_float(acc[3])};
     out[2*i+1]={canonical_float(acc[4]),canonical_float(acc[5]),canonical_float(acc[6]),canonical_float(acc[7])};
 #else
@@ -640,14 +678,14 @@ void instruction_reference(Instruction kind, const std::vector<uint32_t>& input,
         }
         return;
     }
-    if (kind==Instruction::fp || kind==Instruction::dot4 || kind==Instruction::dot2 || kind==Instruction::dot2_pos) {
+    if (kind==Instruction::fp || kind==Instruction::dot4 || kind==Instruction::dot2 || kind==Instruction::dot2_pos || kind==Instruction::dot2_exact) {
         for(size_t i=0;i<input.size();++i) {
             const uint32_t a=input[i]^seed,b=input[i^size_t(1)]+seed;
             if(kind==Instruction::fp) {
                 const int x=int(a%32)-15,y=int(b%32)-15,z=int((a/256)%32)-15;
                 expected[i]={host_float_bits(float(x*y+16*z)/256),
                              host_float_bits(float(x*y)/256),host_float_bits(float(x+y)/16),uint32_t(x)};
-            } else if (kind==Instruction::dot2 || kind==Instruction::dot2_pos) {
+            } else if (kind==Instruction::dot2 || kind==Instruction::dot2_pos || kind==Instruction::dot2_exact) {
                 const bool positive=kind==Instruction::dot2_pos;
                 const int offset=positive?0:15;
                 const int x=int(a%32)-offset,y=int((a/256)%32)-offset;
@@ -696,6 +734,20 @@ void instruction_reference(Instruction kind, const std::vector<uint32_t>& input,
         }
     }
 }
+bool precision_reference_case(const std::string& dtype) {
+    return dtype=="dot2-rdna3-reference" || dtype=="wmma-fp16-rdna3-reference" ||
+           dtype=="wmma-bf16-rdna3-reference";
+}
+float as_float(uint32_t bits) { float x; std::memcpy(&x,&bits,sizeof(x)); return x; }
+std::string precision_sha(const std::vector<Words>& words) {
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    if (!SHA256(reinterpret_cast<const unsigned char*>(words.data()),words.size()*sizeof(Words),hash))
+        throw Failure(4,"reference fingerprint failed");
+    std::string out;
+    constexpr char digits[]="0123456789abcdef";
+    for(unsigned char c:hash) { out+=digits[c>>4]; out+=digits[c&15]; }
+    return out;
+}
 void instruction_screen(Instruction kind, const std::string& dtype, const std::string& bdf,
                         const std::string& arch, int hip_version, int driver_version,
                         unsigned width, int blocks, int headroom_mib, int seconds, int pause) {
@@ -705,6 +757,9 @@ void instruction_screen(Instruction kind, const std::string& dtype, const std::s
         throw Failure(3,"native dot4 unavailable for this target");
     if (is_wmma(kind) && (width!=32 || (arch!="gfx1100" && arch!="gfx1201")))
         throw Failure(3,"native WMMA unavailable for this target/wave width");
+    const bool precision=precision_reference_case(dtype);
+    if (precision && (arch!="gfx1100" || blocks>64))
+        throw Failure(3,"RDNA3 reference scope requires gfx1100 and at most 64 groups");
     const size_t elements = size_t(blocks)*instruction_block;
     const size_t result_elements=elements*(is_wmma(kind)?2:1);
     const size_t input_bytes = elements*sizeof(uint32_t), output_bytes = result_elements*sizeof(Words);
@@ -732,8 +787,12 @@ void instruction_screen(Instruction kind, const std::string& dtype, const std::s
     check_input();
     const int64_t start=mono_ns();
     int64_t iterations=0;
+    std::array<std::vector<Words>,precision_epochs> references;
+    uint64_t different=0;
+    double max_abs=0;
     do {
-        const uint32_t seed=uint32_t(iterations)*0x9e3779b9u+0x712db419u;
+        const unsigned epoch=unsigned(precision?iterations%precision_epochs:iterations);
+        const uint32_t seed=uint32_t(epoch)*0x9e3779b9u+0x712db419u;
         instruction_reference(kind,input,expected,width,seed,arch=="gfx1201");
         HIP(hipMemsetAsync(out,0xff,output_bytes));
         auto* in = static_cast<const uint32_t*>(device_input.p);
@@ -745,6 +804,9 @@ void instruction_screen(Instruction kind, const std::string& dtype, const std::s
         case Instruction::dot4: instruction_dot4<<<blocks,instruction_block>>>(in,out,seed); break;
         case Instruction::dot2: instruction_dot2<false><<<blocks,instruction_block>>>(in,out,seed); break;
         case Instruction::dot2_pos: instruction_dot2<true><<<blocks,instruction_block>>>(in,out,seed); break;
+        case Instruction::dot2_exact: instruction_dot2_exact<<<blocks,instruction_block>>>(in,out,seed); break;
+        case Instruction::wmma_fp16_bias: instruction_wmma<false,false,true><<<blocks,instruction_block>>>(in,out,seed); break;
+        case Instruction::wmma_bf16_bias: instruction_wmma<true,false,true><<<blocks,instruction_block>>>(in,out,seed); break;
         case Instruction::wmma_iu8: instruction_wmma_iu8<<<blocks,instruction_block>>>(in,out,seed); break;
         case Instruction::wmma_fp16: instruction_wmma<false,false><<<blocks,instruction_block>>>(in,out,seed); break;
         case Instruction::wmma_bf16: instruction_wmma<true,false><<<blocks,instruction_block>>>(in,out,seed); break;
@@ -754,7 +816,26 @@ void instruction_screen(Instruction kind, const std::string& dtype, const std::s
         HIP(hipGetLastError());
         HIP(hipDeviceSynchronize());
         HIP(hipMemcpy(actual.data(),out,output_bytes,hipMemcpyDeviceToHost));
-        for (size_t i=0;i<result_elements;++i)
+        if (precision) {
+            // Discovery only: verify the independently derived dyadic output
+            // lattice, then fingerprint and replay exact bytes. No numerical
+            // pass is issued by discovery, even when all repeats agree.
+            const double grid=kind==Instruction::dot2 ? 1.0/256 : 1.0;
+            for(size_t i=0;i<result_elements;++i) {
+                const Words& a=actual[i]; const Words& e=expected[i];
+                const uint32_t got[]={a.a,a.b,a.c,a.d}, want[]={e.a,e.b,e.c,e.d};
+                for(unsigned q=0;q<4;++q) {
+                    const double v=as_float(got[q]), w=as_float(want[q]);
+                    const double err=std::abs(v-w);
+                    if (!std::isfinite(v) || !(err<grid/2))
+                        throw Failure(2,"RDNA3 reference outside exact output lattice");
+                    if (got[q]!=want[q]) { ++different; max_abs=std::max(max_abs,err); }
+                }
+            }
+            if (iterations<precision_epochs) references[epoch]=actual;
+            else if (std::memcmp(references[epoch].data(),actual.data(),output_bytes))
+                throw Failure(2,"RDNA3 reference changed on repeated epoch");
+        } else for (size_t i=0;i<result_elements;++i)
             if (!same_words(actual[i],expected[i])) {
                 auto describe = [](const Words& w) {
                     return std::to_string(w.a)+","+std::to_string(w.b)+","+
@@ -773,14 +854,14 @@ void instruction_screen(Instruction kind, const std::string& dtype, const std::s
         }
         ++iterations;
         if (pause) std::this_thread::sleep_for(std::chrono::milliseconds(pause));
-    } while (iterations<2 || mono_ns()-start<int64_t(seconds)*1000000000);
+    } while (iterations<(precision?2*precision_epochs:2) || mono_ns()-start<int64_t(seconds)*1000000000);
     const int64_t end=mono_ns();
     check_input();
     std::cout << "{\"protocol_version\":" << protocol_version << ",\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
               << "\",\"dtype\":\"" << dtype << "\",\"n\":" << blocks
               << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
               << ",\"provider\":\"hip-native\",\"library_version\":\"" << hip_version
-              << "\",\"workspace\":0,\"algorithm\":\"" << instruction_algorithm(kind)
+              << "\",\"workspace\":0,\"algorithm\":\"" << (precision ? dtype : instruction_algorithm(kind))
               << "\",\"batch\":1,\"block_size\":" << instruction_block << ",\"wave_size\":" << width
               << ",\"iterations\":" << iterations << ",\"host_checks\":" << iterations
               << ",\"checked_lanes\":" << uint64_t(iterations)*elements
@@ -789,7 +870,16 @@ void instruction_screen(Instruction kind, const std::string& dtype, const std::s
               << ",\"allocated_bytes\":" << budget << ",\"free_before_bytes\":" << free
               << ",\"free_after_bytes\":" << after
               << ",\"elapsed_s\":" << std::setprecision(9) << double(end-start)/1e9
-              << ",\"start_ns\":" << start << ",\"end_ns\":" << end << ",\"status\":\"pass\"}\n";
+              << ",\"start_ns\":" << start << ",\"end_ns\":" << end;
+    if(precision) {
+        std::cout << ",\"precision_epochs\":" << precision_epochs
+                  << ",\"precision_different_words\":" << different
+                  << ",\"precision_max_abs_error\":" << std::setprecision(17) << max_abs
+                  << ",\"precision_fingerprints\":[";
+        for(unsigned i=0;i<precision_epochs;++i)
+            std::cout << (i?",":"") << "\"" << precision_sha(references[i]) << "\"";
+        std::cout << "],\"status\":\"precision_observed\"}\n";
+    } else std::cout << ",\"status\":\"pass\"}\n";
 }
 
 int parse_int(const char* s, int lo, int hi) {

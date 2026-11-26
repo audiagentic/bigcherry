@@ -10,7 +10,7 @@ from . import ai_probe as a
 MIB = 2**20
 # The native probe's hipBLASLt preference limit, not a measured allocation.
 LT_WORKSPACE_LIMIT = 32*MIB
-GROUP_FIELDS = {"matrix", "dtypes", "n", "batch", "seconds", "pause_ms", "matrix_shape",
+GROUP_FIELDS = {"matrix", "hot", "dtypes", "n", "batch", "seconds", "pause_ms", "matrix_shape",
                 "memory_fraction", "resident_fraction", "warmup_seconds",
                 "min_hotspot_c", "setup_timeout"}
 
@@ -43,7 +43,7 @@ def load_recipe(path: Path):
 
 def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
             headroom: int, max_hotspot: int, max_memory: int) -> dict:
-    _need(set(raw) == {"schema", "target", "recipe", "group"} and raw["schema"] == 1,
+    _need(set(raw) == {"schema", "target", "recipe", "group"} and raw["schema"] == 2,
           "invalid qualification recipe schema")
     _need(arch in raw["target"] and recipe in raw["recipe"], "unknown target/recipe")
     _need(_integer(total, 1, 2**50) and _integer(free, 1, total)
@@ -52,22 +52,28 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
     _need(_integer(max_hotspot, 1, 110) and _integer(max_memory, 1, 110),
           "invalid thermal ceiling")
     target = raw["target"][arch]
-    _need(set(target) == {"provider", "matrix"} and target["provider"] in a.PROVIDERS
+    _need({"provider","matrix","hot_dtype"} <= set(target) <= {"provider","matrix","hot_dtype","precision_references"} and target["provider"] in a.PROVIDERS
           and _names(target["matrix"]) and set(target["matrix"]) <= set(a.MATRIX_DTYPES)
+          and target["hot_dtype"] in target["matrix"]
           and not (target["provider"] == "rocblas" and "fp8" in target["matrix"]),
           "invalid target capability configuration")
+    precision = target.get("precision_references",False)
+    _need(type(precision) is bool and (not precision or arch=="gfx1100"),"invalid precision reference target")
     selected = raw["recipe"][recipe]
     _need(set(selected) == {"groups"} and _names(selected["groups"]), "invalid group selection")
     groups = {}
     for name in selected["groups"]:
         _need(name in raw["group"], "unknown selected group")
         g = raw["group"][name]
-        _need(not set(g)-GROUP_FIELDS and (("matrix" in g) != ("dtypes" in g))
-              and ("matrix" not in g or g["matrix"] is True), "invalid group fields")
-        dtypes = target["matrix"] if g.get("matrix") else g["dtypes"]
+        _need(not set(g)-GROUP_FIELDS and sum(k in g for k in ("matrix","dtypes","hot"))==1
+              and ("matrix" not in g or g["matrix"] is True)
+              and ("hot" not in g or g["hot"] is True), "invalid group fields")
+        dtypes = target["matrix"] if g.get("matrix") else [target["hot_dtype"]] if g.get("hot") else g["dtypes"]
         _need(_names(dtypes) and set(dtypes) <= set(a.DTYPES)
               and set(dtypes)&set(a.MATRIX_DTYPES) <= set(target["matrix"]),
               "unknown or unconfigured matrix case")
+        if precision:
+            dtypes = [a.PRECISION_CASES.get(d,d) for d in dtypes]
         missing = [d for d in dtypes if d in a.WMMA_CASES and arch not in a.WMMA_ARCHES]
         if missing:
             _need(missing == dtypes, "split supported and unsupported cases into separate groups")
@@ -82,6 +88,7 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
               and isinstance(pause,list) and bool(pause) and all(_integer(x,0,1000) for x in pause)
               and len(pause)==len(set(pause)) and (not warm or hot is not None)
               and (hot is None or _integer(hot,1,max_hotspot-1)), "invalid group bounds")
+        _need(not any(d in a.PRECISION_DTYPES for d in dtypes) or (arch=="gfx1100" and n<=64 and all(d in a.PRECISION_DTYPES for d in dtypes)), "invalid precision reference scope")
         matrix = any(d in a.MATRIX_DTYPES for d in dtypes)
         shape = g.get("matrix_shape")
         _need(shape is None or matrix, "shape requires matrix case")

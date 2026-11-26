@@ -25,7 +25,9 @@ def test_platform_recipe_architecture_capabilities_and_memory():
         assert ("fp8" in groups["matrix"]["options"]["dtype"])==(arch=="gfx1201")
         assert groups["wmma-positive"]["status"]==("not_applicable" if arch=="gfx1030" else "planned")
         assert groups["dot2-signed"]["status"]=="planned"
+        assert groups["dot2-signed"]["options"]["dtype"]==[a.PRECISION_CASES["dot2"] if arch=="gfx1100" else "dot2"]
         assert groups["hot"]["options"]["min_hotspot_c"]==60
+        assert groups["hot"]["options"]["dtype"]==["fp32" if arch=="gfx1201" else "bf16"]
         mem=groups["memory"]["options"]["memory_mib"]
         res=groups["resident"]["options"]["resident_mib"]
         assert mem==res==21*1024
@@ -63,6 +65,7 @@ def test_native_scope_only_uses_existing_routes_and_gaps():
 
 def plan_fixture(tmp_path):
     groups=resolve()
+    groups["dot2-signed"]["options"]["dtype"]=["dot2"]
     # Only the two groups necessary to exercise pass and missing evidence.
     doc={"schema":1,"protocol":a.NATIVE_PROTOCOL,"screen_schema":a.SCREEN_SCHEMA,
          "groups":{"direct":groups["direct"],"dot2-signed":groups["dot2-signed"]},
@@ -146,3 +149,20 @@ def test_report_revalidates_passing_case(tmp_path):
     assert result["groups"]["dot2-signed"]["status"]=="pass"
     assert result["groups"]["direct"]["status"]=="not_run"
     assert result["independent_pass"] is False
+
+def test_precision_match_requires_two_prior_identical_references():
+    ref=[("same","01","02"),("same","03","04")]
+    result=[("same","05","06")]
+    assert cli.precision_match(ref,result)
+    assert not cli.precision_match(ref[:1],result)
+    assert not cli.precision_match(ref,[])
+    assert not cli.precision_match(ref,[("changed-one-bit","05","06")])
+    assert not cli.precision_match(ref,[("same","03","06")])
+    assert not cli.precision_match([ref[0],("different","03","04")],result)
+
+
+def test_precision_recipe_mapping_only_gfx1100():
+    raw=q.load_recipe(RECIPE)
+    raw["target"]["gfx1201"]["precision_references"]=True
+    with pytest.raises(a.ScreenError,match="precision"):
+        resolve("gfx1201",raw)

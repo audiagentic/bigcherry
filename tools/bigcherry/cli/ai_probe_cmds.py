@@ -156,7 +156,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
     try:
         ai_probe.screen_receipt(run.run_id, result).save(args.output)
         # An unresolved journal/child must stay protected from cleanup.
-        hold = result.get("transaction", {}).get("state") == "restore_unverified" or result["status"] == "unreaped"
+        hold = result.get("transaction", {}).get("state") == "restore_unverified" or result["status"] in ("unreaped","precision_observed")
         rm.update_manifest(run.path, expected_generation=manifest["generation"],
                            state="completed" if rc == 0 else ("cancelled" if result["status"] == "cancelled" else "failed"),
                            patch={"execution": {"exit_code": rc},
