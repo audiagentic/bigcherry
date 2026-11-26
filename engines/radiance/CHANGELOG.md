@@ -1,5 +1,17 @@
 # Changelog
 
+## [2020.23.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.22.0...bc-radiance-2020.23.0) (2026-11-26)
+
+
+### New and changed
+
+* **radiance:** bind native qualification scope and physical evidence ([#1670](https://github.com/audiagentic/bigcherry/issues/1670)) ([2b75a81](https://github.com/audiagentic/bigcherry/commit/2b75a81cedd11beb8e99e1f11456d0b4ec5ca035))
+
+
+### Fixes
+
+* **rsc02:** a KL run's managed start scores the trunk: speculative depth 0 ([#1675](https://github.com/audiagentic/bigcherry/issues/1675)) ([6d576a7](https://github.com/audiagentic/bigcherry/commit/6d576a724dfe958eeb5d342ef271fafe57611f69))
+
 ## [2020.22.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.21.1...bc-radiance-2020.22.0) (2026-11-26)
 
 
