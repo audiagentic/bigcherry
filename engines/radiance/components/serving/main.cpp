@@ -56,37 +56,6 @@ void usage() {
            "      validates one settled helper record against the strict lab manifest and atomically appends "
            "it\n"
 
-           "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] "
-           "[site/profile/set]\n"
-           "      writes the serving manifest for this configuration to OUT (an existing OUT is refused) "
-           "from its\n"
-           "      measured plan and the planner's owner map, and reads it back through the shared strict "
-           "reader before it\n"
-           "      stays; a miss in the plan cache exits 10. Starts no process. The engine admits the plan the "
-           "manifest\n"
-           "      carries (expected plan and kv_backing_floor): there is no other way to hand it one.\n"
-           "      --unmeasured   (with --write-manifest; no --plan-cache or --engine-binary) writes the "
-           "unmeasured manifest\n"
-           "                     of the measuring start instead: owner map and settings, plan.state "
-           "unmeasured, no plan. Only\n"
-           "                     a measuring start (radiance --plan-memory, r3_moe_worker --measuring) accepts "
-           "it; every\n"
-           "                     serving start refuses it.\n"
-           "      --live-policy FILE   lab-only JSON override of every spec.handoff.placement.live_policy "
-           "member; present means\n"
-           "                     the helper runs the live placement policy. Nothing is defaulted.\n"
-           "      --auto-calibrate-live-policy  with --calibration FILE, a measured production start with no record for its layout\n"
-           "                           calibrates the live policy in session (default off)\n"
-           "      --calibration-run    the lab calibration start: lab profile with the explicit --live-policy "
-           "and no\n"
-           "                     experiment, so the measured plan is the production plan.\n"
-           "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then "
-           "written with\n"
-           "                     profile lab; a production manifest never carries one).\n"
-           "  --plan-extra TEXT   (with --write-manifest) engine arguments passed through "
-           "verbatim; part of the key\n"
-           "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they "
-           "match\n"
            "No process is started by these commands.\n"
            "\n"
            "Serving sessions (RSC02; engine-only configs for now):\n"
@@ -634,22 +603,6 @@ const std::string cache_note = work_root.empty()
 
 } // namespace
 
-/* A JSON object an operator supplies (a live policy, a lab experiment): read once, never defaulted; empty path
- * = none. `from` names the file for the member's provenance record. */
-static void load_json_input(const fs::path& path, const char* flag, Json* out, std::string* from) {
-    if (path.empty())
-        return;
-    std::ifstream in(path, std::ios::binary);
-    if (!in)
-        throw std::runtime_error(std::string(flag) + ": cannot read " + path.string());
-    std::ostringstream text;
-    text << in.rdbuf();
-    *out = Json::parse(text.str(), nullptr, false);
-    if (!out->is_object())
-        throw std::runtime_error(std::string(flag) + ": " + path.string() + " is not a JSON object");
-    *from = std::string(flag) + " " + path.filename().string();
-}
-
 int main(int argc, char** argv) {
     try {
         if (argc > 1) {
@@ -765,18 +718,6 @@ int main(int argc, char** argv) {
         Options opts;
         bool detection = false, schema = false, validation = false;
         bool explanation = false, json = false;
-        std::string plan_extra;
-        std::string expected_plan_key;
-        int native_config_fd = -1;
-        fs::path plan_cache, engine_binary;
-        fs::path write_manifest, live_policy_file, experiment_file, calibration_records_file,
-            s8_replay_evidence_file;
-        bool auto_calibrate_live_policy = false;   // default off: no in-session calibration unless asked for
-        std::string expected_owner_attempt;
-        // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
-        // explicit live policy and NO experiment, so the plan it measures is the production plan.
-        bool calibration_run = false;
-        bool unmeasured = false;
         std::vector<fs::path> positional;
         for (int i = 1; i < argc; ++i) {
             const std::string arg = argv[i];
@@ -809,42 +750,8 @@ int main(int argc, char** argv) {
                 opts.configs.emplace_back(need_arg("--configs"));
             else if (arg == "--model-root")
                 opts.model_root = need_arg("--model-root");
-            else if (arg == "--run-dir")
-                opts.run_dir = need_arg("--run-dir");
             else if (arg == "--calibration")
                 opts.calibration_cache = need_arg("--calibration");
-            else if (arg == "--write-manifest")
-                write_manifest = need_arg("--write-manifest");
-            else if (arg == "--unmeasured")
-                unmeasured = true;
-            else if (arg == "--auto-calibrate-live-policy")
-                auto_calibrate_live_policy = true;
-            else if (arg == "--live-policy")
-                live_policy_file = need_arg("--live-policy");
-            else if (arg == "--calibration-run")
-                calibration_run = true;
-            else if (arg == "--experiment")
-                experiment_file = need_arg("--experiment");
-            else if (arg == "--plan-extra")
-                plan_extra = need_arg("--plan-extra");
-            else if (arg == "--expected-plan-key")
-                expected_plan_key = need_arg("--expected-plan-key");
-            else if (arg == "--bc-native-config-fd") {
-                const std::string value = need_arg("--bc-native-config-fd");
-                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), native_config_fd);
-                if (error != std::errc{} || end != value.data() + value.size() || native_config_fd < 3)
-                    throw std::runtime_error("--bc-native-config-fd requires a descriptor greater than 2");
-            }
-            else if (arg == "--expected-owner-attempt")
-                expected_owner_attempt = need_arg("--expected-owner-attempt");
-            else if (arg == "--calibration-records")
-                calibration_records_file = need_arg("--calibration-records");
-            else if (arg == "--s8-replay-evidence")
-                s8_replay_evidence_file = need_arg("--s8-replay-evidence");
-            else if (arg == "--plan-cache")
-                plan_cache = need_arg("--plan-cache");
-            else if (arg == "--engine-binary")
-                engine_binary = need_arg("--engine-binary");
             else if (arg == "--set")
                 opts.sets.push_back(need_arg("--set"));
             else if (!arg.empty() && arg.front() == '-')
@@ -858,46 +765,7 @@ int main(int argc, char** argv) {
         if (const auto refusal =
                 bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
             throw std::runtime_error(*refusal);
-        const int modes = int(detection) + int(schema) + int(validation) + int(explanation) +
-                          int(!write_manifest.empty());
-        const bool plan_mode = !write_manifest.empty();
-        if (native_config_fd >= 0 && !plan_mode)
-            throw std::runtime_error("--bc-native-config-fd is an internal --write-manifest input");
-        if (plan_mode) {
-            // The v3 measuring/writing path is owner-bound to the sealed native
-            // YAML snapshot. Never fall back to the v2 key or import caller-
-            // supplied plan files: that would create an unowned cache entry
-            // before the strict v3 writer can reject the missing snapshot.
-            if (native_config_fd < 3)
-                throw std::runtime_error("v3 --write-manifest requires --bc-native-config-fd");
-        }
-        if (!plan_mode && !opts.run_dir.empty())
-            throw std::runtime_error("--run-dir in resolver mode is internal to --write-manifest");
-        if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
-            throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
-        if (!plan_mode && !plan_extra.empty())
-            throw std::runtime_error("--plan-extra goes with --write-manifest");
-        if ((!s8_replay_evidence_file.empty() && (write_manifest.empty() || unmeasured)))
-            throw std::runtime_error("--s8-replay-evidence requires a measured --write-manifest");
-        if (write_manifest.empty() && !calibration_records_file.empty())
-            throw std::runtime_error("--calibration-records goes with --write-manifest");
-        if (plan_mode && !unmeasured &&
-            expected_owner_attempt.empty())
-            throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
-        if (plan_mode && !unmeasured && expected_plan_key.empty())
-            throw std::runtime_error("v3 measured cache reads require --expected-plan-key");
-        if (!expected_plan_key.empty() && !unmeasured &&
-            !(plan_mode && native_config_fd >= 3))
-            throw std::runtime_error(
-                "--expected-plan-key is for a session-owned unmeasured call or v3 measured cache read");
-        if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
-            throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab "
-                                     "profile, or --calibration-run");
-        if (calibration_run && (live_policy_file.empty() || !experiment_file.empty()))
-            throw std::runtime_error("--calibration-run takes an explicit --live-policy and no --experiment "
-                                     "(the production plan is measured)");
-        if (write_manifest.empty() && (unmeasured || !live_policy_file.empty() || !experiment_file.empty()))
-            throw std::runtime_error("--unmeasured, --live-policy and --experiment go with --write-manifest");
+        const int modes = int(detection) + int(schema) + int(validation) + int(explanation);
         if (modes != 1)
             throw std::runtime_error("choose one mode (see --help)");
         if (schema) {
@@ -935,77 +803,6 @@ int main(int argc, char** argv) {
                 opts.profile = positional[1];
         } else if (!positional.empty()) {
             throw std::runtime_error("unexpected file; use --site or --profile");
-        }
-        if (plan_mode) {
-            if (!positional.empty())
-                throw std::runtime_error(
-                    "--write-manifest takes --site, --profile, --set and --calibration only");
-            if (unmeasured && !plan_cache.empty())
-                throw std::runtime_error("--unmeasured has no plan: it takes no --plan-cache");
-            if (unmeasured && expected_plan_key.empty() && (!engine_binary.empty() || !plan_extra.empty()))
-                throw std::runtime_error(
-                    "--unmeasured takes --engine-binary and --plan-extra only with --expected-plan-key");
-            if (unmeasured && !expected_plan_key.empty() && (engine_binary.empty() || plan_extra.empty()))
-                throw std::runtime_error(
-                    "session-owned --unmeasured requires --expected-plan-key, --engine-binary and --plan-extra");
-            if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
-                throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
-            // The same two steps the session owner runs in-process (write_native_manifest); this command is their CLI.
-            bc::serving::NativeWriterRequest request;
-            request.calibration_records = Json::array();
-            if (!calibration_records_file.empty()) {
-                std::ifstream rin(calibration_records_file, std::ios::binary);
-                if (!rin)
-                    throw std::runtime_error("--calibration-records: cannot read " +
-                                             calibration_records_file.string());
-                std::ostringstream text;
-                text << rin.rdbuf();
-                request.calibration_records = Json::parse(text.str(), nullptr, false);
-                if (!request.calibration_records.is_array())
-                    throw std::runtime_error("--calibration-records: " + calibration_records_file.string() +
-                                             " is not a JSON array");
-            }
-            auto native = bc::serving::session::read_native_writer_input(native_config_fd);
-            request.options = opts;
-            request.inspected = std::move(native.inspected);
-            request.snapshot = std::move(native.snapshot);
-            request.settings = std::move(native.settings);
-            request.unmeasured = unmeasured;
-            request.engine_binary = engine_binary;
-            request.plan_extra = plan_extra;
-            request.expected_plan_key = expected_plan_key;
-            request.expected_owner_attempt = expected_owner_attempt;
-            request.plan_cache = plan_cache;
-            request.power_profile = request.inspected.x.power_profile();
-            request.power_rules = bc::serving::session::selected_power_rules(native.power_profiles, request.power_profile);
-            request.manifest_name = write_manifest.filename().string();
-            request.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
-            request.lab_profile = !(experiment_file.empty() && !calibration_run);
-            request.auto_calibrate = auto_calibrate_live_policy;
-            request.want_s8_replay_evidence = !s8_replay_evidence_file.empty();
-            load_json_input(live_policy_file, "--live-policy", &request.live_policy, &request.live_policy_from);
-            load_json_input(experiment_file, "--experiment", &request.experiment, &request.experiment_from);
-            const auto outcome = bc::serving::write_native_manifest(request);
-            using Kind = bc::serving::NativeWriterOutcome::Kind;
-            if (outcome.kind == Kind::cache_miss) {
-                std::cerr << "bc-serve: no measured plan for this configuration (key " << outcome.plan_key.substr(0, 16)
-                          << "); a start measures it with the helpers up\n";
-                return 10;
-            }
-            if (outcome.kind == Kind::host_pool_change) {
-                std::cerr << outcome.notes;
-                std::cout << "derived_host_pool_mib=" << outcome.derived_pool_mib << '\n';
-                return 11;
-            }
-            std::cerr << outcome.notes;
-            bc::serving::write_manifest_file(write_manifest, outcome.built.text);
-            if (!outcome.s8_replay_source.is_null())
-                bc::serving::write_manifest_file(s8_replay_evidence_file, outcome.s8_replay_source.dump(2) + "\n");
-            std::cout << "manifest: " << write_manifest << (unmeasured ? " (unmeasured: for the measuring start only)" : "")
-                      << '\n'
-                      << "digest: " << outcome.built.digest << '\n'
-                      << "no processes started\n";
-            return 0;
         }
         auto result = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
         if (validation) {

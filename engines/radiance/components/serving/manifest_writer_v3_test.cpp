@@ -49,26 +49,6 @@ void check(bool condition, const char* message) {
         throw std::runtime_error(message);
 }
 
-int sealed_snapshot_fd(std::string_view bytes) {
-    const int fd = ::memfd_create("bc-v3-native-snapshot", MFD_CLOEXEC | MFD_ALLOW_SEALING);
-    if (fd < 0) throw std::runtime_error("cannot create sealed snapshot test descriptor");
-    size_t offset = 0;
-    while (offset < bytes.size()) {
-        const ssize_t count = ::write(fd, bytes.data() + offset, bytes.size() - offset);
-        if (count <= 0) {
-            ::close(fd);
-            throw std::runtime_error("cannot write sealed snapshot test descriptor");
-        }
-        offset += static_cast<size_t>(count);
-    }
-    constexpr int seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
-    if (::fcntl(fd, F_ADD_SEALS, seals) != 0) {
-        ::close(fd);
-        throw std::runtime_error("cannot seal snapshot test descriptor");
-    }
-    return fd;
-}
-
 void check_snapshot_required(const sv::ManifestInputs& inputs) {
     try {
         (void)sv::build_manifest(inputs);
@@ -205,12 +185,6 @@ int main(int argc, char** argv) {
         }
         inputs.native_config = sv::NativeConfigSnapshot::read(authored, temporary.path);
         fs::remove(authored);
-        const int snapshot_fd = sealed_snapshot_fd(inputs.native_config->manifest_field().dump());
-        const auto received_snapshot = sv::NativeConfigSnapshot::from_sealed_fd(snapshot_fd);
-        ::close(snapshot_fd);
-        check(received_snapshot.manifest_field() == inputs.native_config->manifest_field(),
-              "shared sealed-fd reader changed native snapshot bytes or identity");
-
         const auto measuring = sv::build_manifest(inputs);
         check_snapshot(measuring, wire::PlanUse::measuring, *inputs.native_config, yaml, temporary.path);
         bc::test::set_measured_manifest_fixture(inputs, measuring, facts);

@@ -1268,7 +1268,7 @@ class Owner {
                 // Register first, even on forbidden starts; cleanup must
                 // reap a child that never passed its pre-exec gate.
                 track(role, pid, log);
-                if (kind != ChildKind::manifest_writer && kind != ChildKind::native_config_inspector &&
+                if (kind != ChildKind::native_config_inspector &&
                     s_.power_hook.begin_manifest && !power_admitted_)
                     throw PlanFailed("planner started a measuring child before durable power admission");
             };
@@ -2322,7 +2322,7 @@ ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& 
 } // namespace
 
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks) {
-    return run_planning_child(argv, env, hooks, ChildKind::manifest_writer, "manifest writer");
+    return run_planning_child(argv, env, hooks, ChildKind::native_config_inspector, "native config inspector");
 }
 
 v2::S10PowerProfile selected_power_rules(const v2::PowerProfiles& loaded, const std::string& name) {
@@ -2547,31 +2547,6 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         settings.prefill_interleave = bounded("prefill_interleave", 0);
     out.receipt = doc;
     return out;
-}
-
-NativeWriterInput read_native_writer_input(int fd) {
-    const std::string bytes = v2::read_sealed_document(fd, "native writer descriptor");
-    const auto parsed = v2::parse_strict_json(bytes, "native writer descriptor");
-    if (!parsed || !parsed.value().is_object() || parsed.value().size() != 3 ||
-        !parsed.value().contains("snapshot") || !parsed.value().contains("inspection") ||
-        !parsed.value().contains("config"))
-        throw PlanFailed("native writer descriptor: expected sealed snapshot, typed inspection receipt and config label");
-    const auto& handoff = parsed.value();
-    auto snapshot = NativeConfigSnapshot::from_manifest(handoff.at("snapshot"));
-    auto inspection = parse_native_config_report(handoff.at("inspection"), snapshot);
-    const Json& label = handoff.at("config");
-    if (!label.is_object() || !label.contains("name") || !label.at("name").is_string() ||
-        !label.contains("yaml_path") || !label.at("yaml_path").is_string())
-        throw PlanFailed("native writer descriptor: config label needs a name and yaml_path");
-    InspectedConfig inspected;
-    inspected.name = label.at("name").get<std::string>();
-    inspected.yaml_path = label.at("yaml_path").get<std::string>();
-    inspected.sha256 = inspection.snapshot_sha256;
-    inspected.model = inspection.model;
-    inspected.tp_wire = inspection.tp_wire;
-    inspected.x = inspection.x_bigcherry;
-    return {std::move(snapshot), std::move(inspection.power_profiles), std::move(inspection.settings),
-            std::move(inspected)};
 }
 
 static void reconcile_native_config(

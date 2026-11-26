@@ -180,7 +180,7 @@ using Wait = Callback<bool(std::chrono::milliseconds)>;
 
 // A role is a compile-time authority class, distinct from the event/ledger
 // label. Only CPU-only planning children are allowed before power admission.
-enum class ChildKind : uint8_t { manifest_writer, native_config_inspector, measuring_helper, measuring_engine };
+enum class ChildKind : uint8_t { native_config_inspector, measuring_helper, measuring_engine };
 
 /* The owner registers every planner child (including the CPU-only writer and native inspector)
  * before its pre-exec gate is released. Every child is reaped and journalled;
@@ -298,9 +298,10 @@ struct ManifestRun {
     int exit = 0;
     std::string out, err;
 };
-/* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop
- * request ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it
- * cannot verify leaves the child the owner's to stop). */
+/* A planning child's captured result (the native config inspector): run by the owner through `hooks.wait` (it keeps
+ * answering its socket; a stop request ends the child and throws PlanFailed) and registered through
+ * `hooks.started`/`ended` (an exit it cannot verify leaves the child the owner's to stop). The inspector calls the
+ * same runner with its descriptors; this plain form is its card-free test seam. */
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks = {});
 
 struct NativeConfigInspection {
@@ -320,14 +321,6 @@ struct NativeConfigInspection {
     v2::PowerProfiles power_profiles;   // the named power profiles, converted by the same engine and decoded strictly
     Json receipt;
 };
-
-struct NativeWriterInput {
-    NativeConfigSnapshot snapshot;
-    v2::PowerProfiles power_profiles;
-    NativeEngineSettings settings;
-    InspectedConfig inspected;   // the config as the owner's inspector parsed it from the same sealed bytes
-};
-NativeWriterInput read_native_writer_input(int fd);
 
 /* Ask the matched Radiance binary to parse and resolve the admitted native YAML snapshot under its recorded
  * root. `native_environment` supplies the same explicit configuration environment selected for the later child;

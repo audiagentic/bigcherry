@@ -18,7 +18,7 @@ catalogue of layouts and no `--set` on a managed start.
 | Tool | Role |
 |---|---|
 | `bc-serve serve/start/stop/status` | Native production owner: reads the config's YAML, seals it, measures and validates the plan, owns engine/helper children and lifecycle; also `explain` and `quality`. |
-| `radiance --manifest M --role engine` | The engine reads its whole configuration from `M`, which the owner hands it as a sealed memfd (`/proc/self/fd/N`). |
+| `radiance --config FILE --bc-admission-fd FD` | The stock YAML entry plus the owner's sealed admission (rad0070); the engine reads no manifest. |
 | `r3_moe_worker --settings-fd FD --role helperN` | A helper receives its typed settings (the role's projection of `M`, computed by the owner) on one sealed descriptor and reads no manifest. |
 
 ## How a manifest is made
@@ -34,8 +34,7 @@ bc-serve explain CONFIG --native-config NAME.yaml --model-root DIR              
 - `CONFIG` is the file name without `.yaml` in the verified bundle (or `--configs DIR`, `BIGCHERRY_CONFIGS`); `--native-config` names another file,
   which is sealed like any config. The site file keeps machine facts, power and calibration; it carries no engine options.
 - The owner seals the YAML, asks the matched engine to inspect it (`radiance --bc-inspect-native-config`), reconciles the result with the
-  `x-bigcherry` section and writes the manifest. `bc-serve --write-manifest` exists only as that internal step (it takes a private
-  `--bc-native-config-fd`) and is not an operator interface. A manifest is immutable: an existing file is refused, and the result is read
+  `x-bigcherry` section and writes the manifest. The manifest is written in-process by the owner (there is no `--write-manifest` command). A manifest is immutable: an existing file is refused, and the result is read
   back through the same strict reader the engine uses.
 - A serving manifest carries a **measured plan**. A named `serve` or `start` reuses the last measured manifest of its config from the work
   root's named-config store (`--work-root`; the key is the resolved settings, the ordered cards with their VRAM, the power profile, the config
@@ -72,23 +71,22 @@ plugin `libr3moe` only when helpers exist), no handoff is needed, and the host-m
 model's expert tables, so a dense model (a container without routed experts, such as the 27B) gets one like any other; only a config with
 helpers needs the experts, to plan which ones each helper owns.
 
-## Starting with a manifest
+## How the engine is started
 
 ```bash
-radiance --manifest /proc/self/fd/N --role engine               # serving: the owner's sealed manifest, which must be measured
-radiance --manifest M --plan-memory PLAN.json --plan-memory-ranks RANKS.json   # measuring start (unmeasured manifest file)
-bc-serve helper-exec M helper0 -- r3_moe_worker   # one helper alone (lab scripts): the same descriptor hand-off
+radiance --config /proc/self/fd/N --bc-admission-fd M          # serving: the owner's sealed YAML and sealed admission
+radiance --config /proc/self/fd/N --bc-admission-fd M --plan-memory PLAN.json --plan-memory-ranks RANKS.json   # measuring start
+bc-serve helper-exec M helper0 -- r3_moe_worker   # one helper alone (lab scripts): the recorded manifest's typed settings
 ```
 
-A serving start takes the owner's **sealed memfd** (all four seals) named `/proc/self/fd/N` together with `--role engine`; a path on disk, a
-missing role or an unsealed descriptor is refused. With `--manifest` the engine accepts only `--role engine`, `--plan-memory FILE`,
-`--plan-memory-ranks FILE`, `-v`, `-vv` and the quality-run flags `--kld-record`, `--kld-corpus`, `--kld-ref` and `--kld-out` (a KL run scores
-the model's own rows and never serves, so the serving plan check is not armed for it; a manifest with helpers is scored only by its matched
-owner, `bc-serve quality`); any other flag is an error naming the flag. The engine's own options come from the admitted native YAML, parsed by
-Radiance's parser; nothing of the manifest is projected to flags. A serving start checks the live memory plan against the plan the manifest
-carries before any weights load; there is no switch to skip it.
+The engine is the stock `radiance --config FILE` with one extra input, `--bc-admission-fd`: a sealed memfd (all four seals) holding what the
+owner derived (ordered rank BDFs, host pool/KV/reserve/checkpoint sizes, the expected memory plan and KV floor, the typed engine/remote
+settings, and for a KL run its files); see `components/serving/v2/engine_admission.h`. No manifest file is read by the engine. The engine's own
+options come from the YAML, parsed by Radiance's parser; a derived value fills an absent or auto option, agrees with an authored one, or the start is
+refused naming both. A serving start checks the live memory plan against the plan in the admission before any weights load; there is no switch to
+skip it.
 
-The engine also applies the manifest's hand-off settings to its environment at start, before it initialises, so the manifest is the only place they are configured and they win over a value inherited from the calling environment: `R3_MOE_WORKER` (set when the manifest has helpers), `R3_MOE_WORKER_SHM` (`spec.handoff.transport.shm`), `R3_MOE_WORKER_MAX_ROWS` (`transport.max_rows`), `R3_MOE_WORKER_SKIP_OWNED` (`transport.skip_owned`), `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` (`telemetry.histogram_file`, `telemetry.period_s`). Kernel switches that were environment variables are manifest fields under `spec.processes.engine.kernels` (contract amendment 14): `attn_native` (`R3_ATTN_NATIVE`), `moe_native`, `moe_fp16`, `moe_ahalf` (`R3_MOE_*` in the engine process), `gfx12_moe_gemv` (`BC_GFX12_MOE_GEMV`), `all_reduce_wire4` (`R3_AR_WIRE4`), `dec11` (`R3_DEC11`), `gemv` (`R3_GEMV`) and `fuse_stage` (`R3_MOE_WORKER_FUSESTAGE`, amendment 16). `R3_MOE_WORKER_COMBINE` is set from `helper_common.combine.enabled` so the engine agrees with the helpers. Each is an `x-bigcherry.kernels` entry (`dec11: true`), and rad0009 sets the variable from the field before the engine initialises (generated from the registry's `env_setting`), so a value in the inherited environment loses to the manifest and an absent field leaves the kernel's own default. The lab-only patch and diagnostic-build switches are optional members of `spec.experiment.engine` (amendment 17): `routing_evidence` (`RAD_ROUTING_EVIDENCE`), `shadow` (`R3_MOE_WORKER_SHADOW`) and `mask_only` (`R3_MOE_WORKER_MASK_ONLY`), applied the same way and refused by the `production` profile.
+The engine also applies the manifest's hand-off settings to its environment at start, before it initialises, so the manifest is the only place they are configured and they win over a value inherited from the calling environment: `R3_MOE_WORKER` (set when the manifest has helpers), `R3_MOE_WORKER_SHM` (`spec.handoff.transport.shm`), `R3_MOE_WORKER_MAX_ROWS` (`transport.max_rows`), `R3_MOE_WORKER_SKIP_OWNED` (`transport.skip_owned`), `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` (`telemetry.histogram_file`, `telemetry.period_s`). Kernel switches that were environment variables are manifest fields under `spec.processes.engine.kernels` (contract amendment 14): `attn_native` (`R3_ATTN_NATIVE`), `moe_native`, `moe_fp16`, `moe_ahalf` (`R3_MOE_*` in the engine process), `gfx12_moe_gemv` (`BC_GFX12_MOE_GEMV`), `all_reduce_wire4` (`R3_AR_WIRE4`), `dec11` (`R3_DEC11`), `gemv` (`R3_GEMV`) and `fuse_stage` (`R3_MOE_WORKER_FUSESTAGE`, amendment 16). `R3_MOE_WORKER_COMBINE` is set from `helper_common.combine.enabled` so the engine agrees with the helpers. Each is an `x-bigcherry.kernels` entry (`dec11: true`), and rad0070 sets the variable from the field before the engine initialises (generated from the registry's `env_setting`), so a value in the inherited environment loses to the manifest and an absent field leaves the kernel's own default. The lab-only patch and diagnostic-build switches are optional members of `spec.experiment.engine` (amendment 17): `routing_evidence` (`RAD_ROUTING_EVIDENCE`), `shadow` (`R3_MOE_WORKER_SHADOW`) and `mask_only` (`R3_MOE_WORKER_MASK_ONLY`), applied the same way and refused by the `production` profile.
 
 ## Where a setting lives
 

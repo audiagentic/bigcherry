@@ -700,7 +700,7 @@ NativeWriterOutcome write_native_manifest(const NativeWriterRequest& request) {
             {"helper_binary", helpers ? (home / "helpers" / "r3_moe_worker").string() : std::string()},
             {"retention_target_tokens", retention},
             {"margin", host_ledger_margin(r, opts.calibration_cache)},
-            {"run_id", "bc-serve --write-manifest " + request.manifest_name}};
+            {"run_id", "bc-serve " + request.manifest_name}};
         s10.p1_record = v2::produce_p1(in, facts, opts.sys_root, sources);
         // The plan echoes the host pool it was measured with; S8 derives the pool from what was measured. When they
         // differ, the plan is for another pool and the launcher measures once more with the derived one (that

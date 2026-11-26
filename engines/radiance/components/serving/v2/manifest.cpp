@@ -649,7 +649,7 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (use == PlanUse::measuring && m.spec.plan.state == PlanState::kMeasured)
         return sourced(err(C::plan_mismatch, "spec.plan.state",
                            "a measuring start takes an unmeasured manifest (plan.state unmeasured), this one is measured",
-                           "write the unmeasured manifest with bc-serve --write-manifest --unmeasured"));
+                           "the owner writes the unmeasured manifest of a measuring start itself (bc-serve start)"));
     return m;
 }
 

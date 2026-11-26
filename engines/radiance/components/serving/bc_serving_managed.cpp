@@ -1,5 +1,5 @@
 /* bc_serving_managed.cpp -- the engine-independent half of the managed native entry (see bc_serving_managed.h): the flag
- * step, the process-global managed state and the chosen-cards check. Built into bc_serving_v2 so the manifest entry (rad0009)
+ * step, the process-global managed state and the chosen-cards check. Built into bc_serving_v2 so the engine entry (rad0070)
  * links it in every engine build; the bind that needs the engine's Config is bc_serving_managed_bind.cpp (rad0070). */
 #include "bc_serving_managed.h"
 

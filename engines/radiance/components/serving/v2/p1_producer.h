@@ -11,7 +11,7 @@ nlohmann::json produce_p1_inputs(const bc::serving::ManifestInputs& manifest_inp
                                   const std::filesystem::path& sys_root,
                                   const nlohmann::json& request);
 // The same from sources in hand: engine_plan and rank_demand as JSON (the plan cache entry), the binaries, the retention
-// target, the host-ledger margin and the run id. bc-serve --write-manifest measures with it at every manifest it writes.
+// target, the host-ledger margin and the run id. the session owner measures with it at every manifest it writes.
 nlohmann::json produce_p1(const bc::serving::ManifestInputs& manifest_inputs,
                           const nlohmann::json& facts,
                           const std::filesystem::path& sys_root,

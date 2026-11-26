@@ -225,12 +225,6 @@ int main() {
     const std::string inspected_yaml = "server: {host: 127.0.0.1, port: 8123}\ncards: [2, 0]\nmodels:\n"
                                        "  tiny:\n    model: tiny.rad\n    mixed-step-target-ms: 17\n";
     const Json inspected_field = config_field(inspected_yaml);
-    // The JSON-envelope form: the manifest writer's handoff only; it dies with manifest_field (RSC02/RSC03).
-    const int envelope_fd = sealed_memfd(inspected_field.dump());
-    const auto received = NativeConfigSnapshot::from_sealed_fd(envelope_fd);
-    ::close(envelope_fd);
-    check(received.manifest_field() == inspected_field,
-          "shared sealed-fd receiver changed native snapshot bytes or identity");
     // The inspector's form: the authored YAML bytes themselves, the root being the process's own working directory.
     const int sealed_fd = sealed_memfd(inspected_yaml);
     const auto raw = NativeConfigSnapshot::from_raw_fd(sealed_fd);

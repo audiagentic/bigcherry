@@ -204,14 +204,8 @@ synthetic KFD/PCI/proc/sysfs tree. The resolver tests are engine-free: they sele
 config through a C++ preset (`test_config_fixture.h`), generated from the shipped `engines/radiance/configs/NAME.yaml` by
 `gen_fixture_presets.py` (a test fails when they drift); the production resolver reads a config only from its YAML.
 
-Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
-`--explain [--json]`, `--write-manifest OUT` (the serving manifest; with `--plan-cache` and `--engine-binary`,
-or with `--unmeasured` and neither: the measuring start's manifest, `plan.state` unmeasured, which only a measuring start
-(`radiance --plan-memory`, `r3_moe_worker --measuring`) accepts; `--live-policy FILE` adds the live placement policy and
-`--experiment FILE` a lab experiment, each a JSON object the reader checks member by member; measured manifests read the session-owned plan cache with
-`--expected-plan-key` and `--expected-owner-attempt`. Both writer modes require the
-sealed native configuration supplied by the session owner). The engine admits the plan the manifest carries; no other
-command or flag hands it one (RSC08 S3 removed `--plan-key`, `--plan-check-args` and `--plan-store`).
+Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`, `--explain [--json]` (read-only). The manifest is written
+by the session owner in-process (there is no `--write-manifest` command); the engine admits the plan its own start was given.
 Use `--site FILE`, `--profile FILE`, and repeated
 `--set section.key=value` with the latter three.
 `--sys-root DIR` overrides the filesystem root for fake-tree tests.
@@ -261,7 +255,7 @@ RSC05 work.
 
 The one document processes load is the serving manifest (edition 3, written by the owner from the config's sealed native YAML; spec in
 `docs/design/serving-manifest-v2/`), read by the shared strict reader. `explain`'s record is not a file any process reads. The engine and
-helpers start from that manifest (rad0009, shared `bc_serving_v2` library).
+the engine starts from the native YAML and the owner's sealed admission (rad0070), the helpers from their typed settings; the shared `bc_serving_v2` library carries both documents.
 The owner launches and verifies the measuring and serving process groups.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
@@ -358,7 +352,7 @@ and the native serving manifest process contract. **Difference from a shell
 launcher:** no second syntax translates `--port`, `--heat`, `--budget`,
 or other legacy flags into environment variables; the one resolver writes
 the typed manifest (edition 3, sealed with the native YAML). `bc_typed_settings_test` executes the compiled `bc-serve
-explain` and `--write-manifest --unmeasured` against a synthetic KFD/
+explain` against a synthetic KFD/
 PCI/proc filesystem, real named configs, and producer-shaped route heat,
 checking provenance, manifest fields and typed refusal cases. The test's
 unmeasured manifest is not serving authorization. GPU parity remains S15.
