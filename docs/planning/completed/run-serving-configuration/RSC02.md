@@ -2,7 +2,7 @@
 id: RSC02
 order: 2
 plan: run-serving-configuration
-state: in_progress
+state: completed
 created-at: '2026-11-02T00:53:02.723581+00:00'
 breadth: ''
 skill: intermediate
@@ -112,6 +112,10 @@ docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25):
 2026-11-26 RSC02 slices (approved by the lead): A = managed native entry patch rad0070 (state untested until the shared acceptance; requires rad0009 only until B) + the sealed engine admission document (v2/engine_admission.*, strict, derived facts only) + bind/chosen/guards; B = owner start on `--config` + admission fd for measuring and final engines, client model-name helper (GET /v1/models; the implicit 'default' alias is removed), archive rad0009 unchanged, rewire rad0011/0002/0012/0055, promote rad0070; C = offline plan/quality on the native offline Engine; then RSC11 deletions. Shared acceptance (dense TP3 + helper/MoE start, canary, stop, restore) must also check: SIGHUP to the managed server does not reload; POST /admin/reload returns 403 (and /admin/models/:name/:action 403); killing the engine child ends the process, failing, with no restart and the restore/reap order intact. Guards 4-6 are covered card-free at patch level (anchors, compose gate 1) plus bc_native_managed_test; Fleet itself needs usable cards so its guards cannot run in CI. rad0009's component-source pin was updated for bc_serving_manifest.cpp (the install function the getters read); rad0009 is archived unchanged-in-content in B.
 
 2026-11-26 RSC02-B shared acceptance PASSED (build rsc02-b-accept4, source 053dd092a; evidence docs/evidence/2026-11-26-rsc02-b-acceptance): dense qwen27b-tp3 (mixed TP3) and helper/MoE flashnext-4gpu, stock power. Every checklist item passed: start through measuring engine, final engine and canary on stock radiance --config + --bc-admission-fd; /v1/models names only the YAML model (no default); SIGHUP refused, engine unchanged; POST /admin/reload and /admin/models/ID/unload 403; stop order incl. segment_retired then power_restored; second start reuses the stored plan (21 s dense, 100 s helper); SIGKILL of the engine ends the owner (exit 1), no restart, helpers reaped, power restored after every child. Defects found and fixed on B: native Fleet kept one architecture (mixed TP refused; managed usable cards = admitted ranks), owner canary sent the removed 'default' model (now asks /v1/models). rad0070 promoted to validated with B. Offline KL and real power apply not run (card-free admission tests; PWR10). Next B2: archive rad0009 unchanged, delete the manifest entry/managed_front/bc_serving_manifest.* and tests, rewire rad0011/0002/0012/0055, move the getters/entry into rad0070-owned bc_serving_engine.
+
+2026-11-26 closeout: every engine start (measuring, serving, replayed, offline KL) is the stock `radiance --config FILE` plus one sealed admission document (#1635 rad0070 + admission, #1639 owner start, shared acceptance on dense mixed TP3 and helper/MoE: docs/evidence/2026-11-26-rsc02-b-acceptance; #1652 rad0009 archived and the manifest entry deleted, rad0011/0002/0055 rewired). Guards proved on hardware: SIGHUP refused, /admin/reload and model admin 403, engine kill ends the owner with no restart. Defects found by that acceptance and fixed: mixed-architecture usable cards, the owner canary's model name (/v1/models, no implicit alias). Later fixes found by real runs: RSC14 room refusal naming (#1658, #1668). Final acceptance on the installed 2020.22.0: one offline quality score through the native entry and one flashnext-4gpu parity measure against the stored baseline (results recorded by the lead's evidence page).
+
+2026-11-26 final acceptance on the installed 2020.23.0 (docs/evidence/2026-11-26-native-serving-final-acceptance, with docs/evidence/2026-11-26-rsc02-b-acceptance and docs/evidence/2026-11-26-pwr10-rsc14-native-acceptance): offline quality through the native entry PASS (KLD mean 0.00314, top-1 96.7% over 42761 positions; found and fixed on the way: a KL start overrides the authored speculative depth with 0, #1675); flashnext-4gpu parity vs the stored baseline PASS (all 9 gated metrics within tolerance: decode1 +0.29%, decode6 +3.08%, long8 +0.63%, sess8 +2.16% ms/step; prefill tps +1.3 to +1.9%; cold TTFT -0.54%, sess8 TTFT -0.75%); Gate E PASS on 2020.19.0 to 2020.23.0.
 
 ## Status 2026-11-19 (after S15 and S16)
 
@@ -233,3 +237,6 @@ retirement. Those remain steps 3, 4, S15 and S16 respectively.
 - 2026-11-25T05:53:20.120020+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T23:38:40.135839+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T01:28:12.832549+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T05:43:01.657348+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:03.412921+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:42.690024+00:00 (state-transition): State: in_progress → completed

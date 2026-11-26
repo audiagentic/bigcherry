@@ -2,7 +2,7 @@
 id: RSC01
 order: 1
 plan: run-serving-configuration
-state: pending
+state: completed
 created-at: '2026-11-02T00:52:58.694609+00:00'
 breadth: ''
 skill: intermediate
@@ -65,6 +65,8 @@ docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25):
 
 2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. Current native_fleet_config.cpp constructor rejects many fleet-only settings because the old path extracts one Config. At cutover remove obsolete restrictions only for native settings actually needed (aliases and existing load/drain/keepalive behavior); retain single-model, loopback/credential policy and refuse managed reload, parking, nonzero TTL and unsupported broker/placement intent. All 18 shipped YAMLs at audit have no card-headroom-mib, gpu-headroom-mib or gpu-memory-mib declarations. Pinned Fleet parses per-card headroom but does not apply it to single-model Engine budget; refuse nonempty map in managed mode on this pin rather than silently ignore or introduce new schema. Existing scalar native behavior remains. Do not add queue-reserve/pinned-numa-node from unreleased source. Preserve original authored YAML; use existing alias authoring or migrate actual client, no generated effective config.
 
+2026-11-26 closeout: delivered by #1612 (the inspector reads the raw sealed YAML via NativeConfigSnapshot::from_raw_fd; auto speculative depth and model RoPE accepted by the inspection), #1622 (one profile file selected by x-bigcherry.power.profile; --power-profile removed), #1630 (site per-BDF power overrides from <work-root>/power-site.yaml). The two reconcile refusals (auto depth, model RoPE) remain only because the owner's internal manifest record cannot carry them (RSC11 note). The TOML/--set/--site/--profile resolver input (old slice E) is split out as RSC15 (deferred, callers named).
+
 ## Change Log
 
 - 2026-11-02T00:52:58.694609+00:00 (created-by): Created by agent
@@ -100,3 +102,5 @@ Reconciliation: the C++ resolver, generated contract, strict reader, writer and 
 - 2026-11-25T03:25:34.302753+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:39:46.871114+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:53:15.310304+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T05:42:31.165691+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:27.380326+00:00 (state-transition): State: pending → completed

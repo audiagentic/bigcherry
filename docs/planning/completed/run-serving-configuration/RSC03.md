@@ -2,7 +2,7 @@
 id: RSC03
 order: 3
 plan: run-serving-configuration
-state: in_progress
+state: completed
 created-at: '2026-11-02T00:53:06.703369+00:00'
 breadth: ''
 skill: advanced
@@ -165,6 +165,8 @@ docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25):
 
 2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. Pinned Fleet use_broker() is models_.size()>1; load_op host reservation and VRAM guess/grant are broker-only. Do not enable broker to solve per-card headroom. Existing rad0011 records live Engine::plan and checks before load_weights; it checks/refuses, not a per-card VRAM allocator. Native vram_budget.cpp resolve takes min free, max configured scalar/host reserve and largest rank costs; Engine::plan measures queue bytes per rank and budgets actual 2/3 (+prefetch where relevant) queues, with existing expert_tiered rank split. Keep that arithmetic and rad0016 ordering. Fleet::reopen_queues (837) returns immediately for <2 models: no eight-queue Fleet reserve to recover on our single-model serving. No duplicated subtraction or local queue knob. First measure using actual selected device/plan and same native settings then final check; carry only compatible existing measurements, preserve both pool convergence and one preweight shortfall retry. If real current layout cannot meet an existing requirement, show exact rank facts/refusal; prefer existing scalar native control where it meets requirement without regression, otherwise smallest independently removable managed change at native budget boundary after owner review. Do not backport 5e0cd1e2 or reproduce whole per-card splitter; explicit per-card map unsupported until qualified. No artificial headroom limit for currently supported configs.
 
+2026-11-26 closeout: the manifest writer runs in-process as write_native_manifest with typed outcomes (cache miss, host-pool change) instead of a writer child and exit codes (#1616); the P1 producer links into bc_serving; the --write-manifest CLI and its writer descriptor are deleted (#1654). Leftovers audited: (i) offline scoring and the serving prefix/checkpoint store: the managed bind's quality branch returns before binding host KV, host headroom and checkpoint slots (bc_serving_managed_bind.cpp), exactly as the old manifest entry's offline_quality skip did; the offline engine takes its own native defaults, so nothing was added or lost: not needed. (ii) the stock literal in v2/p1_producer.cpp (owner_inputs.s10.power_profile = "stock") builds a temporary owner-map manifest read back with PlanUse::measuring of which only spec.plan.owner_map is used; no power plan is produced or consumed from it, so it is not a stock-seeded power path in the sense the PWR08 note meant (the real power plan is resolved by S10 from the YAML profile, #1622/#1630/#1632): not needed. (iii) measured-resource structures independent of Manifest are only needed if the manifest is gone; RSC11 decided it is not (the in-memory Manifest stays as the owner's evidence/capture record): not needed.
+
 ## Status 2026-11-19
 
 The derived start-up resource plan is in production use (C++ RAD/BDF ledger: `resources: derived host pool N MiB, host KV N MiB`, then the measuring start re-measures the pool, for example 1033 -> 2247 MiB on flashnext-4gpu). Observed today: the engine's own host admission is the last word (n-gram table 47.68 GiB needs about 74.8 GiB available including the 4.59 GiB headroom; a start with 74.1 GiB available was refused), so a start right after another heavy process can fail for memory the ledger cannot see; consider reporting MemAvailable at the ledger step. The policy-calibration key no longer includes the host pool or helper budgets (#1169), so a re-measured pool does not orphan a calibration record.
@@ -223,3 +225,5 @@ The shipped `engines/radiance/layouts.toml` now omits all literal helper `budget
 - RV4673
 - 2026-11-25T05:40:50.133015+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:53:35.312402+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T05:42:40.815320+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:47.464837+00:00 (state-transition): State: in_progress → completed

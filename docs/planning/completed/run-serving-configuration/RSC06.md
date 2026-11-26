@@ -2,7 +2,7 @@
 id: RSC06
 order: 12
 plan: run-serving-configuration
-state: in_progress
+state: completed
 created-at: '2026-11-02T03:52:00.963006+00:00'
 breadth: ''
 skill: intermediate
@@ -65,6 +65,8 @@ Depends on the RSC01 schema. The engine side is RSC07; the supervisor is RSC02.
 
 docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25): v2/helper_settings.cpp::helper_settings currently projects all WorkerHelper/WorkerHandoff settings and model/home, role-specific plugin/format, budget, all helper budgets/shares, balance speeds, lanes, live/calibration/forced lab and diagnostics. Retain existing HelperSettings and typed kernel ABI; replace its producer with same BC YAML decode plus actual selected role/derived facts. Critical boot order: r3_moe_worker loads these BEFORE HIP and before v26::init/map, so the helper cannot obtain initial budget/topology/shm name solely from a segment it must create; pass only indispensable derived bootstrap facts using existing owner child handoff, not full manifest or JSON copy of YAML. v26 header manifest_digest currently comes from content_sha256; use existing unique owner-selected segment/session identity shared before init (nonzero, same for roles of each measuring/final attempt), keep shape/topology/independent owner-map/generation checks; no new digest protocol. bc_engine_settings.h manifest flag is a presence marker and DSO getter gates on it; change together with rad0002/rad0012 and actual consumers, preserve absent standalone defaults and install before native Fleet/Engine plugin registration; never turn managed missing settings into silent standalone defaults. Retain independent owner-map agreement, lab/heat/phase trace, layout and actual drains.
 
+2026-11-26 closeout: helpers read typed HelperSettings from one sealed descriptor (`--settings-fd FD --role helperN`), never a manifest (#1618); the shared-memory header identity is the owner-selected segment identity, not a manifest hash (#1617); the helper registration test is deterministic (#1621). The helper cohort (flashnext-4gpu: three helpers + engine) started, served, stopped and restored through the native path in the shared acceptance (docs/evidence/2026-11-26-rsc02-b-acceptance) and in the RSC14 and Gate E runs. `bc-serve helper-exec` and the lab scripts that use it still read the owner's recorded manifest (lab tooling; kept, RSC11 note).
+
 ## Change Log
 
 - 2026-11-02T03:52:00.963006+00:00 (created-by): Created by agent
@@ -91,3 +93,5 @@ docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25):
 - RV4674
 - 2026-11-25T05:41:21.769599+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:43:45.066176+00:00 (updated-by): Updated: section:steps
+- 2026-11-26T05:42:56.854858+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:57.019357+00:00 (state-transition): State: in_progress → completed

@@ -2,7 +2,7 @@
 id: PWR08
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: completed
 created-at: '2026-11-10T13:32:38.583551+00:00'
 breadth: ''
 skill: advanced
@@ -81,6 +81,8 @@ docs/design/radiance-native-yaml-launch.md §4.2 (code seam review, 2026-11-25):
 
 2026-11-26 S1-S4 (card-free, no new store). S1 role key per arch (#1619). S2 one profile file, selected by x-bigcherry.power.profile (#1622). S3 (#1630): apply is accepted for a BDF when a durable controller receipt (<work-root>/power/receipts) of an earlier apply of exactly those settings on the same kernel/amdgpu/board identity string read back exactly and restored exactly; workload is evidence only; probe is the transaction's own Hardware::inspect read; site per-BDF overrides from <work-root>/power-site.yaml via the engine YAML parser. First qualifying apply is the lab run `--allow-power-apply --qualify-power` under the verified gpu lease (waives only the receipt match; probe range and gfx1100 pairing still apply) - PWR10 runs it for the min cap. S4: the S10 output (typed manifest) goes straight to ManifestPower/SessionPower (no file reload, digest only a receipt record); apply once before measuring (duplicate admission refused, final serving manifest must carry the same effective settings); calibration key power_profile = profile name, or profile@digest of the effective per-BDF settings when the plan applies.
 
+2026-11-26 closeout: S1 role key per architecture (#1619); S2 one profile file selected by x-bigcherry.power.profile, no --power-profile (#1622, with the helper-registration flake fix #1621); S3 site per-BDF overrides from <work-root>/power-site.yaml, the transaction's own capability read as the S10 probe, and qualification from the controller's verified apply/readback/restore receipts matched on BDF, exact settings and a kernel/amdgpu/board identity string (workload is evidence only), with the lab-only --qualify-power first apply (#1630); S4 the typed S10 manifest goes straight to the power transaction, power is admitted once before any measuring child, and the calibration key carries the effective per-BDF settings (#1632); end-to-end test that the YAML profile, the site file and --allow-power-apply reach the admitted plan (#1664). Proven on real hardware by PWR10.
+
 ## Change Log
 
 - 2026-11-10T13:32:38.583551+00:00 (created-by): Created by agent
@@ -131,3 +133,5 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 - 2026-11-25T05:41:53.148203+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:53:58.285137+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T23:16:37.482050+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T05:43:27.239695+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:36:06.594192+00:00 (state-transition): State: in_progress → completed

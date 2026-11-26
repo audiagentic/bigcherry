@@ -2,7 +2,7 @@
 id: RSC05
 order: 15
 plan: run-serving-configuration
-state: pending
+state: completed
 created-at: '2026-11-02T03:40:33.029040+00:00'
 breadth: ''
 skill: intermediate
@@ -67,6 +67,8 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 
 2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. Pinned Fleet::choose_cards uses cards_of(m) in authored order and first tp for single model. Preserve existing ordered BDF -> ROCR mask -> local HIP ordinals, including any model-specific cards subset: require exact admitted sequence, not just same unordered set. Check after Fleet chooses and before Engine starts, and set equivalent order for offline native measurement/quality (which bypass choose_cards). Preserve rad0016 rank-device selection and helper disjointness; power uses same physical BDFs. No second device selector; use existing discovery and native chosen order. Only later adopt native per-card map keyed by these exact local ordinals when supporting pin is qualified.
 
+2026-11-26 closeout: serving selection uses the exported engine_visibility builder and discovery only (#1614); radiance_layout.resolve/_pick deleted and power_cmds uses radiance_inventory.resolve with BDF-keyed overrides (#1615); site per-BDF power overrides are the YAML file <work-root>/power-site.yaml (#1630). Mixed-architecture TP selection is proven by the shared acceptance (dense qwen27b-tp3, two gfx1100 + one gfx1201: docs/evidence/2026-11-26-rsc02-b-acceptance). The Python gpu-power lab command still reads environment.local.toml (lab path, not serving); no second serving inventory remains.
+
 ## Change Log
 
 - 2026-11-02T03:40:33.029040+00:00 (created-by): Created by agent
@@ -88,3 +90,5 @@ PR #518 fixed the Python amd-smi discovery used by job placement, which is still
 - RV4657
 - 2026-11-25T03:25:58.046952+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:53:42.955101+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T05:42:35.979574+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:52.227460+00:00 (state-transition): State: pending → completed

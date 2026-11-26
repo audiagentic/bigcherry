@@ -2,7 +2,7 @@
 id: PWR10
 order: 0
 plan: run-power-efficiency
-state: pending
+state: in_progress
 created-at: '2026-11-25T00:42:29.487523+00:00'
 breadth: ''
 skill: intermediate
@@ -71,6 +71,10 @@ Historical note (superseded by the clarification below): the then-active voltage
 
 2026-11-26 roadmap reconciliation at 165d6f724: External reference: Sweet-Spot Tuner v3.5.15, commit a2a31ce63cc1d40af72997de621115eaa2dcd54d (https://gitlab.com/spawnitems-group/sweetspot-tuner/-/tree/v3.5.15); see docs/reference/power-tuning-evidence-2026-11.md, hot AI qualification section. First deployable cap-only slice unchanged; do not block native serving on undervolt research. Before qualifying any clock/voltage (or combined clock/voltage/cap) candidate, add a short fail-fast AI arithmetic screen and final sustained plus burst/transient and memory correctness under actual safe operating envelope. Use matched installed ROCm headers/libs and existing rad-kbench/replay/unit harness/actual kernels; optional focused 768x768 FP16 FP32-accum hipBLASLt test with fixed algorithm, only if supported; reuse existing lab HIP diagnostic pattern, do not add downloaded binaries or clone proprietary/hand-declared ABI. Generate deterministic reference at verified stock on the same physical card, validate stock repeat and independent CPU/reference where feasible; compare candidate full outputs to unchanged stock reference, check all HIP return codes, positive completed iterations/time and actual BDF, fail closed on skip. This catches consistent corruption the external self-reference misses. Use actual IQ8R/IQR/MoE/GDN/attention and transfers for roles, not FP16 alone, and check actual near-resident VRAM patterns using existing replay/copy checks with safe headroom; no arbitrary fill or OC. Screen only promising paired settings under lease, one bounded representative full inference/quality and warm/transition soak for finalist, exact restore. No fixed universal undervolt reserve or automated search to crash edge. Thermal limit -> stop/cool/qualified bounded repeat or inconclusive, never raise limit/fans to claim normal-policy stability. Do not promote from synthetic GFLOPS or stable games; require zero unexpected mismatches/faults and agreed throughput/latency/energy, per-card receipt, no defaults changed.
 
+2026-11-26: the first real native minimum-cap apply passed on the installed 2020.21.1 (lab script run.sh with a self-checking result.txt; the evidence page carries it): the qualifying apply (--allow-power-apply --qualify-power under the gpu lease) set 272/272/210 W on the two XTX and the R9700 while serving (readback exact, 6900 XT untouched at 303 W), stop restored 303/303/300 W exactly, the receipt recorded apply, restored, 3 applied + 3 restored events and no failure events; a second start without --qualify-power was accepted by that receipt and applied/restored again; a start with a different cap (215 W on the R9700) was refused naming the missing receipt, nothing written. Found and fixed on the way: an installed release resolves NAME.yaml from its bundle before --configs, so the lab script now passes --native-config (the first attempt measured the bundled stock config); and a missing card-free end-to-end test of YAML profile + site file + allow flag reaching the admitted plan (#1664). Not run, by decision: the 3-arm decode/prefill A/B and the clock/voltage qualification (the research part of this item stays open).
+
+Evidence: docs/evidence/2026-11-26-pwr10-rsc14-native-acceptance. Item stays open for its research part only (steps 2-4: stock/XTX-only/R9700-only/all-selected minimum-cap A/B with three runs per arm, clock-only and paired voltage qualification); the native apply/readback/restore path itself is accepted.
+
 ## Change Log
 
 - 2026-11-25T00:42:29.487523+00:00 (created-by): Created by lead
@@ -91,3 +95,6 @@ Historical note (superseded by the clarification below): the then-active voltage
 - 2026-11-25T03:29:11.902957+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T22:03:05.477798+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T22:05:39.356405+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-26T05:43:32.075041+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:35:13.183700+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:36:15.464511+00:00 (state-transition): State: pending → in_progress
