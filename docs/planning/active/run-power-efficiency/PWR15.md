@@ -53,8 +53,11 @@ No unattended candidate sweep until reciprocal owner admission, exact restoratio
 
 2026-11-26: hardened platform PowerTransaction: validate run/BDF and requested setting, reject reused/unknown/malformed journals, check fresh original snapshot and restorable range before writes, lease check per write and final apply/restore, full control plus physical identity/default cap readback for all touched devices, late caller readback invalidates terminal journal, strict recovery inventory. Historical active journals without saved identity require manual owner recovery; resolved historical records retained. Card-free hardware and CLI tests 289 passed/1 skipped. Native C++ already has per-write lease checks; cross-owner directories remain separate. PWR15 remains in progress: reciprocal admission across native and platform roots and approved real fault/recovery qualification still outstanding. No physical power writes or automated candidates in this slice.
 
+2026-11-27: native 210 W diagnostic showed second XTX restore write fault, despite complete independent snapshots matching. Retain unresolved journal and recover through native owner. See PWR16 and docs/evidence/2026-11-26-power-session-closeout. Cross-owner admission remains open.
+
 ## Change Log
 
 - 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
 - 2026-11-26T05:48:42.356489+00:00 (state-transition): State: pending → in_progress
 - 2026-11-26T05:57:33.132221+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T21:28:12.962663+00:00 (updated-by): Updated: section:notes

@@ -299,3 +299,30 @@ supports opt-in supervised short model experiments only. Earlier
 sustained inference thermal stops, driver health, concurrent-load
 throughput and long-duration stability remain unresolved. No change
 to production defaults or claim of full production qualification.
+
+### Native 210 W comparison (2026-11-26)
+
+Radiance 2020.23.1 includes the PWR16 signed offset owner. Qwen27B
+IQ8R TP3; fixed release hash verified. A stock, B XTX efficient,
+C B plus R9700 -300 MHz/-125 mV/300 W, D same at 210 W. Original
+memory clocks; two 256-token decode and two uncached prefill
+requests per arm, 4653/4614 prompt tokens; 12 s rest and 80 C
+ceilings. Native owner applies the existing named XTX profile with
+isolated per-device R9700 site settings. No production override.
+
+| Metric | A | B | C | D |
+|---|---:|---:|---:|---:|
+| Decode tok/s | 125.316 | 123.971 | 123.805 | 123.810 |
+| Prefill tok/s | 2461.041 | 2420.438 | 2433.371 | 2428.082 |
+| Decode TTFT ms | 101.813 | 115.397 | 114.919 | 110.707 |
+| Decode J/token | 6.4585 | 5.3252 | 4.9111 | 4.9360 |
+| Prefill J/token | 0.28915 | 0.22797 | 0.20652 | 0.20310 |
+
+All 16 requests completed; identical prompt/output hashes and token counts. The 210 W arm had essentially equal decode throughput and 0.22 percent lower prefill throughput than the 300 W arm. Compared to the opening stock reference its estimated decode and prefill energy per token fell 23.6 and 29.8 percent respectively. These are short client-side measurements, not sustained or wall-system energy measurements.
+
+The 210 W owner exited with a restoration fault on the second XTX. The R9700 restoration succeeded and independent before/after snapshots were equal for all four devices. The closing stock reference was not run. The native transaction remains unresolved and must be recovered by its owner before additional apply runs. No qualification or production promotion is claimed.
+
+Independent BF16/FP32 screen: 16 of 16 cases passed, 163232 verified GEMMs, both candidate restores exact. Captures 20261126T102415Z-gpu-ai-screen-135c3c732653, 20261126T102440Z-gpu-ai-screen-730524c2a9c2, 20261126T102505Z-gpu-ai-screen-a7d4209e9ff1, 20261126T102530Z-gpu-ai-screen-04ea5ea52e41. C/D energy per 1000 GEMMs 24.749/25.195 J; rates 3406/3411 GEMMs/s. Both below the cap. Raw native evidence and runners archived locally under PWR16-native-cap-20261126 with verified copies; original unresolved journal retained. Managed capture 20261126T212407Z-native-power-cap-0cc14c765951 now retains 112 source files and a verified summary as failed diagnostic evidence. The unresolved original journal is preserved. Prefer 210 W for the next supervised qualification only. Extended stability and driver health remain open.
+
+
+See the [power session closeout inventory](../evidence/2026-11-26-power-session-closeout/README.md) for preserved source and data, verified capture IDs and remaining gates.
