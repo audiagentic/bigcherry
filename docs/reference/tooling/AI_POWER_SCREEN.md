@@ -235,8 +235,16 @@ Select a matrix dtype and explicit `--resident-mib` with
 `--headroom-mib` (at least 256 MiB). The allocation is additional to
 the matrix input, output, oracle, guards, counters and workspace.
 The live free-memory checks before and after allocation cover the
-whole known budget. This mode is observe-only pending owner recovery
-hardening, not an authorization to alter the power profile.
+whole known budget. After PWR15 platform transaction hardening, square
+matrix resident cases may run an explicitly supervised research candidate
+with a fresh matching observed reference, `--observe-current --apply-profile
+--confirm-idle`, a verified lease and all-owner journal audit. The executor
+also checks a fresh idle KFD inventory before constructing the transaction.
+Factory-reference resident application, non-matrix resident mixes,
+instruction and explicit rectangular candidate applies, and automated
+qualification candidates remain refused. No precision exceptions or
+production promotion are allowed. Cross-owner automated admission remains
+a separate PWR15 gate.
 
 The resident buffer is initialized and fully read back before compute.
 A separate nonblocking HIP stream changes one bounded 4 MiB chunk per

@@ -108,6 +108,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 floor-free fresh matched sustained tests complete, both helper0 and helper1 original/2700-0/-100/-125 all pass. BF16 768-square batch32 30+60 s, unchanged 80 C ceilings, no floor. helper0 GEMMs 374368/364672/370208/370752; J/1000 34.489/29.559/24.413/23.061, peak 62/59/56/54 C. helper1 377088/363488/367744/368576; J/1000 36.417/29.652/24.358/22.865, peak 63/59/58/58 C. Combined 2956896 verified GEMMs, 8/8 sustained cases, exact 6/6 candidate restoration, all four card snapshots match, eight harvested captures and IDs in AI_POWER_SCREEN.md. Combined with 8/8 VRAM and 32/32 burst cases, bounded independent pressure stage passes; elevated-temperature coverage, mixed candidate, driver health, native and long soak separate. No promotion.
 
+2026-11-26: narrowly enable supervised square-matrix mixed-resident research after PWR15 platform exact restoration hardening. Requires observed matched passing reference, explicit apply/confirm-idle and existing lease/transaction, fresh idle KFD inventory before transaction; operator audits all owner journals under lease. Factory-reference resident applies, new instruction/geometry applies, precision exceptions and automatic qualification remain refused. Four card-free tests cover valid mixed reference, busy inventory, corrupt resident coverage and mismatch restoration; full hardware/CLI 297 pass, 1 skip. No new writer or output schema; PWR15 reciprocal automatic admission remains incomplete. Actual resident pressure tests use canonical workload resolver with only 60 s duration override and explicit headroom.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -138,3 +140,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T06:45:28.297760+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:54:14.212273+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:07:24.539911+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T07:15:20.394263+00:00 (updated-by): Updated: section:notes

@@ -58,6 +58,17 @@ class ScreenError(RuntimeError):
         self.status = status
 
 
+def idle_preflight() -> None:
+    """Require a fresh idle KFD inventory; no inference from lease alone."""
+    try:
+        result = subprocess.run(["rocm-smi", "--showpids"], capture_output=True,
+                                text=True, timeout=10, check=True)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise ScreenError("GPU process inventory unavailable") from exc
+    if "No KFD PIDs currently running" not in result.stdout:
+        raise ScreenError("GPU process inventory not idle")
+
+
 def digest(path: Path) -> str:
     with path.open("rb") as f:
         return "sha256:" + hashlib.file_digest(f, "sha256").hexdigest()
@@ -637,8 +648,15 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         if not all(d in PRECISION_DTYPES for d in args.dtype):
             raise ScreenError("isolate RDNA3 reference observations from strict cases")
     if args.apply_profile:
-        if any(dtype in INSTRUCTION_ALGORITHMS for dtype in args.dtype) or shape is not None or args.resident_mib:
-            raise ScreenError("new instruction/geometry/residency cases are observe-only pending owner recovery hardening")
+        if any(dtype in INSTRUCTION_ALGORITHMS for dtype in args.dtype) or shape is not None:
+            raise ScreenError("new instruction/geometry cases are observe-only pending owner recovery hardening")
+        # PWR15 hardened the platform transaction. Permit only explicitly
+        # supervised, exact observed-reference resident research here.
+        # Automated qualification and factory-reference promotion stay blocked;
+        # --confirm-idle still asserts resolved journals from every owner.
+        if args.resident_mib and (not args.observe_current or
+                                  not all(dtype in MATRIX_DTYPES for dtype in args.dtype)):
+            raise ScreenError("resident candidate is observe-only outside explicit matched research")
         if args.profile == "stock" or not args.confirm_idle or journal_dir is None:
             raise ScreenError("apply requires candidate, existing transaction journal and --confirm-idle")
         if "sclk_offset_mhz" in settings:
@@ -746,6 +764,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         if args.apply_profile:
             # Reuse the existing platform GPU power transaction, recovery
             # journal and sysfs writer. No second controller or reset command.
+            if args.resident_mib:
+                idle_preflight()
             tx = PowerTransaction(args.run_id, journal_dir,
                                   lease_ok=lease.held_by_this_process)
             result["transaction"] = {"state": "new", "run_id": tx.run_id, "journal": str(tx.journal_path),
