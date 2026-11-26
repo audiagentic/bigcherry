@@ -1,0 +1,7 @@
+kernel,NT,MW,staged,vgpr_count_base,sgpr_count_base,vgpr_spill_count_base,sgpr_spill_count_base,private_segment_fixed_size_base,group_segment_fixed_size_base,max_flat_workgroup_size_base,vgpr_count_final,sgpr_count_final,vgpr_spill_count_final,sgpr_spill_count_final,private_segment_fixed_size_final,group_segment_fixed_size_final,max_flat_workgroup_size_final
+tile_kernel,1,8,1,167,41,0,0,0,25856,256,167,41,0,0,0,25856,256
+tile_kernel,2,8,1,205,71,0,0,0,34304,256,205,71,0,0,0,34304,256
+tile_kernel,3,8,0,240,86,35,0,52,42752,256,240,86,35,0,52,42752,256
+tile_kernel,4,8,0,256,84,797,0,204,51200,256,256,86,663,0,204,51200,256
+quant_kernel,,,,16,18,0,0,0,0,32,16,18,0,0,0,0,32
+gather_kernel,,,,10,28,0,0,0,0,1024,10,28,0,0,0,0,1024

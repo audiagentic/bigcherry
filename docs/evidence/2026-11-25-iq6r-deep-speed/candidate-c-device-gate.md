@@ -1,0 +1,12 @@
+# Candidate C — GPU qualification and disposition
+
+**Disposition: NOT KEPT; gate BLOCKED.** Candidate source remains unchanged in the worktree. The resource-qualified experiment is retained as a patch, not enabled. Earlier embedding/head optimizations remain untouched.
+
+- Compiled both the four-part baseline and the four-part guarded candidate successfully, then ran the targeted IQR selftest through short queued device leases. Both failed before producing a BF16 output: the first GEMV launch and subsequent M16 launches returned device-layer status `-15`. Test-only HIP tracing reported `hipGetLastError() = 2` (out of memory) immediately after an otherwise accepted kernel dispatch. This happened for ordinary and chained dispatches, including the 16-row M1–64 cases and the supported ragged width N=5376. It is a **baseline device launch failure**, not an observed numerical discrepancy.
+- To test whether the failure was due solely to the four-part module, relinked restricted two- and three-part modules with regenerated missing-symbol stubs. Supported launches still reported the same HIP out-of-memory error. The unneeded form/partition reported unsupported in these deliberately restricted modules; it is not evidence of a candidate regression.
+- Byte-identity gate: **not measurable**, 0 baseline and 0 candidate BF16 outputs; do not equate no measured differences with success. The isolated CPU integer ownership check passed 10,240 values but cannot replace this gate.
+- Cold replay: **blocked** at baseline (`rc=1`, zero `IQR_REPLAY` records). Warm and reverse-order replay: **not run** because no valid first launch or baseline timing exists. There is therefore no speed evidence supporting promotion.
+- The complete static resource comparison in `candidate-c-resources.csv` remains valid: 3,172/3,172 matched, 44 chained M16 records improved, 3,128 unchanged, zero added spills or wave losses. Static resources alone cannot clear the device gate. The guarded candidate is not applied.
+- The pre-existing scratch selftest edit and the subsequent temporary diagnostics were saved as a patch for reproducibility. No diagnostic rewrite is retained in the production native kernel.
+
+**Next investigation:** establish why the isolated IQR host-to-device launch reports HIP memory exhaustion despite ample observed idle VRAM, then rerun the full byte-identity and cold/warm replay gates before considering this candidate. The next requested optimization stage is item D, M=1 GEMV; it must not assume candidate C is accepted.

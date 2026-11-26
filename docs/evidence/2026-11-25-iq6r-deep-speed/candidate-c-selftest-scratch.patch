@@ -1,0 +1,156 @@
+diff --git a/engines/radiance/components/libr3/native/r4d_selftest.cpp.rw b/engines/radiance/components/libr3/native/r4d_selftest.cpp.rw
+index d7f700970..f7a9d3cdb 100644
+--- a/engines/radiance/components/libr3/native/r4d_selftest.cpp.rw
++++ b/engines/radiance/components/libr3/native/r4d_selftest.cpp.rw
+@@ -764,3 +764,151 @@ static int g_perfpaged_kv = 2;                   // libr3: --perfpaged-kv
+ 
+ /* moe_gemm_iqr against the dense IQR GEMM over the same expert buffers. Every expert is an IQR
+ @@ end
++
++
++# Scratch-only exact IQR bit gate: exports are isolated, outputs compared between builds.
++@@ find 1
++    okall &= sym(pl->h, "rad_kernel_at", &pl->kernel_at);
++@@ replace
++    okall &= sym(pl->h, "rad_kernel_at", &pl->kernel_at);
++    if (std::getenv("R3_IQR_ONLY")) return okall;
++@@ end
++
++@@ find 1
++    const RadKernelInfo* ri = find(pl, ref);
++    if (!r || !ri || !r->layout || !r->relayout || !ri->layout || !ri->relayout) {
++@@ replace
++    const RadKernelInfo* ri = find(pl, ref);
++    const bool only_iqr = std::getenv("R3_IQR_ONLY") != nullptr;
++    if (!r || !r->layout || !r->relayout ||
++        (!only_iqr && (!ri || !ri->layout || !ri->relayout))) {
++@@ end
++
++@@ find 1
++    if (stored(ri, lp, 2, pi, { "codes" }, &iq) != RAD_OK || stored(ri, lp, 3, pi, { "scale" }, &isc) != RAD_OK) {
++@@ replace
++    if (!only_iqr && (stored(ri, lp, 2, pi, { "codes" }, &iq) != RAD_OK ||
++                      stored(ri, lp, 3, pi, { "scale" }, &isc) != RAD_OK)) {
++@@ end
++
++@@ find 1
++    void* d_iw = dalloc(iq.size());
++    void* d_is = dalloc(isc.size());
++@@ replace
++    void* d_iw = dalloc(only_iqr ? 1 : iq.size());
++    void* d_is = dalloc(only_iqr ? 1 : isc.size());
++@@ end
++
++@@ find 1
++    if (f.rb > 1) gp.push_back(PI("w_rb", f.rb));
++@@ replace
++    if (f.rb > 1) gp.push_back(PI("w_rb", f.rb));
++    if (std::getenv("R3_IQR_CHAIN")) gp.push_back(PI("chain", 1));
++@@ end
++
++@@ find 1
++    const int rr = launch(ri, ti, gp);
++@@ replace
++    const int rr = only_iqr ? RAD_OK : launch(ri, ti, gp);
++@@ end
++
++@@ find 1
++    st_memcpy(y.data(), d_y, y.size() * 2, hipMemcpyDeviceToHost);
++    st_memcpy(yr.data(), d_yr, yr.size() * 2, hipMemcpyDeviceToHost);
++@@ replace
++    st_memcpy(y.data(), d_y, y.size() * 2, hipMemcpyDeviceToHost);
++    if (only_iqr) {
++        const char* const root = std::getenv("R3_IQR_DUMP");
++        if (!root) { ok(nm, false, "missing R3_IQR_DUMP"); dfree_all(); return; }
++        const int ch = std::getenv("R3_IQR_CHAIN") ? 1 : 0;
++        std::string path = std::string(root) + "/B" + std::to_string(f.B) +
++                           "-M" + std::to_string(M) + "-N" + std::to_string(N) +
++                           "-K" + std::to_string(K) + "-ch" + std::to_string(ch) + ".bf16";
++        std::FILE* fp = std::fopen(path.c_str(), "wb");
++        bool wrote = fp && std::fwrite(y.data(), sizeof(uint16_t), y.size(), fp) == y.size();
++        if (fp) std::fclose(fp);
++        ok(nm, wrote, wrote ? "exact output recorded" : "output dump failed");
++        if (std::getenv("R3_IQR_PERF")) {
++            RadArgs a{};
++            a.t = tq.data(); a.n_t = (int)tq.size();
++            a.p = gp.data(); a.n_p = (int)gp.size();
++            a.world_size = 1;
++            const int64_t need = r->scratch ? r->scratch(&a) : 0;
++            if (need > 0) { a.scratch = dalloc((size_t)need); a.scratch_bytes = need; }
++            bool all_ok = true;
++            const double us = st_time_us([&](int) {
++                all_ok &= r->launch(&a, nullptr) == RAD_OK;
++            }, g_cold ? 12 : 32, nullptr);
++            ok("IQR replay launch status", all_ok);
++            std::printf("IQR_REPLAY B=%d M=%lld N=%lld K=%lld chain=%d mode=%s median_us=%.4f\n",
++                        f.B, (long long)M, (long long)N, (long long)K, ch,
++                        g_cold ? "cold" : "warm", us);
++            std::fflush(stdout);
++        }
++        dfree_all();
++        return;
++    }
++    st_memcpy(yr.data(), d_yr, yr.size() * 2, hipMemcpyDeviceToHost);
++@@ end
++
++@@ find 1
++            for (const int b : { 2, 3, 4, 6 })
++                for (const int64_t m : { (int64_t)1, (int64_t)2, (int64_t)5, (int64_t)16 })
++                    iqr_gated_case(pl, b, m, 1024, 1280);
++            iqr_gated_case(pl, 4, 1, 17408, 5120);
++            iqr_gated_case(pl, 4, 9, 17408, 5120);
++            for (const IqrCase& f : fs) {
++@@ replace
++            if (std::getenv("R3_IQR_ONLY")) {
++                const IqrCase narrow[] = {
++                    { 6, 6, 0, 16, 1, false, true, true },
++                    { 6, 7, 0, 16, 1, false, true, true },
++                };
++                for (const IqrCase& f : narrow) {
++                    if (!std::getenv("R3_IQR_PERF"))
++                        for (int64_t M = 1; M <= 64; ++M)
++                            iqr_gemm_case(pl, f, M, 512, 1024);
++                    for (int64_t M : { 16, 24, 32, 40, 48, 49, 56, 64 }) {
++                        if (std::getenv("R3_IQR_PERF") && M < 33) continue;
++                        iqr_gemm_case(pl, f, M, 5376, 5120);
++                    }
++                }
++            } else {
++            for (const int b : { 2, 3, 4, 6 })
++                for (const int64_t m : { (int64_t)1, (int64_t)2, (int64_t)5, (int64_t)16 })
++                    iqr_gated_case(pl, b, m, 1024, 1280);
++            iqr_gated_case(pl, 4, 1, 17408, 5120);
++            iqr_gated_case(pl, 4, 9, 17408, 5120);
++            for (const IqrCase& f : fs) {
++@@ end
++
++@@ find 1
++                iqr_gemm_case(pl, f, 300, 512, 1024);
++            }
++        }
++@@ replace
++                iqr_gemm_case(pl, f, 300, 512, 1024);
++            }
++            }
++        }
++@@ end
++
++@@ find 1
++    st_memcpy(d_iw, iq.data(), iq.size(), hipMemcpyHostToDevice);
++    st_memcpy(d_is, isc.data(), isc.size(), hipMemcpyHostToDevice);
++@@ replace
++    if (!only_iqr) {
++        st_memcpy(d_iw, iq.data(), iq.size(), hipMemcpyHostToDevice);
++        st_memcpy(d_is, isc.data(), isc.size(), hipMemcpyHostToDevice);
++    }
++@@ end
++
++@@ find 1
++    const int rq = launch(r, tq, gp);
++@@ replace
++    if (only_iqr) {
++        const hipError_t pending = hipGetLastError();
++        if (pending != hipSuccess) std::fprintf(stderr, "IQR test prior HIP error: %s\n", hipGetErrorString(pending));
++    }
++    const int rq = launch(r, tq, gp);
++@@ end

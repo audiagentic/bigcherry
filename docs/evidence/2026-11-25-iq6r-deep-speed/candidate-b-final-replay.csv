@@ -1,0 +1,13 @@
+mode,M,variant,exit,median_us
+cold,49,base,0,389.607
+cold,49,final,0,366.007
+cold,56,base,0,389.525
+cold,56,final,0,367.927
+cold,64,base,0,397.447
+cold,64,final,0,353.965
+warm,49,base,0,370.8405
+warm,49,final,0,370.258
+warm,56,base,0,372.2317
+warm,56,final,0,371.578
+warm,64,base,0,397.4883
+warm,64,final,0,338.264

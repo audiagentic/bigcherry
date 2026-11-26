@@ -1,0 +1,3 @@
+# Candidate C — resource gate
+
+**PASS (resource only).** Both variants built and linked after the upstream merge. Exact symbol-name comparison: 3,172/3,172 matched; 404 M16 and 2,768 non-M16. Exactly 44 chained NT3/NT4 M16 symbols changed, and 3,128 others were identical. All 44 reduced VGPR by 48–68 and increased register-derived waves without new spills, LDS, or private bytes. The 56 other formerly excluded forms remain unchanged. GPU byte identity and replay are pending; no kernel candidate has been enabled in production.
