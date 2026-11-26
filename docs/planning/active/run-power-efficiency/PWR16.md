@@ -55,6 +55,10 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 
 2026-11-26: 30+60 s FP32 reference 20261126T083443Z-gpu-ai-screen-c566b175881a thermal nonpass at 80 C after ~33 s; no candidate applied, all original snapshots matched. Fresh 30+60 s BF16 bracket passed 4/4: stock A1 468608 GEMMs/7481.768 J/58 C; 300W/-200MHz/-50mV 473344/7491.458 J/61 C; 210W/-200MHz/-75mV 474208/7436.050 J/62 C; stock A2 468480/7626.687 J/64 C. Both restores and all-card exact snapshot pass, lease free. BF16 energy savings ~1.8%/2.7% against stock aggregate; not inference. CI first pass 39/40 serving tests, bc_manifest_power_test fake populated mutually exclusive shader capabilities. Corrected fixture in 1381502de without changing admission; rerun pending. Driver health incomplete. Native live owner, VRAM/burst/mixed pressure and model ABBA pending; do not promote profiles.
 
+2026-11-26 expanded voltage-only and clock screens complete: 64/64 cases, 659136 verified GEMMs, 12/12 candidate restores and all-card exact snapshots. Original clock 300 W through -150 mV passed, -14.9% estimated energy/GEMM and +1.3% rate. At -125 mV, offsets 0/-100/-200/-300/-400 MHz all pass; 210 W/-200 also passes. 300 W/-300/-125 saves 20.0% energy/GEMM at -0.36% rate, 300 W/-400/-125 saves 22.4% at -1.03% rate. Capture IDs in AI_POWER_SCREEN.md. Fresh 90 s BF16 sustained finalists selected from evidence; no measured failure boundary, driver health incomplete, no default changes. Native owner release and further pressure remain required.
+
+2026-11-26: expanded finalists complete. Both 300 W/-300/-125 and -400/-125 pass 90 s BF16, 4/4 including bracketed references, 1890656 GEMMs, two restores. -300/-125 selected on sustained energy and throughput (8.5% lower J/GEMM, +1.1% rate vs stock). Fresh matched 28546 MiB independent VRAM 2/2 pass (two full patterns each), 60 s mixed resident 2/2 pass (one full sweep each, -7.1% J/GEMM, +0.4% rate), 15 s x 4 burst 8/8 pass (-7.2% J/GEMM, +0.3% aggregate rate). Combined expanded cohort 80/80 cases, 3343488 verified GEMMs, 17 exact candidate restores. All captures harvested, all-card originals match, leases free. Retain -300/-125/300 W as supervised research finalist. Prior sustained FP32 thermal stop, missing driver log and native/extended/concurrent qualification still outstanding; installed 2020.23.0 predates PWR16, use a verified build containing 4eabbd6c7 or later. No production defaults changed.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
@@ -62,3 +66,5 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 - 2026-11-26T08:32:54.215371+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T08:32:59.239311+00:00 (state-transition): State: pending → in_progress
 - 2026-11-26T08:44:35.266324+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:58:07.547084+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T09:13:45.754693+00:00 (updated-by): Updated: section:notes

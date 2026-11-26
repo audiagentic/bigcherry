@@ -1472,3 +1472,110 @@ Both candidate restores passed, all four original card snapshots matched,
 lease released. Driver health incomplete. This is sustained BF16 only;
 FP32 thermal nonpass, VRAM/burst/mixed pressure, native physical owner
 and matched model inference remain separate gates. No profile promotion.
+
+
+### R9700 expanded voltage-only screen (2026-11-26)
+
+Original shader offset 0, cap 300 W, original memory; signed voltage
+offset in 25 mV steps. Same BF16/FP32 768-square batch32, 3 s and
+0/2 ms pause cases as previous cohort. Fixed 10 s rest before each
+arm, fresh bracketed observed reference, fail-fast on any nonpass,
+80 C ceilings, no temperature floor. All four cards restored.
+
+| Voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---:|---:|---:|---:|---:|---:|---:|---|
+| 0 | 40992 | 12.02 | 1291.355 | 107.438 | 31.503 | 60 | 20261126T085021Z-gpu-ai-screen-a23ec25289b9 |
+| -25 | 41184 | 12.022 | 1272.244 | 105.824 | 30.892 | 62 | 20261126T085046Z-gpu-ai-screen-3caebd596b65 |
+| -50 | 41248 | 12.023 | 1250.837 | 104.039 | 30.325 | 62 | 20261126T085111Z-gpu-ai-screen-47619dd35c74 |
+| -75 | 41376 | 12.013 | 1216.19 | 101.237 | 29.394 | 62 | 20261126T085136Z-gpu-ai-screen-91f9b651d947 |
+| -100 | 41440 | 12.027 | 1191.739 | 99.093 | 28.758 | 62 | 20261126T085201Z-gpu-ai-screen-32f62cb1bea6 |
+| -125 | 41472 | 12.013 | 1153.883 | 96.054 | 27.823 | 62 | 20261126T085226Z-gpu-ai-screen-d8eb7f6e0b9d |
+| -150 | 41568 | 12.033 | 1125.055 | 93.497 | 27.065 | 62 | 20261126T085251Z-gpu-ai-screen-631053e4ecfc |
+| 0 | 40992 | 12.015 | 1317.006 | 109.614 | 32.128 | 67 | 20261126T085317Z-gpu-ai-screen-d3a4e5aa4d1a |
+
+32/32 numerical cases pass, 330272 verified GEMMs, six exact
+candidate restorations. At -150 mV estimated J/GEMM falls 14.9%
+versus bracketed stock, aggregate throughput rises about 1.3%.
+-125 mV falls 12.5% with about 1.2% higher rate. No failing voltage
+boundary found; -150 mV is a short screen point, not stable proof.
+Use -125 mV for clock sweep, leaving 25 mV relative to the deepest
+tested point; not a demonstrated failure-boundary margin. Driver
+health incomplete. Do not alter production settings.
+
+
+### R9700 clock screen at -125 mV (2026-11-26)
+
+Same bounded four-case workload and preflight/rest/safety as voltage
+screen. Fresh bracketed stock references, explicit voltage control,
+clock offsets 0 through -400 MHz in 100 MHz steps; additional
+210 W cap at -200 MHz. All physical snapshots exactly restored.
+
+| Cap W / clock MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 300/0/0 A1 | 41152 | 12.015 | 1318.266 | 109.722 | 32.034 | 66 | 20261126T085405Z-gpu-ai-screen-8773f80ec793 |
+| 300/0/-125 | 41472 | 12.021 | 1156.159 | 96.178 | 27.878 | 63 | 20261126T085430Z-gpu-ai-screen-925f4b60f657 |
+| 300/-100/-125 | 41280 | 12.016 | 1120.847 | 93.281 | 27.152 | 63 | 20261126T085455Z-gpu-ai-screen-a2526a7520f7 |
+| 300/-200/-125 | 41120 | 12.017 | 1094.753 | 91.098 | 26.623 | 61 | 20261126T085520Z-gpu-ai-screen-93b2f02878bf |
+| 300/-300/-125 | 40992 | 12.026 | 1056.113 | 87.82 | 25.764 | 60 | 20261126T085545Z-gpu-ai-screen-126101c3093f |
+| 300/-400/-125 | 40672 | 12.013 | 1016.44 | 84.615 | 24.991 | 59 | 20261126T085611Z-gpu-ai-screen-e176b3225009 |
+| 210/-200/-125 | 41120 | 12.029 | 1082.786 | 90.018 | 26.332 | 62 | 20261126T085636Z-gpu-ai-screen-9232acec4bbe |
+| 300/0/0 A2 | 41056 | 12.016 | 1329.515 | 110.643 | 32.383 | 69 | 20261126T085701Z-gpu-ai-screen-4119a24cc60c |
+
+32/32 cases pass, 328864 verified GEMMs, six exact candidate
+restores. Bracketed stock 32.208 J/1000 GEMMs and 3420.915 GEMMs/s.
+-300/-125/300 W: -20.0% energy/GEMM, -0.36% aggregate rate;
+-400/-125/300 W: -22.4%, -1.03% rate. These two finalists go to
+fresh 90 s BF16 sustained pressure. No failure boundary located;
+no stable or model-performance claim from short screen. Driver
+health incomplete. Native backend merged in PR 1685, but live native
+qualification requires a release that contains it; never substitute
+a platform writer under the native owner.
+
+
+### Expanded R9700 finalist pressure (2026-11-26)
+
+90 s BF16 (30 s warmup + 60 s), 768 square batch32, hipBLASLt,
+original 300 W cap and memory, 80 C ceilings and no floor. Both
+finalists, bracketed by observed stock, completed with exact restore.
+
+| Clock MHz / voltage mV | GEMMs | Native s | Estimated J | W | J/1000 | Peak C | Capture |
+|---|---:|---:|---:|---:|---:|---:|---|
+| 0/0 A1 | 470816 | 90.002 | 7509.127 | 83.433 | 15.949 | 58 | 20261126T085750Z-gpu-ai-screen-cf089a4f6e29 |
+| -300/-125 | 475488 | 90.002 | 7039.845 | 78.219 | 14.806 | 59 | 20261126T085932Z-gpu-ai-screen-01cc6fcdb27e |
+| -400/-125 | 474368 | 90.004 | 7071.337 | 78.567 | 14.907 | 60 | 20261126T090113Z-gpu-ai-screen-8c25316dc9ac |
+| 0/0 A2 | 469984 | 90.003 | 7715.974 | 85.730 | 16.418 | 63 | 20261126T090255Z-gpu-ai-screen-0b5a54b46bfa |
+
+4/4 pass, 1890656 GEMMs, two candidate restores. -300/-125
+selected for additional pressure because it has lower sustained J/GEMM
+and higher observed throughput than -400/-125; clock-sweep short
+mixed precision results alone do not establish the sustained optimum.
+Compared with bracketed stock, -300 saves about 8.5% energy/GEMM
+at +1.1% rate; -400 saves about 7.9% at +0.8% rate.
+
+Fresh matched reference for each additional group, 2048 MiB reserved
+headroom, recipe resolver for memory/residency and burst parameters.
+Memory 28546 MiB, requested 15 s, both complete two full address
+patterns; mixed BF16 60 s with the same resident bytes (29932650496).
+Burst BF16 four pauses 1/2/10/100 ms, 15 s each.
+
+| Group | Setting | GEMMs or patterns | Native s | Estimated J | W | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---|
+| Memory | stock | 2 patterns | 36.072 | n/a | n/a | 55 | 20261126T090527Z-gpu-ai-screen-bc4269d61fd4 |
+| Memory | -300/-125 | 2 patterns | 36.031 | n/a | n/a | 53 | 20261126T090614Z-gpu-ai-screen-e988d1c14c64 |
+| Resident | stock | 242592 | 60.008 | 4697.795 | 78.286 | 56 | 20261126T090702Z-gpu-ai-screen-455a58e89694 |
+| Resident | -300/-125 | 243584 | 60.007 | 4380.033 | 72.992 | 56 | 20261126T090849Z-gpu-ai-screen-6fcbf2b40604 |
+| Burst | stock | 153440 | 60.020 | 3741.535 | 62.338 | 56 | 20261126T091038Z-gpu-ai-screen-19fdcce65bce |
+| Burst | -300/-125 | 154080 | 60.112 | 3486.958 | 58.008 | 54 | 20261126T091151Z-gpu-ai-screen-d9186db08f05 |
+
+Memory 2/2, resident 2/2 (one complete resident sweep each;
+22915055616/22947561472 words checked), burst 8/8. Memory peak
+57/55 C stock/candidate; mixed both 56 C. Mixed saves 7.1%
+energy/GEMM at +0.4% rate; burst saves 7.2% at +0.3% aggregate
+rate. Three candidate restores and all-card exact snapshots;
+leases released. Expanded cohort 80/80 cases, 3343488 verified
+GEMMs (excluding memory patterns), 17 candidate restores.
+No instruction-specific or sustained FP32 pass inferred; earlier
+stock thermal stop retained. Driver health incomplete. The current
+installed release predates PWR16; combined native inference and
+extended soak require a build containing the merged native owner.
+No production setting changed.
