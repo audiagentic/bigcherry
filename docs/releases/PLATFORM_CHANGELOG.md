@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.80.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.79.0...bc-platform-1.80.0) (2026-11-26)
+
+
+### New and changed
+
+* **platform:** qualify explicit GPU peer pairs ([#1662](https://github.com/audiagentic/bigcherry/issues/1662)) ([79416c3](https://github.com/audiagentic/bigcherry/commit/79416c398b4132aaf0d4f82c7c7471aa285ec10a))
+* **platform:** retain GPU workload telemetry and fault coverage ([#1657](https://github.com/audiagentic/bigcherry/issues/1657)) ([6975599](https://github.com/audiagentic/bigcherry/commit/697559925630547611804f972264fdb72c056f15))
+
+
+### Fixes
+
+* **lab:** a failed Gate E run keeps its logs ([#1659](https://github.com/audiagentic/bigcherry/issues/1659)) ([bd73bb6](https://github.com/audiagentic/bigcherry/commit/bd73bb6fdd275f704f2c0e0babb9a2802ab14250))
+
 ## [1.79.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.78.0...bc-platform-1.79.0) (2026-11-26)
 
 
