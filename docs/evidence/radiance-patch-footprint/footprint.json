@@ -7,9 +7,6 @@
   "compositions": {
     "radiance": [
       "rad0008_hc_upmix_rt_sweep",
-      "rad0009_serving_manifest",
-      "rad0002_moe_remote_handoff",
-      "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
       "rad0017_vtp14_n3_shared_rendezvous",
@@ -38,15 +35,14 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace",
-      "rad0064_owned_weighted_head"
+      "rad0064_owned_weighted_head",
+      "rad0070_managed_native_entry",
+      "rad0002_moe_remote_handoff",
+      "rad0011_plan_memory",
+      "rad0055_step_phase_trace"
     ],
     "radiance-diag": [
       "rad0008_hc_upmix_rt_sweep",
-      "rad0009_serving_manifest",
-      "rad0002_moe_remote_handoff",
-      "rad0004_moe_remote_diagnostics",
-      "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
       "rad0017_vtp14_n3_shared_rendezvous",
@@ -75,16 +71,17 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace",
-      "rad0064_owned_weighted_head"
+      "rad0064_owned_weighted_head",
+      "rad0070_managed_native_entry",
+      "rad0002_moe_remote_handoff",
+      "rad0004_moe_remote_diagnostics",
+      "rad0011_plan_memory",
+      "rad0055_step_phase_trace"
     ],
     "radiance-native": [],
     "radiance-routing-evidence": [
       "rad0008_hc_upmix_rt_sweep",
-      "rad0009_serving_manifest",
-      "rad0002_moe_remote_handoff",
       "rad0010_routing_evidence",
-      "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
       "rad0017_vtp14_n3_shared_rendezvous",
@@ -113,14 +110,14 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace",
-      "rad0064_owned_weighted_head"
+      "rad0064_owned_weighted_head",
+      "rad0070_managed_native_entry",
+      "rad0002_moe_remote_handoff",
+      "rad0011_plan_memory",
+      "rad0055_step_phase_trace"
     ],
     "radiance-vtp44-evidence": [
       "rad0008_hc_upmix_rt_sweep",
-      "rad0009_serving_manifest",
-      "rad0002_moe_remote_handoff",
-      "rad0011_plan_memory",
       "rad0012_helper_kernel_config",
       "rad0016_vtp14_rank_code_selection",
       "rad0017_vtp14_n3_shared_rendezvous",
@@ -153,21 +150,24 @@
       "rad0053_v4_kv_layouts",
       "rad0042_kv_b16_selftest",
       "rad0054_attn_prefill_fp8",
-      "rad0055_step_phase_trace",
-      "rad0064_owned_weighted_head"
+      "rad0064_owned_weighted_head",
+      "rad0070_managed_native_entry",
+      "rad0002_moe_remote_handoff",
+      "rad0011_plan_memory",
+      "rad0055_step_phase_trace"
     ]
   },
   "totals": {
     "composed_patches": 40,
-    "edits": 672,
-    "anchors": 640,
-    "upstream_anchors": 605,
+    "edits": 681,
+    "anchors": 649,
+    "upstream_anchors": 614,
     "created_target_anchors": 35,
-    "anchor_sites": 663,
-    "anchor_bytes": 80052,
-    "inserted_bytes": 593647,
+    "anchor_sites": 672,
+    "anchor_bytes": 80388,
+    "inserted_bytes": 594255,
     "created_edits": 32,
-    "upstream_files": 81
+    "upstream_files": 82
   },
   "patches": [
     {
@@ -326,7 +326,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 41,
       "anchor_bytes": 2309,
-      "inserted_bytes": 52899,
+      "inserted_bytes": 52904,
       "created_edits": 5
     },
     {
@@ -956,6 +956,36 @@
       "created_edits": 0
     },
     {
+      "patch": "rad0070_managed_native_entry",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "core/CMakeLists.txt",
+        "core/fleet/fleet.cpp",
+        "core/main.cpp",
+        "tests/CMakeLists.txt"
+      ],
+      "upstream_files": [
+        "core/CMakeLists.txt",
+        "core/fleet/fleet.cpp",
+        "core/main.cpp",
+        "tests/CMakeLists.txt"
+      ],
+      "created_files": [],
+      "edits": 14,
+      "anchors": 14,
+      "upstream_anchors": 14,
+      "created_target_anchors": 0,
+      "anchor_sites": 14,
+      "anchor_bytes": 572,
+      "inserted_bytes": 3273,
+      "created_edits": 0
+    },
+    {
       "patch": "rad0020_vtp14_tp3_pipelined_prefill",
       "sources": [
         "radiance",
@@ -1269,7 +1299,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 7,
       "anchor_bytes": 300,
-      "inserted_bytes": 23464,
+      "inserted_bytes": 23460,
       "created_edits": 4
     },
     {
@@ -1351,34 +1381,6 @@
       "anchor_sites": 6,
       "anchor_bytes": 953,
       "inserted_bytes": 1416,
-      "created_edits": 0
-    },
-    {
-      "patch": "rad0009_serving_manifest",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "core/CMakeLists.txt",
-        "core/main.cpp",
-        "tests/CMakeLists.txt"
-      ],
-      "upstream_files": [
-        "core/CMakeLists.txt",
-        "core/main.cpp",
-        "tests/CMakeLists.txt"
-      ],
-      "created_files": [],
-      "edits": 5,
-      "anchors": 5,
-      "upstream_anchors": 5,
-      "created_target_anchors": 0,
-      "anchor_sites": 5,
-      "anchor_bytes": 236,
-      "inserted_bytes": 2666,
       "created_edits": 0
     },
     {
@@ -1856,15 +1858,15 @@
     {
       "path": "tests/CMakeLists.txt",
       "patch_ids": [
-        "rad0009_serving_manifest",
         "rad0042_kv_b16_selftest",
         "rad0048_abi44_kv_contract",
-        "rad0050_b16_kv_runtime_contract"
+        "rad0050_b16_kv_runtime_contract",
+        "rad0070_managed_native_entry"
       ],
       "anchors": 4,
       "anchor_sites": 4,
       "anchor_bytes": 105,
-      "inserted_bytes": 1118,
+      "inserted_bytes": 1016,
       "patch_count": 4
     },
     {
@@ -2117,6 +2119,17 @@
       "patch_count": 1
     },
     {
+      "path": "core/fleet/fleet.cpp",
+      "patch_ids": [
+        "rad0070_managed_native_entry"
+      ],
+      "anchors": 8,
+      "anchor_sites": 8,
+      "anchor_bytes": 315,
+      "inserted_bytes": 982,
+      "patch_count": 1
+    },
+    {
       "path": "core/plugin/select.cpp",
       "patch_ids": [
         "rad0016_vtp14_rank_code_selection"
@@ -2194,6 +2207,17 @@
       "patch_count": 1
     },
     {
+      "path": "core/main.cpp",
+      "patch_ids": [
+        "rad0070_managed_native_entry"
+      ],
+      "anchors": 4,
+      "anchor_sites": 4,
+      "anchor_bytes": 114,
+      "inserted_bytes": 344,
+      "patch_count": 1
+    },
+    {
       "path": "core/place/planner.cpp",
       "patch_ids": [
         "rad0002_moe_remote_handoff"
@@ -2224,17 +2248,6 @@
       "anchor_sites": 3,
       "anchor_bytes": 447,
       "inserted_bytes": 1145,
-      "patch_count": 1
-    },
-    {
-      "path": "core/main.cpp",
-      "patch_ids": [
-        "rad0009_serving_manifest"
-      ],
-      "anchors": 3,
-      "anchor_sites": 3,
-      "anchor_bytes": 93,
-      "inserted_bytes": 139,
       "patch_count": 1
     },
     {
@@ -2394,12 +2407,12 @@
     {
       "path": "core/CMakeLists.txt",
       "patch_ids": [
-        "rad0009_serving_manifest"
+        "rad0070_managed_native_entry"
       ],
       "anchors": 1,
       "anchor_sites": 1,
       "anchor_bytes": 87,
-      "inserted_bytes": 2183,
+      "inserted_bytes": 1705,
       "patch_count": 1
     },
     {
