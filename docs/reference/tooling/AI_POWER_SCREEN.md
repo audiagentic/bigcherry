@@ -1033,3 +1033,22 @@ screen nominal load budgets are 88/128/136 s and extended 460/500/508 s
 (gfx1030/1100/1201). These are not measured comparison wall times.
 Persistent GPU contexts are not required to achieve the current target;
 evaluate setup overhead further before changing the native protocol.
+
+
+### gfx1030 sustained hot coverage (2026-11-26)
+
+Using unchanged controls, the larger 1536-square BF16 attempt with
+90 s warmup stopped at the existing 80 C ceiling after about 83 s wall.
+Preserved capture 20261126T055347Z-gpu-ai-screen-22528262f5c7 and
+report 20261126T055510Z-gpu-ai-qualification-report-b374e720798c.
+The intermediate 1024-square BF16 case with 60 s warmup and a 60 s
+measured interval passed 200,576 exact GEMMs, overall hotspot 42–74 C,
+final window 66–74 C (241 samples, max gap 253 ms). Capture
+20261126T055532Z-gpu-ai-screen-2118fdba6724 and report
+20261126T055733Z-gpu-ai-qualification-report-53177bcb5620 are harvested.
+No control changed; health remains incomplete. The canonical gfx1030
+target now resolves exactly the successful diagnostic options via
+hot_n and hot_warmup_seconds; other architectures and burst, slim and
+screen remain unchanged. Operational and extended gfx1030 nominal
+budgets increase by 30 s. This is individual hot coverage, not a new
+combined operational report or candidate qualification.

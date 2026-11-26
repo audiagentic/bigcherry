@@ -52,9 +52,11 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
     _need(_integer(max_hotspot, 1, 110) and _integer(max_memory, 1, 110),
           "invalid thermal ceiling")
     target = raw["target"][arch]
-    _need({"provider","matrix","hot_dtype"} <= set(target) <= {"provider","matrix","hot_dtype","precision_references"} and target["provider"] in a.PROVIDERS
+    _need({"provider","matrix","hot_dtype"} <= set(target) <= {"provider","matrix","hot_dtype","precision_references","hot_n","hot_warmup_seconds"} and target["provider"] in a.PROVIDERS
           and _names(target["matrix"]) and set(target["matrix"]) <= set(a.MATRIX_DTYPES)
           and target["hot_dtype"] in target["matrix"]
+          and ("hot_n" not in target or _integer(target["hot_n"],16,2048))
+          and ("hot_warmup_seconds" not in target or _integer(target["hot_warmup_seconds"],0,3599))
           and not (target["provider"] == "rocblas" and "fp8" in target["matrix"]),
           "invalid target capability configuration")
     precision = target.get("precision_references",False)
@@ -96,6 +98,9 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
         n, batch = g.get("n", 768), g.get("batch", 1)
         sec, warm, timeout = g["seconds"], g.get("warmup_seconds", 0), g.get("setup_timeout", 60)
         pause, hot = g["pause_ms"], g.get("min_hotspot_c")
+        if g.get("hot"):
+            n = target.get("hot_n",n)
+            warm = target.get("hot_warmup_seconds",warm)
         _need(_integer(n,16,2048) and _integer(batch,1,256) and _integer(sec,1,3600)
               and _integer(warm,0,3600-sec) and _integer(timeout,1,300)
               and isinstance(pause,list) and bool(pause) and all(_integer(x,0,1000) for x in pause)

@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_055942_rx-6900-xt-hot-qualification-n_8658",
+  "files": [
+    "config/gpu-ai-qualification.toml",
+    "tools/bigcherry/hardware/ai_qualification.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Resolve architecture-specific hot geometry and warmup via existing recipe; use gfx1030 validated 1024-square BF16 and 60-second warmup with unchanged final window and ceilings.",
+  "timestamp-utc": "2026-11-26T05:59:42.297022Z",
+  "user-summary-candidate": "RX 6900 XT hot qualification now uses the tested workload that sustained 66\u201374\u00b0C without reaching the 80\u00b0C safety ceiling."
+}
