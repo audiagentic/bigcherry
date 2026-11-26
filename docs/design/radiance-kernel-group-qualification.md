@@ -1,5 +1,7 @@
 # Kernel group qualification and profile selection (RCS26–28)
 
+See also [GPU qualification code-level implementation guide](gpu-qualification-code-guide.md), especially section 7 for the native harness power-intent gate and section 9 for owner admission/recovery prerequisites. PWR13 owns independent workload expansion; RCS26–28 retain native selection and integration.
+
 Extends [kernel composition](radiance-kernel-composition.md), [bump integration](radiance-bump-integration.md) and [AI power screen](../reference/tooling/AI_POWER_SCREEN.md). RCS19–25 delivered the foundations; do not reopen their completed records. RCS08/RCS10, KAB01, FKE01, MEN bump work and PWR07/08/10/12/PWR02 remain their existing owners. This design introduces no alternate build graph, engine runtime authority, profile format, launch manifest, cache or evidence database.
 
 ## 1. Inventory and ownership
