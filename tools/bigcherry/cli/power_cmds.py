@@ -128,8 +128,8 @@ def cmd_apply(args: Namespace) -> int:
         print(f"gpu-power apply: {exc}", file=sys.stderr)
         return 2
     requested = {bdf: _setting(d.power) for bdf, d in selected.items() if d is not None and d.power}
-    tx = PowerTransaction(args.run_id, _journal_dir(), lease_ok=gpu_lease.held_by_this_process, **_sys())
     try:
+        tx = PowerTransaction(args.run_id, _journal_dir(), lease_ok=gpu_lease.held_by_this_process, **_sys())
         tx.prepare(requested, sorted(selected))
         tx.apply()
     except PowerRefused as exc:
@@ -150,7 +150,11 @@ def cmd_apply(args: Namespace) -> int:
 
 
 def cmd_restore(args: Namespace) -> int:
-    path = _journal_dir() / f"{args.run_id}.json"
+    try:
+        path = PowerTransaction(args.run_id, _journal_dir(), lease_ok=gpu_lease.held_by_this_process).journal_path
+    except PowerRefused as exc:
+        print("gpu-power restore: refused: " + str(exc), file=sys.stderr)
+        return 2
     if not path.exists():
         print(f"gpu-power restore: no journal for run {args.run_id} (nothing applied by that run)")
         return 0

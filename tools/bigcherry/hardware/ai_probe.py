@@ -825,6 +825,11 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                         raise ScreenError("original controls/identity not restored exactly")
                     receipt["state"] = "restored"
                 except Exception as exc:
+                    if tx.state in ("rolled_back", "restored"):
+                        try:
+                            tx.invalidate_restoration(str(exc))
+                        except OSError as journal_error:
+                            receipt["journal_error"] = str(journal_error)
                     receipt.update(state="restore_unverified", reason=str(exc))
                     result["screen_status"] = result["status"]
                     result.update(status="restore_failed", reason=str(exc))

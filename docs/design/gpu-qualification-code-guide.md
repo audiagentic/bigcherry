@@ -393,3 +393,26 @@ owners for any future replacement. Require equivalent work, exact integer
 checks or independently justified floating-point contracts, resources and
 matched cold/warm timing, model quality, and no serving regression. No
 blanket architecture rewrite or automatic promotion.
+
+
+### Platform recovery hardening (PWR15, 2026-11-26)
+
+The existing PowerTransaction now checks the lease before each control
+write, rechecks original state and restore ranges before applying, binds
+device identity and hwmon in the journal, and compares all observed
+controls before terminal restoration. A later contradictory screen
+readback reopens a resolved journal. Unknown or malformed journals,
+reused IDs and invalid recovery inventories refuse. Legacy active
+journals lacking identity require manual owner recovery; do not fabricate
+their original identity. No new writer or registry.
+
+Card-free hardware/CLI fault tests cover lease loss between OverDrive
+writes, unrequested drift, identity replacement, stale or malformed
+journals, zero original cap and late readback disagreement.
+Cross-owner admission remains open: platform CLI uses the existing
+flashnext/power/journals path, native managed starts use explicit work-root
+power/journals, and one-off starts use run-local journals. Reciprocal
+admission must resolve existing roots under a verified lease and refuse
+unknown inventory before automatic candidates. Preserve both recovery
+formats; do not change root paths by inference. No physical control write
+or unattended candidate was performed by this slice.
