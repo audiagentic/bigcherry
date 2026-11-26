@@ -285,6 +285,7 @@ int main(int argc, char** argv) {
         std::printf("fake engine: native v3 %s snapshot, root and environment verified\n", measuring ? "measuring" : "serving");
         m["port"] = std::atoi(std::getenv("TEST_NATIVE_INSPECT_PORT") ? std::getenv("TEST_NATIVE_INSPECT_PORT") : "0");
         m["engine_cards"] = admission.at("bdfs");
+        if (admission.at("quality").is_object()) m["quality"] = admission.at("quality");
         m["host_pool_mib"] = admission.at("host").at("pool_mib_per_rank");
         if (const char* context = std::getenv("TEST_NATIVE_INSPECT_MAX_CONTEXT")) m["max_context"] = std::atoll(context);
         if (const char* settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS")) {
@@ -491,20 +492,32 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
-    const std::string record_dir = arg_after(argc, argv, "--kld-record");
+    // A KL run's files arrive in the admission (the native entry), as the flags the manifest entry took.
+    const auto kld_arg = [&](const char* flag) -> std::string {
+        if (!m.contains("quality") || !m.at("quality").is_object()) return arg_after(argc, argv, flag);
+        const json& q = m.at("quality");
+        const bool record = q.at("record").get<bool>();
+        const std::string f = flag;
+        if (f == "--kld-record") return record ? q.at("reference").get<std::string>() : std::string();
+        if (f == "--kld-corpus") return record ? q.at("corpus").get<std::string>() : std::string();
+        if (f == "--kld-ref") return record ? std::string() : q.at("reference").get<std::string>();
+        if (f == "--kld-out") return record ? std::string() : q.at("output").get<std::string>();
+        return arg_after(argc, argv, flag);
+    };
+    const std::string record_dir = kld_arg("--kld-record");
     if (!record_dir.empty()) {
-        const std::string corpus = arg_after(argc, argv, "--kld-corpus");
+        const std::string corpus = kld_arg("--kld-corpus");
         if (corpus.empty() || !std::filesystem::path(record_dir).is_absolute() ||
             !std::filesystem::path(corpus).is_absolute() || !std::filesystem::is_regular_file(corpus) ||
-            !arg_after(argc, argv, "--kld-ref").empty() || !arg_after(argc, argv, "--kld-out").empty() ||
+            !kld_arg("--kld-ref").empty() || !kld_arg("--kld-out").empty() ||
             !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
             return 9;
         std::ofstream(std::filesystem::path(record_dir) / "kld.json") << json{{"positions", 1}}.dump() << '\n';
         return 0;
     }
-    const std::string reference = arg_after(argc, argv, "--kld-ref");
+    const std::string reference = kld_arg("--kld-ref");
     if (!reference.empty()) {
-        const std::string output = arg_after(argc, argv, "--kld-out");
+        const std::string output = kld_arg("--kld-out");
         std::ifstream metadata(std::filesystem::path(reference) / "kld.json");
         const auto fixture = json::parse(metadata, nullptr, false);
         if (output.empty() || !fixture.is_object() ||
@@ -585,6 +598,7 @@ int main(int argc, char** argv) {
     const auto healthy_at = up + std::chrono::milliseconds(m.value("health_delay_ms", 0));
     const long die_after = m.value("die_after_ms", -1L);
     const std::string answer = m.value("answer", std::string("Paris."));
+    const std::string served_model = m.value("served_model", std::string("qwen27b"));
     while (!g_stop) {
         if (die_after >= 0 && Clock::now() - up > std::chrono::milliseconds(die_after)) return 7;
         pollfd p{ls, POLLIN, 0};
@@ -609,7 +623,16 @@ int main(int argc, char** argv) {
         }
         if (req.rfind("GET /health", 0) == 0) {
             reply(fd, Clock::now() >= healthy_at ? 200 : 503, "{}");
+        } else if (req.rfind("GET /v1/models", 0) == 0) {
+            reply(fd, 200, json({{"object", "list"}, {"data", json::array({{{"id", served_model}}})}}).dump());
         } else if (req.rfind("POST /v1/completions", 0) == 0) {
+            // Like the native front: only the model the file names (and its aliases, none here) is served.
+            const size_t body_at = req.find("\r\n\r\n");
+            const json asked = json::parse(body_at == std::string::npos ? std::string() : req.substr(body_at + 4), nullptr, false);
+            if (asked.is_object() && asked.value("model", std::string()) != served_model) {
+                reply(fd, 404, json({{"error", {{"message", "no model '" + asked.value("model", std::string()) +
+                                                      "' is served here (serving: " + served_model + ")"}}}}).dump());
+            } else
             reply(fd, 200, json({{"choices", json::array({{{"text", answer}}})}}).dump());
         } else {
             reply(fd, 404, "{}");

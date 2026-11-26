@@ -1072,7 +1072,17 @@ std::optional<HttpReply> http(int port, const std::string& method, const std::st
 
 std::optional<std::string> canary(int port, const std::string& prompt, const std::string& expect,
                                   std::chrono::milliseconds timeout) {
-    const Json request = {{"model", "default"}, {"prompt", prompt}, {"max_tokens", 24}, {"temperature", 0}};
+    // The model the server answers to is the one it lists (the YAML's name; there is no implicit alias).
+    const auto listing = http(port, "GET", "/v1/models", "", timeout);
+    if (!listing)
+        return "the request failed (no HTTP reply to /v1/models)";
+    const Json models = Json::parse(listing->body, nullptr, false);
+    if (listing->status < 200 || listing->status > 299 || models.is_discarded() || !models.is_object() ||
+        !models.contains("data") || !models.at("data").is_array() || models.at("data").empty() ||
+        !models.at("data")[0].is_object() || !models.at("data")[0].contains("id") ||
+        !models.at("data")[0].at("id").is_string())
+        return "the server lists no model (HTTP " + std::to_string(listing->status) + ": " + listing->body.substr(0, 80) + ")";
+    const Json request = {{"model", models.at("data")[0].at("id")}, {"prompt", prompt}, {"max_tokens", 24}, {"temperature", 0}};
     const auto reply = http(port, "POST", "/v1/completions", request.dump(), timeout);
     if (!reply)
         return "the request failed (no HTTP reply)";

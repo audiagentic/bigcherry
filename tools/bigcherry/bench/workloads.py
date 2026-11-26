@@ -120,7 +120,7 @@ def _stream_reps(cfg: dict, url: str, *, cold: bool) -> tuple[dict, dict]:
     count = 1 if cold else cfg["streams"]
     rep_count = cfg["reps"]
     for i in range(rep_count if cold else 1):
-        record = stream_bench.run(url, "default", [count], cfg["target_tokens"], cfg["max_tokens"],
+        record = stream_bench.run(url, served_model(url), [count], cfg["target_tokens"], cfg["max_tokens"],
                                   1 if cold else rep_count, temperature=0, timeout=900,
                                   seed=cfg["seed_first"] + i if cold else cfg["seed"],
                                   shared_prefix=False, allow_estimate=False, calibrate=True)

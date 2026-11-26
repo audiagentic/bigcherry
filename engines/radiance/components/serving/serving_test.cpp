@@ -2391,8 +2391,8 @@ void helper_vram_owner_graph(Fixture& t) {
     const auto& engine_args = quality.at("processes").back().at("argv");
     const auto events = quality.at("events").dump();
     if (scored != 0 || quality.value("state", "") != "stopped" || !ss::alive_recorded(quality).empty() ||
-        engine_args.size() != 9 || engine_args[5] != "--kld-ref" || engine_args[6] != reference.string() ||
-        engine_args[7] != "--kld-out" || engine_args[8] != owner.quality->output.string() ||
+        engine_args.size() != 5 || engine_args[1] != "--config" || engine_args[3] != "--bc-admission-fd" ||   // the run's files are in the admission
+        !fs::is_regular_file(owner.quality->output) ||
         events.find("quality_completed") == std::string::npos || events.find("power_restored") == std::string::npos ||
         events.find("canary_passed") != std::string::npos || events.find("healthy") != std::string::npos)
         throw std::runtime_error("native helper finite score did not complete and clean up: " + quality.dump());
@@ -2411,8 +2411,7 @@ void helper_vram_owner_graph(Fixture& t) {
         const auto& record_args = record_run.at("processes").back().at("argv");
         const auto record_events = record_run.at("events").dump();
         if (recorded_exit != 0 || record_run.value("state", "") != "stopped" || !ss::alive_recorded(record_run).empty() ||
-            record_args.size() != 9 || record_args[5] != "--kld-record" || record_args[6] != recorded.string() ||
-            record_args[7] != "--kld-corpus" || record_args[8] != corpus.string() ||
+            record_args.size() != 5 || record_args[1] != "--config" || record_args[3] != "--bc-admission-fd" ||
             !fs::is_regular_file(recorded / "kld.json") ||
             record_events.find("quality_recorded") == std::string::npos ||
             record_events.find("power_restored") == std::string::npos)
