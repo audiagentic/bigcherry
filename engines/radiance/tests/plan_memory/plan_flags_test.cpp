@@ -151,6 +151,21 @@ int main(int argc, char** argv) {
     err = captured(scratch, [&] { rc = bc_plan::check(host_drift); });
     check(rc == 2 && err.find("BC_CFG_PLAN_MISMATCH") != std::string::npos, "one byte of host drift is refused: " + err);
 
+    // The same difference on a host that cannot hold the planned pinned consumers is a room refusal (typed exit 4, needed and
+    // available named), not drift: memory moved between the owner's admission and the engine's placement.
+    {
+        v2::EnginePlan planned = expected_plan;
+        planned.host[0].bytes = int64_t{1} << 50;   // far more than this host has
+        planned.host[0].residence = v2::Residence::kPinned;
+        check(bc_plan::arm(planned, 600000) == 0, "an expected plan with an enormous pinned consumer arms");
+        v2::EnginePlan placed_elsewhere = live;
+        placed_elsewhere.host[0].bytes = 0;   // the live plan placed it elsewhere: it differs from the planned one
+        err = captured(scratch, [&] { rc = bc_plan::check(placed_elsewhere); });
+        check(rc == 4 && err.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos && err.find("BC_CFG_PLAN_MISMATCH") == std::string::npos,
+              "a mismatch the host cannot hold is a room refusal, exit 4: " + err);
+        check(bc_plan::arm(expected_plan, 600000) == 0, "the vector's plan is armed again");
+    }
+
     // Every normative admission vector through the engine's own entry points: the expected plan decoded as the manifest
     // reader decodes it, bc_plan::arm (the floor), then bc_plan::check. The exit code and the message must be what the vector
     // says (admit 0, admission 4, plan or input 2).

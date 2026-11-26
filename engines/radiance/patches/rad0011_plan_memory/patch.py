@@ -219,7 +219,22 @@ int check(const v2::EnginePlan& live) {
             if (live.vram.cards[i].free < live.vram.cards[limiting].free) limiting = i;
         binding_bdf = g_bdfs[limiting];
     }
-    if (v2::Status e = v2::check_engine_plan(g_expected, live, g_ppm, binding_bdf)) return report(*e);
+    if (v2::Status e = v2::check_engine_plan(g_expected, live, g_ppm, binding_bdf)) {
+        // A live plan that differs because the host could not hold the planned consumers (a build or the page cache took the
+        // memory the owner admitted against: the engine then places a pinned consumer elsewhere and it is missing from the
+        // live plan) is a host-room refusal, not drift: same structured needed/available/shortfall, typed room exit, and the
+        // stored plan stays valid. Only a mismatch is re-read this way; an admitted plan is never turned into a refusal.
+        if (e->code == v2::ConfigErrorCode::plan_mismatch) {
+            std::vector<std::pair<std::string, int64_t>> pinned;
+            for (const v2::PlanHostConsumer& c : g_expected.host)
+                if (c.residence == v2::Residence::kPinned) pinned.push_back({c.name, c.bytes});
+            const long long kb = mem_available_kb_now();
+            if (kb > 0 && kb <= (9007199254740991LL / 1024))
+                if (v2::Status room = v2::check_host_room("host_pool", kb * 1024, 0, pinned))
+                    if (room->room_refusal) return report(*room);
+        }
+        return report(*e);
+    }
     const v2::AdmissionMargins m = v2::admission_margins(g_expected, live, g_ppm);
     std::fprintf(stderr,
                  "radiance: plan check: admitted: claimable %lld >= required %lld bytes (margin %lld); resolved KV %lld "
