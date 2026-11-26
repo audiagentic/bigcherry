@@ -165,7 +165,7 @@
     "created_target_anchors": 35,
     "anchor_sites": 672,
     "anchor_bytes": 80388,
-    "inserted_bytes": 594255,
+    "inserted_bytes": 595345,
     "created_edits": 32,
     "upstream_files": 82
   },
@@ -1299,7 +1299,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 7,
       "anchor_bytes": 300,
-      "inserted_bytes": 23460,
+      "inserted_bytes": 24550,
       "created_edits": 4
     },
     {
