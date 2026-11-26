@@ -37,7 +37,10 @@ Json engine_admission_to_json(const EngineAdmission& a) {
             {"kv_backing_floor_ppm", a.kv_backing_floor_ppm},
             {"expected", a.expected ? *a.expected : Json(nullptr)},
             {"settings", settings},
-            {"env", env}};
+            {"env", env},
+            {"quality", a.quality ? Json{{"record", a.quality->record}, {"reference", a.quality->reference},
+                                         {"corpus", a.quality->corpus}, {"output", a.quality->output}}
+                                  : Json(nullptr)}};
 }
 
 v2::Result<EngineAdmission> engine_admission_from_json(const Json& j) {
@@ -87,7 +90,7 @@ v2::Result<EngineAdmission> engine_admission_from_json(const Json& j) {
                 throw Fault{bad->code, bad->path, bad->message};
             a.expected = e;
         }
-        if (a.measuring == a.expected.has_value())
+        if (a.measuring == a.expected.has_value() && !w.at("quality").is_object())
             throw Fault{v2::ConfigErrorCode::invalid_state, w.path("expected"),
                         a.measuring ? "a measuring start has no plan to admit" : "a serving start needs the plan to admit"};
         {
@@ -123,6 +126,22 @@ v2::Result<EngineAdmission> engine_admission_from_json(const Json& j) {
                             "not an engine switch the contract binds, or not a string"};
             a.env.emplace(it.key(), it.value().get<std::string>());
         }
+        if (const Json& q = w.at("quality"); !q.is_null()) {
+            Wire quality(q, "engine_admission.quality");
+            EngineAdmission::Quality out;
+            out.record = quality.boolean("record");
+            out.reference = quality.text("reference");
+            out.corpus = quality.text("corpus");
+            out.output = quality.text("output");
+            quality.done();
+            // record: a corpus and a reference directory to fill, no report; score: a reference and a report, no corpus
+            const bool shaped = out.record ? !out.corpus.empty() && !out.reference.empty() && out.output.empty()
+                                           : out.corpus.empty() && !out.reference.empty() && !out.output.empty();
+            if (!shaped || a.measuring || a.expected)
+                throw Fault{v2::ConfigErrorCode::invalid_value, w.path("quality"),
+                            "a quality run names its files as a record or a score and is neither measuring nor serving"};
+            a.quality = std::move(out);
+        }
         w.done();
         return a;
     } catch (const Fault& f) {
@@ -130,7 +149,8 @@ v2::Result<EngineAdmission> engine_admission_from_json(const Json& j) {
     }
 }
 
-v2::Result<EngineAdmission> engine_admission_from_manifest(const v2::Manifest& m, bool measuring) {
+v2::Result<EngineAdmission> engine_admission_from_manifest(const v2::Manifest& m, bool measuring,
+                                                           std::optional<EngineAdmission::Quality> quality) {
     const v2::Spec& spec = m.spec;
     EngineAdmission a;
     a.measuring = measuring;
@@ -140,6 +160,8 @@ v2::Result<EngineAdmission> engine_admission_from_manifest(const v2::Manifest& m
     a.host_kv_mib = spec.resources.host.kv_mib;
     a.host_reserve_mib = spec.resources.host.reserve_mib;
     a.checkpoint_slots = spec.resources.host.checkpoint_slots;
+    a.quality = std::move(quality);
+    if (a.quality && measuring) return v2::make_error(v2::ConfigErrorCode::invalid_state, "engine_admission.quality", "a quality run is not a measuring start");
     if (measuring) {
         for (const v2::CalibrationEntry& entry : spec.calibration)
             if (entry.key == v2::CalibrationKey::kKvBackingFloorFractionPpm)
@@ -148,7 +170,8 @@ v2::Result<EngineAdmission> engine_admission_from_manifest(const v2::Manifest& m
         const auto view = v2::engine_view(m);
         if (!view) return view.error();
         a.kv_backing_floor_ppm = view.value().kv_backing_floor_ppm;
-        a.expected = v2::encode(view.value().memory.expected);
+        // A quality run scores the trunk's own rows: no serving plan describes it, so none is armed.
+        if (!a.quality) a.expected = v2::encode(view.value().memory.expected);
     }
     if (spec.handoff) {
         const auto& h = *spec.handoff;

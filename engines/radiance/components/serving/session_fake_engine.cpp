@@ -243,8 +243,68 @@ int main(int argc, char** argv) {
     const std::string manifest = arg_after(argc, argv, "--manifest");
     const std::string role = arg_after(argc, argv, "--role");
     const std::string settings_fd_text = arg_after(argc, argv, "--settings-fd");
+    const std::string config_path = arg_after(argc, argv, "--config");
+    const std::string admission_fd_text = arg_after(argc, argv, "--bc-admission-fd");
     json m = json::object();
-    if (!settings_fd_text.empty()) {
+    if (!config_path.empty()) {
+        // The native entry: the raw YAML at --config (an inherited sealed descriptor) and the owner's derived facts in the
+        // admission document at --bc-admission-fd. The port, context and n-gram placement are the native file's own
+        // values, which this fake cannot parse, so the test supplies them in the environment as it does for the inspector.
+        const auto sealed_text = [](const std::string& label, int fd) {
+            constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+            struct stat info {};
+            const int seals = fd < 3 ? -1 : ::fcntl(fd, F_GET_SEALS);
+            if (fd < 3 || seals < 0 || (seals & seals_required) != seals_required || ::fstat(fd, &info) != 0 ||
+                info.st_size <= 0) {
+                std::fprintf(stderr, "fake engine: %s is not an inherited sealed descriptor\n", label.c_str());
+                std::exit(9);
+            }
+            std::string bytes(static_cast<size_t>(info.st_size), '\0');
+            if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) std::exit(9);
+            return bytes;
+        };
+        int config_fd = -1;
+        if (config_path.rfind("/proc/self/fd/", 0) == 0) config_fd = std::atoi(config_path.c_str() + 14);
+        const std::string yaml = sealed_text("--config", config_fd);
+        const json admission = json::parse(sealed_text("--bc-admission-fd", std::atoi(admission_fd_text.c_str())), nullptr, false);
+        const char* expected_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
+        const char* expected_frozen = std::getenv("TEST_NATIVE_EXPECT_FROZEN");
+        const char* frozen = std::getenv("TEST_NATIVE_FROZEN");
+        const bool measuring = !arg_after(argc, argv, "--plan-memory").empty();
+        if (!admission.is_object() || admission.value("kind", std::string()) != "bigcherry.engine-admission/v1" ||
+            admission.value("measuring", false) != measuring || (expected_yaml && yaml != expected_yaml) ||
+            (expected_frozen && (!frozen || std::strcmp(frozen, expected_frozen) != 0))) {
+            std::fprintf(stderr, "fake engine: native YAML, admission, environment or role mismatch\n");
+            return 9;
+        }
+        const char* expected_root = std::getenv("TEST_NATIVE_EXPECT_ROOT");
+        if (expected_root && std::filesystem::current_path() != expected_root) {
+            std::fprintf(stderr, "fake engine: the execution root is not the admitted one\n");
+            return 9;
+        }
+        std::printf("fake engine: native v3 %s snapshot, root and environment verified\n", measuring ? "measuring" : "serving");
+        m["port"] = std::atoi(std::getenv("TEST_NATIVE_INSPECT_PORT") ? std::getenv("TEST_NATIVE_INSPECT_PORT") : "0");
+        m["engine_cards"] = admission.at("bdfs");
+        if (admission.at("quality").is_object()) m["quality"] = admission.at("quality");
+        m["host_pool_mib"] = admission.at("host").at("pool_mib_per_rank");
+        if (const char* context = std::getenv("TEST_NATIVE_INSPECT_MAX_CONTEXT")) m["max_context"] = std::atoll(context);
+        if (const char* settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS")) {
+            const json native = json::parse(settings, nullptr, false);
+            if (native.is_object() && native.contains("ngram_placement")) m["ngram_placement"] = native.at("ngram_placement");
+        }
+        if (admission.at("settings").at("handoff") == true) m["shm"] = admission.at("settings").at("shm");
+        if (!measuring) {
+            if (const char* behaviour = std::getenv("TEST_FAKE_BEHAVIOUR")) {
+                const json given = json::parse(behaviour, nullptr, false);
+                if (!given.is_object()) {
+                    std::fprintf(stderr, "fake engine: TEST_FAKE_BEHAVIOUR is not a JSON object\n");
+                    return 9;
+                }
+                for (const auto& [key, value] : given.items())
+                    if (key != "port") m[key] = value;   // the port is the file's
+            }
+        }
+    } else if (!settings_fd_text.empty()) {
         // A helper started by the owner: its typed settings arrive as one sealed descriptor, never a manifest.
         const int fd = std::atoi(settings_fd_text.c_str());
         struct stat info {};
@@ -432,20 +492,32 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
-    const std::string record_dir = arg_after(argc, argv, "--kld-record");
+    // A KL run's files arrive in the admission (the native entry), as the flags the manifest entry took.
+    const auto kld_arg = [&](const char* flag) -> std::string {
+        if (!m.contains("quality") || !m.at("quality").is_object()) return arg_after(argc, argv, flag);
+        const json& q = m.at("quality");
+        const bool record = q.at("record").get<bool>();
+        const std::string f = flag;
+        if (f == "--kld-record") return record ? q.at("reference").get<std::string>() : std::string();
+        if (f == "--kld-corpus") return record ? q.at("corpus").get<std::string>() : std::string();
+        if (f == "--kld-ref") return record ? std::string() : q.at("reference").get<std::string>();
+        if (f == "--kld-out") return record ? std::string() : q.at("output").get<std::string>();
+        return arg_after(argc, argv, flag);
+    };
+    const std::string record_dir = kld_arg("--kld-record");
     if (!record_dir.empty()) {
-        const std::string corpus = arg_after(argc, argv, "--kld-corpus");
+        const std::string corpus = kld_arg("--kld-corpus");
         if (corpus.empty() || !std::filesystem::path(record_dir).is_absolute() ||
             !std::filesystem::path(corpus).is_absolute() || !std::filesystem::is_regular_file(corpus) ||
-            !arg_after(argc, argv, "--kld-ref").empty() || !arg_after(argc, argv, "--kld-out").empty() ||
+            !kld_arg("--kld-ref").empty() || !kld_arg("--kld-out").empty() ||
             !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
             return 9;
         std::ofstream(std::filesystem::path(record_dir) / "kld.json") << json{{"positions", 1}}.dump() << '\n';
         return 0;
     }
-    const std::string reference = arg_after(argc, argv, "--kld-ref");
+    const std::string reference = kld_arg("--kld-ref");
     if (!reference.empty()) {
-        const std::string output = arg_after(argc, argv, "--kld-out");
+        const std::string output = kld_arg("--kld-out");
         std::ifstream metadata(std::filesystem::path(reference) / "kld.json");
         const auto fixture = json::parse(metadata, nullptr, false);
         if (output.empty() || !fixture.is_object() ||
@@ -526,6 +598,7 @@ int main(int argc, char** argv) {
     const auto healthy_at = up + std::chrono::milliseconds(m.value("health_delay_ms", 0));
     const long die_after = m.value("die_after_ms", -1L);
     const std::string answer = m.value("answer", std::string("Paris."));
+    const std::string served_model = m.value("served_model", std::string("qwen27b"));
     while (!g_stop) {
         if (die_after >= 0 && Clock::now() - up > std::chrono::milliseconds(die_after)) return 7;
         pollfd p{ls, POLLIN, 0};
@@ -550,7 +623,16 @@ int main(int argc, char** argv) {
         }
         if (req.rfind("GET /health", 0) == 0) {
             reply(fd, Clock::now() >= healthy_at ? 200 : 503, "{}");
+        } else if (req.rfind("GET /v1/models", 0) == 0) {
+            reply(fd, 200, json({{"object", "list"}, {"data", json::array({{{"id", served_model}}})}}).dump());
         } else if (req.rfind("POST /v1/completions", 0) == 0) {
+            // Like the native front: only the model the file names (and its aliases, none here) is served.
+            const size_t body_at = req.find("\r\n\r\n");
+            const json asked = json::parse(body_at == std::string::npos ? std::string() : req.substr(body_at + 4), nullptr, false);
+            if (asked.is_object() && asked.value("model", std::string()) != served_model) {
+                reply(fd, 404, json({{"error", {{"message", "no model '" + asked.value("model", std::string()) +
+                                                      "' is served here (serving: " + served_model + ")"}}}}).dump());
+            } else
             reply(fd, 200, json({{"choices", json::array({{{"text", answer}}})}}).dump());
         } else {
             reply(fd, 404, "{}");

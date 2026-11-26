@@ -122,8 +122,9 @@ t1=$(date +%s)
 port=$(grep -o '"port": *[0-9]*' "$o/status.json" 2>/dev/null | head -1 | grep -o '[0-9]*$')
 canary=""
 if [ "$state" = running ] && [ -n "$port" ]; then
+  model=$(curl -s -m 30 "http://127.0.0.1:$port/v1/models" | grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4)
   canary=$(curl -s -m 180 "http://127.0.0.1:$port/v1/completions" -H 'content-type: application/json' \
-    -d '{"model":"default","prompt":"The capital of France is","max_tokens":8,"temperature":0}' \
+    -d '{"model":"'"$model"'","prompt":"The capital of France is","max_tokens":8,"temperature":0}' \
     | grep -o '"text":"[^"]*"' | head -1)
 fi
 "$BS" stop --run-dir "$o/run" >"$o/stop.log" 2>&1; stop_rc=$?

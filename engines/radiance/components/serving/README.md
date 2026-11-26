@@ -35,16 +35,23 @@ bc-serve start CONFIG --native-config fleet.yaml --model-root MODEL_DIR --run-di
 For an exact replay, use `bc-serve start --manifest MANIFEST --run-dir RUN_DIR`.
 It reads the YAML bytes and resolution root from the admitted manifest.
 
-## RSC02 managed native entry (rad0070, next to the manifest entry until the owner switches)
+## RSC02 managed native entry (rad0070): how the owner starts every engine
 
 The owner starts the stock `radiance --config FILE` and adds `--bc-admission-fd FD`: one sealed, strict JSON document
 (`v2/engine_admission.h`) with only what the owner derived (ordered rank BDFs, host pool/KV/reserve/checkpoint sizes, the
 rad0011 expected plan and KV floor, the typed engine/remote settings, the not-yet-typed engine switches). It is not a copy
 of any native setting. After the YAML is parsed, `bc_serving_managed_bind` applies each derived value to an absent or auto
 option, accepts an agreeing authored one and refuses a disagreement naming both; one model, loopback, no per-card headroom
-map. Fleet's chosen cards must be the admitted ranks before the Engine exists. A managed process refuses SIGHUP and
+map. Fleet's usable cards are the admitted ranks (Radiance's own filter keeps one architecture and would refuse mixed TP; the owner has restricted visibility to exactly those cards), and its chosen cards must be that order before the Engine exists. A managed process refuses SIGHUP and
 `/admin/reload` and model admin (403) and ends, failing, when its engine stops. Without the flag nothing changes. Card-free
 tests: `bc_native_managed_test` (engine build), the admission wire in `bc_serving_v3_wire_test`.
+
+The owner starts the measuring engine, the serving engine, a replayed engine and an offline KL run this way
+(`engine_inputs` in session.cpp: the YAML of the admitted manifest sealed as `--config /proc/self/fd/N`, the admission
+sealed beside it, the measuring flags and the heat/phase flags after them). The manifest stays the owner's own record
+(power, guards, replay) until RSC11; no engine reads it. A KL run's files travel in the admission (`quality`), not as
+flags. Clients that were not told a model ask `GET /v1/models` (`bigcherry.bench.served_model`); the implicit
+"default" alias is gone.
 
 ## RSC02 step 3: manifest-bound power and native runtime guards
 

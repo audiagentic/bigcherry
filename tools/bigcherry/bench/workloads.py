@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core import engines, feature_states, host_facts, measurement_producers
+from .served_model import served_model
 from ..core.context import resolve_work_root
 from . import stream_bench
 
@@ -59,7 +60,7 @@ def git_head(root: Path) -> str | None:
 
 def request(url: str, prompt: str, max_tokens: int, timeout: float = 900.0,
             *, ignore_eos: bool = True) -> tuple[float, dict]:
-    payload = {"model": "default", "prompt": prompt, "max_tokens": max_tokens,
+    payload = {"model": served_model(url), "prompt": prompt, "max_tokens": max_tokens,
                "temperature": 0, "ignore_eos": ignore_eos}
     req = urllib.request.Request(
         url.rstrip("/") + "/v1/completions",
@@ -119,7 +120,7 @@ def _stream_reps(cfg: dict, url: str, *, cold: bool) -> tuple[dict, dict]:
     count = 1 if cold else cfg["streams"]
     rep_count = cfg["reps"]
     for i in range(rep_count if cold else 1):
-        record = stream_bench.run(url, "default", [count], cfg["target_tokens"], cfg["max_tokens"],
+        record = stream_bench.run(url, served_model(url), [count], cfg["target_tokens"], cfg["max_tokens"],
                                   1 if cold else rep_count, temperature=0, timeout=900,
                                   seed=cfg["seed_first"] + i if cold else cfg["seed"],
                                   shared_prefix=False, allow_estimate=False, calibrate=True)

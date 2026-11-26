@@ -215,7 +215,7 @@ int main(int argc, char** argv) {
         using bc::serving::EngineAdmission;
         // A member added to EngineAdmission changes this size: extend the wire (engine_admission_to_json/from_json) and
         // this test's expectations before updating it.
-        static_assert(sizeof(EngineAdmission) == 296, "EngineAdmission changed: extend the wire and this test");
+        static_assert(sizeof(EngineAdmission) == 408, "EngineAdmission changed: extend the wire and this test");
         const auto serving = bc::serving::engine_admission_from_manifest(measured, false);
         check(serving.ok() && serving.value().expected && !serving.value().measuring && !serving.value().bdfs.empty(),
               "no serving admission from a measured manifest");
@@ -224,6 +224,22 @@ int main(int argc, char** argv) {
         if (back.ok() && bc::serving::engine_admission_to_json(back.value()) != wire) std::cerr << wire.dump(1) << "\n" << bc::serving::engine_admission_to_json(back.value()).dump(1) << "\n";
         if (!back.ok()) std::cerr << v3::render_human("admission", back.error());
         check(back.ok() && bc::serving::engine_admission_to_json(back.value()) == wire, "the admission wire lost or invented a member");
+        {   // a KL run: its files, no plan to admit; record and score each have one shape
+            const auto record = bc::serving::engine_admission_from_manifest(
+                measured, false, EngineAdmission::Quality{true, "/ref", "/corpus", ""});
+            check(record.ok() && !record.value().expected && record.value().quality && record.value().quality->record,
+                  "a record admission carries a plan or lost its files");
+            const Json record_wire = bc::serving::engine_admission_to_json(record.value());
+            const auto record_back = bc::serving::engine_admission_from_json(record_wire);
+            check(record_back.ok() && bc::serving::engine_admission_to_json(record_back.value()) == record_wire,
+                  "the quality wire lost a member");
+            Json both = record_wire; both["quality"]["output"] = "/out";
+            check(!bc::serving::engine_admission_from_json(both).ok(), "a record that also names a report was accepted");
+            Json score_without_report = record_wire; score_without_report["quality"]["record"] = false;
+            check(!bc::serving::engine_admission_from_json(score_without_report).ok(), "a score without a report was accepted");
+            check(!bc::serving::engine_admission_from_manifest(unmeasured, true, EngineAdmission::Quality{true, "/r", "/c", ""}).ok(),
+                  "a measuring start took a quality run");
+        }
         const auto measuring = bc::serving::engine_admission_from_manifest(unmeasured, true);
         check(measuring.ok() && measuring.value().measuring && !measuring.value().expected, "a measuring admission carries a plan");
         const auto refused_with = [&](Json doc, Code code, const char* field) {

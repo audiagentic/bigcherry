@@ -445,7 +445,7 @@ int main(int argc, char** argv) {
 
         // A digest-correct manifest B can atomically replace the admitted manifest A pathname between the owner and
         // the strict child reader. The child must still consume A, byte for byte: the swap happens after the owner's
-        // final SHA check and before the first exec, and the engine's own --manifest argument must still read A.
+        // final SHA check and before the first exec, and the engine's own --config argument must still read A's YAML.
         Case during_exec(world, next_root());
         const fs::path swapped = during_exec.root / "swapped.json";
         const fs::path restore_a = during_exec.root / "valid-a-backup.json";
@@ -454,11 +454,13 @@ int main(int argc, char** argv) {
         during_exec.session.before_gpu_start = [stored = during_exec.stored, a = during_exec.bytes, swapped,
                                                 restore_a](const ss::EngineStart& plan) -> v2::Status {
             fs::rename(swapped, stored);
-            const std::string child_bytes = read(plan.argv.at(2));
-            const auto consumed = v2::read_manifest(child_bytes, plan.argv.at(2), v2::PlanUse::serving);
-            if (!consumed || child_bytes != a)
+            // The engine's --config argument is the sealed YAML of A, not any public path.
+            const std::string child_yaml = read(plan.argv.at(2));
+            const auto admitted_a = v2::read_manifest(a, "valid-a", v2::PlanUse::serving);
+            const auto native_a = admitted_a ? v2::native_config_view(admitted_a.value()) : std::nullopt;
+            if (plan.argv.at(1) != "--config" || !native_a || child_yaml != native_a->yaml_utf8)
                 return v2::make_error(v2::ConfigErrorCode::plan_mismatch, "test.before_gpu_start",
-                                      "strict child reader followed the swapped public manifest");
+                                      "strict child reader followed the swapped public manifest or lost the admitted YAML");
             fs::rename(restore_a, stored);
             return std::nullopt;
         };
