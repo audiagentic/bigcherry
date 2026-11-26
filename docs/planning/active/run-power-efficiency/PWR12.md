@@ -96,6 +96,10 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 helper1 VRAM pressure also passes original, 2700/0, 2700/-100 and 2700/-125: 20.5 GiB (22011707392 B), two full iterations each, memory peak 51/52/53/52 C. All controls restored. Captures 20261126T063105Z-gpu-ai-screen-d627b78f35e5, 20261126T063130Z-gpu-ai-screen-ccff8a827ba1, 20261126T063154Z-gpu-ai-screen-501aa270956b, 20261126T063219Z-gpu-ai-screen-039b695d5d2c. Combined 8/8 independent memory arms pass; not simultaneous resident compute or native qualification.
 
+2026-11-26 helper0 short burst pressure: BF16 768-square batch32, 15 s each of 1/2/10/100 ms gaps, 60 s total, 80 C ceilings. Observed reference/2700-0/-100/-125 pass all 16 cases; 114208/123456/124544/124128 verified GEMMs and estimated J/1000 29.560/29.451/25.486/25.019. All candidate restores exact, all four snapshots match. Captures 20261126T063250Z-gpu-ai-screen-d5fbbd4a6058, 20261126T063352Z-gpu-ai-screen-d350b07e19af, 20261126T063454Z-gpu-ai-screen-988460896b7b, 20261126T063556Z-gpu-ai-screen-55c7d16d7b54. No aggregate rate regression vs matched 2700/0 control; health incomplete. Separate helper1 burst queued and 1024 hot repeat queued.
+
+2026-11-26 helper1 same 60 s burst diagnostic: reference/2700-0/-100/-125 all 16 cases pass, 125024/123232/120640/123616 verified GEMMs, J/1000 31.585/29.387/25.486/24.629. Exact candidate restores and all four snapshots equal. Captures 20261126T063659Z-gpu-ai-screen-6377d90f4272, 20261126T063801Z-gpu-ai-screen-7d931ba66e88, 20261126T063903Z-gpu-ai-screen-21b84208bd3b, 20261126T064005Z-gpu-ai-screen-94c387411526. Both cards combined 32/32 cases, 978848 verified GEMMs. -125 no aggregate rate regression vs matched 2700/0 on either card, -100 about 2% lower on helper1. Health incomplete. Shortened pressure diagnostic, not full operational burst duration.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -120,3 +124,5 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T06:21:17.933628+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:31:46.650763+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:33:12.654600+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:37:49.897111+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:41:44.624784+00:00 (updated-by): Updated: section:notes

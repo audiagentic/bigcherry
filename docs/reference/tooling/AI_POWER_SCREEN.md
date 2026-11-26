@@ -1197,3 +1197,35 @@ matrix workload implied.
 | helper1 | 2700/0 | 23.69 | 52 | 20261126T063130Z-gpu-ai-screen-ccff8a827ba1 |
 | helper1 | 2700/-100 | 23.70 | 53 | 20261126T063154Z-gpu-ai-screen-501aa270956b |
 | helper1 | 2700/-125 | 23.70 | 52 | 20261126T063219Z-gpu-ai-screen-039b695d5d2c |
+
+
+Independent burst pressure: BF16 768 square, batch 32, 15 s per
+1/2/10/100 ms gap (60 s total per arm), 80 C ceilings. This is a
+shortened pressure diagnostic, not the full 60 s per gap operational
+recipe. Matched observed reference and 2700/0 control for each card.
+Energy is sampled native-load GPU energy, not wall power.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | J/1000 GEMMs | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---|
+| helper0 | observed | 114208 | 60.117 | 3376.014 | 29.56 | 60 | 20261126T063250Z-gpu-ai-screen-d5fbbd4a6058 |
+| helper0 | 2700/0 | 123456 | 60.146 | 3635.891 | 29.451 | 57 | 20261126T063352Z-gpu-ai-screen-d350b07e19af |
+| helper0 | 2700/-100 | 124544 | 60.036 | 3174.133 | 25.486 | 60 | 20261126T063454Z-gpu-ai-screen-988460896b7b |
+| helper0 | 2700/-125 | 124128 | 60.14 | 3105.575 | 25.019 | 53 | 20261126T063556Z-gpu-ai-screen-55c7d16d7b54 |
+
+All 16 cases pass on helper0, exact restoration of three candidates.
+Aggregate throughput is not lower at either undervolt than the matched
+clock-only arm; estimated energy per GEMM falls 13.5% and 15.1%.
+
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | J/1000 GEMMs | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---|
+| helper1 | observed | 125024 | 60.056 | 3948.833 | 31.585 | 64 | 20261126T063659Z-gpu-ai-screen-6377d90f4272 |
+| helper1 | 2700/0 | 123232 | 60.14 | 3621.457 | 29.387 | 60 | 20261126T063801Z-gpu-ai-screen-7d931ba66e88 |
+| helper1 | 2700/-100 | 120640 | 60.054 | 3074.649 | 25.486 | 57 | 20261126T063903Z-gpu-ai-screen-21b84208bd3b |
+| helper1 | 2700/-125 | 123616 | 60.034 | 3044.58 | 24.629 | 60 | 20261126T064005Z-gpu-ai-screen-94c387411526 |
+
+All 16 cases pass on helper1, exact restore of three candidates. Relative
+to matched 2700/0, -100 has about 2% lower aggregate rate and -125 has
+about 0.5% higher rate; energy per GEMM is 13.3% and 16.2% lower.
+Combined 32/32 cases, 978848 GEMMs. No production throughput or
+stability guarantee. All controls/identities verified after each arm.
