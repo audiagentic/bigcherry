@@ -561,7 +561,7 @@ def test_probe_changed_during_handshake_refuses(tmp_path, mock_native_protocol):
             a.screen(ns)
     snapshot.assert_not_called()
 
-@pytest.mark.parametrize("dtype", list(a.INSTRUCTION_ALGORITHMS))
+@pytest.mark.parametrize("dtype", [d for d in a.INSTRUCTION_ALGORITHMS if d not in a.PRECISION_DTYPES])
 def test_instruction_case_strict_counts(dtype):
     n, iterations = 32, 8
     lanes = n*a.INSTRUCTION_BLOCK
@@ -751,3 +751,37 @@ def test_driver_health_fault_class_without_raw_log():
     assert obs["status"]=="fault_observed"
     assert obs["fault_classes"]=={"reset":1}
     assert "private" not in str(obs)
+
+@pytest.mark.parametrize("dtype",a.PRECISION_DTYPES)
+def test_precision_observation_is_scoped_and_complete(dtype):
+    n,iterations=64,16
+    lanes=n*a.INSTRUCTION_BLOCK
+    words=8 if dtype in a.WMMA_CASES else 4
+    allocated=lanes*(1+words)*4+512
+    payload=case(0)["native"] | {
+        "dtype":dtype,"n":n,"provider":"hip-native","algorithm":dtype,
+        "status":"precision_observed","iterations":iterations,
+        "block_size":256,"wave_size":32,"host_checks":iterations,
+        "checked_lanes":lanes*iterations,"host_elements_checked":lanes*iterations*words,
+        "guard_checks":iterations*2,"input_checks":2,"allocated_bytes":allocated,
+        "free_before_bytes":allocated+512*2**20,"free_after_bytes":512*2**20,
+        "precision_epochs":8,"precision_fingerprints":[f"{i:064x}" for i in range(8)],
+        "precision_max_abs_error":2**-23,"precision_different_words":3,
+    }
+    def validate(value,arch="gfx1100"):
+        a.validate_native(value,BDF,arch,dtype,n,"hip-native",1,2,512)
+    validate(payload)
+    for bad in ({"status":"pass"},{"precision_epochs":8.0},{"precision_different_words":0},
+                {"precision_max_abs_error":0.01},{"precision_max_abs_error":float("nan")},
+                {"precision_fingerprints":["f"*64]*8},{"precision_fingerprints":[{}]*8},
+                {"precision_fingerprints":["f"*64]},{"iterations":15}):
+        with pytest.raises(a.ScreenError):
+            validate(payload | bad)
+    with pytest.raises(a.ScreenError):
+        validate(payload | {"arch":"gfx1201"},"gfx1201")
+
+
+def test_strict_case_never_accepts_precision_metadata():
+    with pytest.raises(a.ScreenError,match="unexpected precision"):
+        a.validate_native(case(0)["native"] | {"precision_epochs":8},BDF,"gfx1100","fp16",768,
+                          "hipblaslt",1,2,512)

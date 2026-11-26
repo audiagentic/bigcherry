@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_043656_allow-only-reproduced-rdna3-pr_4198",
+  "files": [
+    "config/gpu-ai-qualification.toml",
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/hardware/ai_qualification.py",
+    "tools/bigcherry/cli/ai_qualification_cmds.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "docs/design/gpu-qualification-code-guide.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Scope gfx1100 signed dot2 and FP16/BF16 WMMA precision exceptions to explicitly reviewed, exact repeated same-card fingerprints with unchanged controls; retain strict other oracles. Add exact bounded-corpus workaround experiments and target-specific hot workload selection.",
+  "timestamp-utc": "2026-11-26T04:36:56.726995Z",
+  "user-summary-candidate": "Allow only reproduced RDNA3 precision signatures while retaining strict GPU checks and documenting exact workaround experiments."
+}

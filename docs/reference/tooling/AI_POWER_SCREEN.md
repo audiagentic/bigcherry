@@ -38,7 +38,7 @@ test -n "${ROCM_PATH:?select the installed ROCm SDK}"
 mkdir -p "$BC_WORK_ROOT/ai-power-screen"
 nice -n 19 "$ROCM_PATH/bin/hipcc" -O2 -std=c++17 -Wall -Wextra \
     tools/bigcherry/hardware/ai_probe.cpp \
-    -L"$ROCM_PATH/lib" -Wl,-rpath,"$ROCM_PATH/lib" -lhipblaslt -lrocblas \
+    -L"$ROCM_PATH/lib" -Wl,-rpath,"$ROCM_PATH/lib" -lhipblaslt -lrocblas -lcrypto \
     -o "$BC_WORK_ROOT/ai-power-screen/ai-probe"
 "$BC_WORK_ROOT/ai-power-screen/ai-probe" --self-test
 ```
@@ -257,8 +257,8 @@ expected architecture before allocation. It selects a hipBLASLt heuristic or exp
 public default GEMM dispatch with atomics disabled. It records provider and
 library versions; hipBLASLt also records opaque algorithm bytes, while
 rocBLAS honestly records default dispatch, not an exact internal solution ID. It
-checks every active HIP/library operation. Native protocol 6 / screen
-observations schema 7 retains the three-corpus check and rotates three deterministic operand corpora: dense
+checks every active HIP/library operation. Native protocol 7 / screen
+observations schema 8 retains the three-corpus check and rotates three deterministic operand corpora: dense
 signed, sparse signed, and signed-diagonal A times dense B. Floating
 inputs are exactly representable 0 or +/-1/16, integer inputs 0 or +/-1.
 The CPU integer dot sum is exact over the supported dimension range. The
@@ -276,7 +276,7 @@ compared elements, are required in the receipt. All three corpora must
 execute, plus the elapsed duration. Memory retains batch 1 and at least
 two full passes. Positive pause is between batches. This is a stronger
 correctness workload, not a comparable throughput benchmark for old probes.
-Old schema-2 through schema-6 receipts are preserved as historical diagnostics; the
+Old schema-2 through schema-7 receipts are preserved as historical diagnostics; the
 protocol handshake refuses old native binaries before any transaction,
 and the new validator refuses an old reference.
 
@@ -809,3 +809,113 @@ The command retains a separate managed peer capture for the explicit pair.
 Unavailable peer access is a nonpass, never a staged-copy pass. Both
 endpoints must retain their original observed controls. This is separate
 from native collective and production serving qualification.
+
+### PWR13 scoped RDNA3 precision observations (2026-11-26)
+
+The original signed dot2, FP16 WMMA and BF16 WMMA cases stay strict.
+Recipe schema 2 explicitly maps only those three signed groups to
+gfx1100-only reference cases. No other architecture, instruction,
+positive corpus, integer or matrix-library case accepts an exception.
+Native protocol 7 and observation schema 8 bind the new semantics;
+the probe uses system libcrypto SHA-256 on the host.
+
+Reference cases require observe-current, verified zero voltage offset,
+unchanged controls and at most 64 workgroups. Eight deterministic
+epochs use the same input/seed generator as the strict test. Every
+output is checked against the independent exact CPU lattice; every
+repeat must equal the entire first output byte-for-byte (floating zero
+is canonicalized by the original instruction test). Record each
+epoch's SHA-256, total differing words, and maximum absolute error.
+The validator additionally requires a conservative independent
+FP32 arithmetic budget: gamma(s) = s*u/(1-s*u), u=2^-23 (one full
+relative binary32 ULP), s=9 and max sum-of-magnitudes=5 for the
+four-product dot2 chain including C; s=33 and sum bound 79 for a
+16-product tile plus C. This is a deliberately conservative
+corpus-screening policy, not an AMD precision guarantee or a
+standalone pass tolerance. Neither a rounded CPU match nor a
+small absolute error alone qualifies the output.
+
+Every native observation remains precision_observed (exit 2),
+including successful repeated epochs. To allow the known precision
+signature, run the same group under separate leases at least three
+times under one managed plan. After review, supply the two prior
+independent, harvested observations with repeated
+`--precision-reference RUN_ID` options to `gpu-ai-qualify report`,
+and the later observation with `--result RUN_ID`. The report
+revalidates scope, timestamps, native counts, exact recipe/input and
+device identity, unchanged observed snapshot, and equality of every
+epoch fingerprint and maximum CPU error across references and result
+(including sustained/burst equality). A different output, missing
+reference, changed runtime/plan, or unrelated nonpass cannot be allowed.
+The aggregate identifies allowed_precision separately from pass;
+no underlying receipt is rewritten. The explicit reference IDs are
+review input, not auto-trained tolerances. They may be reused for
+later runs of that same observed plan while its inputs/state match.
+Do not apply this to a new binary or voltage/clock candidate; actual
+factory-confirmed reference reuse across changed controls remains
+gated by the power owner.
+
+Source: AMD RDNA3 Shader Instruction Set Architecture, section 7.9
+(https://www.amd.com/content/dam/amd/en/documents/radeon-tech-docs/instruction-set-architectures/rdna3-shader-instruction-set-architecture-feb-2023_0.pdf):
+WMMA internally uses dot instructions and specifies rounding mode but
+does not provide a bit-exact internal reduction model. Independent
+7900 XT research corroborates cancellation residues and order
+sensitivity (https://github.com/j0nsh1n/rdna3-fp8, matrix arithmetic
+measurements). Neither is a general numerical waiver.
+
+Observed evidence: both cards agree on all eight full-output fingerprints
+for each of the three instruction cases, including both gap patterns.
+18 independent captures (36 completed cases), 10244849664 compared words
+including repeated observations; maximum absolute errors below:
+
+| Case | Max absolute error | Complete same-card reference/repeat sets |
+| --- | ---: | --- |
+| dot2-rdna3-reference | 1.1920928955078125e-7 | helper0, helper1 |
+| wmma-fp16-rdna3-reference | 2.384185791015625e-6 | helper0, helper1 |
+| wmma-bf16-rdna3-reference | 2.384185791015625e-6 | helper0, helper1 |
+
+Managed plans: 20261126T042742Z-gpu-ai-qualification-plan-337ad0bf6aee,
+20261126T042743Z-gpu-ai-qualification-plan-89f54ae31455.
+Both complete independent reports pass with precisely the three allowed
+precision groups and all remaining screen groups strict:
+20261126T043305Z-gpu-ai-qualification-report-8d680c97f580 and
+20261126T043753Z-gpu-ai-qualification-report-001a1473983b.
+Without explicit references, their respective reports
+20261126T043304Z-gpu-ai-qualification-report-fb81ac154baf and
+20261126T043752Z-gpu-ai-qualification-report-26bd346a7b28 refuse all
+three signed groups. The initially refused helper1 BF16 repeat was
+resumed after the GPU lease became available; the two additional
+captures are 20261126T043540Z-gpu-ai-screen-f0dcc1b07107 and
+20261126T043550Z-gpu-ai-screen-b4710ae77cf4. All observations retained
+original controls. Production and native qualification remain separate.
+
+### Exact workaround experiments
+
+The strict dot2-exact case uses FP32 vector multiply/add with the same
+signed dyadic inputs. The two wmma-*-bias cases transform the bounded
+integer-valued signed corpus into nonnegative inputs (A+1, B+1), use
+a native WMMA with zero accumulator, then correct with the row/column
+sums and original C. Algebra: AB = (A+1)(B+1) - sum(A+1) -
+sum(B+1) + K, at each output coordinate. Every result must equal the
+original exact signed CPU oracle, not the recorded RDNA3 deviation.
+
+Both gfx1100 cards passed all 12 sustained/burst cases:
+20261126T042608Z-gpu-ai-screen-2dac27928eed and
+20261126T042630Z-gpu-ai-screen-07404c152d83, unchanged controls.
+Disassembly of the final code object confirms vector FP32 FMA
+for dot2-exact and actual FP16/BF16 WMMA plus FP32 correction for the
+bias cases on gfx1100/gfx1201. gfx1030 has no WMMA. Workaround
+success applies only to this exact bounded corpus. General arbitrary
+floating inputs need sign-separated positive/negative products,
+range/exponent analysis, quality and performance qualification; four
+nonnegative WMMAs may be much more expensive. Prefer existing exact
+integer WMMA where representation permits. Do not change native
+serving kernels solely on this diagnostic.
+
+The operational recipe selects FP32 on gfx1201 (previous effective
+heat-producing workload) and BF16 on gfx1100/gfx1030. It retains
+the 60 C required final window and 80 C example ceilings, not a
+weakened thermal gate. Peer access and kernel health are still
+unavailable: the unprivileged kernel journal query returned no
+JSON kernel records, so it cannot replace the inaccessible kmsg
+cursor. No permissions, clocks, voltage or caps were changed.

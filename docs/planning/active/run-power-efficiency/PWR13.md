@@ -69,6 +69,10 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26: Real telemetry validation on engine R9700: transition smoke 20261126T040058Z-gpu-ai-screen-8dafa7337ac5 passed all five 0/1/2/10/100 ms load gaps, complete native-load energy estimates for each; observed hotspot 34-39 C, unchanged controls. 30+60 s sustained hot trial 20261126T040128Z-gpu-ai-screen-ee71f5be59e7 inconclusive (37-50 C, required >=60 C final window not reached); energy estimate 7202.76 J across native interval; unchanged controls, health unavailable. Both harvested. PWR10 owner holds GPU lease for first native min-cap apply; no duplicate control mutation, no profile promotion. PWR13 remains open for peer-capable data path, full hot/transition cohort, verified health and integration with native family/production owners.
 
+2026-11-26: Scoped RDNA3 exceptions implemented (protocol 7/screen schema 8/recipe schema 2). Only gfx1100 signed dot2 and FP16/BF16 WMMA reference variants, zero offset and unchanged observed controls, exact CPU lattice and independent conservative arithmetic bound, eight SHA-256 epoch signatures, two earlier same-card verified captures and later exact match. Original receipts remain precision_observed/nonpass; all other checks strict. Both XTX signatures match across all three cases and sustained/burst patterns; 18 captures/36 cases, 10,244,849,664 compared words, max absolute dot2 1.1920928955078125e-7, WMMA 2.384185791015625e-6. Both cards passed all 12 exact workaround cases (FP32 FMA and bounded operand shift with correction, no serving change). Helper0 complete independent pass 20261126T043305Z-gpu-ai-qualification-report-8d680c97f580; helper1 reference cohort complete, remaining strict groups in progress. 249 offline tests pass, 1 skipped. Production/native qualification, hot/transition retest, peer-capable allocation and readable driver-health evidence remain gates. gfx1201 hot recipe selects FP32 based on previous effective load; thresholds unchanged. No power writes or blanket tolerances. PWR13 remains in_progress.
+
+2026-11-26: Helper1 resumed and completed remaining strict matrix/direct/nonnegative groups. Both complete independent reports now pass with exactly the three precision allowances: 20261126T043305Z-gpu-ai-qualification-report-8d680c97f580 and 20261126T043753Z-gpu-ai-qualification-report-001a1473983b. Reports without references refuse all three signed groups. All other completion gates above remain outstanding.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -82,3 +86,5 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T03:56:02.771051+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T04:01:14.438957+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T04:03:55.901123+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T04:37:34.147358+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T04:38:17.313462+00:00 (updated-by): Updated: section:notes

@@ -10,6 +10,7 @@ import argparse
 import errno
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -27,8 +28,16 @@ INSTRUCTION_ALGORITHMS = {"alu": "integer-wrap-v1", "wave": "wave-exchange-v1",
                           "wmma-fp16-pos": "wmma-fp16-nonnegative-v1",
                           "wmma-bf16-pos": "wmma-bf16-nonnegative-v1",
                           "dot2-pos": "half-dot2-nonnegative-v1",
-                          "wmma-iu8": "wmma-iu8-mixed-tile-v1"}
-WMMA_CASES = ("wmma-fp16", "wmma-bf16", "wmma-fp16-pos", "wmma-bf16-pos", "wmma-iu8")
+                          "wmma-iu8": "wmma-iu8-mixed-tile-v1",
+                          "dot2-exact": "half-dot2-vector-fma-v1",
+                          "wmma-fp16-bias": "wmma-fp16-biased-corpus-v1",
+                          "wmma-bf16-bias": "wmma-bf16-biased-corpus-v1"}
+PRECISION_CASES = {d: d+"-rdna3-reference" for d in ("dot2", "wmma-fp16", "wmma-bf16")}
+PRECISION_DTYPES = tuple(PRECISION_CASES.values())
+INSTRUCTION_ALGORITHMS.update({d:d for d in PRECISION_DTYPES})
+PRECISION_EPOCHS = 8
+WMMA_CASES = ("wmma-fp16", "wmma-bf16", "wmma-fp16-pos", "wmma-bf16-pos", "wmma-iu8", "wmma-fp16-bias", "wmma-bf16-bias",
+              PRECISION_CASES["wmma-fp16"], PRECISION_CASES["wmma-bf16"])
 WMMA_ARCHES = ("gfx1100", "gfx1201")
 MATRIX_DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8")
 DTYPES = (*MATRIX_DTYPES, "memory", *INSTRUCTION_ALGORITHMS)
@@ -36,8 +45,8 @@ INSTRUCTION_BLOCK = 256
 INSTRUCTION_WORDS = 4
 PROVIDERS = ("hipblaslt", "rocblas")
 POLL_SECONDS = 0.25
-NATIVE_PROTOCOL = 6
-SCREEN_SCHEMA = 7
+NATIVE_PROTOCOL = 7
+SCREEN_SCHEMA = 8
 CORPUS_COUNT = 3
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 ARCH = re.compile(r"^gfx[0-9a-f]+$")
@@ -412,7 +421,7 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
         if result["hot_window"] is None:
             return result | {"status": "inconclusive", "diagnostic": "hot window not reached/observed"}
     result["hot_window_verified"] = min_hotspot_c is not None
-    return result | {"status": "pass"}
+    return result | {"status": payload["status"]}
 
 
 
@@ -449,7 +458,7 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                                                       {"rocblas": "rocblas-default-no-atomics",
                                                        "hip-memory": "address-pattern-v1"}.get(provider))))
     if (not valid_algorithm or type(payload.get("protocol_version")) is not int or
-            payload["protocol_version"] != NATIVE_PROTOCOL or payload.get("status") != "pass" or
+            payload["protocol_version"] != NATIVE_PROTOCOL or payload.get("status") != ("precision_observed" if dtype in PRECISION_DTYPES else "pass") or
             payload.get("bdf") != bdf or payload.get("arch") != arch or
             payload.get("dtype") != dtype or payload.get("n") != n or
             payload.get("provider") != provider or type(payload.get("batch")) is not int or payload.get("batch") != batch or
@@ -464,6 +473,29 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
             (launch_ns is not None and not launch_ns <= payload["start_ns"] < payload["end_ns"] <= time.monotonic_ns()) or
             payload["end_ns"] - payload["start_ns"] < duration * 1e9):
         raise ScreenError("probe result identity or coverage mismatch")
+    if dtype in PRECISION_DTYPES:
+        # An independent, conservative FP32 error budget for this fixed dyadic
+        # corpus, NOT an architectural accuracy guarantee or a pass tolerance.
+        # Dot2 uses <=4 products of magnitude <=1, plus C<=1. WMMA has
+        # <=16 products <=4, plus |C|<=15. Budget one full relative FP32 ULP
+        # per product/add (and final add); accept only frozen exact fingerprints.
+        steps, scale = (9, 5) if dtype==PRECISION_CASES["dot2"] else (33, 79)
+        u = 2**-23
+        bound = steps*u/(1-steps*u)*scale
+        fp = payload.get("precision_fingerprints")
+        diff = payload.get("precision_different_words")
+        err = payload.get("precision_max_abs_error")
+        if (arch!="gfx1100" or not 16<=n<=64 or type(payload.get("precision_epochs")) is not int
+                or payload["precision_epochs"]!=PRECISION_EPOCHS
+                or payload["iterations"]<2*PRECISION_EPOCHS or not isinstance(fp,list)
+                or len(fp)!=PRECISION_EPOCHS
+                or any(not isinstance(v,str) or not re.fullmatch("[0-9a-f]{64}",v) for v in fp)
+                or len(set(fp))!=PRECISION_EPOCHS
+                or type(diff) is not int or not 0<diff<=payload.get("host_elements_checked",0)
+                or type(err) not in (int,float) or not math.isfinite(err) or not 0<err<=bound):
+            raise ScreenError("RDNA3 reference coverage/error budget mismatch")
+    elif any(k.startswith("precision_") for k in payload):
+        raise ScreenError("unexpected precision exception in strict case")
     if dtype in INSTRUCTION_ALGORITHMS:
         lanes = n * INSTRUCTION_BLOCK
         iterations = payload["iterations"]
@@ -599,6 +631,11 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
             raise ScreenError("stock arm requires exactly one of --stock-confirmed or --observe-current and no reference")
     elif not settings or not args.reference or args.stock_confirmed or (args.observe_current and not args.apply_profile):
         raise ScreenError("candidate requires matching nonempty profile rules and --reference")
+    if any(d in PRECISION_DTYPES for d in args.dtype):
+        if args.arch!="gfx1100" or not args.observe_current or args.profile!="stock" or args.apply_profile:
+            raise ScreenError("RDNA3 reference observations require observe-only gfx1100 stock selection")
+        if not all(d in PRECISION_DTYPES for d in args.dtype):
+            raise ScreenError("isolate RDNA3 reference observations from strict cases")
     if args.apply_profile:
         if any(dtype in INSTRUCTION_ALGORITHMS for dtype in args.dtype) or shape is not None or args.resident_mib:
             raise ScreenError("new instruction/geometry/residency cases are observe-only pending owner recovery hardening")
@@ -630,6 +667,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                "max_memory_c": args.max_memory_c, "observe_current": args.observe_current,
                "stock_confirmed": args.stock_confirmed, "apply_profile": args.apply_profile}
     before, hw = snapshot(args.bdf)
+    if any(d in PRECISION_DTYPES for d in args.dtype) and before["controls"].get("vddgfx_offset_mv") != 0:
+        raise ScreenError("RDNA3 reference observation requires readback of zero voltage offset")
     if getattr(args,"qualification",None):
         if (args.apply_profile or args.profile!="stock" or not args.observe_current or
                 before!=args.qualification_expected or
@@ -744,7 +783,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                                 geometry=geometry if dtype in MATRIX_DTYPES else None,
                             resident_mib=args.resident_mib if dtype in MATRIX_DTYPES else 0)
                 result["cases"].append(case)
-                if case["status"] != "pass":
+                if case["status"] != ("precision_observed" if dtype in PRECISION_DTYPES else "pass"):
                     raise ScreenError(f"{dtype}/{pause} ms: {case['status']}", case["status"])
         if reference is not None:
             if [case_identity(c) for c in result["cases"]] != [case_identity(c) for c in reference["cases"]]:
@@ -753,7 +792,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
             raise ScreenError("native probe changed during screen")
         if cancelled() or not lease.held_by_this_process():
             raise ScreenError("interrupted or lease lost after probe", "cancelled")
-        result["status"] = "pass"
+        result["status"] = "precision_observed" if any(d in PRECISION_DTYPES for d in args.dtype) else "pass"
     except (ScreenError, PowerRefused, PowerFailed, OSError, ValueError, KeyError, TypeError) as exc:
         result.update(status=getattr(exc, "status", "inconclusive"), reason=str(exc))
     finally:
@@ -762,11 +801,11 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
             result["after"] = after
             if before != after:
                 result["readback_error"] = "device controls/identity changed during screen"
-                if result["status"] == "pass":
+                if result["status"] in ("pass","precision_observed"):
                     result.update(status="inconclusive", reason=result["readback_error"])
         except Exception as exc:
             result["readback_error"] = f"final readback failed: {exc}"
-            if result["status"] == "pass":
+            if result["status"] in ("pass","precision_observed"):
                 result.update(status="inconclusive", reason=result["readback_error"])
         if tx is not None:
             receipt = result["transaction"]
