@@ -53,7 +53,10 @@ No second profile store/writer or receipt; owner promotion only, release gates u
 
 Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.
 
+2026-11-26: Existing gpu-ai-qualify plan --native-plan imports requested/affected scope, row gaps, compatible reference and digest identity; verified managed capture 20261126T050013Z-gpu-ai-qualification-plan-0cfc3ad6a040 remains incomplete and not qualified. No new receipt, writer or profile store. Remaining: actual per-rank execution traces, matched native replay receipts, exact evidence reuse/invalidation and PWR08/PWR10/PWR02 owner gates; no control changes.
+
 ## Change Log
 
 - 2026-11-26T01:36:38.139000+00:00 (created-by): Created by agent
 - 2026-11-26T01:38:03.286329+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-26T05:07:11.373464+00:00 (updated-by): Updated: section:notes

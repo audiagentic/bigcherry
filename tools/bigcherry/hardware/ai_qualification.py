@@ -120,28 +120,68 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
 
 
 def native_scope(doc: dict | None, arch: str) -> dict:
-    """Consume the RCS27 planned routes; never run embedded build/measure args."""
+    """Retain the native planner's scope, not a second kernel taxonomy or a pass."""
     if doc is None:
         return {"status": "not_supplied", "qualification": "not_run"}
-    _need(isinstance(doc, dict) and doc.get("arch")==arch and doc.get("outcome")=="diagnostic"
+    def names(value):
+        return isinstance(value,list) and all(isinstance(v,str) and bool(v) for v in value) and len(set(value))==len(value)
+    _need(isinstance(doc,dict) and doc.get("arch")==arch and doc.get("outcome")=="diagnostic"
           and doc.get("qualification")=="not_run" and isinstance(doc.get("release"),str)
           and bool(doc["release"]) and isinstance(doc.get("runs"),list)
-          and isinstance(doc.get("selected_units"),list) and bool(doc["selected_units"])
-          and isinstance(doc.get("uncovered_units"),list), "invalid native qualification plan")
-    names=set()
+          and names(doc.get("selected_units")) and names(doc.get("uncovered_units"))
+          and set(doc["uncovered_units"])<=set(doc["selected_units"]), "invalid native qualification plan")
+    requested=doc.get("requested_rows",[])
+    _need(isinstance(requested,list) and (bool(doc["selected_units"]) or bool(requested)),
+          "empty native qualification selection")
     routes=[]
+    route_keys=set()
     for item in doc["runs"]:
         _need(isinstance(item,dict) and item.get("kind") in ("family","overlay")
               and isinstance(item.get("name"),str) and bool(item["name"])
-              and isinstance(item.get("units"),list) and bool(item["units"])
-              and isinstance(item.get("selftest_case"),str) and bool(item["selftest_case"]),
-              "invalid native route")
+              and names(item.get("units")) and bool(item["units"])
+              and bool(set(item["units"])&set(doc["selected_units"]))
+              and isinstance(item.get("selftest_case"),str) and bool(item["selftest_case"])
+              and names(item.get("other_rows_need_evidence",[]))
+              and type(item.get("reference_required",False)) is bool, "invalid native route")
         key=(item["kind"],item["name"])
-        _need(key not in names, "duplicate native route")
-        names.add(key)
-        routes.append({k:item[k] for k in ("kind","name","units","selftest_case",
-                        "other_rows_need_evidence","reference_required") if k in item})
-    return {"status": "planned", "release": doc["release"],
-            "inventory_kind": doc.get("inventory_kind"), "selected_units": doc["selected_units"],
-            "uncovered_units": doc["uncovered_units"], "routes": routes,
-            "qualification": "not_run"}
+        _need(key not in route_keys, "duplicate native route")
+        route_keys.add(key)
+        routes.append({k:item[k] for k in ("kind","name","units","selftest_case","support_units",
+                        "base_rows","overlay_rows","other_rows_need_evidence","reference_required") if k in item})
+    covered={u for r in routes for u in r["units"]}
+    _need(set(doc["selected_units"])-covered<=set(doc["uncovered_units"]),
+          "native plan hides uncovered units")
+    row_names=set()
+    for row in requested:
+        _need(isinstance(row,dict) and isinstance(row.get("row"),str) and bool(row["row"])
+              and row["row"] not in row_names and row.get("status") in ("configured_route","uncovered")
+              and isinstance(row.get("routes"),list),"invalid native row scope")
+        row_names.add(row["row"])
+        if row["status"]=="configured_route":
+            _need(len(row["routes"])==1 and (row["routes"][0]["kind"],row["routes"][0]["name"]) in route_keys,
+                  "requested row lacks planned route")
+    digests={}
+    for key in ("reference_sha256","family_policy_sha256"):
+        if key in doc:
+            _need(isinstance(doc[key],str) and re.fullmatch(r"[0-9a-f]{64}",doc[key]),"invalid native input digest")
+            digests[key]=doc[key]
+    gaps=[]
+    graph=doc.get("model_graph")
+    if graph is not None:
+        _need(isinstance(graph,dict) and isinstance(graph.get("sha256"),str)
+              and re.fullmatch(r"[0-9a-f]{64}",graph["sha256"])
+              and isinstance(graph.get("declared"),list) and bool(graph["declared"])
+              and all(isinstance(r,dict) and r.get("row") in row_names for r in graph["declared"]),
+              "invalid model graph scope")
+        gaps.append("model graph declaration is not execution evidence")
+    if doc["uncovered_units"]: gaps.append("uncovered units")
+    if any(r["status"]=="uncovered" for r in requested): gaps.append("uncovered requested rows")
+    if any(r.get("other_rows_need_evidence") for r in routes): gaps.append("additional runtime rows need evidence")
+    if any(r.get("reference_required") for r in routes): gaps.append("compatible base reference missing")
+    if doc.get("inventory_kind")!="matching_libr3_membership": gaps.append("actual configured inventory not verified")
+    if len(digests)!=2: gaps.append("native reference/policy identity incomplete")
+    return {"status":"incomplete" if gaps else "planned","release":doc["release"],
+            "inventory_kind":doc.get("inventory_kind"),"selected_units":doc["selected_units"],
+            "uncovered_units":doc["uncovered_units"],"requested_rows":requested,
+            "affected_scope":doc.get("affected_scope"),"pin_triage":doc.get("pin_triage"),
+            "routes":routes,"gaps":gaps,"model_graph":graph,**digests,"qualification":"not_run"}

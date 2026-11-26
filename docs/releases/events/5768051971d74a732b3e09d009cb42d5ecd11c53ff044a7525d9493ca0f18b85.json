@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_050718_kernel-qualification-now-resol_4049",
+  "files": [
+    "tools/lab/radiance/unit_harness.py",
+    "tools/bigcherry/hardware/ai_qualification.py",
+    "tools/tests/lab/test_unit_harness.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "engines/radiance/components/libr3/KERNEL_GROUPS.md",
+    "docs/design/radiance-kernel-group-qualification.md"
+  ],
+  "plan-item-ids": [
+    "RCS26",
+    "RCS27",
+    "RCS28"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Extend existing kernel qualification with model graph/row and pin-affected selection, physical GPU and artifact identity checks, strict cold/warm replay, and managed native scope integration.",
+  "timestamp-utc": "2026-11-26T05:07:18.017127Z",
+  "user-summary-candidate": "Kernel qualification now resolves model-selected and affected kernel groups, retaining missing evidence and preventing unmatched device or artifact qualification."
+}
