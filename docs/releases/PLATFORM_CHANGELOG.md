@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.81.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.80.0...bc-platform-1.81.0) (2026-11-26)
+
+
+### New and changed
+
+* **platform:** add progressive slim GPU qualification ([#1674](https://github.com/audiagentic/bigcherry/issues/1674)) ([de907ef](https://github.com/audiagentic/bigcherry/commit/de907ef84ec9cb1906d62441e9709f924c9ed796))
+* **radiance:** bind native qualification scope and physical evidence ([#1670](https://github.com/audiagentic/bigcherry/issues/1670)) ([2b75a81](https://github.com/audiagentic/bigcherry/commit/2b75a81cedd11beb8e99e1f11456d0b4ec5ca035))
+* **radiance:** resolve kernel qualification from build groups ([#1644](https://github.com/audiagentic/bigcherry/issues/1644)) ([f29a806](https://github.com/audiagentic/bigcherry/commit/f29a806e86c646b88bdf3fb14ca804399e097908))
+
+
+### Fixes
+
+* **platform:** admit supervised matched resident pressure research ([#1681](https://github.com/audiagentic/bigcherry/issues/1681)) ([ca4ad08](https://github.com/audiagentic/bigcherry/commit/ca4ad0857f2e838e3e728dbdca89da2f116a83cf))
+* **platform:** fence GPU power writes and verify complete restoration ([#1676](https://github.com/audiagentic/bigcherry/issues/1676)) ([147716b](https://github.com/audiagentic/bigcherry/commit/147716ba49dcf64726bf1490389eb44dbcefb496))
+* **platform:** qualify gfx1030 hot workload geometry ([#1677](https://github.com/audiagentic/bigcherry/issues/1677)) ([1548533](https://github.com/audiagentic/bigcherry/commit/154853397aedad7c4dd61d12a910bce702df4f76))
+* **platform:** remove sustained temperature floor and record XTX pressure tests ([#1680](https://github.com/audiagentic/bigcherry/issues/1680)) ([9aa04bf](https://github.com/audiagentic/bigcherry/commit/9aa04bfe1a7877e552300c79115f8d9a13c1330f))
+* **platform:** scope RDNA3 precision exceptions to exact references ([#1665](https://github.com/audiagentic/bigcherry/issues/1665)) ([751183e](https://github.com/audiagentic/bigcherry/commit/751183e9b911641fb3c5f9cf2fe9a4253da90fac))
+* **rsc14:** a plan mismatch the host cannot hold is a room refusal (exit 4), not drift ([#1668](https://github.com/audiagentic/bigcherry/issues/1668)) ([6b53745](https://github.com/audiagentic/bigcherry/commit/6b53745fcc0ff834ef3fa31c270234d01eba81d7))
+
 ## [1.80.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.79.0...bc-platform-1.80.0) (2026-11-26)
 
 
