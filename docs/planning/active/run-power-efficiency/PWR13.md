@@ -73,6 +73,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26: Helper1 resumed and completed remaining strict matrix/direct/nonnegative groups. Both complete independent reports now pass with exactly the three precision allowances: 20261126T043305Z-gpu-ai-qualification-report-8d680c97f580 and 20261126T043753Z-gpu-ai-qualification-report-001a1473983b. Reports without references refuse all three signed groups. All other completion gates above remain outstanding.
 
+2026-11-26 follow-up: documented measured-versus-unmeasured performance status and adoption gates in AI_POWER_SCREEN.md and gpu-qualification-code-guide.md section 21. PR1665 merged (751183e9b); no serving code/dispatch changed, no comparative kernel/serving benchmark, no speed or throughput claim beyond unchanged implementation. Static gfx1100 ISA confirms packed dot versus vector FMA/packing tradeoff, and single WMMA plus correction in biased variants. Reuse RCS27/28 native family selection, exact equivalent-work resource/replay and model quality/energy/no-regression gates before any serving replacement. Operational cohort queued in named existing GPU lease queue: engine FP32 hot first, then burst and remaining cards hot/burst (recipe schema 2, protocol 7; 60 C hot floor/80 C ceilings unchanged); one bounded lease per group, plan after lease admission, harvest/report existing managed captures, stop on unexpected nonpass or altered controls. At recording time RSC14 holds lease; no new hardware outcome yet. Peer capability and readable driver-health evidence remain blocked, production/native owner gates separate. No mutation.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -88,3 +90,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T04:03:55.901123+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T04:37:34.147358+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T04:38:17.313462+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T04:45:49.998369+00:00 (updated-by): Updated: section:notes

@@ -919,3 +919,36 @@ weakened thermal gate. Peer access and kernel health are still
 unavailable: the unprivileged kernel journal query returned no
 JSON kernel records, so it cannot replace the inaccessible kmsg
 cursor. No permissions, clocks, voltage or caps were changed.
+
+### Performance and adoption decision (2026-11-26)
+
+The RDNA3 precision allowance changes the independent qualification path only;
+no Radiance serving kernel, dispatch, power control or production profile has
+changed. No serving-throughput A/B was performed, so do not claim a measured
+zero-percent throughput change. The 12 workaround passes establish correctness
+on the bounded signed corpus, not comparative kernel speed. In particular,
+launch counts from the host-verified probes include CPU oracle generation,
+readback, comparison, launch overhead and optional sleep; they cannot be used
+as native throughput or equivalent-work energy measurements.
+
+Static inspection of the ROCm 7.2.4 gfx1100 protocol-7 code object finds four
+native packed-dot instructions in the original signed dot2 case, whereas
+`dot2-exact` uses vector FP32 FMA/multiply, with less input packing in this
+synthetic probe. Each signed FP16/BF16 WMMA variant uses one native WMMA;
+the biased variant still uses one WMMA, but adds operand construction,
+row/column sums and correction arithmetic. Static instruction counts and
+instruction classes are not execution time, occupancy or serving throughput.
+Sign splitting may require four native products; compensation may not recover
+error already introduced inside a native instruction. Neither is qualified.
+
+Adoption gate: use RCS27/RCS28 existing kernel-family selection and native
+replay; identify actual signed floating WMMA/dot users from selected model
+rows (not all IQR or integer kernels). First demonstrate measurable quality
+benefit versus the shipped path, with the appropriate numerical contract;
+then compare equivalent-work kernel timing, registers/LDS/spills/occupancy,
+matched cold/warm shape replay, and real prefill/decode throughput, latency,
+quality and phase energy through the existing owner workflow. Record all
+rejected variants and results. Do not promote a slower or lower-quality
+replacement; the currently shipped fast kernels remain the default. The
+precision-reference exception does not authorize voltage changes or
+candidate qualification with changed controls.

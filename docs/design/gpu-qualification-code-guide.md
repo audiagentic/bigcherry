@@ -379,3 +379,17 @@ lack readable kernel records), native scope integration and matched
 factory-confirmed production finalists. Do not close PWR13 as full
 qualification until these gaps are resolved or explicitly scoped
 out by the owner.
+
+## 21. Performance contract for numerical alternatives
+
+The reference exception is diagnostic policy, not a serving rewrite. The
+original signed dot2/WMMA paths remain unchanged. Exact vector FMA and
+biased WMMA experiments are correctness-only results. Host-verification
+launch counts are not kernel throughput; the static gfx1100 code shows
+packing/correction tradeoffs, not measured performance. See the performance
+and adoption decision in `docs/reference/tooling/AI_POWER_SCREEN.md`.
+Use actual model-selected native families and existing replay/quality/energy
+owners for any future replacement. Require equivalent work, exact integer
+checks or independently justified floating-point contracts, resources and
+matched cold/warm timing, model quality, and no serving regression. No
+blanket architecture rewrite or automatic promotion.
