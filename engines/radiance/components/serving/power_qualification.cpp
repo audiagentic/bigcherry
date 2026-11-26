@@ -12,7 +12,8 @@ namespace fs = std::filesystem;
 constexpr std::pair<const char*, ControlId> kControls[] = {{"vddgfx_offset_mv", ControlId::voltage},
                                                            {"sclk_max_mhz", ControlId::shader},
                                                            {"mclk_max_mhz", ControlId::memory},
-                                                           {"power_cap_w", ControlId::board_cap}};
+                                                           {"power_cap_w", ControlId::board_cap},
+                                                           {"sclk_offset_mhz", ControlId::shader_offset}};
 
 Json requested(const v2::PowerSettings& s) {
     Json out = Json::object();
@@ -24,6 +25,7 @@ Json requested(const v2::PowerSettings& s) {
     put("sclk_max_mhz", s.sclk_max_mhz);
     put("mclk_max_mhz", s.mclk_max_mhz);
     put("power_cap_w", s.power_cap_w);
+    put("sclk_offset_mhz", s.sclk_offset_mhz);
     return out;
 }
 const Json* card_of(const Json& observation, const std::string& bdf) {
@@ -57,7 +59,7 @@ bool reads_back(const Json& card, const Json& want) {
     return true;
 }
 bool same_values(const Json& a, const Json& b) {
-    for (const char* key : {"vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "power_cap_uw"})
+    for (const char* key : {"vddgfx_offset_mv", "sclk_max_mhz", "mclk_max_mhz", "power_cap_uw", "sclk_offset_mhz"})
         if (a.value(key, Json()) != b.value(key, Json()))
             return false;
     return true;
@@ -88,6 +90,9 @@ bool qualifies(const Json& receipt, const std::string& bdf, const Json& want, st
     const Json* applied = card_of(seen.at("post_apply"), bdf);
     const Json* stop = card_of(seen.at("stop"), bdf);
     if (!start || !applied || !stop || identity.empty() || start->value("identity", "") != identity)
+        return false;
+    if (want.contains("sclk_offset_mhz") && (!start->contains("sclk_offset_mhz") ||
+        !start->at("sclk_offset_mhz").is_number_integer() || !stop->contains("sclk_offset_mhz")))
         return false;
     return reads_back(*applied, want) && same_values(*start, *stop);
 }

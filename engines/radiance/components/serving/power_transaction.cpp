@@ -48,15 +48,27 @@ Status original_can_restore(const SavedDevice& saved, const CardSnapshot& curren
                                                " cannot be safely restored within device range");
         return std::nullopt;
     };
+    const bool signed_shader = before.at(ControlId::shader_offset).current.has_value();
+    const bool live_signed = current.at(ControlId::shader_offset).current.has_value();
+    if (signed_shader && (before.identity.empty() || current.identity != before.identity))
+        return unsafe("power.devices", bdf + ": physical identity changed");
+    if (signed_shader != live_signed)
+        return unsafe("power.devices", bdf + ": original shader offset missing or changed control kind");
     // An OverDrive commit is coupled: SCLK and the voltage offset must both
     // be restored even when a profile requests only one of them.
     if (tuning.changes_overdrive()) {
         if (auto error = check(ControlId::voltage, "voltage offset"))
             return error;
-        if (auto error = check(ControlId::shader, "shader clock"))
+        const bool absolute = before.at(ControlId::shader).current.has_value();
+        if (absolute == signed_shader || (signed_shader && tuning.shader_ceiling) ||
+            (!signed_shader && tuning.shader_offset) ||
+            current.at(ControlId::shader).current.has_value() != absolute)
+            return unsafe("power.devices", bdf + ": incompatible or ambiguous shader control kind");
+        if (auto error = check(signed_shader ? ControlId::shader_offset : ControlId::shader,
+                               signed_shader ? "shader offset" : "shader clock"))
             return error;
     }
-    if (tuning.memory_ceiling) {
+    if (tuning.memory_ceiling || (signed_shader && tuning.changes_overdrive())) {
         if (auto error = check(ControlId::memory, "memory clock"))
             return error;
     }
@@ -72,6 +84,29 @@ Status verify_readback(const SavedDevice& saved, const CardSnapshot& current, bo
     const auto& original = saved.before;
     if (current.pci != original.pci || current.amdgpu != original.amdgpu || current.hwmon != original.hwmon)
         return unsafe("power.readback", original.pci.value + ": controller identity changed");
+    // Signed-shader cards save and compare the complete represented state,
+    // even controls not requested. Do not confuse missing readback with zero.
+    if (original.at(ControlId::shader_offset).current) {
+        if (original.identity.empty() || current.identity != original.identity)
+            return unsafe("power.readback", original.pci.value + ": physical identity changed");
+        for (size_t index = 0; index < control_count; ++index) {
+            const auto id = static_cast<ControlId>(index);
+            auto desired = original.at(id).current;
+            if (!restoring) {
+                if (id == ControlId::voltage && tuning.voltage_offset)
+                    desired = tuning.voltage_offset->value;
+                if (id == ControlId::shader_offset && tuning.shader_offset)
+                    desired = tuning.shader_offset->value;
+                if (id == ControlId::memory && tuning.memory_ceiling)
+                    desired = tuning.memory_ceiling->value;
+                if (id == ControlId::board_cap && tuning.board_cap)
+                    desired = tuning.board_cap->value * kMicrowattsPerWatt;
+            }
+            if (current.at(id).current != desired)
+                return unsafe("power.readback", original.pci.value + ": signed-card control readback mismatch");
+        }
+        return std::nullopt;
+    }
     const auto check = [&](ControlId id, std::optional<int64_t> desired, std::string_view label) -> Status {
         if (desired && current.at(id).current != desired)
             return unsafe("power.readback",
@@ -85,6 +120,8 @@ Status verify_readback(const SavedDevice& saved, const CardSnapshot& current, bo
         if (auto error = check(ControlId::voltage, offset, "voltage offset"))
             return error;
     }
+    if (current.at(ControlId::shader_offset).current)
+        return unsafe("power.readback", original.pci.value + ": shader offset readback mismatch");
     if (tuning.shader_ceiling || tuning.voltage_offset) {
         auto shader = original.at(ControlId::shader).current;
         if (!restoring && tuning.shader_ceiling)
@@ -94,14 +131,14 @@ Status verify_readback(const SavedDevice& saved, const CardSnapshot& current, bo
     }
     if (tuning.memory_ceiling) {
         auto memory = original.at(ControlId::memory).current;
-        if (!restoring)
+        if (!restoring && tuning.memory_ceiling)
             memory = tuning.memory_ceiling->value;
         if (auto error = check(ControlId::memory, memory, "memory clock"))
             return error;
     }
     if (tuning.board_cap) {
         auto board = original.at(ControlId::board_cap).current;
-        if (!restoring)
+        if (!restoring && tuning.board_cap)
             board = tuning.board_cap->value * kMicrowattsPerWatt;
         if (auto error = check(ControlId::board_cap, board, "board cap"))
             return error;
@@ -197,7 +234,7 @@ v2::Result<Role> Role::parse(std::string_view text) {
     return Role{RoleKind::helper, static_cast<uint32_t>(number)};
 }
 bool Tuning::changes_overdrive() const {
-    return voltage_offset || shader_ceiling || memory_ceiling;
+    return voltage_offset || shader_ceiling || memory_ceiling || shader_offset;
 }
 bool Tuning::changes_hardware() const {
     return changes_overdrive() || board_cap;
@@ -237,14 +274,15 @@ v2::Result<PowerPlan> bind(const v2::Manifest& verified, std::span<const Selecte
             !distinct.insert(pci.value().value).second)
             return unsafe("spec.plan.power.devices", "role, BDF or order differs from selected inventory");
         const auto& s = source.settings;
-        if (s.sclk_offset_mhz)
-            return invalid("spec.plan.power.devices.settings.sclk_offset_mhz",
-                           "unsupported shader offset without a reversible hardware controller");
+        if (s.sclk_offset_mhz && s.sclk_max_mhz)
+            return invalid("spec.plan.power.devices.settings.sclk_offset_mhz", "mutually exclusive shader controls");
         Tuning tuning;
         if (s.vddgfx_offset_mv)
             tuning.voltage_offset = Millivolts{*s.vddgfx_offset_mv};
         if (s.sclk_max_mhz)
             tuning.shader_ceiling = Megahertz{*s.sclk_max_mhz};
+        if (s.sclk_offset_mhz)
+            tuning.shader_offset = Megahertz{*s.sclk_offset_mhz};
         if (s.mclk_max_mhz)
             tuning.memory_ceiling = Megahertz{*s.mclk_max_mhz};
         if (s.power_cap_w)
@@ -268,7 +306,27 @@ v2::Result<std::vector<PowerCommand>> commands_for(const DevicePolicy& policy, c
             return unsafe("power.original", pci.value + ": required original control is unreadable");
         return measured.value_or(0);
     };
-    if (restoring) {
+    const bool signed_shader = before.at(ControlId::shader_offset).current.has_value();
+    if (tuning.changes_overdrive() &&
+        (signed_shader == before.at(ControlId::shader).current.has_value() ||
+         (signed_shader && tuning.shader_ceiling) || (!signed_shader && tuning.shader_offset)))
+        return unsafe("power.original", pci.value + ": incompatible or ambiguous shader control");
+    if (signed_shader && tuning.changes_overdrive()) {
+        // RDNA4 uses a signed one-argument shader command. Stage all
+        // represented coupled controls to restore an interrupted commit too.
+        auto shader = original(ControlId::shader_offset);
+        auto memory = original(ControlId::memory);
+        auto voltage = original(ControlId::voltage);
+        if (!shader) return shader.error();
+        if (!memory) return memory.error();
+        if (!voltage) return voltage.error();
+        issue(ShaderOffset{Megahertz{!restoring && tuning.shader_offset ?
+            tuning.shader_offset->value : shader.value()}});
+        issue(MemoryClock{Megahertz{!restoring && tuning.memory_ceiling ?
+            tuning.memory_ceiling->value : memory.value()}});
+        issue(VoltageOffset{Millivolts{!restoring && tuning.voltage_offset ?
+            tuning.voltage_offset->value : voltage.value()}});
+    } else if (restoring) {
         // An OverDrive commit couples the original shader row and VDDGFX.
         if (tuning.shader_ceiling || tuning.voltage_offset) {
             auto previous = original(ControlId::shader);
@@ -469,6 +527,10 @@ v2::Status SessionPower::preflight() {
             if (auto err = check(ControlId::shader, tuning.shader_ceiling->value, "shader clock"))
                 return err;
         }
+        if (tuning.shader_offset) {
+            if (auto err = check(ControlId::shader_offset, tuning.shader_offset->value, "shader offset"))
+                return err;
+        }
         if (tuning.memory_ceiling) {
             if (auto err = check(ControlId::memory, tuning.memory_ceiling->value, "memory clock"))
                 return err;
@@ -534,6 +596,14 @@ v2::Status SessionPower::begin() {
         const auto& saved = *selected;
         if (auto failure = checked(lease_, "power.lease", "GPU lease lost before device write"))
             return attempted_write ? abort_apply(*failure, saved.policy.device.pci) : failure;
+        if (saved.before.at(ControlId::shader_offset).current) {
+            auto current = probe(hardware_, saved.policy.device.pci);
+            if (!current) return abort_apply(current.error(), saved.policy.device.pci);
+            if (auto err = original_can_restore(saved, current.value()))
+                return abort_apply(*err, saved.policy.device.pci);
+            if (auto err = verify_readback(saved, current.value(), true))
+                return abort_apply(*err, saved.policy.device.pci);
+        }
         journal_.touched.push_back(saved.policy.device.pci);
         record(EventKind::touched, saved.policy.device.pci);
         if (auto err = persist()) {
@@ -548,6 +618,13 @@ v2::Status SessionPower::begin() {
         else if (current.value().pci != saved.before.pci || current.value().hwmon != saved.before.hwmon ||
                  !current.value().amdgpu)
             fault = unsafe("power.devices", "hardware controller changed before writing");
+        if (!fault && saved.before.at(ControlId::shader_offset).current) {
+            fault = original_can_restore(saved, current.value());
+            if (!fault && current.value().identity != saved.before.identity)
+                fault = unsafe("power.devices", "physical identity changed before writing");
+            if (!fault)
+                fault = verify_readback(saved, current.value(), true);
+        }
         if (!fault) {
             auto program = commands_for(saved.policy, saved.before, false);
             if (!program)
@@ -575,6 +652,15 @@ v2::Status SessionPower::begin() {
         if (fault)
             return abort_apply(*fault, saved.policy.device.pci);
         record(EventKind::applied, saved.policy.device.pci);
+    }
+    for (const auto& saved : journal_.devices) {
+        if (!saved.before.at(ControlId::shader_offset).current) continue;
+        if (auto failure = checked(lease_, "power.lease", "GPU lease lost before final signed readback"))
+            return abort_apply(*failure, saved.policy.device.pci);
+        auto current = probe(hardware_, saved.policy.device.pci);
+        if (!current) return abort_apply(current.error(), saved.policy.device.pci);
+        if (auto err = verify_readback(saved, current.value(), false))
+            return abort_apply(*err, saved.policy.device.pci);
     }
     auto applied = snapshot(Moment::post_apply, ObservationState::applied);
     if (!applied)
@@ -637,6 +723,15 @@ v2::Status SessionPower::restore_touched(bool rollback) {
         } else {
             record(EventKind::restored, saved->policy.device.pci, rollback ? "rollback" : "shutdown");
         }
+    }
+    for (const auto* saved : reverse) {
+        if (!saved->before.at(ControlId::shader_offset).current) continue;
+        if (auto failure = checked(lease_, "power.lease", "GPU lease lost before final signed restore readback"))
+            return failure;
+        auto current = probe(hardware_, saved->policy.device.pci);
+        if (!current) return current.error();
+        if (auto err = verify_readback(*saved, current.value(), true))
+            return err;
     }
     return first_error;
 }
@@ -739,6 +834,22 @@ v2::Status recover(const fs::path& journal_path, Hardware& hardware, Records& re
                                  found->policy.device.pci, problem ? problem->message : ""});
         if (problem && !failure)
             failure = problem;
+    }
+    for (const auto& saved : record.devices) {
+        if (!saved.before.at(ControlId::shader_offset).current ||
+            std::find(record.touched.begin(), record.touched.end(), saved.policy.device.pci) == record.touched.end())
+            continue;
+        if (auto gate = SessionPower::checked(lease, "power.recovery", "GPU lease lost before final signed recovery readback")) {
+            if (!failure) failure = gate;
+            continue;
+        }
+        auto now = probe(hardware, saved.policy.device.pci);
+        if (!now) {
+            if (!failure) failure = now.error();
+            continue;
+        }
+        if (auto err = verify_readback(saved, now.value(), true))
+            if (!failure) failure = err;
     }
     record.stage = failure ? Stage::restore_failed : Stage::restored;
     stopping.state = failure ? ObservationState::unresolved : ObservationState::restored;

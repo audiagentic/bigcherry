@@ -269,6 +269,8 @@ std::vector<HostFinding> inspect_host(const PowerPlan& plan, Hardware& hardware,
             inspect(ControlId::voltage, setting.voltage_offset->value);
         if (setting.shader_ceiling)
             inspect(ControlId::shader, setting.shader_ceiling->value);
+        if (setting.shader_offset)
+            inspect(ControlId::shader_offset, setting.shader_offset->value);
         if (setting.memory_ceiling)
             inspect(ControlId::memory, setting.memory_ceiling->value);
         if (setting.board_cap) {

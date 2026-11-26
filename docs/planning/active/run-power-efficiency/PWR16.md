@@ -2,7 +2,7 @@
 id: PWR16
 order: 0
 plan: run-power-efficiency
-state: pending
+state: in_progress
 created-at: '2026-11-26T08:12:38.552070+00:00'
 breadth: ''
 skill: ''
@@ -51,7 +51,11 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 
 2026-11-26: R9700 read-only probe shows OD_SCLK_OFFSET (signed -500..1000 MHz, current 0), voltage -200..0 mV current 0, MCLK1259, cap300 W range210..330. Independent BF16/FP32 768 square hipBLASLt baseline passes in captures 20261126T080808Z-gpu-ai-screen-21022b43708e and 20261126T080906Z-gpu-ai-screen-e326d84ca65f. Mixed settings request refused before writes in 20261126T080920Z-gpu-ai-screen-1e457e9a4260: no platform shader-offset transaction backend. Native resolver also refuses offsets; both restore models assume absolute shader ceiling for voltage. All four original snapshots matched. PWR16 owns backend work. Cap-only 270/240/210 W sweep queued behind release acceptance; no new cap result yet.
 
+2026-11-26: platform and native typed signed shader offset implementation completed. Source grammar cross-checked against upstream SMU14 driver, verified physically on gfx1201 using managed platform writes. Signed path stages/restores actual shader offset, memory ceiling, voltage and verifies all observed controls; native signed journals save identity and refuse missing original or changed identity; legacy active platform journals without complete new state refuse manual recovery. 323 hardware/core/CLI tests pass, 1 skipped; native power acceptance executable compiled/run with exact generated contract fingerprint, signed recovery/fault/zero/receipt cases and existing Python golden profiles pass; resolver/site/manifest binding syntax checks pass. No full release or native physical run. Cap-only 20/20 cases 203328 GEMMs, three restores; offset 32/32 cases 323104 GEMMs, six restores, all-card exact snapshots. Captures and per-arm energy in AI_POWER_SCREEN.md. Finalists 300W/-200MHz/-50mV and 210W/-200MHz/-75mV. Native physical owner, independent extended pressure, combined inference and long soak remain pending. GPU held by release parity job; no production profile change.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
 - 2026-11-26T08:13:11.345658+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:32:54.215371+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T08:32:59.239311+00:00 (state-transition): State: pending → in_progress

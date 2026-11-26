@@ -63,6 +63,7 @@ bool same_policy(const power::PowerPlan& x, const power::PowerPlan& y) {
         if (!(a.device.role == b.device.role) || !(a.device.pci == b.device.pci) ||
             a.tuning.voltage_offset != b.tuning.voltage_offset ||
             a.tuning.shader_ceiling != b.tuning.shader_ceiling ||
+            a.tuning.shader_offset != b.tuning.shader_offset ||
             a.tuning.memory_ceiling != b.tuning.memory_ceiling || a.tuning.board_cap != b.tuning.board_cap)
             return false;
     }

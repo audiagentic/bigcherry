@@ -88,7 +88,7 @@ def _state_from_probe(g: power_probe.GpuCapability) -> gpu_power.State:
 
     cap_default = None
     return gpu_power.State(vddgfx_offset_mv=cur("vddgfx_offset_mv"), sclk_max_mhz=cur("sclk_max_mhz"),
-                           mclk_max_mhz=cur("mclk_max_mhz"),
+                           mclk_max_mhz=cur("mclk_max_mhz"), sclk_offset_mhz=cur("sclk_offset_mhz"),
                            power_cap_uw=cur("power_cap_w"), power_cap_default_uw=cap_default)
 
 
@@ -188,7 +188,8 @@ class PowerTransaction:
             c = g.controls
             for field, name, val in (("vddgfx_offset_mv", "vddgfx_offset_mv", s.vddgfx_offset_mv),
                                      ("sclk_max_mhz", "sclk_max_mhz", s.sclk_max_mhz),
-                                     ("mclk_max_mhz", "mclk_max_mhz", s.mclk_max_mhz)):
+                                     ("mclk_max_mhz", "mclk_max_mhz", s.mclk_max_mhz),
+                                     ("sclk_offset_mhz", "sclk_offset_mhz", s.sclk_offset_mhz)):
                 if val is None:
                     continue
                 cap = c[name]
@@ -205,8 +206,10 @@ class PowerTransaction:
                     reasons.append(f"{bdf}: power_cap_w={s.power_cap_w} outside the device range "
                                    f"{cap.minimum // 1_000_000}..{cap.maximum // 1_000_000}")
             before = _state_from_probe(g)
+            if s.sclk_offset_mhz is not None and s.sclk_max_mhz is not None:
+                reasons.append(f"{bdf}: mutually exclusive shader controls")
             # an OverDrive commit couples the clock and the voltage offset: both originals must be readable to restore
-            if any((s.vddgfx_offset_mv is not None, s.sclk_max_mhz is not None, s.mclk_max_mhz is not None)):
+            if any(x is not None for x in (s.vddgfx_offset_mv, s.sclk_max_mhz, s.mclk_max_mhz, s.sclk_offset_mhz)):
                 if before.vddgfx_offset_mv is None and c["vddgfx_offset_mv"].status == "supported":
                     reasons.append(f"{bdf}: original voltage offset unreadable")
                 if c["sclk_max_mhz"].status == "supported" and before.sclk_max_mhz is None:
@@ -255,7 +258,7 @@ class PowerTransaction:
                 or _identity(self.root, d.bdf, d.hwmon) != d.identity):
             bad.append("device driver or hwmon identity changed")
         for field, label in (("vddgfx_offset_mv", "voltage offset"), ("sclk_max_mhz", "max clock"),
-                             ("mclk_max_mhz", "max memory clock"), ("power_cap_uw", "power cap")):
+                             ("mclk_max_mhz", "max memory clock"), ("sclk_offset_mhz", "shader offset"), ("power_cap_uw", "power cap")):
             value, expected = getattr(now, field), getattr(want, field)
             if value != expected:
                 bad.append(f"{label} {value} != {expected}")
@@ -267,6 +270,7 @@ class PowerTransaction:
             vddgfx_offset_mv=s.vddgfx_offset_mv if s.vddgfx_offset_mv is not None else d.before.vddgfx_offset_mv,
             sclk_max_mhz=s.sclk_max_mhz if s.sclk_max_mhz is not None else d.before.sclk_max_mhz,
             mclk_max_mhz=s.mclk_max_mhz if s.mclk_max_mhz is not None else d.before.mclk_max_mhz,
+            sclk_offset_mhz=s.sclk_offset_mhz if s.sclk_offset_mhz is not None else d.before.sclk_offset_mhz,
             power_cap_uw=s.power_cap_w * 1_000_000 if s.power_cap_w is not None else d.before.power_cap_uw)
 
     def apply(self) -> None:
@@ -294,7 +298,14 @@ class PowerTransaction:
                 # Both OverDrive clock writes reset gfx1100 VDDGFX. Preserve the
                 # measured original when no offset change was requested.
                 setting = d.setting
-                if (setting.sclk_max_mhz is not None or setting.mclk_max_mhz is not None) and setting.vddgfx_offset_mv is None:
+                if d.before.sclk_offset_mhz is not None and any(x is not None for x in (
+                        setting.sclk_offset_mhz, setting.vddgfx_offset_mv, setting.mclk_max_mhz)):
+                    target = self._target_state(d)
+                    setting = gpu_power.Setting(sclk_offset_mhz=target.sclk_offset_mhz,
+                                                mclk_max_mhz=target.mclk_max_mhz,
+                                                vddgfx_offset_mv=target.vddgfx_offset_mv,
+                                                power_cap_w=setting.power_cap_w)
+                elif (setting.sclk_max_mhz is not None or setting.mclk_max_mhz is not None) and setting.vddgfx_offset_mv is None:
                     setting = gpu_power.Setting(vddgfx_offset_mv=d.before.vddgfx_offset_mv,
                                                 sclk_max_mhz=setting.sclk_max_mhz,
                                                 mclk_max_mhz=setting.mclk_max_mhz,
@@ -323,18 +334,28 @@ class PowerTransaction:
                 or _identity(self.root, d.bdf, d.hwmon) != d.identity):
             raise OSError(f"{d.bdf}: device identity changed before restoration")
         s, b = d.setting, d.before
-        od = any(x is not None for x in (s.sclk_max_mhz, s.mclk_max_mhz, s.vddgfx_offset_mv))
+        od = any(x is not None for x in (s.sclk_max_mhz, s.mclk_max_mhz, s.vddgfx_offset_mv, s.sclk_offset_mhz))
+        signed = b.sclk_offset_mhz is not None
+        if od:
+            # Require an unambiguous shader grammar and the saved original on the live device.
+            live_signed = g.controls["sclk_offset_mhz"].status == "supported"
+            live_absolute = g.controls["sclk_max_mhz"].status == "supported"
+            if live_signed == live_absolute or signed != live_signed or (signed and b.sclk_max_mhz is not None):
+                raise OSError(f"{d.bdf}: ambiguous or changed shader control kind")
+            if (signed and s.sclk_max_mhz is not None) or (not signed and s.sclk_offset_mhz is not None):
+                raise OSError(f"{d.bdf}: incompatible shader control")
         for required, name, value in (
-            (s.sclk_max_mhz is not None or s.vddgfx_offset_mv is not None, "sclk_max_mhz", b.sclk_max_mhz),
-            (s.mclk_max_mhz is not None, "mclk_max_mhz", b.mclk_max_mhz),
-            (od and (b.vddgfx_offset_mv is not None or s.vddgfx_offset_mv is not None),
+            (not signed and (s.sclk_max_mhz is not None or s.vddgfx_offset_mv is not None), "sclk_max_mhz", b.sclk_max_mhz),
+            (od and signed, "sclk_offset_mhz", b.sclk_offset_mhz),
+            (s.mclk_max_mhz is not None or (od and signed), "mclk_max_mhz", b.mclk_max_mhz),
+            (od and (signed or b.vddgfx_offset_mv is not None or s.vddgfx_offset_mv is not None),
              "vddgfx_offset_mv", b.vddgfx_offset_mv),
             (s.power_cap_w is not None, "power_cap_w", b.power_cap_uw),
         ):
             if not required:
                 continue
             c = g.controls[name]
-            if (type(value) is not int or (name != "vddgfx_offset_mv" and value <= 0)
+            if (type(value) is not int or (name not in ("vddgfx_offset_mv", "sclk_offset_mhz") and value <= 0)
                     or c.status != "supported" or not c.minimum <= value <= c.maximum):
                 raise OSError(f"{d.bdf}: original {name} cannot be restored safely")
 

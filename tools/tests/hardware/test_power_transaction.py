@@ -37,6 +37,9 @@ class FakeDriver(FileOps):
         p = self._p(path)
         if path.endswith("pp_od_clk_voltage"):
             st = self.staged.setdefault(bdf, {})
+            m = re.match(r"s (-?\d+)$", value)
+            if m:
+                st["shader_offset"] = int(m.group(1))
             m = re.match(r"s 1 (\d+)$", value)
             if m:
                 st["sclk"] = int(m.group(1))
@@ -51,6 +54,9 @@ class FakeDriver(FileOps):
                 st["off"] = int(m.group(1))
             if value == "c":
                 text = p.read_text()
+                if "shader_offset" in st:
+                    text = re.sub(r"(OD_SCLK_OFFSET:\n)-?\d+Mhz",
+                                  lambda mm: f"{mm.group(1)}{st['shader_offset']}Mhz", text)
                 if "sclk" in st:
                     text = re.sub(r"(1: )\d+(Mhz)", lambda mm: f"{mm.group(1)}{st['sclk']}{mm.group(2)}", text, count=1)
                 if "mclk" in st and bdf not in self.ignore_mclk_on:
@@ -58,7 +64,7 @@ class FakeDriver(FileOps):
                         r"(OD_MCLK:\n0:\s*\d+\s*MHz\n1:\s*)\d+(\s*MHz)",
                         lambda mm: f"{mm.group(1)}{st['mclk']}{mm.group(2)}",
                         text, count=1, flags=re.IGNORECASE)
-                if ("sclk" in st or "mclk" in st) and "off" not in st:
+                if ("sclk" in st or "mclk" in st or "shader_offset" in st) and "off" not in st:
                     text = re.sub(r"(OD_VDDGFX_OFFSET:\n)-?\d+mV", r"\g<1>0mV", text)
                 if "off" in st:
                     text = re.sub(r"(OD_VDDGFX_OFFSET:\n)-?\d+mV", lambda mm: f"{mm.group(1)}{st['off']}mV", text)
@@ -89,6 +95,50 @@ class TxTest(unittest.TestCase):
         return {k: v.current.value for k, v in g.controls.items() if v.status == "supported"}
 
     S = gpu_power.Setting
+
+    def test_rdna4_signed_offset_and_coupled_restore(self):
+        bdf = "0000:09:00.0"
+        p = self.root / "sys/bus/pci/devices" / bdf / "pp_od_clk_voltage"
+        p.write_text(p.read_text().replace("OD_SCLK_OFFSET:\n0Mhz", "OD_SCLK_OFFSET:\n-25Mhz")
+                     .replace("OD_VDDGFX_OFFSET:\n0mV", "OD_VDDGFX_OFFSET:\n-10mV"))
+        before = self.state(bdf)
+        t = self.tx()
+        t.prepare({bdf: self.S(sclk_offset_mhz=-100, vddgfx_offset_mv=-50)}, [bdf])
+        t.apply()
+        self.assertEqual(self.state(bdf)["sclk_offset_mhz"], -100)
+        self.assertEqual(self.state(bdf)["vddgfx_offset_mv"], -50)
+        self.assertEqual([v for _, v in self.drv.log], ["s -100", "m 1 1259", "vo -50", "c"])
+        self.assertTrue(t.restore(processes_exited=True))
+        self.assertEqual(self.state(bdf), before)
+        self.assertEqual([v for _, v in self.drv.log][-4:], ["s -25", "m 1 1259", "vo -10", "c"])
+
+    def test_rdna4_voltage_only_preserves_shader_offset_and_recovers(self):
+        bdf = "0000:09:00.0"
+        before = self.state(bdf)
+        t = self.tx()
+        t.prepare({bdf: self.S(vddgfx_offset_mv=-25)}, [bdf])
+        t.apply()
+        self.assertEqual(self.state(bdf)["sclk_offset_mhz"], 0)
+        self.assertTrue(PowerTransaction.recover(
+            t.journal_path, sysfs_root=self.root, fileops=self.drv,
+            lease_ok=lambda: True, processes_exited=True, platform_name="linux"))
+        self.assertEqual(self.state(bdf), before)
+
+    def test_rdna4_offset_refusal_and_rollback(self):
+        bdf = "0000:09:00.0"
+        before = self.state(bdf)
+        for setting in (self.S(sclk_offset_mhz=-501), self.S(sclk_max_mhz=2700),
+                        self.S(sclk_offset_mhz=-100, sclk_max_mhz=2700)):
+            with self.assertRaises(PowerRefused):
+                self.tx().prepare({bdf: setting}, [bdf])
+        self.assertEqual(self.drv.log, [])
+        t = self.tx()
+        t.prepare({bdf: self.S(sclk_offset_mhz=-100, vddgfx_offset_mv=-25)}, [bdf])
+        self.drv.fail_on = lambda path, value: value == "vo -25"
+        with self.assertRaises(PowerFailed) as e:
+            t.apply()
+        self.assertTrue(e.exception.rolled_back)
+        self.assertEqual(self.state(bdf), before)
 
     def test_apply_readback_restore_exact(self):
         before = {b: self.state(b) for b in (A, B)}

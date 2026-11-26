@@ -659,8 +659,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
             raise ScreenError("resident candidate is observe-only outside explicit matched research")
         if args.profile == "stock" or not args.confirm_idle or journal_dir is None:
             raise ScreenError("apply requires candidate, existing transaction journal and --confirm-idle")
-        if "sclk_offset_mhz" in settings:
-            raise ScreenError("platform transaction does not support sclk_offset_mhz; use observe-only owner path")
+        if "sclk_offset_mhz" in settings and not args.observe_current:
+            raise ScreenError("shader offset requires explicit observed-reference research")
     elif args.confirm_idle:
         raise ScreenError("--confirm-idle is only for explicit apply")
     if not lease.held_by_this_process():
@@ -764,7 +764,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         if args.apply_profile:
             # Reuse the existing platform GPU power transaction, recovery
             # journal and sysfs writer. No second controller or reset command.
-            if args.resident_mib:
+            if args.resident_mib or "sclk_offset_mhz" in settings:
                 idle_preflight()
             tx = PowerTransaction(args.run_id, journal_dir,
                                   lease_ok=lease.held_by_this_process)

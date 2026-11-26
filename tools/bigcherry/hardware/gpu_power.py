@@ -30,6 +30,7 @@ class Setting:
     sclk_max_mhz: int | None = None       #: OverDrive maximum shader clock
     mclk_max_mhz: int | None = None       #: OverDrive maximum memory clock
     power_cap_w: int | None = None        #: board power cap
+    sclk_offset_mhz: int | None = None   #: signed shader offset (not absolute ceiling)
 
 
 @dataclass(frozen=True)
@@ -41,6 +42,7 @@ class State:
     mclk_max_mhz: int | None = None
     power_cap_uw: int | None = None
     power_cap_default_uw: int | None = None
+    sclk_offset_mhz: int | None = None
 
     def to_json(self) -> dict:
         return asdict(self)
@@ -113,7 +115,9 @@ class _Amdgpu:
         sclk = re.search(r"OD_SCLK:\s*\n\s*0:\s*\d+Mhz\s*\n\s*1:\s*(\d+)Mhz", od)
         mclk = re.search(r"OD_MCLK:\s*\n\s*0:\s*\d+\s*MHz\s*\n\s*1:\s*(\d+)\s*MHz", od, re.IGNORECASE)
         off = re.search(r"OD_VDDGFX_OFFSET:\s*\n\s*(-?\d+)mV", od)
+        shader_offset = re.search(r"OD_SCLK_OFFSET:\s*\n\s*(-?\d+)\s*MHz", od, re.IGNORECASE)
         return State(
+            sclk_offset_mhz=int(shader_offset.group(1)) if shader_offset else None,
             vddgfx_offset_mv=int(off.group(1)) if off else None,
             sclk_max_mhz=int(sclk.group(1)) if sclk else None,
             mclk_max_mhz=int(mclk.group(1)) if mclk else None,
@@ -123,13 +127,17 @@ class _Amdgpu:
 
     @classmethod
     def writes(cls, locator: str, hwmon: str | None, sclk: int | None, mclk: int | None, offset: int | None,
-               cap_uw: int | None) -> list[tuple[str, str]]:
+               cap_uw: int | None, shader_offset: int | None) -> list[tuple[str, str]]:
         od = cls.od(locator)
         out: list[tuple[str, str]] = []
         # A clock write and commit resets the voltage offset on these cards, so the offset is staged after the clock
         # and both are committed together.
         if sclk is not None:
             out.append((od, f"s 1 {sclk}"))
+        if shader_offset is not None:
+            if sclk is not None:
+                raise ValueError("mutually exclusive shader controls")
+            out.append((od, f"s {shader_offset}"))
         if mclk is not None:
             out.append((od, f"m 1 {mclk}"))
         if offset is not None:
@@ -171,18 +179,21 @@ def apply_writes(locator: str, driver: str | None, hwmon: str | None, setting: S
     """The writes that put ``setting`` on the card, in order."""
     return backend(locator, driver).writes(
         locator, hwmon, setting.sclk_max_mhz, setting.mclk_max_mhz, setting.vddgfx_offset_mv,
-        setting.power_cap_w * 1_000_000 if setting.power_cap_w is not None else None)
+        setting.power_cap_w * 1_000_000 if setting.power_cap_w is not None else None, setting.sclk_offset_mhz)
 
 
 def restore_writes(locator: str, driver: str | None, hwmon: str | None, before: State,
                    setting: Setting) -> list[tuple[str, str]]:
     """The writes that put back what ``before`` recorded, for the values ``setting`` changed."""
+    od = any(x is not None for x in (setting.sclk_max_mhz, setting.mclk_max_mhz, setting.vddgfx_offset_mv, setting.sclk_offset_mhz))
+    signed = od and before.sclk_offset_mhz is not None
     return backend(locator, driver).writes(
         locator, hwmon,
         before.sclk_max_mhz if setting.sclk_max_mhz is not None or setting.vddgfx_offset_mv is not None else None,
-        before.mclk_max_mhz if setting.mclk_max_mhz is not None else None,
-        before.vddgfx_offset_mv if any((setting.sclk_max_mhz is not None, setting.mclk_max_mhz is not None, setting.vddgfx_offset_mv is not None)) else None,
-        before.power_cap_uw if setting.power_cap_w is not None else None)
+        before.mclk_max_mhz if signed or setting.mclk_max_mhz is not None else None,
+        before.vddgfx_offset_mv if od else None,
+        before.power_cap_uw if setting.power_cap_w is not None else None,
+        before.sclk_offset_mhz if signed else None)
 
 
 def targets(locator: str, driver: str | None, hwmon: str | None, setting: Setting) -> list[str]:

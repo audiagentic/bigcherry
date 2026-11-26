@@ -65,6 +65,7 @@ struct Tuning {
     std::optional<Megahertz> shader_ceiling;
     std::optional<Megahertz> memory_ceiling;
     std::optional<Watts> board_cap;
+    std::optional<Megahertz> shader_offset;
     bool changes_hardware() const;
     bool changes_overdrive() const;
 };
@@ -88,7 +89,7 @@ struct PowerPlan {
 // duck-typed JSON dictionary. A different role, order or BDF refuses.
 v2::Result<PowerPlan> bind(const v2::Manifest& verified, std::span<const SelectedGpu> selected);
 
-enum class ControlId : uint8_t { voltage, shader, memory, board_cap, count };
+enum class ControlId : uint8_t { voltage, shader, memory, board_cap, shader_offset, count };
 constexpr size_t control_count = static_cast<size_t>(ControlId::count);
 struct Capability {
     std::optional<int64_t> current;
@@ -109,6 +110,9 @@ struct CardSnapshot {
 struct ShaderClock {
     Megahertz value;
 };
+struct ShaderOffset {
+    Megahertz value;
+};
 struct MemoryClock {
     Megahertz value;
 };
@@ -119,7 +123,7 @@ struct OverdriveCommit {};
 struct BoardCap {
     Microwatts value;
 };
-using CommandValue = std::variant<ShaderClock, MemoryClock, VoltageOffset, OverdriveCommit, BoardCap>;
+using CommandValue = std::variant<ShaderClock, MemoryClock, VoltageOffset, OverdriveCommit, BoardCap, ShaderOffset>;
 struct PowerCommand {
     PciAddress pci;
     std::optional<std::string> hwmon;

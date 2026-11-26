@@ -72,8 +72,8 @@ bool writable(const fs::path& path) {
     return ::access(path.c_str(), W_OK) == 0;
 }
 struct Overdrive {
-    std::optional<int64_t> shader, memory, voltage;
-    std::optional<std::pair<int64_t, int64_t>> shader_range, memory_range, voltage_range;
+    std::optional<int64_t> shader, memory, voltage, shader_offset;
+    std::optional<std::pair<int64_t, int64_t>> shader_range, memory_range, voltage_range, shader_offset_range;
 };
 std::optional<std::pair<int64_t, int64_t>> clock_range(std::string_view row, std::string_view label,
                                                        std::string_view suffix) {
@@ -90,7 +90,7 @@ std::optional<std::pair<int64_t, int64_t>> clock_range(std::string_view row, std
 }
 Overdrive parse_overdrive(std::string_view contents) {
     Overdrive result;
-    enum class Section : uint8_t { none, shader, memory, voltage, ranges };
+    enum class Section : uint8_t { none, shader, memory, voltage, shader_offset, ranges };
     Section part = Section::none;
     bool shader_start = false, memory_start = false;
     std::istringstream input{std::string(contents)};
@@ -99,6 +99,10 @@ Overdrive parse_overdrive(std::string_view contents) {
         auto row = trim(line);
         if (row == "OD_SCLK:") {
             part = Section::shader;
+            continue;
+        }
+        if (row == "OD_SCLK_OFFSET:") {
+            part = Section::shader_offset;
             continue;
         }
         if (row == "OD_MCLK:") {
@@ -138,6 +142,10 @@ Overdrive parse_overdrive(std::string_view contents) {
             }
             break;
         }
+        case Section::shader_offset:
+            result.shader_offset = parse_number(row, "Mhz");
+            part = Section::none;
+            break;
         case Section::voltage:
             result.voltage = parse_number(row, "mV");
             part = Section::none;
@@ -145,6 +153,8 @@ Overdrive parse_overdrive(std::string_view contents) {
         case Section::ranges:
             if (auto value = clock_range(row, "SCLK", "Mhz"))
                 result.shader_range = *value;
+            else if (auto offset_limits = clock_range(row, "SCLK_OFFSET", "Mhz"))
+                result.shader_offset_range = *offset_limits;
             else if (auto memory_limits = clock_range(row, "MCLK", "Mhz"))
                 result.memory_range = *memory_limits;
             else if (auto voltage_limits = clock_range(row, "VDDGFX_OFFSET", "mV"))
@@ -190,6 +200,8 @@ v2::Result<SysfsWrite> render(const PowerCommand& command) {
                 const auto path = root / "pp_od_clk_voltage";
                 if constexpr (std::is_same_v<T, ShaderClock>)
                     return SysfsWrite{path, "s 1 " + std::to_string(value.value.value)};
+                if constexpr (std::is_same_v<T, ShaderOffset>)
+                    return SysfsWrite{path, "s " + std::to_string(value.value.value)};
                 if constexpr (std::is_same_v<T, MemoryClock>)
                     return SysfsWrite{path, "m 1 " + std::to_string(value.value.value)};
                 if constexpr (std::is_same_v<T, VoltageOffset>)
@@ -225,6 +237,8 @@ v2::Result<CardSnapshot> LinuxHardware::do_inspect(const PciAddress& pci) {
                can_write);
         assign(snapshot.controls[static_cast<size_t>(ControlId::shader)], parsed.shader, parsed.shader_range,
                can_write);
+        assign(snapshot.controls[static_cast<size_t>(ControlId::shader_offset)], parsed.shader_offset,
+               parsed.shader_offset_range, can_write);
         assign(snapshot.controls[static_cast<size_t>(ControlId::memory)], parsed.memory, parsed.memory_range,
                can_write);
     }
