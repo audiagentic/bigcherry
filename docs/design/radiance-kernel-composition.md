@@ -89,6 +89,10 @@ A kernel change should be provable in minutes on one card without composing the 
 
 **The unit harness** is the piece to build, once: a small tool that compiles one unit or family into a loadable test plugin with a loader that tolerates the absent rows, hashes selected rows' outputs and replays them with the adaptive launch rule (stop when two windows agree). The pieces already exist in scratch form (the single-unit plugin builds, the cross-plugin output-hash selftest, the replay tool with a cold flush); the work is to make them one repository tool with a stable command. Tracked as RCS25.
 
+### Model-driven family qualification (RCS26–28)
+
+See [Kernel group qualification and profile selection](radiance-kernel-group-qualification.md) for the extension of the existing build-group inventory, unit harness, naming policy and evidence workflow. It preserves existing build and runtime ownership.
+
 ## 5. Layer 2: arch-neutral formulation and the upstream path (RCS21)
 
 **Traits seam.** Write new tile code once, against a small compile-time traits type: wave size, native WMMA operand layout accessors, accumulator conversion (identity on gfx12, the 11-to-12 conversion on gfx11 today, a no-op on a native gfx11 provider), LDS capacity and granularity, register-file budget and maximum waves. Each architecture supplies its traits. The libr3 rewrites then shrink to the traits header and the few genuinely gfx11-only optimisations.
