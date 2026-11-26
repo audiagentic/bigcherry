@@ -1,0 +1,59 @@
+---
+id: RCS26
+order: 0
+plan: build-radiance-components
+state: pending
+created-at: '2026-11-26T01:36:23.064898+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P1
+work: M
+---
+
+# Resolve kernel family, ownership and naming from existing metadata
+
+## Description
+
+Reuse r3_groups.cmake/tsv, patch registry, component.toml targets and origins.toml. Distinguish build group, qualification family and runtime row. Resolve complete canonical inventory including exclusions, affected units via compose_check and dependency closure. Unknown scope widens or blocks. Expand naming suffixes literally from validated owner/target metadata; parse lexical context, not isolated edit braces. Audit exceptions.
+
+## Steps
+
+1. Validate full build inventory, exclusions and origin row mapping. 2. Resolve affected units and transitive header dependencies. 3. Replace naming suffix regex with metadata-resolved literals; scope-aware declarations and exception audit. 4. Integrate existing compose and pin-triage gates.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+See docs/design/radiance-kernel-composition.md; extend existing owners.
+
+## Validation
+
+Actual configure inventory, synthetic new group/target, excluded and overlay units, shared headers, conditional branches, raw strings, nested namespaces, macros, attributes and ordinary helpers. Real lint and compose gates.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+One source per dimension; no duplicate taxonomy; no unsupported scope silently passes; existing build and release gates unchanged.
+
+## Notes
+
+Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.
+
+## Change Log
+
+- 2026-11-26T01:36:23.064898+00:00 (created-by): Created by agent
+- 2026-11-26T01:37:48.639355+00:00 (updated-by): Updated: section:steps, section:notes
