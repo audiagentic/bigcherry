@@ -60,11 +60,24 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
     precision = target.get("precision_references",False)
     _need(type(precision) is bool and (not precision or arch=="gfx1100"),"invalid precision reference target")
     selected = raw["recipe"][recipe]
-    _need(set(selected) == {"groups"} and _names(selected["groups"]), "invalid group selection")
+    _need({"groups"} <= set(selected) <= {"groups", "overrides"}
+          and _names(selected["groups"]), "invalid group selection")
+    overrides = selected.get("overrides", {})
+    _need(isinstance(overrides, dict) and set(overrides) <= set(selected["groups"]),
+          "override must name a selected group")
     groups = {}
     for name in selected["groups"]:
         _need(name in raw["group"], "unknown selected group")
         g = raw["group"][name]
+        if name in overrides:
+            override = overrides[name]
+            _need(isinstance(override, dict) and bool(override)
+                  and set(override) <= {"seconds", "pause_ms", "memory_fraction"}
+                  and not g.get("hot") and "min_hotspot_c" not in g
+                  and "warmup_seconds" not in g
+                  and ("memory_fraction" not in override or "memory_fraction" in g),
+                  "invalid short-recipe override")
+            g = g | override
         _need(not set(g)-GROUP_FIELDS and sum(k in g for k in ("matrix","dtypes","hot"))==1
               and ("matrix" not in g or g["matrix"] is True)
               and ("hot" not in g or g["hot"] is True), "invalid group fields")
@@ -117,6 +130,13 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
             "headroom_mib": headroom}}
     _need(any(g["status"]=="planned" for g in groups.values()), "no executable group")
     return groups
+
+
+def workload_seconds(groups: dict) -> int:
+    """Nominal native load budget, excluding setup, teardown and lease waits."""
+    return sum((g["options"]["seconds"] + g["options"]["warmup_seconds"])
+               * len(g["options"]["dtype"]) * len(g["options"]["pause_ms"])
+               for g in groups.values() if g["status"] == "planned")
 
 
 def native_scope(doc: dict | None, arch: str) -> dict:

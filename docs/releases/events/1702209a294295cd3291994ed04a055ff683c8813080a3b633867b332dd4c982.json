@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_054455_gpu-stability-screening-now-su_1894",
+  "files": [
+    "config/gpu-ai-qualification.toml",
+    "tools/bigcherry/hardware/ai_qualification.py",
+    "tools/bigcherry/cli/ai_qualification_cmds.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR14"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add strict sanity/slim recipe overrides and one-lease all-group fail-fast execution with managed harvest/report, recipe identity and nominal workload budgets.",
+  "timestamp-utc": "2026-11-26T05:44:55.632551Z",
+  "user-summary-candidate": "GPU stability screening now supports a 15\u201322 second measured slim mode without relaxing numerical gates; full qualification remains separate."
+}

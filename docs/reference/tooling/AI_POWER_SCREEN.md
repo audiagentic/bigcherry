@@ -986,3 +986,50 @@ matched and driver health remained incomplete. The harvested capture is
 20261126T053453Z-gpu-ai-screen-096213d56357 and its report is
 20261126T053624Z-gpu-ai-qualification-report-f6ae62d0827e. Retain the
 original BF16 recipe; neither workload has qualified the gfx1030 hot gate.
+
+### Progressive early screening (PWR14)
+
+Use `gpu-ai-qualify plan --recipe sanity` for two seconds of nominal
+ALU/BF16 work, or `--recipe slim` for architecture-selected matrix types,
+six direct instruction cases with 2 ms gaps, supported positive/mixed
+integer WMMA cases and a short address-pattern VRAM integrity test.
+Slim overrides duration/pause/memory fraction of existing groups; it
+does not duplicate the case registry, modify other recipes, relax the
+verification counts, or alter the thermal safety ceilings. Memory is
+1/128 of total VRAM, rounded down within available headroom; not a
+full-capacity screen. Native WMMA on gfx1030 is explicitly not applicable.
+
+Execute `gpu-ai-qualify run --plan PLAN --all` within the existing GPU
+lease. The executor rechecks idle/lease/source/physical identity at each
+group, stops on the first nonpass, harvests each completed capture and
+emits the existing managed report including recipe, planned nominal
+workload seconds and not-run groups. Precision-reference groups require
+explicit individual runs and reference receipts; all-group mode refuses
+them before work. Nominal time excludes setup, teardown and lease wait.
+
+A slim pass is not a screen/extended, signed precision, hot, full-memory,
+native model kernel or production pass. Use it for early rejection;
+promising candidates escalate through screen, operational and extended
+then the existing RCS27/28 and PWR10/PWR02 owners. The qualification
+runner remains observe-only until owner recovery gates permit candidate
+transactions; no profile promotion or automatic sweep is introduced.
+
+
+Observe-only cohort (2026-11-26, protocol 7/schema 8; end-to-end
+plan + run + automatic harvest/report elapsed, excludes queue wait):
+
+| Role / architecture | Recipe | Workload s | Wall s | Cases | Verified GEMMs | Managed report |
+|---|---|---:|---:|---:|---:|---|
+| helper2 / gfx1030 | sanity | 2 | 3.554 | 2 | 38,496 | 20261126T054234Z-gpu-ai-qualification-report-b53e9d266b22 |
+| helper2 / gfx1030 | slim | 11 | 15.270 | 11 | 81,472 | 20261126T054249Z-gpu-ai-qualification-report-77ac6abb4637 |
+| helper0 / gfx1100 | slim | 14 | 19.448 | 14 | 113,408 | 20261126T054309Z-gpu-ai-qualification-report-3636035c07cc |
+| helper1 / gfx1100 | slim | 14 | 19.259 | 14 | 114,816 | 20261126T054329Z-gpu-ai-qualification-report-25e0331d8f4a |
+| engine / gfx1201 | slim | 15 | 21.847 | 15 | 101,600 | 20261126T054351Z-gpu-ai-qualification-report-567c56a6ab31 |
+
+All 56 cases and all five reports passed within their declared scope;
+16 group captures harvested, unchanged controls and physical identities,
+no transaction requested. Driver health remains incomplete. Existing
+screen nominal load budgets are 88/128/136 s and extended 460/500/508 s
+(gfx1030/1100/1201). These are not measured comparison wall times.
+Persistent GPU contexts are not required to achieve the current target;
+evaluate setup overhead further before changing the native protocol.
