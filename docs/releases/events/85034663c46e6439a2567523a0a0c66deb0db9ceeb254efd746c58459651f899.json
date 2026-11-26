@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261126_030900_serving-starts-every-engine-fr_7378",
+  "files": [
+    "engines/radiance/patches/rad0070_managed_native_entry/patch.py",
+    "engines/radiance/patches/archive/rad0009_serving_manifest/patch.py",
+    "engines/radiance/components/serving/bc_serving_engine.cpp",
+    "engines/radiance/components/serving/session.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The engine's only owner-facing entry is now the stock --config YAML entry plus one sealed admission document (rad0070, validated on the shared acceptance). The manifest entry rad0009, its managed front and bc_serving_manifest.* are archived/deleted; rad0011, rad0002 and rad0055 require rad0070; the engine-side getters and entry live in bc_serving_engine.*.",
+  "timestamp-utc": "2026-11-26T03:09:00.335317Z",
+  "user-summary-candidate": "Serving starts every engine from the native YAML with a small owner-derived admission instead of a launch manifest; the old manifest entry is retired."
+}

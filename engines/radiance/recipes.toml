@@ -11,9 +11,9 @@ pinned-version = "2.2.0"
 [patch-set.serving-core]
 patches = [
   "rad0008_hc_upmix_rt_sweep",
+  "rad0070_managed_native_entry",
   "rad0002_moe_remote_handoff",
   "rad0011_plan_memory",
-  "rad0009_serving_manifest",
   "rad0016_vtp14_rank_code_selection",
   "rad0017_vtp14_n3_shared_rendezvous",
   "rad0018_vtp14_n2_tp_ownership",
@@ -43,7 +43,6 @@ patches = [
   "rad0053_v4_kv_layouts",
   "rad0054_attn_prefill_fp8",
   "rad0055_step_phase_trace",
-  "rad0070_managed_native_entry",
   "rad0064_owned_weighted_head",
 ]
 

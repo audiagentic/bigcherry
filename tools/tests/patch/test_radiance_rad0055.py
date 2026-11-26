@@ -19,7 +19,7 @@ PATCH_DIR = REPO / "engines/radiance/patches" / PACKAGE
 class StepPhaseTraceTests(unittest.TestCase):
     def test_package_is_in_the_production_set_behind_the_serving_manifest(self):
         meta = tomllib.loads((PATCH_DIR / "patch.toml").read_text())
-        self.assertEqual(meta["requires"], ["rad0009_serving_manifest"])
+        self.assertEqual(meta["requires"], ["rad0070_managed_native_entry"])
         self.assertEqual(meta["plan-ids"], ["RUM09"])
         assert_promoted_recipe(self, PACKAGE)
 

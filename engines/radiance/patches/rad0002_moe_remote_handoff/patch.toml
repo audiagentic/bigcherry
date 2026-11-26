@@ -7,6 +7,6 @@ origin = "local"
 backend = "agnostic"
 plan-item = "RAD01"
 plan-ids = ["RAD01"]
-requires = ["rad0009_serving_manifest"]
+requires = ["rad0070_managed_native_entry"]
 conflicts = []
 tags = ["moe-routing"]

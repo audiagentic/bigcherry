@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-// rad0011 reads the manifest reader's expected plan (rad0009 core/bc_serving_manifest.cpp, linked here); it asks the engine's
+// rad0011 reads the owner admission's expected plan (rad0070 core/bc_serving_engine.cpp, linked here); it asks the engine's
 // option table for its names, which this test never uses.
 namespace rad::diag {
 std::vector<std::string> config_option_names() { return {}; }

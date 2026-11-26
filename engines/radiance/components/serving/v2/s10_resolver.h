@@ -4,7 +4,8 @@
 // queries sysfs or writes a device. S13 will supply the trusted producers.
 #include "v2/s8_rules.h"
 
-#include <functional>
+#include "callback_boundary.h"
+
 #include <map>
 #include <optional>
 #include <string>
@@ -39,8 +40,8 @@ struct S10DeviceProbe {
 // the gfx1100 pairing rule and the lease still apply). `site_overrides` are this host's per-BDF settings.
 struct S10PowerEvidence {
   std::map<std::string, PowerPatch> site_overrides;
-  std::function<S10DeviceProbe(const std::string &bdf)> probe;
-  std::function<std::optional<std::string>(const std::string &bdf, const PowerSettings &)> qualified_by;
+  callback::Guarded<S10DeviceProbe(const std::string &bdf)> probe;
+  callback::Guarded<std::optional<std::string>(const std::string &bdf, const PowerSettings &)> qualified_by;
   bool qualify = false;
 };
 struct S10PolicyPreflight {
