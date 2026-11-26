@@ -322,3 +322,22 @@ groups and three signed-arithmetic mismatch groups. Report
 20261126T035431Z-gpu-ai-qualification-report-2b0b6674b9be correctly
 refused independent qualification. This hardware report predates the
 additive telemetry schema; a new hardware smoke is needed for that schema.
+
+## 19. Explicit peer-pair qualification
+
+Reuse the GP11/GP13 exact position-dependent source/poison oracle in
+`tools/tests/fixtures/hardware/p2p_copy_correctness_test.cpp`. Its managed
+mode verifies both physical BDFs/architectures, checks directional HIP access
+capability and reserves VRAM independently at each endpoint. It attempts
+push/pull hipMemcpyDefault, explicit hipMemcpyPeer and hipMemcpyPeerAsync
+in both directions at six boundary sizes, checking every destination word
+and the source afterwards. The legacy regression mode remains available.
+The managed wrapper requires a GPU lease, idle preflight, both thermal
+ceilings and unchanged snapshots. Only complete exact coverage can pass;
+pull mismatches are not waived. API correctness alone does not prove a
+direct physical transport path.
+
+The six physical pairs in the initial allocation all reported both
+directional capabilities false. All six managed captures are unavailable,
+not passing; no copy was launched. Driver log coverage was also unavailable.
+A peer-capable allocation is required for actual data-path qualification.

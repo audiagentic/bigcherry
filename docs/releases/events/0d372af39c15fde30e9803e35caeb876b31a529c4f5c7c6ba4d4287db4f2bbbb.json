@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_040157_independent-gpu-qualification_9013",
+  "files": [
+    "tools/tests/fixtures/hardware/p2p_copy_correctness_test.cpp",
+    "tools/bigcherry/cli/ai_peer_cmds.py",
+    "tools/bigcherry/cli/ai_qualification_cmds.py",
+    "tools/tests/hardware/test_ai_peer.py",
+    "docs/design/gpu-qualification-code-guide.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Extend existing peer oracle for leased explicit physical pairs, directional capability checks, exact push/pull/sync/async copy and source checks, and managed nonpass evidence.",
+  "timestamp-utc": "2026-11-26T04:01:57.920658Z",
+  "user-summary-candidate": "Independent GPU qualification records explicit peer-pair capability and exact transfer coverage; unavailable hardware does not pass."
+}

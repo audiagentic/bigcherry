@@ -65,6 +65,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26: Managed screen end-to-end on helper0: report 20261126T035431Z-gpu-ai-qualification-report-2b0b6674b9be, six harvested groups: matrix/direct/wmma-positive pass; dot2-signed/wmma-fp16-signed/wmma-bf16-signed mismatch. Implemented additive telemetry schema 1 (timestamped power, raw clock/voltage and busy interfaces, memory/junction temperatures, gap-bounded interpolated energy across native load and requested warmup boundary); private read-only kernel log cursor, explicit inaccessible/overrun status, AMDGPU fault class counts stop work. 239 offline hardware tests passed/1 skipped. Hardware telemetry smoke not yet completed; Gate E holds lease. Estimates are diagnostic, not measured energy per token, and no control writes.
 
+2026-11-26: Extended existing GP11/GP13 peer fixture with explicit physical BDF/architecture bindings, per-direction HIP capability reporting, per-endpoint allocation headroom and 48 exact copy/source verification cases (push, pull, explicit peer sync and async; six boundary sizes, both directions), leased managed wrapper with both thermal sensors, driver-health observation and unchanged snapshots. Compiled against ROCm 7.2.4 all three targets; 240 offline hardware tests passed/1 skipped. Six physical pairs probed, all 12 directional capabilities false; no copies launched, all unavailable not pass, controls unchanged, all harvested. IDs 20261126T040021Z-gpu-ai-peer-4f9358f01f4e, 20261126T040022Z-gpu-ai-peer-97262d198490, 20261126T040023Z-gpu-ai-peer-149d4d73955d, 20261126T040023Z-gpu-ai-peer-f55953947d8a, 20261126T040024Z-gpu-ai-peer-303657000cdd, 20261126T040025Z-gpu-ai-peer-b6056248773e. Host kernel log unavailable; health incomplete. Peer data-path hardware coverage remains blocked on peer-capable allocation; API success would not prove physical route. Production remains blocked.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -76,3 +78,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T03:42:09.263099+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:50:43.706946+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:56:02.771051+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T04:01:14.438957+00:00 (updated-by): Updated: section:notes

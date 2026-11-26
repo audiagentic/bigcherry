@@ -40,6 +40,8 @@
 #include <cstdlib>
 #include <cstdint>
 #include <vector>
+#include <cstring>
+#include <string>
 
 #define CHK(x) do { hipError_t _e = (x); if (_e != hipSuccess) { \
     printf("HIP error %d (%s) at %s:%d\n", _e, hipGetErrorString(_e), __FILE__, __LINE__); \
@@ -127,7 +129,7 @@ static CheckResult check(const std::vector<uint64_t> &got, const std::vector<uin
 // "never written" from "wrote the previous run's data") so the failure
 // mode is classifiable, not just detectable.
 static bool run_direction(const char *label, int cur_device, int src_dev, int dst_dev,
-                           void *d_src, void *d_dst, size_t bytes, int epoch, int prev_epoch) {
+                           void *d_src, void *d_dst, size_t bytes, int epoch, int prev_epoch, int method = 0, bool verify_source = false) {
     size_t n = bytes / sizeof(uint64_t);
     std::vector<uint64_t> src_pattern(n), poison_pattern(n), prev_epoch_pattern(n), got(n);
 
@@ -135,23 +137,38 @@ static bool run_direction(const char *label, int cur_device, int src_dev, int ds
     fill_pattern(poison_pattern, SEED_POISON, dst_dev, epoch);
     fill_pattern(prev_epoch_pattern, SEED_SRC, src_dev, prev_epoch);
 
-    hipSetDevice(src_dev);
+    CHK(hipSetDevice(src_dev));
     CHK(hipMemcpy(d_src, src_pattern.data(), bytes, hipMemcpyHostToDevice));
-    hipSetDevice(dst_dev);
+    CHK(hipSetDevice(dst_dev));
     CHK(hipMemcpy(d_dst, poison_pattern.data(), bytes, hipMemcpyHostToDevice));
     CHK(hipDeviceSynchronize());
 
-    hipSetDevice(cur_device);
-    CHK(hipMemcpy(d_dst, d_src, bytes, hipMemcpyDefault));
+    CHK(hipSetDevice(cur_device));
+    if (method == 0) {
+        CHK(hipMemcpy(d_dst, d_src, bytes, hipMemcpyDefault));
+    } else if (method == 1) {
+        CHK(hipMemcpyPeer(d_dst, dst_dev, d_src, src_dev, bytes));
+    } else {
+        hipStream_t stream;
+        CHK(hipStreamCreateWithFlags(&stream, hipStreamNonBlocking));
+        CHK(hipMemcpyPeerAsync(d_dst, dst_dev, d_src, src_dev, bytes, stream));
+        CHK(hipStreamSynchronize(stream));
+        CHK(hipStreamDestroy(stream));
+    }
     CHK(hipDeviceSynchronize());
 
-    hipSetDevice(dst_dev);
+    CHK(hipSetDevice(dst_dev));
     CHK(hipMemcpy(got.data(), d_dst, bytes, hipMemcpyDeviceToHost));
 
     CheckResult r = check(got, src_pattern,
                            SEED_POISON ^ ((uint64_t)dst_dev << 56) ^ ((uint64_t)(uint32_t)epoch << 32),
                            SEED_SRC ^ ((uint64_t)src_dev << 56) ^ ((uint64_t)(uint32_t)prev_epoch << 32),
-                           src_dev, dst_dev == 0 ? 1 : 0);
+                           src_dev, dst_dev);
+    if (verify_source) {
+        CHK(hipSetDevice(src_dev));
+        CHK(hipMemcpy(got.data(), d_src, bytes, hipMemcpyDeviceToHost));
+        if (got != src_pattern) { printf("SOURCE_CHANGED\n"); return false; }
+    }
     if (r.bad == 0) {
         printf("%-40s OK   (n=%zu)\n", label, n);
         return true;
@@ -164,7 +181,88 @@ static bool run_direction(const char *label, int cur_device, int src_dev, int ds
     return false;
 }
 
-int main() {
+// Explicit physical pair mode for the leased PWR13 wrapper. The existing
+// ordinal-based GP11/GP13 regression mode remains unchanged.
+static int managed_device(const char *bdf, const char *arch) {
+    int device = -1;
+    CHK(hipDeviceGetByPCIBusId(&device, bdf));
+    char actual[32] = {};
+    CHK(hipDeviceGetPCIBusId(actual, sizeof(actual), device));
+    hipDeviceProp_t prop{};
+    CHK(hipGetDeviceProperties(&prop, device));
+    std::string observed_arch(prop.gcnArchName);
+    observed_arch = observed_arch.substr(0, observed_arch.find(':'));
+    if (std::strcmp(actual, bdf) || observed_arch != arch) {
+        printf("MANAGED_IDENTITY_MISMATCH\n"); exit(1);
+    }
+    return device;
+}
+
+static void reserve_check(int device, size_t allocation, size_t reserve) {
+    size_t free_bytes=0, total_bytes=0;
+    CHK(hipSetDevice(device));
+    CHK(hipMemGetInfo(&free_bytes, &total_bytes));
+    if (free_bytes < reserve || allocation > free_bytes-reserve) {
+        printf("MANAGED_HEADROOM_UNAVAILABLE\n"); exit(2);
+    }
+}
+
+static int managed_pair(char **argv) {
+    int devices[] = {managed_device(argv[2], argv[4]), managed_device(argv[3], argv[5])};
+    if (devices[0] == devices[1]) return 1;
+    char *end=nullptr;
+    unsigned long mib=std::strtoul(argv[6], &end, 10);
+    if (!end || *end || mib < 256 || mib > 65536) return 1;
+    size_t reserve=size_t(mib)<<20;
+    printf("MANAGED_PAIR %s %s %s %s\n", argv[2], argv[3], argv[4], argv[5]);
+    int can[2] = {};
+    for (int src=0; src<2; ++src) {
+        CHK(hipDeviceCanAccessPeer(&can[src], devices[src], devices[1-src]));
+        printf("MANAGED_ACCESS %d %d %d\n", src, 1-src, can[src]);
+    }
+    if (!can[0] || !can[1]) { printf("MANAGED_PEER_UNAVAILABLE\n"); return 2; }
+    for (int src=0; src<2; ++src) {
+        CHK(hipSetDevice(devices[src]));
+        CHK(hipDeviceEnablePeerAccess(devices[1-src], 0));
+    }
+    const size_t sizes[] = {8, 4088, 4096, 4104, 1ull<<20, 64ull<<20};
+    const char *methods[] = {"push", "pull", "peer", "peer-async"};
+    bool all_ok=true;
+    int epoch=1;
+    for (size_t bytes : sizes) {
+        void *buf[2] = {};
+        for (int i=0; i<2; ++i) {
+            reserve_check(devices[i], bytes, reserve);
+            CHK(hipMalloc(&buf[i], bytes));
+            reserve_check(devices[i], 0, reserve);
+        }
+        for (int src=0; src<2; ++src) {
+            int dst=1-src;
+            for (int m=0; m<4; ++m) {
+                bool ok=run_direction(methods[m], devices[m==1 ? dst : src],
+                    devices[src], devices[dst], buf[src], buf[dst], bytes,
+                    epoch, epoch-1, m<2 ? 0 : m-1, true);
+                printf("MANAGED_CASE %s %d %d %zu %zu %s\n",
+                       methods[m], src, dst, bytes, bytes/sizeof(uint64_t), ok ? "pass" : "mismatch");
+                fflush(stdout);
+                all_ok &= ok;
+                ++epoch;
+            }
+        }
+        for (int i=0; i<2; ++i) {
+            CHK(hipSetDevice(devices[i]));
+            CHK(hipFree(buf[i]));
+        }
+    }
+    return all_ok ? 0 : 1;
+}
+
+int main(int argc, char **argv) {
+    if (argc == 2 && !std::strcmp(argv[1], "--protocol-version")) {
+        printf("1\n"); return 0;
+    }
+    if (argc == 7 && !std::strcmp(argv[1], "--managed")) return managed_pair(argv);
+    if (argc != 1) return 1;
     int count = 0;
     CHK(hipGetDeviceCount(&count));
     if (count < 2) {
@@ -174,8 +272,8 @@ int main() {
 
     const int devA = 0, devB = 1;
     int can_ab = 0, can_ba = 0;
-    hipDeviceCanAccessPeer(&can_ab, devA, devB);
-    hipDeviceCanAccessPeer(&can_ba, devB, devA);
+    CHK(hipDeviceCanAccessPeer(&can_ab, devA, devB));
+    CHK(hipDeviceCanAccessPeer(&can_ba, devB, devA));
     printf("hipDeviceCanAccessPeer: %d->%d=%d  %d->%d=%d\n", devA, devB, can_ab, devB, devA, can_ba);
     // hipDeviceCanAccessPeer is directional and must not be assumed
     // symmetric; record any asymmetry rather than silently averaging it away.
@@ -187,9 +285,9 @@ int main() {
         return 2;
     }
 
-    hipSetDevice(devA);
+    CHK(hipSetDevice(devA));
     CHK(hipDeviceEnablePeerAccess(devB, 0));
-    hipSetDevice(devB);
+    CHK(hipSetDevice(devB));
     CHK(hipDeviceEnablePeerAccess(devA, 0));
 
     // Boundary sizes: 8 bytes is the size at which a real gfx1100 ROCm
@@ -222,9 +320,9 @@ int main() {
             continue;
 
         void *dA, *dB;
-        hipSetDevice(devA);
+        CHK(hipSetDevice(devA));
         CHK(hipMalloc(&dA, bytes));
-        hipSetDevice(devB);
+        CHK(hipSetDevice(devB));
         CHK(hipMalloc(&dB, bytes));
 
         char label[64];
@@ -236,8 +334,10 @@ int main() {
         if (!pull_ok)
             pull_currently_broken = true;
 
-        hipFree(dA);
-        hipFree(dB);
+        CHK(hipSetDevice(devA));
+        CHK(hipFree(dA));
+        CHK(hipSetDevice(devB));
+        CHK(hipFree(dB));
         epoch++; prev_epoch++;
     }
 
