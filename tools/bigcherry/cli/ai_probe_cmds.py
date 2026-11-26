@@ -27,13 +27,13 @@ def register(sub) -> None:
                    help="confirm no other GPU users or unresolved power journals from any owner")
     p.add_argument("--reference", help="managed stock screen run ID (observed reference only in explicit research mode)")
     p.add_argument("--dtype", nargs="+", choices=ai_probe.DTYPES, default=["fp16"],
-                   help="matrix dtype or independent memory/alu/wave/lds case")
+                   help="matrix dtype or registered independent instruction/memory case")
     p.add_argument("--provider", choices=ai_probe.PROVIDERS, default="hipblaslt",
                    help="explicit installed matrix library; no silent fallback")
     p.add_argument("--memory-mib", type=int, help="total allocation for memory dtype; explicit even MiB")
     p.add_argument("--resident-mib", type=int, default=0,
                    help="actively checked VRAM allocation concurrent with matrix workload")
-    p.add_argument("--headroom-mib", type=int, help="VRAM to leave free for memory or resident workload")
+    p.add_argument("--headroom-mib", type=int, help="VRAM to leave free (all workloads; default 512 MiB)")
     p.add_argument("--warmup-seconds", type=int, default=0, help="additional bounded heating time per case")
     p.add_argument("--min-hotspot-c", type=int, help="required sampled temperature for entire final interval")
     p.add_argument("--max-memory-c", type=int, help="optional explicit memory temperature ceiling")
@@ -47,6 +47,8 @@ def register(sub) -> None:
     p.add_argument("--max-hotspot-c", type=int, required=True, help="explicit safe upper ceiling, bounded by available reported limits")
     p.add_argument("--work-root", type=Path, help="existing shared managed work root")
     p.set_defaults(func=cmd_screen)
+    from .ai_qualification_cmds import register as register_qualification
+    register_qualification(sub)
 
 
 def cmd_screen(args: argparse.Namespace) -> int:
@@ -60,7 +62,8 @@ def cmd_screen(args: argparse.Namespace) -> int:
             ("memory" in args.dtype and (args.memory_mib is None or not 2 <= args.memory_mib <= 65536 or
                                         args.memory_mib % 2 or args.headroom_mib is None or
                                         not 256 <= args.headroom_mib <= 65536)) or
-            ("memory" not in args.dtype and (args.memory_mib is not None or (not args.resident_mib and args.headroom_mib is not None))) or
+            ("memory" not in args.dtype and args.memory_mib is not None) or
+            (args.headroom_mib is not None and not 256 <= args.headroom_mib <= 65536) or
             ("fp8" in args.dtype and args.provider == "rocblas") or
             not all(0 <= x <= 1000 for x in args.pause_ms) or
             len(set(args.dtype)) != len(args.dtype) or len(set(args.pause_ms)) != len(args.pause_ms)):
@@ -100,8 +103,18 @@ def cmd_screen(args: argparse.Namespace) -> int:
             inputs.append({"role": ref_role, "uri": str(args.reference), "sha256": args.reference_digest.removeprefix("sha256:")})
         for role, path in (("probe", args.probe), ("profiles", args.profiles)):
             inputs.append({"role": role, "uri": str(path.resolve()), "sha256": ai_probe.digest(path).removeprefix("sha256:")})
+        if getattr(args,"qualification",None):
+            for source in inputs:
+                if source != args.qualification_sources[source["role"]]:
+                    raise ai_probe.ScreenError("planned source digest changed")
+            binding=args.qualification
+            if ai_probe.digest(args.qualification_path)!=binding["digest"]:
+                raise ai_probe.ScreenError("qualification plan digest changed")
+            refs.append({"type":"run","id":binding["plan"],"role":"qualification-plan"})
+            inputs.append({"role":"qualification-plan","uri":str(args.qualification_path),
+                           "sha256":binding["digest"].removeprefix("sha256:")})
         args.input_digests = {i["role"]: "sha256:" + i["sha256"] for i in inputs}
-        plan_item = "PWR13" if args.matrix_shape is not None or args.resident_mib or any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
+        plan_item = "PWR13" if getattr(args,"qualification",None) or args.matrix_shape is not None or args.resident_mib or any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
         run = workspace.create_run(root, "capture", "gpu-ai-screen", plan_item=plan_item, engine="none",
                                    argv=sys.argv[:], purpose="Independent GPU power-profile screen",
                                    inputs=inputs, references=refs, subkind="gpu-ai-screen", repo=paths.REPO_ROOT)
@@ -130,6 +143,9 @@ def cmd_screen(args: argparse.Namespace) -> int:
         result = {"kind": "ai-power-screen", "schema_version": ai_probe.SCREEN_SCHEMA,
                   "status": getattr(exc, "status", "inconclusive"), "reason": str(exc),
                   "production_qualified": False}
+        if getattr(args,"qualification",None):
+            result["request"]={"qualification":args.qualification,"bdf":args.bdf,
+                               "arch":args.arch,"role":args.role}
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)

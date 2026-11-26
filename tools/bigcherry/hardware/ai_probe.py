@@ -490,6 +490,12 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                "max_memory_c": args.max_memory_c, "observe_current": args.observe_current,
                "stock_confirmed": args.stock_confirmed, "apply_profile": args.apply_profile}
     before, hw = snapshot(args.bdf)
+    if getattr(args,"qualification",None):
+        if (args.apply_profile or args.profile!="stock" or not args.observe_current or
+                before!=args.qualification_expected or
+                digest(args.qualification_path)!=args.qualification["digest"]):
+            raise ScreenError("qualification plan controls/identity/input changed; no work")
+        request["qualification"]=args.qualification
     reference_bytes = args.reference.read_bytes() if args.reference else None
     if reference_bytes is not None:
         if "sha256:" + hashlib.sha256(reference_bytes).hexdigest() != args.reference_digest:

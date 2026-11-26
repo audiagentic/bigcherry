@@ -270,3 +270,33 @@ architecture-specific mathematical precision contract and matched
 output-repeatability oracle require separate review and evidence.
 Do not accept a tolerance inferred solely from these few mismatches,
 or reinterpret the nonnegative coverage as a signed pass.
+
+## 17. Managed independent qualification recipe
+
+PWR13 now has a data-only architecture/recipe/group policy at
+`config/gpu-ai-qualification.toml`. The `gpu-ai-qualify plan` command
+resolves the architecture's supported matrix and direct-instruction cases,
+a bounded allocation from observed VRAM, explicit headroom and thermal limits,
+and a selected canonical power profile. Planning never writes GPU controls.
+The managed plan binds the probe, profiles, recipe and optional native-family
+plan by content digest. Native scope is imported from the RCS27 plan, with
+uncovered units preserved; it is not executed or certified by PWR13.
+
+`gpu-ai-qualify run --plan ID --group NAME` executes one group using the
+existing independent screen, under a verified GPU lease and idle-process
+preflight. It refuses non-stock selection, changed inputs and changed physical
+control snapshots. Stock selection here means observe-current, not factory
+settings. Signed precision cases are distinct required groups, even where the
+baseline disagrees with the mathematical oracle. Unsupported native WMMA is
+explicitly not applicable, never a software-emulated pass.
+
+Harvest each screen receipt with the existing managed capture harvester.
+`gpu-ai-qualify report --plan ID --result RUN_ID ...` checks verified bundle
+identity, plan bindings, recipe, actual case counts, and unchanged physical
+control snapshots. Missing and nonpassing groups remain visible. Even a complete
+independent pass cannot certify native or production qualification.
+
+The screen and extended policies are capability-driven, not a model-specific
+kernel coverage claim. The existing RCS27 native-family planner remains the
+authority for model/release route selection. Candidate execution remains
+blocked pending cross-owner recovery and reference qualification.

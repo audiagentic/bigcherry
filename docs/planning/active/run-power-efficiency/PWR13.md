@@ -61,6 +61,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26 tensor ISA slice: protocol 6/schema 7, vector FP, signed dot4/dot2, nonnegative dot2, FP16/BF16 WMMA signed/nonnegative, mixed IU8 WMMA. Three target code objects and CPU selftest passed; 222 hardware tests passed, one skipped. ISA proof as documented. Seventeen harvested observe-only captures: 70 passing cases, 7 strict mismatch cases, 28578021376 host-verified words in passing cases, all controls unchanged. gfx1100 both cards reproduce signed FP16/BF16 WMMA residue (0x3f7ffffa vs exact 1.0) and small signed dot2 discrepancies; nonnegative and mixed IU8 pass. gfx1201 passes signed and nonnegative; gfx1030 no native WMMA. Strict signed nonpasses retained; no tolerance or factory/production claim. Remaining recipe/transfer/phase/health/owner gates and separately reviewed precision contract.
 
+2026-11-26: Implemented managed architecture/recipe-driven gpu-ai-qualify plan/run/report, digest-bound probe/profile/recipe/native scope, observed physical snapshots and VRAM-derived budgets, one leased idle-screen group, fail-closed harvested result aggregation. 235 hardware tests passed/1 skipped. Physical plan 20261126T034531Z-gpu-ai-qualification-plan-84c0394b3695 captured; GPU smoke queued behind active Gate E release acceptance, not yet proven. RCS27 model/release route execution remains its owner; candidate execution deliberately refused pending cross-owner recovery and reference gates.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -70,3 +72,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T03:10:45.923234+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:21:55.716861+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:42:09.263099+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T03:50:43.706946+00:00 (updated-by): Updated: section:notes
