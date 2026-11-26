@@ -1162,3 +1162,38 @@ setting persisted. Driver health incomplete. The 2700/-100 arm is a
 candidate for a better rate/energy tradeoff; 2500/0 is a clock-only
 control worth retaining. No inference performance claim. Retain all
 points rather than select a profile solely on this single sweep.
+
+
+### XTX finalist pressure screening (2026-11-26)
+
+Supervised explicit applies using the existing power owner and matched
+observed references, each arm under verified lease with known-root
+journal audit, idle check, and all-four-card snapshot equality after
+restore. Settings 2700 MHz at 0/-100/-125 mV, unchanged 303 W cap and
+memory clock. No production profile changes. Driver health incomplete.
+The candidate interface still prohibits new instruction, rectangular
+geometry and concurrent resident-memory cases; these are not tested
+under candidate controls and no restriction is bypassed.
+
+Original hot recipe (768-square BF16, batch 32, 30 s warmup + 60 s
+measurement) at helper0 2700/0: 338432 verified GEMMs but 51–58 C,
+inconclusive because the full 60 C hot window was not reached.
+Capture 20261126T062716Z-gpu-ai-screen-eab61e3fc539. Exact restore.
+Do not reduce the temperature floor. Increase geometry with a fresh
+matched reference.
+
+Independent VRAM pressure: 20992 MiB (22011707392 bytes), 2048 MiB
+headroom, 15 s requested, two complete address-pattern iterations per
+arm. All eight arms pass (six explicit candidate restores), no concurrent
+matrix workload implied.
+
+| Role | Clock/offset | Native s | Memory peak C | Capture |
+|---|---|---:|---:|---|
+| helper0 | observed | 30.54 | 65 | 20261126T062913Z-gpu-ai-screen-b39aa94b0584 |
+| helper0 | 2700/0 | 23.59 | 65 | 20261126T062944Z-gpu-ai-screen-7abe41480d24 |
+| helper0 | 2700/-100 | 23.59 | 66 | 20261126T063009Z-gpu-ai-screen-ce945c04ddb5 |
+| helper0 | 2700/-125 | 23.58 | 67 | 20261126T063033Z-gpu-ai-screen-252b9f9a8c59 |
+| helper1 | observed | 23.70 | 51 | 20261126T063105Z-gpu-ai-screen-d627b78f35e5 |
+| helper1 | 2700/0 | 23.69 | 52 | 20261126T063130Z-gpu-ai-screen-ccff8a827ba1 |
+| helper1 | 2700/-100 | 23.70 | 53 | 20261126T063154Z-gpu-ai-screen-501aa270956b |
+| helper1 | 2700/-125 | 23.70 | 52 | 20261126T063219Z-gpu-ai-screen-039b695d5d2c |

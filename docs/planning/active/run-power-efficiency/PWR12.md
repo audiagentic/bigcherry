@@ -92,6 +92,10 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26: helper1 same sweep completed 10 arms, 40/40 cases and 274816 verified GEMMs; eight candidate transactions restored, all four device snapshots match. 2700/-125 lowest observed 38.411 J/1000 vs bracketed baseline 56.281 (31.8% lower estimated energy, 2.2% lower aggregate rate); 2700/-100 40.324, 0.9% lower aggregate rate. Both cards 80/80 cases, 539712 verified GEMMs, 20 harvested captures, no setting persisted. Detailed per-arm capture IDs/metrics in AI_POWER_SCREEN.md. Repeat finalist matched arms and native/model performance/stability before any profile promotion; driver-health and reciprocal owner admission incomplete. No changes to production settings.
 
+2026-11-26: pressure stage started from merged sweep. At 2700/0 helper0, original hot recipe BF16 768 batch32 30+60 s completed 338432 verified GEMMs but hotspot only 51–58 C, hot window inconclusive; exact restoration all four; harvested 20261126T062716Z-gpu-ai-screen-eab61e3fc539. Do not reduce temperature floor; increase geometry with fresh matched reference. Helper0 20.5 GiB address-pattern VRAM at stock, 2700/0, -100, -125 all pass, two full iterations each (allocated 22011707392 B), memory peak 65/65/66/67 C, exact candidate restores. Captures 20261126T062913Z-gpu-ai-screen-b39aa94b0584, 20261126T062944Z-gpu-ai-screen-7abe41480d24, 20261126T063009Z-gpu-ai-screen-ce945c04ddb5, 20261126T063033Z-gpu-ai-screen-252b9f9a8c59.
+
+2026-11-26 helper1 VRAM pressure also passes original, 2700/0, 2700/-100 and 2700/-125: 20.5 GiB (22011707392 B), two full iterations each, memory peak 51/52/53/52 C. All controls restored. Captures 20261126T063105Z-gpu-ai-screen-d627b78f35e5, 20261126T063130Z-gpu-ai-screen-ccff8a827ba1, 20261126T063154Z-gpu-ai-screen-501aa270956b, 20261126T063219Z-gpu-ai-screen-039b695d5d2c. Combined 8/8 independent memory arms pass; not simultaneous resident compute or native qualification.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -114,3 +118,5 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T06:12:37.386843+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:19:29.145327+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:21:17.933628+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:31:46.650763+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:33:12.654600+00:00 (updated-by): Updated: section:notes
