@@ -710,3 +710,44 @@ def test_resident_refuses_application(tmp_path):
         with pytest.raises(a.ScreenError, match="observe-only"):
             a.screen(ns, journal_dir=tmp_path)
     tx.assert_not_called()
+
+
+def test_sampled_energy_requires_complete_bounded_trace():
+    ns=10**9
+    trace=[(0,100_000_000),(ns,200_000_000),(2*ns,100_000_000)]
+    value=a.sampled_energy(trace,ns//2,3*ns//2)
+    assert value["status"]=="estimated"
+    assert value["joules"]==175
+    for bad in ([(0,100),(2*ns,100)],[(0,100),(ns,None),(2*ns,100)],
+                [(0,100),(ns,100),(ns,100)],[(0,-1),(ns,100)]):
+        assert a.sampled_energy(bad,0,ns)["joules"] is None
+    assert a.sampled_energy(trace,0,3*ns)["status"]=="incomplete"
+
+
+def test_telemetry_preserves_unavailable_status(tmp_path):
+    (tmp_path/"power1_average").write_text("100000000")
+    (tmp_path/"freq1_input").write_text("123456789")
+    row=a.telemetry_sample(tmp_path,"0000:ff:00.0")
+    assert row["power1_average"]["value"]==100000000
+    assert row["freq1_input"]["unit"]=="Hz"
+    assert row["freq2_input"]["status"]=="unsupported"
+    assert row["freq2_input"]["value"] is None
+
+
+def test_driver_health_unavailable_not_healthy():
+    with patch.object(a.os, "open", side_effect=PermissionError):
+        with a.DriverHealthWindow() as health:
+            health.scan()
+            assert health.observation()["status"]=="incomplete"
+
+
+def test_driver_health_fault_class_without_raw_log():
+    with patch.object(a.os,"open",return_value=123), patch.object(a.os,"lseek"), \
+            patch.object(a.os,"close"), patch.object(a.os,"read",side_effect=[
+                b"unrelated private message",b"amdgpu: GPU reset begin",BlockingIOError()]):
+        with a.DriverHealthWindow() as health:
+            health.scan()
+            obs=health.observation()
+    assert obs["status"]=="fault_observed"
+    assert obs["fault_classes"]=={"reset":1}
+    assert "private" not in str(obs)

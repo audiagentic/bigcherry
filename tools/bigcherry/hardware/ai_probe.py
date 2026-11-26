@@ -7,6 +7,7 @@ This is not production qualification or automatic profile promotion.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -143,6 +144,117 @@ def hot_window(samples: list[tuple[int, int]], start_ns: int, end_ns: int,
             "max_gap_ns": max(gaps), "samples": len(window)}
 
 
+def sampled_energy(samples: list[tuple[int, int | None]], start_ns: int,
+                   end_ns: int) -> dict:
+    """Estimate joules only from a bracketed, gap-bounded power trace."""
+    unavailable = {"status": "incomplete", "joules": None,
+                   "method": "trapezoid_power1_average", "start_ns": start_ns, "end_ns": end_ns}
+    if start_ns >= end_ns or len(samples) < 2 or any(
+            b[0] <= a[0] for a, b in zip(samples, samples[1:])):
+        return unavailable
+    area = 0.0
+    covered = 0
+    max_gap = int(4 * POLL_SECONDS * 1e9)
+    for (t0, v0), (t1, v1) in zip(samples, samples[1:]):
+        left, right = max(t0, start_ns), min(t1, end_ns)
+        if left >= right:
+            continue
+        if (t1-t0 > max_gap or type(v0) is not int or type(v1) is not int or
+                min(v0, v1) < 0):
+            return unavailable
+        low = v0+(v1-v0)*(left-t0)/(t1-t0)
+        high = v0+(v1-v0)*(right-t0)/(t1-t0)
+        area += (low+high)*(right-left)/2
+        covered += right-left
+    if covered != end_ns-start_ns:
+        return unavailable
+    return unavailable | {"status": "estimated", "joules": area/1e15,
+                          "covered_ns": covered}
+
+
+class DriverHealthWindow:
+    """Read a private, non-consuming kernel-log cursor, never clear the log.
+
+    Missing permissions or lost records are explicit gaps, not evidence of
+    health. Store only fault classes, not unrelated kernel messages.
+    """
+    def __init__(self, path=Path("/dev/kmsg")):
+        self.path = path
+        self.fd = None
+        self.reason = "not_opened"
+        self.events = {}
+        self.records = 0
+
+    def __enter__(self):
+        try:
+            self.fd = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK | os.O_CLOEXEC)
+            os.lseek(self.fd, 0, os.SEEK_END)
+            self.reason = None
+        except OSError:
+            self.reason = "kernel_log_unavailable"
+            self.close()
+        return self
+
+    def close(self):
+        if self.fd is not None:
+            os.close(self.fd)
+            self.fd = None
+
+    def __exit__(self, *_):
+        self.close()
+
+    def scan(self):
+        if self.fd is None:
+            return
+        for _ in range(256):
+            try:
+                raw = os.read(self.fd, 65536)
+            except BlockingIOError:
+                return
+            except OSError as exc:
+                self.reason = "kernel_log_overrun" if exc.errno == errno.EPIPE else "kernel_log_read_failed"
+                self.close()
+                return
+            if not raw:
+                self.reason = "kernel_log_eof"
+                self.close()
+                return
+            self.records += 1
+            msg = raw.decode(errors="replace").lower()
+            if "amdgpu" not in msg:
+                continue
+            markers = {"reset": ("gpu reset", "gpu recovery"),
+                       "timeout": ("ring timeout", "job_timedout", "ring gfx", "ring sdma"),
+                       "page_fault": ("page fault", "vm fault", "vm_fault"),
+                       "device_lost": ("gpu is lost", "device lost")}
+            for key, words in markers.items():
+                if any(w in msg for w in words) and (key != "timeout" or "timeout" in msg or "timedout" in msg):
+                    self.events[key] = self.events.get(key, 0)+1
+        self.reason = "kernel_log_drain_bound_reached"
+        self.close()
+
+    def observation(self):
+        return {"status": "fault_observed" if self.events else
+                "incomplete" if self.reason else "no_matching_fault_observed",
+                "reason": self.reason, "scope": "system_amdgpu", "records": self.records,
+                "fault_classes": dict(self.events)}
+
+
+def telemetry_sample(hw: Path, bdf: str) -> dict:
+    # Keep raw interface names; never infer a voltage rail or clock domain.
+    fields = {"power1_average": (hw/"power1_average", "uW"),
+              "freq1_input": (hw/"freq1_input", "Hz"),
+              "freq2_input": (hw/"freq2_input", "Hz"),
+              "in0_input": (hw/"in0_input", "mV"),
+              "gpu_busy_percent": (Path("/sys/bus/pci/devices")/bdf/"gpu_busy_percent", "%")}
+    result = {}
+    for name, (path, unit) in fields.items():
+        obs = power_probe.read_int(path, unit=unit)
+        result[name] = {"time_ns": time.monotonic_ns(), "value": obs.value,
+                        "status": obs.status, "unit": unit}
+    return result
+
+
 def matrix_geometry(n: int, selected=None) -> list[int]:
     """Resolve and bound a column-major NN GEMM layout."""
     g = [n]*6 if selected is None else list(selected)
@@ -187,12 +299,25 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
     timestamps: list[tuple[int, int]] = []
     memory_samples: list[int] = []
     power_samples: list[int] = []
+    memory_timestamps: list[tuple[int, int]] = []
+    telemetry: list[dict] = []
     def observe():
-        sample(sensor, limit, samples)
-        timestamps.append((time.monotonic_ns(), samples[-1]))
+        previous = len(samples)
+        try:
+            sample(sensor, limit, samples)
+        finally:
+            if len(samples) > previous:
+                timestamps.append((time.monotonic_ns(), samples[-1]))
         if memory_sensor is not None:
-            sample(memory_sensor, memory_limit, memory_samples)
-        watts = power_probe.read_int(sensor.parent / "power1_average").value
+            previous = len(memory_samples)
+            try:
+                sample(memory_sensor, memory_limit, memory_samples)
+            finally:
+                if len(memory_samples) > previous:
+                    memory_timestamps.append((time.monotonic_ns(), memory_samples[-1]))
+        row = telemetry_sample(sensor.parent, bdf)
+        telemetry.append(row)
+        watts = row["power1_average"]["value"]
         if type(watts) is int and watts >= 0:
             power_samples.append(watts)
     observe()
@@ -211,7 +336,7 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
             raise ScreenError("matrix geometry/residency on nonmatrix case")
         native_geometry = [0]*5
     launch_ns = time.monotonic_ns()
-    with tempfile.TemporaryFile(dir=output_dir) as stdout, tempfile.TemporaryFile(dir=output_dir) as stderr:
+    with DriverHealthWindow() as health, tempfile.TemporaryFile(dir=output_dir) as stdout, tempfile.TemporaryFile(dir=output_dir) as stderr:
         proc = subprocess.Popen([str(binary), bdf, arch, dtype, str(n), str(duration), str(pause),
                                  provider, str(headroom_mib), str(batch), *map(str, native_geometry), str(resident_mib)], stdout=stdout, stderr=stderr)
         failure = None
@@ -222,10 +347,16 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
                 if not lease.held_by_this_process():
                     raise ScreenError("GPU lease lost", "lease_lost")
                 observe()
+                health.scan()
+                if health.events:
+                    raise ScreenError("AMDGPU fault observed during workload", "device_error")
                 if time.monotonic_ns() - launch_ns > (duration + setup_timeout) * 1e9:
                     raise ScreenError("probe deadline exceeded", "timeout")
                 time.sleep(POLL_SECONDS)
             observe()
+            health.scan()
+            if health.events:
+                raise ScreenError("AMDGPU fault observed during workload", "device_error")
             if cancelled():
                 raise ScreenError("screen interrupted", "cancelled")
             if not lease.held_by_this_process():
@@ -250,7 +381,8 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
               "memory_max_mc": max(memory_samples) if memory_samples else None,
               "mean_sampled_power_uw": sum(power_samples)//len(power_samples) if power_samples else None,
               "power_samples": len(power_samples), "exit": proc.returncode,
-              "junction_samples": timestamps}
+              "junction_samples": timestamps, "memory_timestamps": memory_timestamps,
+              "telemetry_schema": 1, "telemetry": telemetry, "driver_health": health.observation()}
     if failure is not None:
         return result | {"status": failure.status, "diagnostic": str(failure)}
     if proc.returncode != 0:
@@ -267,6 +399,14 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
                         headroom_mib, launch_ns=launch_ns, batch=batch, geometry=geometry, resident_mib=resident_mib)
     except ScreenError as exc:
         return result | {"status": exc.status, "diagnostic": str(exc)}
+    power_trace = [(r["power1_average"]["time_ns"], r["power1_average"]["value"])
+                   for r in telemetry]
+    start, end = payload["start_ns"], payload["end_ns"]
+    result["native_load_energy"] = sampled_energy(power_trace, start, end)
+    if warmup_seconds:
+        boundary = start + warmup_seconds*10**9
+        result["requested_warmup_energy"] = sampled_energy(power_trace, start, boundary)
+        result["after_requested_warmup_energy"] = sampled_energy(power_trace, boundary, end)
     if min_hotspot_c is not None:
         result["hot_window"] = hot_window(timestamps, payload["start_ns"], payload["end_ns"], seconds, min_hotspot_c*1000)
         if result["hot_window"] is None:
