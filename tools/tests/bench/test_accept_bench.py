@@ -30,6 +30,9 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        if self.path == "/v1/models":
+            body = b'{"data": [{"id": "served-test-model"}]}'
+            self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
         if self.path != "/metrics" or not self.metrics_on:
             self.send_response(404); self.end_headers(); return
         body = (f"radiance:draft_tokens_total {self.drafted}\nradiance:draft_accepted_total {self.accepted}\n"

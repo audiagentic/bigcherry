@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                         help="native bc-serve run directory for immutable measurement identity")
     parser.add_argument("--work-root", type=Path,
                         help="BC_WORK_ROOT MRC01 record store (defaults to environment)")
-    parser.add_argument("--model", default="default")
+    parser.add_argument("--model", default=None, help="the served model name (default: the first id of /v1/models)")
     parser.add_argument("--expect", choices=("answered", "refused"), default="answered")
     parser.add_argument("--format", dest="kind", choices=("bmp", "jpeg", "png"), default="bmp")
     parser.add_argument("--timeout", type=float, default=300.0)
@@ -126,8 +126,10 @@ def main(argv: list[str] | None = None) -> int:
     if tools not in sys.path:
         sys.path.insert(0, tools)
     from bigcherry.bench.radiance_lab_records import verify_live_target
+    from bigcherry.bench.served_model import served_model
 
     verify_live_target(args.run_dir, args.url)
+    args.model = args.model or served_model(args.url)
     actual_image_bytes = {"bmp": bmp, "jpeg": jpeg, "png": png}[args.kind]()
     status, payload, seconds = ask(args.url, args.model, args.timeout, args.kind,
                                    image_bytes=actual_image_bytes)

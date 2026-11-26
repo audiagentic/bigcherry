@@ -98,7 +98,7 @@ def main(argv: list[str] | None = None) -> int:
                     help="native bc-serve run directory; required for immutable measurement provenance")
     ap.add_argument("--work-root", type=Path,
                     help="BC_WORK_ROOT MRC01 record store (defaults to environment)")
-    ap.add_argument("--model", default="default")
+    ap.add_argument("--model", default=None, help="the served model name (default: the first id of /v1/models)")
     ap.add_argument("--tokens", type=int, action="append", required=True, help="target prompt tokens (repeatable)")
     ap.add_argument("--depths", default="0.1,0.5,0.9")
     ap.add_argument("--repeats", type=int, default=3)
@@ -110,8 +110,10 @@ def main(argv: list[str] | None = None) -> int:
     if tools not in sys.path:
         sys.path.insert(0, tools)
     from bigcherry.bench.radiance_lab_records import verify_live_target
+    from bigcherry.bench.served_model import served_model
 
     verify_live_target(args.run_dir, args.url)
+    args.model = args.model or served_model(args.url)
     text = corpus()
     cpt = chars_per_token(args.url, args.model, text, args.timeout)
     rows = []

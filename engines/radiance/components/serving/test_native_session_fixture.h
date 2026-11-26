@@ -212,6 +212,7 @@ inline NativeSessionPlan native_session_inputs(const fs::path& host, const fs::p
         {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
         {"TEST_NATIVE_INSPECT_MODEL", model.string()},
         {"TEST_NATIVE_INSPECT_EXPECT_YAML", out.yaml_bytes},
+        {"TEST_NATIVE_EXPECT_ROOT", root.string()},
         {"TEST_NATIVE_INSPECT_PORT", std::to_string(port)},
         {"TEST_NATIVE_INSPECT_SETTINGS", settings.dump()},
         {"TEST_NATIVE_INSPECT_MAX_CONTEXT", std::to_string(resolved.values.at("service").at("max_context").get<int>())},
@@ -296,6 +297,7 @@ inline NativeSessionPlan native_helper_session_inputs(const fs::path& host, cons
     }
     ss::Env overrides = {
         {"TEST_NATIVE_INSPECT_EXPECT_YAML", out.yaml_bytes},
+        {"TEST_NATIVE_EXPECT_ROOT", root.string()},
         {"TEST_NATIVE_INSPECT_MODEL", model.string()},
         {"TEST_NATIVE_INSPECT_RANK_DEVICES", resolved.values.at("layout").at("engine_cards").dump()},
         {"TEST_NATIVE_INSPECT_PORT", std::to_string(port)},

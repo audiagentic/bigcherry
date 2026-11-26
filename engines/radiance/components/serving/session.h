@@ -68,7 +68,7 @@ Env current_child_environment(const Env& runtime);
  * fchdir only after registration; it remains close-on-exec. Throws, naming the program, on launch failure. */
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log,
             const Callback<void(pid_t)>& recorded = {}, int inherited_manifest_fd = -1,
-            int working_directory_fd = -1);
+            int working_directory_fd = -1, const std::vector<int>& more_inherited_fds = {});
 
 /* A child of this process: whether it is still running (reaps it when it has exited; its status goes to
  * `status`). */
@@ -122,7 +122,9 @@ struct EngineStart {
     std::string stored_sha256; // original authenticated bytes, verified again against the pinned handoff
     std::shared_ptr<PinnedManifest>
         pinned_manifest;              // keeps a sealed file open across children; null on first start
-    std::vector<std::string> argv;    // the engine binary, --manifest M, --role engine; nothing else
+    std::vector<std::string> argv;    // the engine binary, --config /proc/self/fd/N, --bc-admission-fd M; nothing else
+    std::shared_ptr<PinnedManifest> config;     // the admitted raw YAML, sealed (--config)
+    std::shared_ptr<PinnedManifest> admission;  // the engine admission document, sealed (--bc-admission-fd)
     std::vector<HelperStart> helpers; // ordered, prior to the engine
     std::string handoff_shm;          // unique to this owner; non-empty only with helpers
     Env runtime;                      // RADIANCE_HOME, ROCR_VISIBLE_DEVICES, HIP_VISIBLE_DEVICES

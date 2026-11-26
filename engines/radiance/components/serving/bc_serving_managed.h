@@ -27,6 +27,11 @@ int bc_serving_managed_bind(rad::fleet::FleetConfig* fleet);
 bool bc_serving_managed();
 /* The last refusal message of the hooks above (also printed on stderr), for tests. */
 const std::string& bc_serving_managed_last_refusal();
+/* Fleet::run: the usable cards for a managed start. Radiance keeps only the cards of the FIRST card's architecture, which
+ * refuses a mixed-architecture layout (2x gfx1100 + gfx1201) that its --rank-devices path admits. The owner has restricted
+ * visibility to exactly the admitted ranks, so they are the usable cards, as ordinals 0..n-1 in rank order; any other
+ * start gets `single_architecture` back unchanged. */
+std::vector<int> bc_serving_managed_usable(const std::vector<int>& single_architecture);
 /* Fleet::reap: a managed engine stopped while serving. The process ends (no demand-driven restart) and exits non-zero. */
 void bc_serving_managed_note_engine_exit();
 bool bc_serving_managed_engine_exited();
@@ -38,6 +43,7 @@ std::string bc_serving_managed_chosen(const std::vector<int>& chosen);
 int bc_serving_managed_refuse(const std::string& why);   /* records, prints, returns 2 */
 void bc_serving_managed_mark();
 const bc::serving::EngineAdmission* bc_serving_managed_admission();
+int bc_serving_managed_admission_fd();   /* the inherited descriptor the admission came from */
 
 /* Defined beside the getters it fills (bc_serving_manifest.cpp). */
 void bc_serving_install_engine_state(const bc::serving::EngineAdmission& admission, const std::string& heat_nonce,

@@ -247,7 +247,10 @@ def docs_corpus(repo: Path = REPO) -> str:
 
 def _completion(url: str, prompt: str, timeout: float) -> tuple[int, float]:
     """One non-streaming completion of max_tokens 1 at temperature 0: (server prompt_tokens, wall seconds)."""
-    body = json.dumps({"model": "default", "prompt": prompt, "max_tokens": 1, "temperature": 0, "stream": False}).encode()
+    if str(REPO / "tools") not in sys.path:
+        sys.path.insert(0, str(REPO / "tools"))
+    from bigcherry.bench.served_model import served_model
+    body = json.dumps({"model": served_model(url), "prompt": prompt, "max_tokens": 1, "temperature": 0, "stream": False}).encode()
     req = urllib.request.Request(url.rstrip("/") + "/v1/completions", data=body,
                                  headers={"Content-Type": "application/json"})
     t0 = time.perf_counter()

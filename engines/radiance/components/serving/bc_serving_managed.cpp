@@ -24,6 +24,7 @@ namespace v2 = bc::serving::v2;
 
 std::optional<bc::serving::EngineAdmission> g_admission;
 std::atomic<bool> g_managed{false};
+int g_admission_fd = -1;
 std::atomic<bool> g_engine_exited{false};
 
 std::string g_last_refusal;
@@ -35,6 +36,7 @@ int bc_serving_managed_refuse(const std::string& why) {
     return 2;
 }
 void bc_serving_managed_mark() { g_managed.store(true); }
+int bc_serving_managed_admission_fd() { return g_admission_fd; }
 const bc::serving::EngineAdmission* bc_serving_managed_admission() { return g_admission ? &*g_admission : nullptr; }
 
 namespace {
@@ -98,6 +100,7 @@ int bc_serving_managed_take_flag(int* argc, char*** argv) {
         for (const auto& [name, value] : admission.value().env) ::setenv(name.c_str(), value.c_str(), 1);
         bc_serving_install_engine_state(admission.value(), nonce.value_or(""), phase.value_or(""));
         g_admission = std::move(admission.value());
+        g_admission_fd = fd;
     } catch (const std::exception& failure) {
         return refuse(failure.what());
     }
@@ -109,6 +112,13 @@ const std::string& bc_serving_managed_last_refusal() { return g_last_refusal; }
 bool bc_serving_managed() { return g_managed.load(); }
 void bc_serving_managed_note_engine_exit() { g_engine_exited.store(true); }
 bool bc_serving_managed_engine_exited() { return g_engine_exited.load(); }
+
+std::vector<int> bc_serving_managed_usable(const std::vector<int>& single_architecture) {
+    if (!g_admission) return single_architecture;
+    std::vector<int> ranks(g_admission->bdfs.size());
+    for (size_t i = 0; i < ranks.size(); ++i) ranks[i] = static_cast<int>(i);
+    return ranks;
+}
 
 std::string bc_serving_managed_chosen(const std::vector<int>& chosen) {
     if (!g_admission) return {};

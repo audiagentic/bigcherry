@@ -35,6 +35,13 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         cls = type(self)
+        if self.path == "/v1/models":
+            body = json.dumps({"object": "list", "data": [{"id": "served-test-model"}]}).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         if self.path != "/metrics" or not cls.metrics_on:
             self.send_response(404)
             self.end_headers()

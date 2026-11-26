@@ -18,6 +18,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from .served_model import served_model
 from .stream_bench import engine_delta, scrape_metrics
 
 SCHEMA = "bigcherry/accept-bench/v1"
@@ -46,8 +47,9 @@ def _complete(url: str, model: str, prompt: str, max_tokens: int, temperature: f
         raise AcceptBenchError(f"completion failed: {exc}") from exc
 
 
-def run(url: str, model: str = "default", kinds: tuple[str, ...] = tuple(KINDS), max_tokens: int = 512,
+def run(url: str, model: str | None = None, kinds: tuple[str, ...] = tuple(KINDS), max_tokens: int = 512,
         temperature: float = 0.0, timeout: float = 900.0) -> dict:
+    model = model or served_model(url)
     unknown = [k for k in kinds if k not in KINDS]
     if unknown or not kinds or max_tokens < 1:
         raise AcceptBenchError(f"kinds must be among {sorted(KINDS)} and max-tokens at least 1 (got {unknown or kinds})")
@@ -79,7 +81,7 @@ def run(url: str, model: str = "default", kinds: tuple[str, ...] = tuple(KINDS),
 def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     ap.add_argument("--url", required=True, help="server base URL, e.g. http://127.0.0.1:8080")
-    ap.add_argument("--model", default="default")
+    ap.add_argument("--model", default=None, help="the served model name (default: the first id of /v1/models)")
     ap.add_argument("--kinds", default=",".join(KINDS), help=f"comma-separated, from {','.join(KINDS)}")
     ap.add_argument("--max-tokens", type=int, default=512)
     ap.add_argument("--temperature", type=float, default=0.0)

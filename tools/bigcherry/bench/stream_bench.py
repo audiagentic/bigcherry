@@ -30,6 +30,8 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from .served_model import served_model
+
 SCHEMA = "bigcherry.stream-benchmark.v1"
 
 _WORDS = ("amber basalt cedar delta ember fjord garnet harbor indigo juniper kestrel lantern meadow nectar onyx prairie "
@@ -378,7 +380,7 @@ def flat_metrics(record: dict) -> dict:
 def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(description=__doc__, add_help=add_help)
     ap.add_argument("--url", required=True, help="server base URL, e.g. http://127.0.0.1:8080")
-    ap.add_argument("--model", default="default")
+    ap.add_argument("--model", default=None, help="the served model name (default: the first id of /v1/models)")
     ap.add_argument("--streams", default="1,2,4,8", help="comma-separated concurrent stream counts")
     ap.add_argument("--prompt-tokens", type=int, default=512,
                     help="target prompt size in tokens, measured against the server's tokenizer (see --no-calibrate)")
@@ -399,7 +401,7 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
 def run_from_namespace(args) -> int:
     try:
         counts = [int(x) for x in str(args.streams).split(",") if x.strip()]
-        record = run(args.url, args.model, counts, args.prompt_tokens, args.max_tokens, args.reps, args.temperature,
+        record = run(args.url, args.model or served_model(args.url), counts, args.prompt_tokens, args.max_tokens, args.reps, args.temperature,
                      args.timeout, args.seed, args.shared_prefix, args.allow_estimate, not args.no_calibrate)
     except (StreamBenchError, ValueError) as exc:
         print(f"stream-bench: ERROR: {exc}", file=sys.stderr)

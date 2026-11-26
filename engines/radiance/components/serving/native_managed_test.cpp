@@ -102,6 +102,8 @@ int main() {
                       f.models[0].cfg.given.empty() && !bc_serving_managed(),
                   "the stock bind changed something");
             check(bc_serving_managed_chosen({1, 0}).empty(), "the stock entry checked the chosen cards");
+            check(bc_serving_managed_usable({0, 1}) == std::vector<int>({0, 1}) && bc_serving_managed_usable({0}) == std::vector<int>({0}),
+                  "the stock entry changed the usable cards");
         }
         // Refused documents and flags: nothing installed, exit 2.
         const bc::serving::EngineAdmission good = admission();
@@ -112,6 +114,15 @@ int main() {
         check(take(good, {"--bc-heat-launch-nonce", "x", "--bc-heat-launch-nonce", "y"}) == 2, "a repeated flag");
         // Accepted document, then the bind matrix (each refusal leaves the process unmanaged).
         check(take(good) == 0, "a good admission was refused");
+        {   // mixed architectures (2x gfx1100 + gfx1201): Radiance's one-architecture filter leaves [0,1]; the admitted ranks are all three
+            bc::serving::EngineAdmission mixed = good;
+            mixed.bdfs = {"0000:03:00.0", "0000:06:00.0", "0000:09:00.0"};
+            mixed.rank_devices = mixed.bdfs;
+            check(take(mixed) == 0, "a three-rank admission was refused");
+            check(bc_serving_managed_usable({0, 1}) == std::vector<int>({0, 1, 2}), "a mixed-architecture start lost its third rank");
+            check(take(good) == 0, "the two-rank admission was refused again");
+            check(bc_serving_managed_usable({0}) == std::vector<int>({0, 1}), "the usable cards are not the admitted ranks");
+        }
         {
             rad::fleet::FleetConfig two = fleet();
             two.models.push_back(two.models[0]);
