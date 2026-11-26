@@ -68,6 +68,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26 follow-up: the queued gfx1030 helper2 observed and 272 W candidate 12800 MiB memory cases completed, two checked whole-buffer passes each; candidate restored exact original controls. Managed run IDs 20261125T234829Z-gpu-ai-screen-97b163609ed5 and 20261125T234916Z-gpu-ai-screen-64226fcb1beb; both hash-verified by the standard run harvest. Sampled mean board power 48.36/48.44 W (not phase energy); no demonstrated saving. All four cards now have the planned observed large-residency diagnostic, both XTX clock-only arms and gfx1030 cap arm tested; R9700 candidate remains thermally stopped. No factory assertion, hot simultaneous model residency, or production qualification.
 
+2026-11-26 extended observed-reference BF16 diagnostic: both gfx1100 helpers used the same batched N=768, 30 s warmup + 60 s final per pattern, sustained and 2 ms burst, junction floor 60 C and junction/memory ceiling 80 C. Helper0 sustained pass 669120 clean GEMMs, verified hot window 72–75 C; burst 418624 clean GEMMs but no full hot window. Helper1 sustained pass 678784 clean GEMMs, 75–78 C; burst 416928 clean GEMMs but no full hot window. Both overall inconclusive, observed controls unchanged, no candidate mutation. Harvested run IDs 20261126T003601Z-gpu-ai-screen-f853a264fda9 and 20261126T003902Z-gpu-ai-screen-1a5e1e347d28; separate initial lease refusal 20261126T003525Z-gpu-ai-screen-835df6a9a21e also harvested, no GPU launch. Do not reuse an overall inconclusive receipt as a candidate reference. Separate sustained-only matching research arms are the next gate, without weakening thermal criteria. Factory and production qualification remain outstanding.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -78,3 +80,4 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-25T23:18:17.777002+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T23:46:49.293197+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T00:36:29.997424+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T00:42:36.050989+00:00 (updated-by): Updated: section:notes

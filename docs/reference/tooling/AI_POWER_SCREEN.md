@@ -397,3 +397,23 @@ qualification is implied. Factory verification, extended thermal and
 burst coverage, actual production kernel/replay quality, driver health,
 and measured phase energy/throughput remain outstanding under PWR12
 and its existing PWR10/PWR02 ownership boundary.
+
+## Extended observed-reference BF16 research (2026-11-26)
+
+Both gfx1100 helpers ran rocBLAS BF16, N=768, batch 32, 30 s warmup and
+60 s measurement per pattern (0/2 ms pause). The required in-load junction
+floor remained 60 C and the junction/memory ceilings remained 80 C.
+
+| Card | Sustained clean GEMMs | Verified sustained junction C | Burst clean GEMMs | Overall | Managed run ID |
+|---|---:|---|---:|---|---|
+| gfx1100 helper0 | 669120 | 72–75 | 418624 | inconclusive | 20261126T003601Z-gpu-ai-screen-f853a264fda9 |
+| gfx1100 helper1 | 678784 | 75–78 | 416928 | inconclusive | 20261126T003902Z-gpu-ai-screen-1a5e1e347d28 |
+
+Both sustained cases passed; burst cases were numerically clean but failed
+the continuous hot-window requirement. No controls changed. The full receipts
+and an initial pre-launch lease-verification refusal
+(20261126T003525Z-gpu-ai-screen-835df6a9a21e) were harvested using capture/v1.
+The refusal was not a GPU workload. A combined inconclusive reference cannot
+authorize candidate application. Separate sustained-only research uses the
+same thermal bounds; this does not replace the missing burst coverage or
+factory/production qualification.
