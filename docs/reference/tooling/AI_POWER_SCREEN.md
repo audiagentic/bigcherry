@@ -773,3 +773,18 @@ words in passing cases across the staged binaries. Evidence is bound
 to each binary digest; a new binary cannot use an old reference.
 All workload launches were short separate leased observe-only
 diagnostics; sustained and 2 ms burst patterns, no hot floor.
+
+### Managed workload recipes (PWR13)
+
+Use `gpu-ai-qualify plan --recipe screen|extended --probe PROBE --profiles PROFILES
+--bdf DEVICE --arch ARCH --role ROLE --headroom-mib MIB --max-hotspot-c C
+--max-memory-c C`. The recipe is resolved into a verified managed capture.
+Supply `--native-plan FILE` to retain the RCS27 planned routes and gaps;
+this does not execute them. A non-stock profile can be planned but cannot run.
+
+Under a GPU lease, use `gpu-ai-qualify run --plan ID --group NAME`.
+Each group is a separate screen receipt. Harvest those receipts, then use
+`gpu-ai-qualify report --plan ID --result RUN_ID` (repeat the result flag).
+The report is itself a retained managed capture and reports missing groups,
+nonpasses, and unsupported cases. It always sets production_qualified false.
+No new power-control mechanism or scheduler is introduced.

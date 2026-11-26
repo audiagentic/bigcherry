@@ -1,0 +1,82 @@
+# PWR13 independent workload policy, never a power-control profile.
+schema = 1
+[target.gfx1030]
+provider = "rocblas"
+matrix = ["fp16", "bf16", "fp32", "int8"]
+[target.gfx1100]
+provider = "rocblas"
+matrix = ["fp16", "bf16", "fp32", "int8"]
+[target.gfx1201]
+provider = "hipblaslt"
+matrix = ["fp16", "bf16", "fp32", "int8", "fp8"]
+
+[recipe.screen]
+groups = ["matrix", "direct", "dot2-signed", "wmma-positive", "wmma-fp16-signed", "wmma-bf16-signed"]
+[recipe.extended]
+groups = ["matrix", "direct", "dot2-signed", "wmma-positive", "wmma-fp16-signed", "wmma-bf16-signed", "padded", "memory", "resident", "hot", "burst"]
+
+[group.matrix]
+matrix = true
+n = 256
+batch = 32
+seconds = 4
+pause_ms = [0, 2]
+[group.direct]
+dtypes = ["alu", "wave", "lds", "vector-fp", "dot4", "dot2-pos"]
+n = 64
+seconds = 4
+pause_ms = [0, 2]
+[group.dot2-signed]
+dtypes = ["dot2"]
+n = 64
+seconds = 4
+pause_ms = [0, 2]
+[group.wmma-positive]
+dtypes = ["wmma-fp16-pos", "wmma-bf16-pos", "wmma-iu8"]
+n = 64
+seconds = 4
+pause_ms = [0, 2]
+[group.wmma-fp16-signed]
+dtypes = ["wmma-fp16"]
+n = 64
+seconds = 4
+pause_ms = [0, 2]
+[group.wmma-bf16-signed]
+dtypes = ["wmma-bf16"]
+n = 64
+seconds = 4
+pause_ms = [0, 2]
+[group.padded]
+dtypes = ["fp16", "bf16", "fp32"]
+matrix_shape = [65, 33, 63, 72, 64, 72]
+batch = 32
+seconds = 4
+pause_ms = [0]
+[group.memory]
+dtypes = ["memory"]
+memory_fraction = [7, 8]
+seconds = 15
+setup_timeout = 180
+pause_ms = [0]
+[group.resident]
+dtypes = ["bf16"]
+resident_fraction = [7, 8]
+n = 768
+batch = 32
+seconds = 15
+setup_timeout = 180
+pause_ms = [0]
+[group.hot]
+dtypes = ["bf16"]
+n = 768
+batch = 32
+seconds = 60
+warmup_seconds = 30
+min_hotspot_c = 60
+pause_ms = [0]
+[group.burst]
+dtypes = ["bf16"]
+n = 768
+batch = 32
+seconds = 60
+pause_ms = [1, 2, 10, 100]

@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_035045_independent-gpu-qualification_5162",
+  "files": [
+    "config/gpu-ai-qualification.toml",
+    "tools/bigcherry/hardware/ai_qualification.py",
+    "tools/bigcherry/cli/ai_qualification_cmds.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_qualification.py",
+    "docs/design/gpu-qualification-code-guide.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Resolve architecture-aware independent GPU workload recipes into managed plans, bind observed state and input hashes, execute one leased group through the existing screen and revalidate harvested coverage in a diagnostic report.",
+  "timestamp-utc": "2026-11-26T03:50:45.647282Z",
+  "user-summary-candidate": "Independent GPU qualification now has managed workload recipes and evidence reports; production qualification is not inferred."
+}
