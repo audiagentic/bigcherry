@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.77.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.76.0...bc-platform-1.77.0) (2026-11-26)
+
+
+### New and changed
+
+* **rsc02:** managed native entry patch rad0070 and engine admission document (A) ([#1635](https://github.com/audiagentic/bigcherry/issues/1635)) ([2570ff8](https://github.com/audiagentic/bigcherry/commit/2570ff8c17ab76fec3d40a16464c615f08c5c4aa))
+
 ## [1.76.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.75.0...bc-platform-1.76.0) (2026-11-25)
 
 
