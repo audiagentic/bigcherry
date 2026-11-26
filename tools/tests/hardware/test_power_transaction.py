@@ -303,6 +303,109 @@ class TxTest(unittest.TestCase):
             t.prepare({A: self.S(power_cap_w=280)}, [A])
         self.assertEqual(self.drv.log, [])
 
+    def test_lease_loss_between_overdrive_writes_retains_unresolved(self):
+        t = self.tx()
+        t.prepare({A: self.S(sclk_max_mhz=2800, vddgfx_offset_mv=-75)}, [A])
+        write = self.drv.write
+        def lose(path, value):
+            write(path, value)
+            self.lease = False
+        self.drv.write = lose
+        with self.assertRaises(PowerFailed) as cm:
+            t.apply()
+        self.assertFalse(cm.exception.rolled_back)
+        self.assertEqual(len(self.drv.log), 1)
+        self.assertEqual(read_json(t.journal_path)["state"], "rollback_failed")
+        self.assertFalse(t.restore(processes_exited=True))
+        self.assertEqual(len(self.drv.log), 1)
+
+    def test_prepared_snapshot_drift_refuses_before_write(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280)}, [A])
+        cap = self.root / "sys/bus/pci/devices" / A / "hwmon/hwmon8/power1_cap"
+        cap.write_text("302000000")
+        with self.assertRaises(PowerRefused):
+            t.apply()
+        self.assertEqual(self.drv.log, [])
+
+    def test_unrequested_control_drift_cannot_resolve_restore(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280)}, [A])
+        t.apply()
+        od = self.root / "sys/bus/pci/devices" / A / "pp_od_clk_voltage"
+        od.write_text(od.read_text().replace("OD_VDDGFX_OFFSET:\n0mV", "OD_VDDGFX_OFFSET:\n-50mV"))
+        self.assertFalse(t.restore(processes_exited=True))
+        self.assertEqual(read_json(t.journal_path)["state"], "restore_failed")
+        with self.assertRaises(PowerRefused):
+            self.tx("next").prepare({A: self.S(power_cap_w=280)}, [A])
+
+    def test_device_identity_drift_refuses_entire_restore(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280), B: self.S(power_cap_w=280)}, [A, B])
+        t.apply()
+        count = len(self.drv.log)
+        (self.root / "sys/bus/pci/devices" / A / "device").write_text("0x1234")
+        self.assertFalse(t.restore(processes_exited=True))
+        self.assertEqual(len(self.drv.log), count)
+        self.assertEqual(read_json(t.journal_path)["state"], "restore_failed")
+
+    def test_unknown_state_and_reused_run_id_refuse(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280)}, [A])
+        with self.assertRaises(PowerRefused):
+            self.tx().prepare({A: self.S(power_cap_w=280)}, [A])
+        doc = read_json(t.journal_path)
+        doc["state"] = "unknown"
+        t.journal_path.write_text(json.dumps(doc))
+        with self.assertRaises(PowerRefused):
+            self.tx("other").prepare({A: self.S(power_cap_w=280)}, [A])
+        self.assertEqual(self.drv.log, [])
+
+    def test_malformed_recovery_inventory_does_not_write_or_resolve(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280)}, [A])
+        t.apply()
+        count = len(self.drv.log)
+        doc = read_json(t.journal_path)
+        doc["touched"].append(B)
+        t.journal_path.write_text(json.dumps(doc))
+        with self.assertRaises(PowerRefused):
+            PowerTransaction.recover(t.journal_path, sysfs_root=self.root, fileops=self.drv,
+                                     lease_ok=lambda: True, processes_exited=True, platform_name="linux")
+        self.assertEqual(len(self.drv.log), count)
+        self.assertEqual(read_json(t.journal_path)["state"], "applied")
+
+    def test_zero_original_cap_refuses(self):
+        cap = self.root / "sys/bus/pci/devices" / A / "hwmon/hwmon8/power1_cap"
+        cap.write_text("0")
+        with self.assertRaises(PowerRefused):
+            self.tx().prepare({A: self.S(power_cap_w=280)}, [A])
+        self.assertEqual(self.drv.log, [])
+
+    def test_late_readback_failure_reopens_resolved_journal(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280)}, [A])
+        t.apply()
+        self.assertTrue(t.restore(processes_exited=True))
+        t.invalidate_restoration("later full readback disagreed")
+        self.assertEqual(read_json(t.journal_path)["state"], "restore_failed")
+        with self.assertRaises(PowerRefused):
+            self.tx("next").prepare({A: self.S(power_cap_w=280)}, [A])
+
+    def test_legacy_active_journal_without_identity_requires_manual_recovery(self):
+        t = self.tx()
+        t.prepare({A: self.S(power_cap_w=280)}, [A])
+        t.apply()
+        count = len(self.drv.log)
+        doc = read_json(t.journal_path)
+        del doc["devices"][0]["identity"]
+        t.journal_path.write_text(json.dumps(doc))
+        with self.assertRaises(PowerRefused):
+            PowerTransaction.recover(t.journal_path, sysfs_root=self.root, fileops=self.drv,
+                                     lease_ok=lambda: True, processes_exited=True, platform_name="linux")
+        self.assertEqual(len(self.drv.log), count)
+        self.assertEqual(read_json(t.journal_path)["state"], "applied")
+
 
 class ReceiptTest(unittest.TestCase):
     def test_binding_uses_canonical_digest_and_rejects_garbage(self):

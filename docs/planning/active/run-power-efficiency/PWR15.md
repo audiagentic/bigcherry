@@ -1,0 +1,60 @@
+---
+id: PWR15
+order: 0
+plan: run-power-efficiency
+state: in_progress
+created-at: '2026-11-26T05:48:37.575642+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P0
+work: M
+---
+
+# Harden existing platform power transaction and cross-owner recovery admission
+
+## Description
+
+Resolve the PWR13 P0 platform lease and exact restoration defects in existing PowerTransaction, without new writer or changing production promotion.
+
+## Steps
+
+1. Require lease before every write and completion, validate original controls before first write, verify all observed controls before terminal journal state. 2. Fail closed on malformed or reused journals and recovery identity. 3. Review native and platform journal ownership with RSC02/PWR08; enforce reciprocal admission before unattended candidate execution. 4. Run fault-injected fixtures then owner-approved hardware validation.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+tools/bigcherry/hardware/power_transaction.py, tools/tests/hardware/test_power_transaction.py; existing native owner only by coordination.
+
+## Validation
+
+Inject lease loss, unexpected control drift, malformed recovery inventory and stale state; no writes after lease loss; never resolve uncertain journal.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+No unattended candidate sweep until reciprocal owner admission, exact restoration and hardware qualification are proven. Keep unresolved journals on any uncertain write or restore; preserve existing supported controls and no-write observation.
+
+## Notes
+
+2026-11-26: hardened platform PowerTransaction: validate run/BDF and requested setting, reject reused/unknown/malformed journals, check fresh original snapshot and restorable range before writes, lease check per write and final apply/restore, full control plus physical identity/default cap readback for all touched devices, late caller readback invalidates terminal journal, strict recovery inventory. Historical active journals without saved identity require manual owner recovery; resolved historical records retained. Card-free hardware and CLI tests 289 passed/1 skipped. Native C++ already has per-write lease checks; cross-owner directories remain separate. PWR15 remains in progress: reciprocal admission across native and platform roots and approved real fault/recovery qualification still outstanding. No physical power writes or automated candidates in this slice.
+
+## Change Log
+
+- 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
+- 2026-11-26T05:48:42.356489+00:00 (state-transition): State: pending → in_progress
+- 2026-11-26T05:57:33.132221+00:00 (updated-by): Updated: section:notes
