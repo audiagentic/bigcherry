@@ -27,6 +27,11 @@ int bc_serving_managed_bind(rad::fleet::FleetConfig* fleet);
 bool bc_serving_managed();
 /* The last refusal message of the hooks above (also printed on stderr), for tests. */
 const std::string& bc_serving_managed_last_refusal();
+/* Fleet::run: the usable cards for a managed start. Radiance keeps only the cards of the FIRST card's architecture, which
+ * refuses a mixed-architecture layout (2x gfx1100 + gfx1201) that its --rank-devices path admits. The owner has restricted
+ * visibility to exactly the admitted ranks, so they are the usable cards, as ordinals 0..n-1 in rank order; any other
+ * start gets `single_architecture` back unchanged. */
+std::vector<int> bc_serving_managed_usable(const std::vector<int>& single_architecture);
 /* Fleet::reap: a managed engine stopped while serving. The process ends (no demand-driven restart) and exits non-zero. */
 void bc_serving_managed_note_engine_exit();
 bool bc_serving_managed_engine_exited();

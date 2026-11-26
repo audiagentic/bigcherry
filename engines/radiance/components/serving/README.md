@@ -42,7 +42,7 @@ The owner starts the stock `radiance --config FILE` and adds `--bc-admission-fd 
 rad0011 expected plan and KV floor, the typed engine/remote settings, the not-yet-typed engine switches). It is not a copy
 of any native setting. After the YAML is parsed, `bc_serving_managed_bind` applies each derived value to an absent or auto
 option, accepts an agreeing authored one and refuses a disagreement naming both; one model, loopback, no per-card headroom
-map. Fleet's chosen cards must be the admitted ranks before the Engine exists. A managed process refuses SIGHUP and
+map. Fleet's usable cards are the admitted ranks (Radiance's own filter keeps one architecture and would refuse mixed TP; the owner has restricted visibility to exactly those cards), and its chosen cards must be that order before the Engine exists. A managed process refuses SIGHUP and
 `/admin/reload` and model admin (403) and ends, failing, when its engine stops. Without the flag nothing changes. Card-free
 tests: `bc_native_managed_test` (engine build), the admission wire in `bc_serving_v3_wire_test`.
 

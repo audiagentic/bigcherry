@@ -113,6 +113,13 @@ bool bc_serving_managed() { return g_managed.load(); }
 void bc_serving_managed_note_engine_exit() { g_engine_exited.store(true); }
 bool bc_serving_managed_engine_exited() { return g_engine_exited.load(); }
 
+std::vector<int> bc_serving_managed_usable(const std::vector<int>& single_architecture) {
+    if (!g_admission) return single_architecture;
+    std::vector<int> ranks(g_admission->bdfs.size());
+    for (size_t i = 0; i < ranks.size(); ++i) ranks[i] = static_cast<int>(i);
+    return ranks;
+}
+
 std::string bc_serving_managed_chosen(const std::vector<int>& chosen) {
     if (!g_admission) return {};
     std::vector<int> want(g_admission->bdfs.size());

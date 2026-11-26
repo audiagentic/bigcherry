@@ -104,6 +104,15 @@ PATCHES = (
                 rationale="The single place Fleet fixes the devices of a load, before the Engine is constructed; the room lock is out of scope here and fail() is the load failure path.",
             ),
             Edit(
+                id="managed-usable-cards",
+                anchor=r"^    cards_ = usable;$",
+                text="    usable = bc_serving_managed_usable(usable);   /* BigCherry rad0070: the admitted ranks, not one architecture */\n",
+                mode="insert_before",
+                guard=r"bc_serving_managed_usable\(usable\)",
+                expect_matches=1, max_span_lines=2,
+                rationale="Fleet::run's usable list comes from Engine::usable_cards, which keeps one architecture; a managed start's cards are the admitted ranks (mixed-architecture TP). Engine::start admits rank-devices itself.",
+            ),
+            Edit(
                 id="managed-no-reload",
                 anchor=r"^std::string Fleet::reload\(\) \{$",
                 text='\n    if (bc_serving_managed()) return "a managed start is not reloaded; restart it";   /* BigCherry rad0070: SIGHUP and /admin/reload */',
