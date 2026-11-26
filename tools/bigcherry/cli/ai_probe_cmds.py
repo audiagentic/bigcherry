@@ -26,7 +26,8 @@ def register(sub) -> None:
     p.add_argument("--confirm-idle", action="store_true",
                    help="confirm no other GPU users or unresolved power journals from any owner")
     p.add_argument("--reference", help="managed stock screen run ID (observed reference only in explicit research mode)")
-    p.add_argument("--dtype", nargs="+", choices=ai_probe.DTYPES, default=["fp16"])
+    p.add_argument("--dtype", nargs="+", choices=ai_probe.DTYPES, default=["fp16"],
+                   help="matrix dtype or independent memory/alu/wave/lds case")
     p.add_argument("--provider", choices=ai_probe.PROVIDERS, default="hipblaslt",
                    help="explicit installed matrix library; no silent fallback")
     p.add_argument("--memory-mib", type=int, help="total allocation for memory dtype; explicit even MiB")
@@ -35,7 +36,7 @@ def register(sub) -> None:
     p.add_argument("--min-hotspot-c", type=int, help="required sampled temperature for entire final interval")
     p.add_argument("--max-memory-c", type=int, help="optional explicit memory temperature ceiling")
     p.add_argument("--batch", type=int, default=1, help="matrix launches per host check; every output checked on-device for batch > 1")
-    p.add_argument("--n", type=int, default=768)
+    p.add_argument("--n", type=int, default=768, help="square matrix dimension, or block count for alu/wave/lds")
     p.add_argument("--seconds", type=int, required=True, help="per dtype and load pattern")
     p.add_argument("--pause-ms", nargs="+", type=int, default=[0, 2], help="0 sustained, positive burst gap")
     p.add_argument("--setup-timeout", type=int, default=60, help="extra seconds allowed for SDK setup/oracle")
@@ -87,7 +88,8 @@ def cmd_screen(args: argparse.Namespace) -> int:
         for role, path in (("probe", args.probe), ("profiles", args.profiles)):
             inputs.append({"role": role, "uri": str(path.resolve()), "sha256": ai_probe.digest(path).removeprefix("sha256:")})
         args.input_digests = {i["role"]: "sha256:" + i["sha256"] for i in inputs}
-        run = workspace.create_run(root, "capture", "gpu-ai-screen", plan_item="PWR12", engine="none",
+        plan_item = "PWR13" if any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
+        run = workspace.create_run(root, "capture", "gpu-ai-screen", plan_item=plan_item, engine="none",
                                    argv=sys.argv[:], purpose="Independent GPU power-profile screen",
                                    inputs=inputs, references=refs, subkind="gpu-ai-screen", repo=paths.REPO_ROOT)
         args.run_id = run.run_id

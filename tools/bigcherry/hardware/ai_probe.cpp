@@ -21,7 +21,7 @@
 #include <vector>
 
 namespace {
-constexpr int protocol_version = 2;
+constexpr int protocol_version = 3;
 constexpr size_t corpus_count = 3;
 constexpr size_t guard_bytes = 256;
 struct Failure : std::runtime_error {
@@ -269,6 +269,168 @@ void memory_screen(const std::string& bdf, const std::string& arch, int hip_vers
               << ",\"status\":\"pass\"}\n";
 }
 
+// Independent instruction cases. Each lane returns four exact uint32 words;
+// all outputs are read by the host, not a second GPU-side oracle.
+constexpr unsigned instruction_block = 256;
+struct Words {
+    uint32_t a, b, c, d;
+};
+static_assert(sizeof(Words) == 4*sizeof(uint32_t));
+enum class Instruction { alu, wave, lds };
+const char* instruction_algorithm(Instruction kind) {
+    switch (kind) {
+    case Instruction::alu: return "integer-wrap-v1";
+    case Instruction::wave: return "wave-exchange-v1";
+    case Instruction::lds: return "lds-exchange-v1";
+    }
+    throw Failure(3, "unknown instruction case");
+}
+__global__ void instruction_alu(const uint32_t* input, Words* out, uint32_t seed) {
+    const unsigned i = blockIdx.x*blockDim.x + threadIdx.x;
+    const uint32_t a = input[i] ^ seed;
+    const uint32_t b = input[i^1u] ^ (seed+0x9e3779b9u);
+    const unsigned shift = (seed & 15u)+1;
+    out[i] = {a*b+(b^seed), __umulhi(a,b),
+              ((a << shift)|(a >> (32-shift)))^b,
+              (a >> ((seed & 3u)*8)) & 255u};
+}
+__global__ void instruction_wave(const uint32_t* input, Words* out, uint32_t seed) {
+    const unsigned i = blockIdx.x*blockDim.x + threadIdx.x;
+    const unsigned width = warpSize, lane = threadIdx.x % width;
+    const uint32_t v = input[i] ^ seed;
+    const unsigned offset = (seed & (width-1))|1u;
+    const unsigned mask = ((seed >> 8) & (width-1))|1u;
+    const auto votes = __ballot((v >> (seed&31u)) & 1u);
+    out[i] = {__shfl(v, (lane+offset)%width, width), __shfl_xor(v, mask, width),
+              uint32_t(votes), uint32_t(uint64_t(votes)>>32)};
+}
+__global__ void instruction_lds(const uint32_t* input, Words* out, uint32_t seed) {
+    __shared__ uint32_t scratch[instruction_block];
+    const unsigned lane = threadIdx.x, i = blockIdx.x*blockDim.x + lane;
+    const unsigned offset = ((seed >> 8)&(instruction_block-1))|1u;
+    const uint32_t v = input[i]^seed;
+    scratch[lane] = v;
+    __syncthreads();
+    const uint32_t a = scratch[(lane+offset)&(instruction_block-1)];
+    __syncthreads(); // all old readers complete before reusing LDS
+    scratch[lane] = a ^ (0x9e3779b9u*(lane+1));
+    __syncthreads();
+    out[i] = {a, scratch[lane^(instruction_block/2)], v, lane};
+}
+bool same_words(const Words& a, const Words& b) {
+    return a.a==b.a && a.b==b.b && a.c==b.c && a.d==b.d;
+}
+void instruction_reference(Instruction kind, const std::vector<uint32_t>& input,
+                           std::vector<Words>& expected, unsigned width, uint32_t seed) {
+    if (kind == Instruction::wave) {
+        for (size_t base=0; base<input.size(); base+=width) {
+            uint64_t votes = 0;
+            for (unsigned lane=0; lane<width; ++lane)
+                if (((input[base+lane]^seed) >> (seed%32))&1u) votes |= uint64_t(1)<<lane;
+            const unsigned offset = (seed%width)|1u, mask = ((seed/256)%width)|1u;
+            for (unsigned lane=0; lane<width; ++lane)
+                expected[base+lane] = {input[base+(lane+offset)%width]^seed,
+                                       input[base+(lane^mask)]^seed,
+                                       uint32_t(votes), uint32_t(votes>>32)};
+        }
+        return;
+    }
+    for (size_t i=0; i<input.size(); ++i) {
+        const uint32_t a = input[i]^seed;
+        if (kind == Instruction::alu) {
+            const uint32_t b = input[i^size_t(1)]^(seed+0x9e3779b9u);
+            const uint64_t product = uint64_t(a)*b;
+            const unsigned shift = seed%16+1;
+            const uint64_t expanded = uint64_t(a)*(uint64_t(1)<<shift);
+            const uint32_t rotate = uint32_t(expanded)+uint32_t(expanded>>32);
+            expected[i] = {uint32_t(product+(b^seed)), uint32_t(product>>32),
+                           rotate^b, uint32_t(a/(uint64_t(1)<<(8*(seed%4))))%256};
+        } else {
+            const size_t base = i/instruction_block*instruction_block;
+            const unsigned lane = i%instruction_block, other = lane^(instruction_block/2);
+            const unsigned offset = ((seed/256)%instruction_block)|1u;
+            const uint32_t first = input[base+(lane+offset)%instruction_block]^seed;
+            const uint32_t second = input[base+(other+offset)%instruction_block]^seed;
+            expected[i] = {first, second ^ uint32_t(uint64_t(0x9e3779b9u)*(other+1)), a, lane};
+        }
+    }
+}
+void instruction_screen(Instruction kind, const std::string& dtype, const std::string& bdf,
+                        const std::string& arch, int hip_version, int driver_version,
+                        unsigned width, int blocks, int headroom_mib, int seconds, int pause) {
+    if ((width!=32 && width!=64) || instruction_block%width)
+        throw Failure(3, "unsupported HIP wave width");
+    const size_t elements = size_t(blocks)*instruction_block;
+    const size_t input_bytes = elements*sizeof(uint32_t), output_bytes = elements*sizeof(Words);
+    const size_t budget = input_bytes+output_bytes+2*guard_bytes;
+    const size_t reserve = size_t(headroom_mib)<<20;
+    size_t free=0, total=0;
+    HIP(hipMemGetInfo(&free,&total));
+    if (budget>free || free-budget<reserve)
+        throw Failure(3, "instruction allocation exceeds VRAM headroom");
+    Buffer device_input(input_bytes), device_output(output_bytes+2*guard_bytes);
+    size_t after=0, total_after=0;
+    HIP(hipMemGetInfo(&after,&total_after));
+    if (after<reserve || total_after!=total)
+        throw Failure(3, "instruction allocation did not preserve headroom");
+    auto* out = reinterpret_cast<Words*>(static_cast<uint8_t*>(device_output.p)+guard_bytes);
+    std::vector<uint32_t> input(elements), input_check(elements);
+    std::vector<Words> actual(elements), expected(elements);
+    for (size_t i=0;i<elements;++i) input[i]=memory_word(i,0x712db419u);
+    HIP(hipMemcpy(device_input.p,input.data(),input_bytes,hipMemcpyHostToDevice));
+    auto check_input = [&] {
+        HIP(hipMemcpy(input_check.data(),device_input.p,input_bytes,hipMemcpyDeviceToHost));
+        if (input!=input_check) throw Failure(2,"instruction input changed");
+    };
+    HIP(hipMemset(device_output.p,0xa5,output_bytes+2*guard_bytes));
+    check_input();
+    const int64_t start=mono_ns();
+    int64_t iterations=0;
+    do {
+        const uint32_t seed=uint32_t(iterations)*0x9e3779b9u+0x712db419u;
+        instruction_reference(kind,input,expected,width,seed);
+        HIP(hipMemsetAsync(out,0xff,output_bytes));
+        auto* in = static_cast<const uint32_t*>(device_input.p);
+        switch (kind) {
+        case Instruction::alu: instruction_alu<<<blocks,instruction_block>>>(in,out,seed); break;
+        case Instruction::wave: instruction_wave<<<blocks,instruction_block>>>(in,out,seed); break;
+        case Instruction::lds: instruction_lds<<<blocks,instruction_block>>>(in,out,seed); break;
+        }
+        HIP(hipGetLastError());
+        HIP(hipDeviceSynchronize());
+        HIP(hipMemcpy(actual.data(),out,output_bytes,hipMemcpyDeviceToHost));
+        for (size_t i=0;i<elements;++i)
+            if (!same_words(actual[i],expected[i]))
+                throw Failure(2,"instruction oracle mismatch at lane "+std::to_string(i)+
+                              " after "+std::to_string(iterations)+" clean launches");
+        std::array<uint8_t,guard_bytes> guard{};
+        for (size_t off : {size_t(0),guard_bytes+output_bytes}) {
+            HIP(hipMemcpy(guard.data(),static_cast<uint8_t*>(device_output.p)+off,
+                          guard.size(),hipMemcpyDeviceToHost));
+            if (!std::all_of(guard.begin(),guard.end(),[](uint8_t v){return v==0xa5;}))
+                throw Failure(2,"instruction output guard changed");
+        }
+        ++iterations;
+        if (pause) std::this_thread::sleep_for(std::chrono::milliseconds(pause));
+    } while (iterations<2 || mono_ns()-start<int64_t(seconds)*1000000000);
+    const int64_t end=mono_ns();
+    check_input();
+    std::cout << "{\"protocol_version\":" << protocol_version << ",\"bdf\":\"" << bdf << "\",\"arch\":\"" << arch
+              << "\",\"dtype\":\"" << dtype << "\",\"n\":" << blocks
+              << ",\"hip\":" << hip_version << ",\"driver\":" << driver_version
+              << ",\"provider\":\"hip-native\",\"library_version\":\"" << hip_version
+              << "\",\"workspace\":0,\"algorithm\":\"" << instruction_algorithm(kind)
+              << "\",\"batch\":1,\"block_size\":" << instruction_block << ",\"wave_size\":" << width
+              << ",\"iterations\":" << iterations << ",\"host_checks\":" << iterations
+              << ",\"checked_lanes\":" << uint64_t(iterations)*elements
+              << ",\"host_elements_checked\":" << uint64_t(iterations)*elements*4
+              << ",\"guard_checks\":" << uint64_t(iterations)*2 << ",\"input_checks\":2"
+              << ",\"allocated_bytes\":" << budget << ",\"free_before_bytes\":" << free
+              << ",\"free_after_bytes\":" << after
+              << ",\"elapsed_s\":" << std::setprecision(9) << double(end-start)/1e9
+              << ",\"start_ns\":" << start << ",\"end_ns\":" << end << ",\"status\":\"pass\"}\n";
+}
+
 int parse_int(const char* s, int lo, int hi) {
     size_t used = 0;
     int v = std::stoi(s, &used);
@@ -308,6 +470,19 @@ int main(int argc, char** argv) {
             uint32_t pos32 = 0, neg32 = 0x80000000;
             if (!equal_element(reinterpret_cast<uint8_t*>(&pos32), reinterpret_cast<uint8_t*>(&neg32), 4, false) ||
                 equal_element(reinterpret_cast<uint8_t*>(&pos32), reinterpret_cast<uint8_t*>(&neg32), 4, true)) return 2;
+            std::vector<uint32_t> lanes(instruction_block);
+            for (unsigned i=0;i<lanes.size();++i) lanes[i]=i;
+            std::vector<Words> words(lanes.size());
+            instruction_reference(Instruction::alu,lanes,words,32,0);
+            if (!same_words(words[0],{0x9e3779b8u,0,0x9e3779b8u,0})) return 2;
+            instruction_reference(Instruction::wave,lanes,words,32,0);
+            if (!same_words(words[0],{1,1,0xaaaaaaaau,0}) ||
+                !same_words(words[31],{0,30,0xaaaaaaaau,0})) return 2;
+            instruction_reference(Instruction::wave,lanes,words,64,0);
+            if (!same_words(words[63],{0,62,0xaaaaaaaau,0xaaaaaaaau})) return 2;
+            instruction_reference(Instruction::lds,lanes,words,32,0);
+            if (!same_words(words[0],{1,129u^uint32_t(0x9e3779b9ull*129),0,0}) ||
+                same_words(words[0],{0,words[0].b,0,0})) return 2;
             std::cout << "CPU oracle self-test passed\n";
             return 0;
         }
@@ -343,6 +518,14 @@ int main(int argc, char** argv) {
         if (dtype == "memory") {
             if (provider != "hip-memory" || batch != 1) throw Failure(3, "memory requires hip-memory and batch 1");
             memory_screen(bdf, arch, hip_version, driver_version, n, headroom, seconds, pause);
+            return 0;
+        }
+        if (dtype=="alu" || dtype=="wave" || dtype=="lds") {
+            if (provider!="hip-native" || batch!=1)
+                throw Failure(3,"instruction cases require hip-native and batch 1");
+            const auto kind = dtype=="alu" ? Instruction::alu : dtype=="wave" ? Instruction::wave : Instruction::lds;
+            instruction_screen(kind,dtype,bdf,arch,hip_version,driver_version,prop.warpSize,
+                               n,headroom,seconds,pause);
             return 0;
         }
         if (provider != "hipblaslt" && provider != "rocblas") throw Failure(3, "unknown provider");

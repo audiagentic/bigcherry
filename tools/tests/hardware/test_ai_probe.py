@@ -519,7 +519,7 @@ def test_protocol_refusal_precedes_mutation(tmp_path, mock_native_protocol):
 def test_old_screen_schema_cannot_be_reference(tmp_path):
     ref = stock_reference(tmp_path)
     doc = json.loads(ref.read_text())
-    doc["observations"]["ai_screen"]["schema_version"] = 2
+    doc["observations"]["ai_screen"]["schema_version"] = a.SCREEN_SCHEMA - 1
     ref.write_text(json.dumps(doc))
     ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
               reference=ref, apply_profile=True, confirm_idle=True)
@@ -530,7 +530,7 @@ def test_old_screen_schema_cannot_be_reference(tmp_path):
             a.screen(ns, journal_dir=tmp_path)
     tx.assert_not_called()
 
-@pytest.mark.parametrize("exit_code, stdout", [(0, "1"), (1, "2"), (0, "2 extra"), (0, "")])
+@pytest.mark.parametrize("exit_code, stdout", [(0, str(a.NATIVE_PROTOCOL-1)), (1, str(a.NATIVE_PROTOCOL)), (0, f"{a.NATIVE_PROTOCOL} extra"), (0, "")])
 def test_native_protocol_handshake_refuses_invalid_output(tmp_path, exit_code, stdout):
     from subprocess import CompletedProcess
     with patch.object(a.subprocess, "run", return_value=CompletedProcess([], exit_code, stdout, "")):
@@ -540,7 +540,7 @@ def test_native_protocol_handshake_refuses_invalid_output(tmp_path, exit_code, s
 
 def test_native_protocol_handshake_accepts_version(tmp_path):
     from subprocess import CompletedProcess
-    with patch.object(a.subprocess, "run", return_value=CompletedProcess([], 0, "2\n", "")) as run:
+    with patch.object(a.subprocess, "run", return_value=CompletedProcess([], 0, f"{a.NATIVE_PROTOCOL}\n", "")) as run:
         verify_probe_protocol(tmp_path / "probe")
     assert run.call_args.args[0] == [str(tmp_path / "probe"), "--protocol-version"]
 
@@ -553,3 +553,58 @@ def test_probe_changed_during_handshake_refuses(tmp_path, mock_native_protocol):
         with pytest.raises(a.ScreenError, match="changed during protocol"):
             a.screen(ns)
     snapshot.assert_not_called()
+
+@pytest.mark.parametrize("dtype", list(a.INSTRUCTION_ALGORITHMS))
+def test_instruction_case_strict_counts(dtype):
+    n, iterations = 32, 8
+    lanes = n*a.INSTRUCTION_BLOCK
+    allocated = lanes*20+512
+    payload = case(0)["native"] | {
+        "dtype": dtype, "n": n, "provider": "hip-native",
+        "algorithm": a.INSTRUCTION_ALGORITHMS[dtype], "iterations": iterations,
+        "block_size": 256, "wave_size": 32, "host_checks": iterations,
+        "checked_lanes": lanes*iterations, "host_elements_checked": lanes*iterations*4,
+        "guard_checks": iterations*2, "input_checks": 2, "allocated_bytes": allocated,
+        "free_before_bytes": allocated+512*2**20, "free_after_bytes": 512*2**20,
+    }
+    def validate(value):
+        a.validate_native(value, BDF, "gfx1100", dtype, n, "hip-native", 1, 2, 512)
+    validate(payload)
+    for key, bad in [("checked_lanes", 0), ("host_elements_checked", 0), ("host_checks", 7),
+                     ("block_size", 128), ("wave_size", 16), ("guard_checks", 15),
+                     ("input_checks", True), ("allocated_bytes", allocated-4),
+                     ("free_after_bytes", 511*2**20), ("algorithm", "address-pattern-v1")]:
+        with pytest.raises(a.ScreenError, match="coverage"):
+            validate(payload | {key: bad})
+
+
+def test_instruction_case_uses_existing_managed_capture_without_mutation(tmp_path):
+    from bigcherry.cli.ai_probe_cmds import cmd_screen
+    from bigcherry.core import run_manifest as rm
+    ns = args(tmp_path, dtype=["alu", "wave", "lds"], pause_ms=[0],
+              batch=32, stock_confirmed=False, observe_current=True)
+    ns.work_root = tmp_path / "work"
+    def run(*pos, **kw):
+        dtype = pos[3]
+        assert kw["provider"] == "hip-native"
+        assert kw["batch"] == 1
+        return case(0) | {"dtype": dtype}
+    with patch.object(a.lease, "held_by_this_process", return_value=True), \
+            patch.object(a, "snapshot", return_value=(STOCK, tmp_path)), \
+            patch.object(a, "thermal_sensor", return_value=(tmp_path/"temp2_input", 85000)), \
+            patch.object(a, "run_case", side_effect=run) as execute, \
+            patch.object(a, "PowerTransaction") as tx:
+        assert cmd_screen(ns) == 0
+    assert execute.call_count == 3
+    tx.assert_not_called()
+    assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR13"
+
+
+def test_instruction_apply_refused_before_transaction(tmp_path):
+    ref = stock_reference(tmp_path)
+    ns = args(tmp_path, profile="xtx-sclk2700-uv125", stock_confirmed=False,
+              reference=ref, dtype=["alu"], apply_profile=True, confirm_idle=True)
+    with patch.object(a, "PowerTransaction") as tx:
+        with pytest.raises(a.ScreenError, match="observe-only"):
+            a.screen(ns, journal_dir=tmp_path)
+    tx.assert_not_called()

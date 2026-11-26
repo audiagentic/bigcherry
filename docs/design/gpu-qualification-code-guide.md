@@ -199,3 +199,26 @@ E. Finalist qualification (PWR12/PWR10/PWR02): matched repeated controls, cold/n
 Use prior 2700 MHz / 0, -25, -50 and -75 mV observations as historical diagnostic context, not as references for changed code or recipes. At the current BF16 sustained recipe the first helper passed -75 mV and missed the hot floor at -100 mV; the second passed through -125 mV. No arithmetic failure was observed: these are not failure cliffs. Start read-only new suite on both cards, establish cold/normal/burst/hot coverage independently; after admission hardening and authorization select shallowest useful candidates and repeat. Preserve R9700 thermal-stop and gfx1030 no-saving evidence; no higher thermal ceiling or unsupported voltage backend.
 
 Deliverables: one maintained platform CLI, registered probes with CPU/device oracle tests, explicit case identity/coverage and managed receipts; native harness fixes under RCS27; production-owner integration under RCS28/PWR10. Each implementation slice gets independent review, offline gates, hardware evidence where required and a commit/PR. Source review alone does not count as implementation or qualification. Final duration, per-target supported case matrix and acceptable production performance budget remain subject to measured evidence and owner approval.
+
+## 13. Implementation update: direct instruction slice
+
+Following release bc-platform 1.78.0, PWR13 adds registered alu/wave/lds
+cases to the existing screen. Resolved provider and batch are hip-native
+and 1; n denotes workgroup count for these cases. Native protocol 3,
+screen observations schema 4; old evidence is retained, not accepted as
+a new matching reference. Every launch is independently host-verified;
+reported lane and word counts are checked exactly against geometry and
+iterations. New case runs use PWR13 managed captures. Explicit application
+of power profiles for new cases is refused pending P0 owner recovery work.
+
+Actual code-object inspection found that declaring LDS volatile selected
+generic flat accesses despite shared storage. Using nonvolatile shared
+storage with full-workgroup barriers produced explicit ds_read/write on
+gfx1030, ds_load/store on gfx1100/gfx1201, and the target's barrier
+instructions. Keep this as a build gate, not a source-level assumption.
+The direct cases deliberately verify every output on the host and do not
+claim peak load saturation. Next slices: varied matrix geometry and
+mixed residency, further instruction coverage (including actual matrix
+instructions), phase telemetry and transition recipes, then qualified
+native/production owner integration. No historical hot nonpass is
+reclassified and no production setting is promoted.

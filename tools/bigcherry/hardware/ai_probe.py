@@ -19,11 +19,15 @@ from pathlib import Path
 from . import gpu_power, lease, power_probe, power_profiles
 from .power_transaction import PowerFailed, PowerRefused, PowerTransaction
 
-DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8", "memory")
+INSTRUCTION_ALGORITHMS = {"alu": "integer-wrap-v1", "wave": "wave-exchange-v1",
+                          "lds": "lds-exchange-v1"}
+DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8", "memory", *INSTRUCTION_ALGORITHMS)
+INSTRUCTION_BLOCK = 256
+INSTRUCTION_WORDS = 4
 PROVIDERS = ("hipblaslt", "rocblas")
 POLL_SECONDS = 0.25
-NATIVE_PROTOCOL = 2
-SCREEN_SCHEMA = 3
+NATIVE_PROTOCOL = 3
+SCREEN_SCHEMA = 4
 CORPUS_COUNT = 3
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 ARCH = re.compile(r"^gfx[0-9a-f]+$")
@@ -230,6 +234,16 @@ def verify_probe_protocol(binary: Path) -> None:
         raise ScreenError("incompatible native probe protocol; rebuild probe")
 
 
+def case_provider(dtype: str, matrix_provider: str) -> str:
+    if dtype in INSTRUCTION_ALGORITHMS:
+        return "hip-native"
+    return "hip-memory" if dtype == "memory" else matrix_provider
+
+
+def case_batch(dtype: str, matrix_batch: int) -> int:
+    return 1 if dtype == "memory" or dtype in INSTRUCTION_ALGORITHMS else matrix_batch
+
+
 def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                     provider: str, duration: int, setup_timeout: int,
                     headroom_mib: int, *, launch_ns: int | None = None, batch: int = 1) -> None:
@@ -237,8 +251,10 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
     valid_algorithm = (isinstance(payload, dict) and
                        isinstance(payload.get("algorithm"), str) and
                        (bool(re.fullmatch("[0-9a-f]{32}", payload["algorithm"])) if provider == "hipblaslt"
-                        else payload["algorithm"] == {"rocblas": "rocblas-default-no-atomics",
-                                                      "hip-memory": "address-pattern-v1"}.get(provider)))
+                        else payload["algorithm"] == (INSTRUCTION_ALGORITHMS.get(dtype)
+                                                      if provider == "hip-native" else
+                                                      {"rocblas": "rocblas-default-no-atomics",
+                                                       "hip-memory": "address-pattern-v1"}.get(provider))))
     if (not valid_algorithm or type(payload.get("protocol_version")) is not int or
             payload["protocol_version"] != NATIVE_PROTOCOL or payload.get("status") != "pass" or
             payload.get("bdf") != bdf or payload.get("arch") != arch or
@@ -255,7 +271,24 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
             (launch_ns is not None and not launch_ns <= payload["start_ns"] < payload["end_ns"] <= time.monotonic_ns()) or
             payload["end_ns"] - payload["start_ns"] < duration * 1e9):
         raise ScreenError("probe result identity or coverage mismatch")
-    if dtype != "memory":
+    if dtype in INSTRUCTION_ALGORITHMS:
+        lanes = n * INSTRUCTION_BLOCK
+        iterations = payload["iterations"]
+        allocated = lanes * (1 + INSTRUCTION_WORDS) * 4 + 2 * 256
+        required = {"block_size": INSTRUCTION_BLOCK, "host_checks": iterations,
+                    "checked_lanes": lanes * iterations,
+                    "host_elements_checked": lanes * iterations * INSTRUCTION_WORDS,
+                    "guard_checks": 2 * iterations, "input_checks": 2,
+                    "allocated_bytes": allocated, "workspace": 0}
+        if (provider != "hip-native" or batch != 1 or
+                type(payload.get("wave_size")) is not int or payload["wave_size"] not in (32, 64) or
+                any(type(payload.get(k)) is not int or payload[k] != v for k, v in required.items()) or
+                type(payload.get("free_before_bytes")) is not int or
+                payload["free_before_bytes"] - allocated < headroom_mib * 2**20 or
+                type(payload.get("free_after_bytes")) is not int or
+                payload["free_after_bytes"] < headroom_mib * 2**20):
+            raise ScreenError("instruction verification coverage/headroom mismatch")
+    elif dtype != "memory":
         launches = payload["iterations"]
         rounds, remainder = divmod(launches, batch)
         q, r = divmod(launches, CORPUS_COUNT)
@@ -288,7 +321,8 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
 def case_identity(case: dict) -> tuple:
     native = case["native"]
     return tuple(case[k] for k in ("dtype", "n", "pause_ms", "requested_seconds", "warmup_seconds", "batch")) + tuple(
-        native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm", "protocol_version"))
+        native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm", "protocol_version")) + (
+        (native["block_size"], native["wave_size"]) if case["dtype"] in INSTRUCTION_ALGORITHMS else ())
 
 
 def screen_receipt(run_id: str, result: dict):
@@ -332,6 +366,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     elif not settings or not args.reference or args.stock_confirmed or (args.observe_current and not args.apply_profile):
         raise ScreenError("candidate requires matching nonempty profile rules and --reference")
     if args.apply_profile:
+        if any(dtype in INSTRUCTION_ALGORITHMS for dtype in args.dtype):
+            raise ScreenError("new instruction cases are observe-only pending owner recovery hardening")
         if args.profile == "stock" or not args.confirm_idle or journal_dir is None:
             raise ScreenError("apply requires candidate, existing transaction journal and --confirm-idle")
         if "sclk_offset_mhz" in settings:
@@ -383,8 +419,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
             raise ScreenError("stock reference lacks complete passing coverage")
         for c, (dtype, pause) in zip(reference["cases"], recipe):
             n = args.memory_mib if dtype == "memory" else args.n
-            provider = "hip-memory" if dtype == "memory" else args.provider
-            batch = 1 if dtype == "memory" else args.batch
+            provider = case_provider(dtype, args.provider)
+            batch = case_batch(dtype, args.batch)
             if (c.get("status") != "pass" or
                     (c["dtype"], c["n"], c["pause_ms"], c["requested_seconds"], c["warmup_seconds"], c["batch"]) !=
                     (dtype, n, pause, args.seconds, args.warmup_seconds, batch) or
@@ -458,11 +494,11 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                 case = run_case(binary, args.bdf, args.arch, dtype,
                                 args.memory_mib if dtype == "memory" else args.n, args.seconds,
                                 pause, args.setup_timeout, sensor, limit, args.output.parent,
-                                provider="hip-memory" if dtype == "memory" else args.provider,
+                                provider=case_provider(dtype, args.provider),
                                 warmup_seconds=args.warmup_seconds, min_hotspot_c=args.min_hotspot_c,
                                 headroom_mib=args.headroom_mib or 512, memory_sensor=mem_sensor,
                                 memory_limit=mem_limit, cancelled=cancelled,
-                                batch=1 if dtype == "memory" else args.batch)
+                                batch=case_batch(dtype, args.batch))
                 result["cases"].append(case)
                 if case["status"] != "pass":
                     raise ScreenError(f"{dtype}/{pause} ms: {case['status']}", case["status"])
