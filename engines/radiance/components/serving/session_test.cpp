@@ -432,10 +432,21 @@ void canary_fails() {
 
 void engine_fails_to_start() {
     Case c("no-start");
-    c.behaviour["exit_at_start"] = 4;
+    c.behaviour["exit_at_start"] = 3;
     assert(exit_code(c.owner()) == 1);
     const Json r = c.record();
     assert(r.at("state") == "failed" && any_error_contains(r, "health gate") &&
+           any_error_contains(r, "exit 3"));
+}
+
+// The engine's structured host-room refusal (typed admission-refused exit, before weights) is a named resource refusal:
+// plan-class exit code, no restart, the cause in the record; the owner still stops cleanly.
+void engine_refuses_host_room() {
+    Case c("room-refused");
+    c.behaviour["exit_at_start"] = 4;
+    assert(exit_code(c.owner()) == 97);
+    const Json r = c.record();
+    assert(r.at("state") == "failed" && any_error_contains(r, "refused its host memory plan before loading weights") &&
            any_error_contains(r, "exit 4"));
 }
 
@@ -445,7 +456,7 @@ void engine_refuses_the_stored_plan() {
     Case c("stored-refused");
     const fs::path entry = c.run / "stored-entry.json";
     std::ofstream(entry) << "{}\n";
-    c.behaviour["exit_at_start"] = 4;
+    c.behaviour["exit_at_start"] = 3;
     c.prepare();   // the real plan step runs here; the stored-plan mark is set on what it produced
     c.prepared.reused_store = entry;
     assert(exit_code(c.owner()) == 1);
@@ -453,9 +464,18 @@ void engine_refuses_the_stored_plan() {
     Case measured("measured-refused");
     const fs::path kept = measured.run / "stored-entry.json";
     std::ofstream(kept) << "{}\n";
-    measured.behaviour["exit_at_start"] = 4;
+    measured.behaviour["exit_at_start"] = 3;
     assert(exit_code(measured.owner()) == 1);
     assert(fs::exists(kept));
+    // A host-room refusal keeps a stored plan that was fine: the host had less memory just now.
+    Case room("room-keeps-store");
+    const fs::path room_entry = room.run / "stored-entry.json";
+    std::ofstream(room_entry) << "{}\n";
+    room.behaviour["exit_at_start"] = 4;
+    room.prepare();
+    room.prepared.reused_store = room_entry;
+    assert(exit_code(room.owner()) == 97);
+    assert(fs::exists(room_entry));
 }
 
 void engine_never_healthy() {
@@ -1815,7 +1835,7 @@ int test_main(int argc, char** argv) {
         {real_session_power_returned_errors, manifest_writer_before_durable_admission, native_config_inspector_before_admission, callback_exception_matrix, power_hook_returned_status_errors, stop_while_waiting_for_health, stop_during_plan, unwritable_record_still_stops},
         {native_only_planning_refusals, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, calibration_ingest_never_fails_serving, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
         {injected_owner_plan_exception, feature_state_start_status_and_warning, feature_state_invalid_manifest_prevents_child, helper_failure_unwinds, helper_shared_segment_gate, long_run_dir, shared_run_dir_and_stale_socket, engine_refuses_the_stored_plan, engine_never_healthy, plan_refused},
-        {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
+        {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_refuses_host_room, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
     };
     size_t first = 0, last = groups.size();
     if (!group.empty()) {
