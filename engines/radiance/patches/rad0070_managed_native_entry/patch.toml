@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0070_managed_native_entry"
 order = 70
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"

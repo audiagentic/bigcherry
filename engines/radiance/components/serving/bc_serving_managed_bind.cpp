@@ -6,7 +6,7 @@
 
 #ifdef BC_RAD_NATIVE_FLEET_CONFIG
 #include "fleet/config.h"
-#include "rad_core.h"
+#include "engine.h"
 #include <sys/stat.h>
 #include <unistd.h>
 #endif

@@ -43,6 +43,7 @@ patches = [
   "rad0053_v4_kv_layouts",
   "rad0054_attn_prefill_fp8",
   "rad0055_step_phase_trace",
+  "rad0070_managed_native_entry",
   "rad0064_owned_weighted_head",
 ]
 
@@ -158,10 +159,6 @@ needs = []
 
 # Experiments contain only unpromoted patches; promotion retires their memberships. None is open: the patches of earlier
 # experiments are qualified (serving-core, or the diagnostic sets below) or retired into engines/radiance/patches/archive/.
-
-# RSC02-B: the managed native entry, built beside the production set for the shared acceptance run before it is promoted.
-[experiment.rsc02-managed-entry]
-patches = ["rad0070_managed_native_entry"]
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
 # component's, never restated here.

@@ -1,0 +1,8 @@
+# rad0070_managed_native_entry promotion evidence
+
+Model: Qwen3.8 27B iq8r dflash (qwen27b-tp3: two gfx1100 and one gfx1201, mixed-architecture TP3, no helpers)
+Model: Qwen3.8-Flash-Next fp8-iq4r-moe (.rad), flashnext-4gpu: engine and three remote-expert helpers
+Mechanics: patch-lint clean; patch-compose-check gate 1 passes for the experiment rsc02-managed-entry; bc_native_managed_test (bind refusals and bound values, stock path untouched, usable and chosen cards), the admission wire test and bc_serving_test, bc_session_test and bc_session_stored_test pass; the lane build of the experiment (run rsc02-b-accept4, source 053dd092a) builds the patch.
+Activation: docs/evidence/2026-11-26-rsc02-b-acceptance/README.md: both cohorts start through the owner on stock radiance --config plus --bc-admission-fd (measuring engine, final engine, canary, running); /v1/models lists only the YAML model; SIGHUP is refused and the engine is unchanged; POST /admin/reload and /admin/models/ID/unload answer 403; SIGKILL of the engine ends the owner with exit 1, no restart, helpers reaped, power restored after every child.
+Identity: The engine reads only the YAML and the owner-derived admission; the stock path is unchanged without the flag (card-free test). Throughput and token identity against the manifest entry were not re-measured: the engine, kernels and sampling are unchanged and the front is the native Fleet front, which the owner exercised end to end on both cohorts.
+A/B: Not run for this patch: it changes how the engine is started and what refuses at the process boundary, not any kernel or decode path. The second start of each cohort reused the stored plan (21 s dense, 100 s helper).
