@@ -2,6 +2,8 @@
 import importlib.util
 import sys
 import unittest
+import tempfile
+from unittest.mock import patch
 from pathlib import Path
 
 PATH = Path(__file__).resolve().parents[2] / "lab" / "radiance" / "unit_harness.py"
@@ -59,6 +61,74 @@ class HarnessTests(unittest.TestCase):
         cases = uh.hash_cases(uh.families()["iqr"]["hash"]).split(",")
         self.assertIn("5376:2560:129", cases)
         self.assertEqual(len(cases), len(set(cases)))
+
+    def test_group_manifest_is_complete_and_unique(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "r3_groups.tsv"
+            path.write_text("group\tunit\nnew_group\tr4d_one\n")
+            actual = uh.read_group_manifest(path)
+            expected = {"r4d_one": "new_group", "r4d_two": "other"}
+            uh.verify_group_manifest(actual, expected, {"r4d_two"})
+            with self.assertRaises(uh.HarnessError):
+                uh.verify_group_manifest(actual, expected, set())
+            with self.assertRaises(uh.HarnessError):
+                uh.verify_group_manifest(actual, {"r4d_one": "wrong"}, set())
+            path.write_text("group\tunit\nnew_group\tr4d_one\nother\tr4d_one\n")
+            with self.assertRaises(uh.HarnessError):
+                uh.read_group_manifest(path)
+
+    def test_group_routes_do_not_count_support_or_substitute_base(self):
+        inventory = {"r4d_a": "new", "r4d_b": "new", "r4d_c": "new", "r4d_d": "other"}
+        families = {"custom": {"units": ["r4d_a"], "support_units": ["r4d_b"], "case": "row_a"}}
+        origins = {"custom_overlay": {"units": ["r4d_c"], "base_rows": ["row_c", "row_d"],
+                                      "overlay_rows": ["new_c", "new_d"], "selftest_case": "row_c"}}
+        plan = uh.resolve_group_plan(inventory, {"r4d_c"}, families, origins, ["new"], [])
+        self.assertEqual(plan["uncovered_units"], ["r4d_b"])
+        self.assertEqual(plan["runs"][1]["other_rows_need_evidence"], ["row_d"])
+        plan = uh.resolve_group_plan(inventory, set(), families, origins, ["new"], [])
+        self.assertEqual(plan["uncovered_units"], ["r4d_b", "r4d_c"])
+        plan = uh.resolve_group_plan(inventory, {"r4d_a", "r4d_c"}, families, origins, ["new"], [])
+        self.assertEqual(plan["uncovered_units"], ["r4d_a", "r4d_b"])
+        with self.assertRaises(uh.HarnessError):
+            uh.resolve_group_plan(inventory, set(), families, origins, ["typo"], [])
+
+    def test_outcome_requires_positive_complete_converged_evidence(self):
+        point = {"row": "row", "N": 16, "K": 64, "M": 1, "B": 4}
+        base = {"hash": uh.compare_hashes({"a": "1"}, {"a": "1"}), "selftest_failures": {"ref": 0, "cand": 0},
+                "required_replay": [point], "replay": [{**point, "converged": True, "verdict": "same"}]}
+        self.assertEqual(uh.configured_measurement_outcome(base)[0], "checks_passed")
+        for changes in (
+            {"hash": uh.compare_hashes({}, {})},
+            {"replay": []},
+            {"replay": [{**point, "converged": False, "verdict": "win"}]},
+            {"selftest_failures": {"ref": 1, "cand": 0}},
+        ):
+            self.assertEqual(uh.configured_measurement_outcome({**base, **changes})[0], "inconclusive")
+        self.assertEqual(uh.configured_measurement_outcome({**base, "hash": uh.compare_hashes({"a": "1"}, {"a": "2"})})[0], "rejected")
+        self.assertEqual(uh.configured_measurement_outcome({**base, "replay": [{**point, "converged": True, "verdict": "regress"}]})[0], "rejected")
+
+    def test_all_overlay_rounds_must_match(self):
+        line = "UNITHASH case 0123456789abcdef\n"
+        self.assertFalse(uh.consistent_round_hashes([line, line])[1])
+        self.assertTrue(uh.consistent_round_hashes([line, ""])[1])
+        self.assertTrue(uh.consistent_round_hashes([line, line + "FAIL test\n"])[1])
+
+    def test_canonical_groups_use_cmake_classifier(self):
+        import shutil
+        if not shutil.which("cmake"):
+            self.skipTest("cmake not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = Path(tmp)
+            (tree / "libr4d").mkdir()
+            cmake = tree / "libr4d/CMakeLists.txt"
+            cmake.write_text('  "r4d_dflash_example|flags"\n  "r4d_ar_Nrank|flags"\n  "r4d_new_unit|"\n')
+            with patch.object(uh, "work_root", return_value=tree):
+                component = uh.ROOT / "engines/radiance/components/libr3"
+                self.assertEqual(uh.canonical_groups(tree, component),
+                                 {"r4d_dflash_example": "speculation", "r4d_ar_Nrank": "collectives", "r4d_new_unit": "core"})
+                cmake.write_text(cmake.read_text() + '  "r4d_new_unit|"\n')
+                with self.assertRaises(uh.HarnessError):
+                    uh.canonical_groups(tree, component)
 
 
 if __name__ == "__main__":

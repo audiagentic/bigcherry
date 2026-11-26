@@ -1,0 +1,24 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261126_014720_added-model-driven-kernel-qual_9639",
+  "files": [
+    "docs/design/radiance-kernel-group-qualification.md",
+    "docs/reference/tooling/TOOL_DISPOSITION.md",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr3/KERNEL_GROUPS.md",
+    "engines/radiance/components/libr3/r3_groups.cmake",
+    "engines/radiance/patches/naming-rules.toml",
+    "tools/bigcherry/patch/unit_ownership.py",
+    "tools/lab/radiance/unit_harness.py",
+    "tools/tests/lab/test_unit_harness.py",
+    "tools/tests/patch/test_unit_ownership.py"
+  ],
+  "plan-item-ids": [
+    "RCS26",
+    "RCS27"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reuse CMake kernel classifier, existing discrete family and overlay metadata for offline plan selection, validate full configured inventory, expose uncovered units/rows and compatible reference prerequisites. Resolve naming suffixes literally from existing architecture and component ownership policy. Reject missing/failed/incomplete or unconverged evidence. Fresh gfx1100 configure and four speculation HIP objects built; 20 Python tests and group inventory pass.",
+  "timestamp-utc": "2026-11-26T01:47:20.439721Z",
+  "user-summary-candidate": "Added model-driven kernel qualification planning using existing build groups, with explicit coverage gaps and evidence checks. Full campaign integration and profile promotion remain pending."
+}

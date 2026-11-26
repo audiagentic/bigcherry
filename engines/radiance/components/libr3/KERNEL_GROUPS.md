@@ -48,3 +48,34 @@ tests, relevant `r3_selftest` rows and downstream engine qualification.
 Keep `R3_ONLY` empty for that full build; nonempty `R3_ONLY` is still
 supported for narrow experiments but is not a release build. Native rewrite
 coverage and shimmed compilation remain enforced by the full build.
+
+### Qualification selection (RCS26–28)
+
+The build's classifier can enumerate the full upstream inventory, including
+units excluded from libr3, without configuring a HIP project:
+
+    cmake -DR3_GROUP_SOURCE=COMPOSED_SOURCE -DR3_GROUP_OUTPUT=OUTPUT.tsv -P engines/radiance/components/libr3/r3_groups.cmake
+
+Use the existing discrete harness to resolve a selected build group or named
+unit into configured test routes. From the repository root with BC_WORK_ROOT
+set, for example:
+
+    python tools/lab/radiance/unit_harness.py plan --tree COMPOSED_SOURCE --manifest BUILD_DIR/r3_groups.tsv --arch gfx1100 --release RELEASE --group gemm_quant
+
+The optional manifest must be a full, matching libr3 build inventory (not a
+partial R3_ONLY build). Without it the planner reports source classification
+only. Repeat --group or --unit to select additional work. The output is a
+diagnostic JSON plan, not a qualification receipt. It names the existing
+build and measurement commands, missing unit/row coverage, and any required
+explicit compatible overlay reference (--overlay-reference). Exit 1 means
+coverage/reference prerequisites remain; exit 2 is an invalid request.
+An excluded base row is not available in the installed libr3 merely because
+the installed overlay serves it. The compatible reference must be independently
+verified; existence of a file does not prove a matched row or layout.
+
+Compile separately using the existing group target. Run the selected measurement
+commands only under the existing GPU lease. Skipped, empty, mismatched or
+unconverged checks cannot establish a pass; a new output directory preserves
+prior evidence. A passing configured check is still not a production or power
+profile qualification. See [the design](../../../../docs/design/radiance-kernel-group-qualification.md)
+for the remaining campaign, ownership and profile integration.

@@ -63,3 +63,25 @@ Power controls remain in engines/radiance/power-profiles.yaml with the existing 
 RCS26: one family/ownership/naming resolution from actual build metadata; lexical and data-policy fixtures; audit exception removals, unknown scope and shared-header expansion. RCS27: existing harness plan selection, coverage gaps and fail-closed outcome gates; add missing family oracles and overlay mapping, then real matched builds/tests. RCS28: consume these outputs in existing bump/campaign/profile workflow and prove evidence reuse and refusal; physical profile testing stays with current authorized owners. Merge planning/design before implementing. Commit implementation and its ledger record together. Do not revise active related plans without coordinating; retain completed plans as evidence.
 
 Acceptance: adding a synthetic group/target/qualification family through existing metadata does not require another classification table; exact source/build coverage, dependency and overlay gaps visible; fixtures include malformed/partial inventory, invalid naming rules, missing rows, wrong layout/provider, empty hashes, bad reference, skipped/unconverged replay and stale evidence; real selected family build, matched discrete GPU qualification and existing release gates separately reported. No new persistent authority or auto profile application. Unimplemented coverage stays pending rather than being described as qualified.
+
+## 6. First implementation and validation (2026-11-26)
+
+The existing classifier now has a read-only CMake script mode and the existing
+unit harness has a plan command; usage is in
+[the build-family guide](../../engines/radiance/components/libr3/KERNEL_GROUPS.md).
+The real full source inventory contains 115 units, eight build groups, and
+six gfx1100 exclusions; the actual full configure contains 109 units. A fresh
+gfx1100 configure and all four speculation-group HIP objects compile with
+ROCm 7.2.4; the existing group inventory check passes. The gemm_quant request
+selects 23 units, maps five excluded IQR units to two overlay test cases, and
+reports 18 uncovered units plus additional GEMM row evidence. Current installed
+base libr3 omits the owned IQR rows, so the plan requires an independently
+verified compatible base reference. No GPU run or profile change was made.
+
+Naming policy uses literal expansion, actual architecture metadata, explicit
+family aliases, and rewrite component ownership. It does not assert a
+patch supports every architecture token. The broader lexical scope/fragment
+audit is still pending, as are complete per-family oracles, complete actual
+row coverage, exact evidence identity and platform campaign/pin integration.
+The current harness's checks_passed is scoped to configured checks, not an
+eligible profile decision; the existing profile owners remain authoritative.

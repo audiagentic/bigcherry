@@ -54,18 +54,9 @@ file(GLOB r4d_inputs CONFIGURE_DEPENDS ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_S
      ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${r4d_inputs})
 
-# The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`.
-file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[A-Za-z0-9_]+\\|")
-# Unit names have capitals (r4d_ar_oneshot_Nrank_exact): a lowercase-only pattern once dropped the 3/4/8-rank
-# all-reduce units without a word, and their entry points became stubs. Every unit line must parse.
-file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt all_unit_lines REGEX "^  \"r4d_")
-list(LENGTH unit_lines n_parsed)
-list(LENGTH all_unit_lines n_listed)
-if(NOT n_parsed EQUAL n_listed)
-  message(FATAL_ERROR "libr3: parsed ${n_parsed} of libr4d's ${n_listed} unit lines; fix the unit pattern")
-endif()
-file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt excluded REGEX "^r4d_")
 include(${CMAKE_CURRENT_SOURCE_DIR}/r3_groups.cmake)
+r3_read_unit_lines("${RADIANCE_SRC}" unit_lines)
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt excluded REGEX "^r4d_")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups.cmake)
 foreach(group IN LISTS R3_KERNEL_GROUPS)
@@ -75,9 +66,7 @@ set(device "")
 set(built "")
 set(skipped "")
 foreach(line ${unit_lines})
-  string(REGEX MATCH "\"(r4d_[A-Za-z0-9_]+)\\|([^\"]*)\"" _ "${line}")
-  set(unit ${CMAKE_MATCH_1})
-  set(flags "${CMAKE_MATCH_2}")
+  r3_unit_fields("${line}" unit flags)
   if(R3_ONLY AND NOT unit IN_LIST R3_ONLY)
     list(APPEND skipped ${unit})
     continue()
