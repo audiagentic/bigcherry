@@ -1,5 +1,7 @@
 # Independent AI power-profile screening (PWR12)
 
+For the next independent coverage slice (PWR13), see [GPU qualification code-level implementation guide](../../design/gpu-qualification-code-guide.md). It documents source-level limitations and proposed fail-closed gates; it does not change the current screen or qualify a profile.
+
 ## Decision and boundary
 
 This is **platform qualification tooling**, not a Radiance component or
