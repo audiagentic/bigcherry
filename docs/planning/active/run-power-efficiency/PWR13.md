@@ -55,9 +55,12 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26 direct instruction slice: bc-platform 1.78.0 base, native protocol 3/screen schema 4; independent alu/wave/lds cases, exact CPU readback every launch, changing epochs, output guards/input integrity and strict geometry/count/headroom validation. New cases refuse profile application until owner recovery hardening. Actual code objects on gfx1030/gfx1100/gfx1201 show mul_hi/lo, bit extraction/rotate, ds_bpermute, explicit LDS read/write and barriers; initial volatile LDS emitted generic flat accesses and was corrected. 202 hardware tests passed, one skipped; CPU golden self-test passed. All 24 observe-only sustained/burst cases across four cards passed with 39635648512 verified 32-bit words and unchanged controls; four receipts harvested, IDs in AI_POWER_SCREEN.md. Host-readback-limited coverage, not hot or saturation proof. Remaining varied matrix geometry, native matrix/FP instructions, mixed residency/traffic and phase/transient/thermal work; P0 owner admission and native serving remain separate. No writer or production changes.
 
+2026-11-26 rectangular geometry slice: explicit M,N,K,LDA,LDB,LDC NN layout, three exact corpora and full logical/padding comparison, strict geometry identity, protocol 4/schema 5. Initial missing native geometry serialization was correctly rejected (four harvested inconclusive receipts); serializer fixed and native validation failures now retain per-case diagnostic/output. Final four observe-only captures passed 15 requested cases: 2158560 GEMMs, 2082375360 GPU and 195222690 CPU padding comparisons; eight captures harvested, IDs in AI_POWER_SCREEN.md. CPU golden self-test and 210 hardware tests passed (one skipped), all three offload targets compiled. No power changes; explicit geometry refuses apply pending P0. Remaining mixed residency/traffic, direct matrix/vector instruction and phase/transient coverage; native and production gates separate.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
 - 2026-11-26T01:52:35.520482+00:00 (state-transition): State: pending → in_progress
 - 2026-11-26T02:00:20.973947+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:02:56.388933+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T03:10:45.923234+00:00 (updated-by): Updated: section:notes

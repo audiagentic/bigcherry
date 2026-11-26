@@ -21,13 +21,14 @@ from .power_transaction import PowerFailed, PowerRefused, PowerTransaction
 
 INSTRUCTION_ALGORITHMS = {"alu": "integer-wrap-v1", "wave": "wave-exchange-v1",
                           "lds": "lds-exchange-v1"}
-DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8", "memory", *INSTRUCTION_ALGORITHMS)
+MATRIX_DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8")
+DTYPES = (*MATRIX_DTYPES, "memory", *INSTRUCTION_ALGORITHMS)
 INSTRUCTION_BLOCK = 256
 INSTRUCTION_WORDS = 4
 PROVIDERS = ("hipblaslt", "rocblas")
 POLL_SECONDS = 0.25
-NATIVE_PROTOCOL = 3
-SCREEN_SCHEMA = 4
+NATIVE_PROTOCOL = 4
+SCREEN_SCHEMA = 5
 CORPUS_COUNT = 3
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 ARCH = re.compile(r"^gfx[0-9a-f]+$")
@@ -134,13 +135,25 @@ def hot_window(samples: list[tuple[int, int]], start_ns: int, end_ns: int,
             "max_gap_ns": max(gaps), "samples": len(window)}
 
 
+def matrix_geometry(n: int, selected=None) -> list[int]:
+    """Resolve and bound a column-major NN GEMM layout."""
+    g = [n]*6 if selected is None else list(selected)
+    if (len(g) != 6 or any(type(x) is not int for x in g) or
+            any(not 1 <= x <= 2048 for x in g[:3])):
+        raise ScreenError("invalid matrix shape")
+    m, _, k, lda, ldb, ldc = g
+    if not (m <= lda <= m+256 and k <= ldb <= k+256 and m <= ldc <= m+256):
+        raise ScreenError("invalid matrix leading dimensions")
+    return g
+
+
 def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
              seconds: int, pause: int, setup_timeout: int,
              sensor: Path, limit: int, output_dir: Path, *,
              provider: str = "hipblaslt", warmup_seconds: int = 0,
              min_hotspot_c: int | None = None, headroom_mib: int = 512,
              memory_sensor: Path | None = None, memory_limit: int | None = None,
-             batch: int = 1,
+             batch: int = 1, geometry=None,
              cancelled=lambda: False) -> dict:
     """Always reap the probe before returning; requested coverage is never a skip."""
     samples: list[int] = []
@@ -161,10 +174,19 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
     if not lease.held_by_this_process():
         raise ScreenError("GPU lease not verified")
     duration = seconds + warmup_seconds
+    if dtype in MATRIX_DTYPES:
+        g = matrix_geometry(n, geometry)
+        if n != g[1]:
+            raise ScreenError("matrix N differs from case")
+        native_geometry = [g[0], g[2], *g[3:]]
+    else:
+        if geometry is not None:
+            raise ScreenError("matrix geometry on nonmatrix case")
+        native_geometry = [0]*5
     launch_ns = time.monotonic_ns()
     with tempfile.TemporaryFile(dir=output_dir) as stdout, tempfile.TemporaryFile(dir=output_dir) as stderr:
         proc = subprocess.Popen([str(binary), bdf, arch, dtype, str(n), str(duration), str(pause),
-                                 provider, str(headroom_mib), str(batch)], stdout=stdout, stderr=stderr)
+                                 provider, str(headroom_mib), str(batch), *map(str, native_geometry)], stdout=stdout, stderr=stderr)
         failure = None
         try:
             while proc.poll() is None:
@@ -210,10 +232,14 @@ def run_case(binary: Path, bdf: str, arch: str, dtype: str, n: int,
     try:
         payload = json.loads(raw.strip().splitlines()[-1])
     except (IndexError, ValueError):
-        raise ScreenError("probe did not emit a valid result") from None
-    validate_native(payload, bdf, arch, dtype, n, provider, duration, setup_timeout,
-                    headroom_mib, launch_ns=launch_ns, batch=batch)
+        return result | {"status": "inconclusive", "diagnostic": "probe did not emit a valid result",
+                         "native_output_tail": raw[-4000:]}
     result["native"] = payload
+    try:
+        validate_native(payload, bdf, arch, dtype, n, provider, duration, setup_timeout,
+                        headroom_mib, launch_ns=launch_ns, batch=batch, geometry=geometry)
+    except ScreenError as exc:
+        return result | {"status": exc.status, "diagnostic": str(exc)}
     if min_hotspot_c is not None:
         result["hot_window"] = hot_window(timestamps, payload["start_ns"], payload["end_ns"], seconds, min_hotspot_c*1000)
         if result["hot_window"] is None:
@@ -246,7 +272,7 @@ def case_batch(dtype: str, matrix_batch: int) -> int:
 
 def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                     provider: str, duration: int, setup_timeout: int,
-                    headroom_mib: int, *, launch_ns: int | None = None, batch: int = 1) -> None:
+                    headroom_mib: int, *, launch_ns: int | None = None, batch: int = 1, geometry=None) -> None:
     """Reject incomplete or mismatched native coverage in live and reference receipts."""
     valid_algorithm = (isinstance(payload, dict) and
                        isinstance(payload.get("algorithm"), str) and
@@ -288,7 +314,14 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                 type(payload.get("free_after_bytes")) is not int or
                 payload["free_after_bytes"] < headroom_mib * 2**20):
             raise ScreenError("instruction verification coverage/headroom mismatch")
-    elif dtype != "memory":
+    elif dtype in MATRIX_DTYPES:
+        g = matrix_geometry(n, geometry)
+        if (g[1] != n or not isinstance(payload.get("matrix_geometry"), list) or
+                any(type(v) is not int for v in payload["matrix_geometry"]) or
+                payload["matrix_geometry"] != g):
+            raise ScreenError("matrix geometry coverage mismatch")
+        logical = g[0]*g[1]
+        padding = (g[5]-g[0])*g[1]
         launches = payload["iterations"]
         rounds, remainder = divmod(launches, batch)
         q, r = divmod(launches, CORPUS_COUNT)
@@ -307,8 +340,10 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
                 not exact_counts("corpus_iterations", want_launches) or
                 not exact_counts("corpus_host_checks", want_checks) or
                 not exact_count("host_checks", host_checks) or
-                not exact_count("host_elements_checked", host_checks * n * n) or
-                not exact_count("device_elements_checked", launches * n * n if batch > 1 else 0)):
+                not exact_count("host_elements_checked", host_checks * logical) or
+                not exact_count("device_elements_checked", launches * logical if batch > 1 else 0) or
+                not exact_count("host_padding_checked", host_checks * padding) or
+                not exact_count("device_padding_checked", launches * padding if batch > 1 else 0)):
             raise ScreenError("matrix verification coverage mismatch")
     if dtype == "memory":
         if (payload.get("allocated_bytes") != n * 2**20 or
@@ -322,7 +357,8 @@ def case_identity(case: dict) -> tuple:
     native = case["native"]
     return tuple(case[k] for k in ("dtype", "n", "pause_ms", "requested_seconds", "warmup_seconds", "batch")) + tuple(
         native[k] for k in ("bdf", "arch", "hip", "driver", "provider", "library_version", "workspace", "algorithm", "protocol_version")) + (
-        (native["block_size"], native["wave_size"]) if case["dtype"] in INSTRUCTION_ALGORITHMS else ())
+        (native["block_size"], native["wave_size"]) if case["dtype"] in INSTRUCTION_ALGORITHMS
+        else tuple(native["matrix_geometry"]) if case["dtype"] in MATRIX_DTYPES else ())
 
 
 def screen_receipt(run_id: str, result: dict):
@@ -353,6 +389,10 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
            journal_dir: Path | None = None) -> dict:
     if not BDF.fullmatch(args.bdf) or not ARCH.fullmatch(args.arch):
         raise ScreenError("invalid physical device identity")
+    shape = args.matrix_shape
+    if shape is not None and not any(dtype in MATRIX_DTYPES for dtype in args.dtype):
+        raise ScreenError("matrix shape requires a matrix case")
+    geometry = matrix_geometry(args.n, shape) if any(dtype in MATRIX_DTYPES for dtype in args.dtype) else None
     input_digests = getattr(args, "input_digests", {})
     if "profiles" in input_digests and digest(args.profiles) != input_digests["profiles"]:
         raise ScreenError("profile input changed since run creation")
@@ -366,8 +406,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     elif not settings or not args.reference or args.stock_confirmed or (args.observe_current and not args.apply_profile):
         raise ScreenError("candidate requires matching nonempty profile rules and --reference")
     if args.apply_profile:
-        if any(dtype in INSTRUCTION_ALGORITHMS for dtype in args.dtype):
-            raise ScreenError("new instruction cases are observe-only pending owner recovery hardening")
+        if any(dtype in INSTRUCTION_ALGORITHMS for dtype in args.dtype) or shape is not None:
+            raise ScreenError("new instruction/geometry cases are observe-only pending owner recovery hardening")
         if args.profile == "stock" or not args.confirm_idle or journal_dir is None:
             raise ScreenError("apply requires candidate, existing transaction journal and --confirm-idle")
         if "sclk_offset_mhz" in settings:
@@ -388,7 +428,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     request = {"bdf": args.bdf, "arch": args.arch, "role": args.role,
                "profile": profile.name, "profile_digest": profile.source_digest,
                "settings": settings, "probe_digest": probe_digest, "kernel": os.uname().release,
-               "dtypes": args.dtype, "n": args.n, "seconds": args.seconds,
+               "dtypes": args.dtype, "n": args.n, "matrix_geometry": geometry, "seconds": args.seconds,
                "pause_ms": args.pause_ms, "max_hotspot_c": args.max_hotspot_c,
                "provider": args.provider, "batch": args.batch, "memory_mib": args.memory_mib, "headroom_mib": args.headroom_mib,
                "setup_timeout": args.setup_timeout,
@@ -404,7 +444,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
     else:
         reference = None
     if reference_bytes is not None:
-        keys = ("bdf", "arch", "role", "probe_digest", "kernel", "dtypes", "n", "seconds", "pause_ms", "max_hotspot_c",
+        keys = ("bdf", "arch", "role", "probe_digest", "kernel", "dtypes", "n", "matrix_geometry", "seconds", "pause_ms", "max_hotspot_c",
                 "provider", "batch", "memory_mib", "headroom_mib", "warmup_seconds", "min_hotspot_c", "max_memory_c",
                 "setup_timeout")
         if (not isinstance(reference, dict) or reference.get("kind") != "ai-power-screen" or reference.get("schema_version") != SCREEN_SCHEMA or reference.get("status") != "pass" or
@@ -418,7 +458,7 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
         if (reference["before"] != reference["after"] or len(reference["cases"]) != len(recipe)):
             raise ScreenError("stock reference lacks complete passing coverage")
         for c, (dtype, pause) in zip(reference["cases"], recipe):
-            n = args.memory_mib if dtype == "memory" else args.n
+            n = args.memory_mib if dtype == "memory" else geometry[1] if dtype in MATRIX_DTYPES else args.n
             provider = case_provider(dtype, args.provider)
             batch = case_batch(dtype, args.batch)
             if (c.get("status") != "pass" or
@@ -428,7 +468,8 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                 raise ScreenError("stock reference lacks complete passing coverage")
             validate_native(c["native"], args.bdf, args.arch, dtype, n, provider,
                             args.seconds + args.warmup_seconds, args.setup_timeout,
-                            args.headroom_mib or 512, batch=batch)
+                            args.headroom_mib or 512, batch=batch,
+                            geometry=geometry if dtype in MATRIX_DTYPES else None)
             if args.min_hotspot_c is not None:
                 window = hot_window(c["junction_samples"], c["native"]["start_ns"], c["native"]["end_ns"],
                                     args.seconds, args.min_hotspot_c*1000)
@@ -492,13 +533,14 @@ def screen(args: argparse.Namespace, *, cancelled=lambda: False,
                 if snapshot(args.bdf)[0] != before:
                     raise ScreenError("device controls changed between cases")
                 case = run_case(binary, args.bdf, args.arch, dtype,
-                                args.memory_mib if dtype == "memory" else args.n, args.seconds,
+                                args.memory_mib if dtype == "memory" else geometry[1] if dtype in MATRIX_DTYPES else args.n, args.seconds,
                                 pause, args.setup_timeout, sensor, limit, args.output.parent,
                                 provider=case_provider(dtype, args.provider),
                                 warmup_seconds=args.warmup_seconds, min_hotspot_c=args.min_hotspot_c,
                                 headroom_mib=args.headroom_mib or 512, memory_sensor=mem_sensor,
                                 memory_limit=mem_limit, cancelled=cancelled,
-                                batch=case_batch(dtype, args.batch))
+                                batch=case_batch(dtype, args.batch),
+                                geometry=geometry if dtype in MATRIX_DTYPES else None)
                 result["cases"].append(case)
                 if case["status"] != "pass":
                     raise ScreenError(f"{dtype}/{pause} ms: {case['status']}", case["status"])

@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_031052_gpu-correctness-screens-can-no_3180",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/design/gpu-qualification-code-guide.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Resolve explicit rectangular column-major matrix geometry and leading dimensions, independently verify three exact corpora and padding, validate geometry and exact logical/padding counts, retain rejected native results. Protocol 4/schema 5. Four cards passed observe-only repeats, no power changes.",
+  "timestamp-utc": "2026-11-26T03:10:52.531951Z",
+  "user-summary-candidate": "GPU correctness screens can now exercise rectangular and ragged matrices with padded strides, detecting writes outside the logical output."
+}
