@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.81.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.81.0...bc-platform-1.81.1) (2026-11-26)
+
+
+### Fixes
+
+* **power:** implement reversible RDNA4 shader offsets in both owners ([#1685](https://github.com/audiagentic/bigcherry/issues/1685)) ([4eabbd6](https://github.com/audiagentic/bigcherry/commit/4eabbd6c784a14df10e4433388d8dff6f199cad2))
+
 ## [1.81.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.80.0...bc-platform-1.81.0) (2026-11-26)
 
 
