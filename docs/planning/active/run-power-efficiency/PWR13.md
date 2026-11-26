@@ -81,6 +81,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26: resolved remaining gfx1030 hot coverage by bounded observe-only geometry investigation. 1536 BF16 90+60 s requested stopped at unchanged 80 C ceiling after ~83 s wall, no numerical completion claim; harvested 20261126T055347Z-gpu-ai-screen-22528262f5c7, report 20261126T055510Z-gpu-ai-qualification-report-b374e720798c. Intermediate 1024 BF16 with 60 s warmup + 60 s measured passed 200576 GEMMs, final 60 s 66–74 C, overall 42–74 C; capture 20261126T055532Z-gpu-ai-screen-2118fdba6724, report 20261126T055733Z-gpu-ai-qualification-report-53177bcb5620. Both controls/identity unchanged, driver health incomplete. Canonical target hot_n/hot_warmup_seconds resolve exactly the passed options; no change to other groups, architectures, measured window or safety ceilings. All four cards now have successful individual hot and burst evidence across managed reports; not one aggregate cohort and not factory/candidate/production qualification. Peer capability and driver health remain blocked, native/owner gates separate.
 
+2026-11-26 owner-directed policy correction: ordinary operational/extended sustained group (historical ID hot) no longer requests min_hotspot_c, with unchanged geometry, warmup, measured duration and upper safety ceilings; optional elevated-temperature recipe retains the prior 60 C coverage floor. Preserve historical reports without reclassification. CLI accepts warmup without a temperature floor. 293 hardware/CLI tests pass, one skipped; fresh floor-free candidate receipts use newly matched references. No change to observe-only restrictions or native/production gates.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -100,3 +102,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T05:32:58.821400+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T05:36:53.590760+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T05:59:28.544787+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:54:41.407843+00:00 (updated-by): Updated: section:notes

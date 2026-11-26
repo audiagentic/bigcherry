@@ -104,7 +104,7 @@ def resolve(raw: dict, recipe: str, arch: str, total: int, free: int,
         _need(_integer(n,16,2048) and _integer(batch,1,256) and _integer(sec,1,3600)
               and _integer(warm,0,3600-sec) and _integer(timeout,1,300)
               and isinstance(pause,list) and bool(pause) and all(_integer(x,0,1000) for x in pause)
-              and len(pause)==len(set(pause)) and (not warm or hot is not None)
+              and len(pause)==len(set(pause))
               and (hot is None or _integer(hot,1,max_hotspot-1)), "invalid group bounds")
         _need(not any(d in a.PRECISION_DTYPES for d in dtypes) or (arch=="gfx1100" and n<=64 and all(d in a.PRECISION_DTYPES for d in dtypes)), "invalid precision reference scope")
         matrix = any(d in a.MATRIX_DTYPES for d in dtypes)

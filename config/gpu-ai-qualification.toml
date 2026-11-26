@@ -19,8 +19,11 @@ matrix = ["fp16", "bf16", "fp32", "int8", "fp8"]
 
 [recipe.screen]
 groups = ["matrix", "direct", "dot2-signed", "wmma-positive", "wmma-fp16-signed", "wmma-bf16-signed"]
+# "hot" is the historical group ID; ordinary sustained load has no floor.
 [recipe.operational]
 groups = ["hot", "burst"]
+[recipe.elevated-temperature]
+groups = ["elevated-temperature"]
 [recipe.precision]
 groups = ["dot2-signed", "wmma-fp16-signed", "wmma-bf16-signed"]
 [recipe.precision-workarounds]
@@ -80,6 +83,15 @@ seconds = 15
 setup_timeout = 180
 pause_ms = [0]
 [group.hot]
+hot = true
+n = 768
+batch = 32
+seconds = 60
+warmup_seconds = 30
+pause_ms = [0]
+
+# Optional coverage diagnostic, not part of ordinary operational/extended.
+[group.elevated-temperature]
 hot = true
 n = 768
 batch = 32

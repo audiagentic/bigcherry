@@ -92,6 +92,22 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 2026-11-26: helper1 same sweep completed 10 arms, 40/40 cases and 274816 verified GEMMs; eight candidate transactions restored, all four device snapshots match. 2700/-125 lowest observed 38.411 J/1000 vs bracketed baseline 56.281 (31.8% lower estimated energy, 2.2% lower aggregate rate); 2700/-100 40.324, 0.9% lower aggregate rate. Both cards 80/80 cases, 539712 verified GEMMs, 20 harvested captures, no setting persisted. Detailed per-arm capture IDs/metrics in AI_POWER_SCREEN.md. Repeat finalist matched arms and native/model performance/stability before any profile promotion; driver-health and reciprocal owner admission incomplete. No changes to production settings.
 
+2026-11-26: pressure stage started from merged sweep. At 2700/0 helper0, original hot recipe BF16 768 batch32 30+60 s completed 338432 verified GEMMs but hotspot only 51–58 C, hot window inconclusive; exact restoration all four; harvested 20261126T062716Z-gpu-ai-screen-eab61e3fc539. Do not reduce temperature floor; increase geometry with fresh matched reference. Helper0 20.5 GiB address-pattern VRAM at stock, 2700/0, -100, -125 all pass, two full iterations each (allocated 22011707392 B), memory peak 65/65/66/67 C, exact candidate restores. Captures 20261126T062913Z-gpu-ai-screen-b39aa94b0584, 20261126T062944Z-gpu-ai-screen-7abe41480d24, 20261126T063009Z-gpu-ai-screen-ce945c04ddb5, 20261126T063033Z-gpu-ai-screen-252b9f9a8c59.
+
+2026-11-26 helper1 VRAM pressure also passes original, 2700/0, 2700/-100 and 2700/-125: 20.5 GiB (22011707392 B), two full iterations each, memory peak 51/52/53/52 C. All controls restored. Captures 20261126T063105Z-gpu-ai-screen-d627b78f35e5, 20261126T063130Z-gpu-ai-screen-ccff8a827ba1, 20261126T063154Z-gpu-ai-screen-501aa270956b, 20261126T063219Z-gpu-ai-screen-039b695d5d2c. Combined 8/8 independent memory arms pass; not simultaneous resident compute or native qualification.
+
+2026-11-26 helper0 short burst pressure: BF16 768-square batch32, 15 s each of 1/2/10/100 ms gaps, 60 s total, 80 C ceilings. Observed reference/2700-0/-100/-125 pass all 16 cases; 114208/123456/124544/124128 verified GEMMs and estimated J/1000 29.560/29.451/25.486/25.019. All candidate restores exact, all four snapshots match. Captures 20261126T063250Z-gpu-ai-screen-d5fbbd4a6058, 20261126T063352Z-gpu-ai-screen-d350b07e19af, 20261126T063454Z-gpu-ai-screen-988460896b7b, 20261126T063556Z-gpu-ai-screen-55c7d16d7b54. No aggregate rate regression vs matched 2700/0 control; health incomplete. Separate helper1 burst queued and 1024 hot repeat queued.
+
+2026-11-26 helper1 same 60 s burst diagnostic: reference/2700-0/-100/-125 all 16 cases pass, 125024/123232/120640/123616 verified GEMMs, J/1000 31.585/29.387/25.486/24.629. Exact candidate restores and all four snapshots equal. Captures 20261126T063659Z-gpu-ai-screen-6377d90f4272, 20261126T063801Z-gpu-ai-screen-7d931ba66e88, 20261126T063903Z-gpu-ai-screen-21b84208bd3b, 20261126T064005Z-gpu-ai-screen-94c387411526. Both cards combined 32/32 cases, 978848 verified GEMMs. -125 no aggregate rate regression vs matched 2700/0 on either card, -100 about 2% lower on helper1. Health incomplete. Shortened pressure diagnostic, not full operational burst duration.
+
+2026-11-26: 1024-square BF16 hot diagnostic with fresh helper0 observed reference, batch32 30+60 s, completed 173024 verified GEMMs, hotspot 52–62 C, memory peak 68 C; still inconclusive full 60 C hot window not reached. Capture 20261126T064108Z-gpu-ai-screen-92a0c4677033. No candidate applied because baseline not passed. All four snapshots unchanged. Retain floor and ceiling; try 1536 square, same duration.
+
+2026-11-26: helper0 1536-square fresh observed hot reference (30+60 s BF16) also completed 71392 GEMMs but hot window not reached, hotspot 50–63 C, memory peak 68 C. Capture 20261126T064306Z-gpu-ai-screen-9d29ed2929b4. No candidate applied under this nonpassed reference. Retain both geometry nonpasses. Returning to earlier passing exact per-card 768-square hot references to record actual target sustained arithmetic, preserving thermal-floor nonpasses independently; no thermal qualification or promotion inferred.
+
+2026-11-26: helper1 previous floor-bound 768-square BF16 sustained control and both candidates completed 90 s and native passes (364064/367936/368032 GEMMs; hotspot 48–60/48–58/48–58 C), all inconclusive only on continuous 60 C floor. Captures 20261126T064807Z-gpu-ai-screen-3620203a2d26, 20261126T064938Z-gpu-ai-screen-4bed2afadce0, 20261126T065109Z-gpu-ai-screen-6ee54dfe2805. All restored. Owner directed removal of minimum temperature from ordinary sustained qualification: retain historical group ID hot and duration, no min_hotspot_c in operational/extended; explicit elevated-temperature recipe is optional and retains old floor as separate coverage. CLI allows warmup without floor; upper limits unchanged. Historical evidence immutable. 293 card-free hardware/CLI tests passed/1 skipped; fresh matched floor-free sustained runs underway.
+
+2026-11-26 floor-free fresh matched sustained tests complete, both helper0 and helper1 original/2700-0/-100/-125 all pass. BF16 768-square batch32 30+60 s, unchanged 80 C ceilings, no floor. helper0 GEMMs 374368/364672/370208/370752; J/1000 34.489/29.559/24.413/23.061, peak 62/59/56/54 C. helper1 377088/363488/367744/368576; J/1000 36.417/29.652/24.358/22.865, peak 63/59/58/58 C. Combined 2956896 verified GEMMs, 8/8 sustained cases, exact 6/6 candidate restoration, all four card snapshots match, eight harvested captures and IDs in AI_POWER_SCREEN.md. Combined with 8/8 VRAM and 32/32 burst cases, bounded independent pressure stage passes; elevated-temperature coverage, mixed candidate, driver health, native and long soak separate. No promotion.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -114,3 +130,11 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 - 2026-11-26T06:12:37.386843+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:19:29.145327+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T06:21:17.933628+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:31:46.650763+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:33:12.654600+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:37:49.897111+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:41:44.624784+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:43:21.873726+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:45:28.297760+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T06:54:14.212273+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T07:07:24.539911+00:00 (updated-by): Updated: section:notes

@@ -34,8 +34,8 @@ def register(sub) -> None:
     p.add_argument("--resident-mib", type=int, default=0,
                    help="actively checked VRAM allocation concurrent with matrix workload")
     p.add_argument("--headroom-mib", type=int, help="VRAM to leave free (all workloads; default 512 MiB)")
-    p.add_argument("--warmup-seconds", type=int, default=0, help="additional bounded heating time per case")
-    p.add_argument("--min-hotspot-c", type=int, help="required sampled temperature for entire final interval")
+    p.add_argument("--warmup-seconds", type=int, default=0, help="additional bounded workload warmup per case (no temperature floor required)")
+    p.add_argument("--min-hotspot-c", type=int, help="optional elevated-temperature coverage floor for entire final interval")
     p.add_argument("--max-memory-c", type=int, help="optional explicit memory temperature ceiling")
     p.add_argument("--batch", type=int, default=1, help="matrix launches per host check; every output checked on-device for batch > 1")
     p.add_argument("--n", type=int, default=768, help="square matrix dimension, or block count for alu/wave/lds")
@@ -57,7 +57,6 @@ def cmd_screen(args: argparse.Namespace) -> int:
             not 1 <= args.setup_timeout <= 300 or not 1 <= args.max_hotspot_c <= 110 or
             not 0 <= args.warmup_seconds <= 3600 - args.seconds or
             (args.min_hotspot_c is not None and not 1 <= args.min_hotspot_c < args.max_hotspot_c) or
-            (args.warmup_seconds and args.min_hotspot_c is None) or
             (args.max_memory_c is not None and not 1 <= args.max_memory_c <= 110) or
             ("memory" in args.dtype and (args.memory_mib is None or not 2 <= args.memory_mib <= 65536 or
                                         args.memory_mib % 2 or args.headroom_mib is None or

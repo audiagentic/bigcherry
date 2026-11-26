@@ -119,7 +119,9 @@ small smoke may use `--dtype memory --memory-mib 128 --headroom-mib 512`;
 larger resident-memory tests require an appropriate measured safe budget.
 No multi-GPU/collective or simultaneous model-resident coverage is implied.
 
-For an actual thermal-envelope screen select `--min-hotspot-c` and optional
+For ordinary sustained qualification, no minimum temperature is required;
+`--warmup-seconds` is independent of the optional temperature floor.
+For a separate elevated-temperature coverage diagnostic select `--min-hotspot-c` and optional
 `--warmup-seconds` per case, in addition to the required safe maximum.
 The workload runs for warmup plus requested measured time. Native monotonic
 timestamps and sampled temperatures must establish the entire requested
@@ -1162,3 +1164,162 @@ setting persisted. Driver health incomplete. The 2700/-100 arm is a
 candidate for a better rate/energy tradeoff; 2500/0 is a clock-only
 control worth retaining. No inference performance claim. Retain all
 points rather than select a profile solely on this single sweep.
+
+
+### XTX finalist pressure screening (2026-11-26)
+
+Supervised explicit applies using the existing power owner and matched
+observed references, each arm under verified lease with known-root
+journal audit, idle check, and all-four-card snapshot equality after
+restore. Settings 2700 MHz at 0/-100/-125 mV, unchanged 303 W cap and
+memory clock. No production profile changes. Driver health incomplete.
+The candidate interface still prohibits new instruction, rectangular
+geometry and concurrent resident-memory cases; these are not tested
+under candidate controls and no restriction is bypassed.
+
+Original hot recipe (768-square BF16, batch 32, 30 s warmup + 60 s
+measurement) at helper0 2700/0: 338432 verified GEMMs but 51–58 C,
+inconclusive because the full 60 C hot window was not reached.
+Capture 20261126T062716Z-gpu-ai-screen-eab61e3fc539. Exact restore.
+Do not reduce the temperature floor. Increase geometry with a fresh
+matched reference.
+
+Independent VRAM pressure: 20992 MiB (22011707392 bytes), 2048 MiB
+headroom, 15 s requested, two complete address-pattern iterations per
+arm. All eight arms pass (six explicit candidate restores), no concurrent
+matrix workload implied.
+
+| Role | Clock/offset | Native s | Memory peak C | Capture |
+|---|---|---:|---:|---|
+| helper0 | observed | 30.54 | 65 | 20261126T062913Z-gpu-ai-screen-b39aa94b0584 |
+| helper0 | 2700/0 | 23.59 | 65 | 20261126T062944Z-gpu-ai-screen-7abe41480d24 |
+| helper0 | 2700/-100 | 23.59 | 66 | 20261126T063009Z-gpu-ai-screen-ce945c04ddb5 |
+| helper0 | 2700/-125 | 23.58 | 67 | 20261126T063033Z-gpu-ai-screen-252b9f9a8c59 |
+| helper1 | observed | 23.70 | 51 | 20261126T063105Z-gpu-ai-screen-d627b78f35e5 |
+| helper1 | 2700/0 | 23.69 | 52 | 20261126T063130Z-gpu-ai-screen-ccff8a827ba1 |
+| helper1 | 2700/-100 | 23.70 | 53 | 20261126T063154Z-gpu-ai-screen-501aa270956b |
+| helper1 | 2700/-125 | 23.70 | 52 | 20261126T063219Z-gpu-ai-screen-039b695d5d2c |
+
+
+Independent burst pressure: BF16 768 square, batch 32, 15 s per
+1/2/10/100 ms gap (60 s total per arm), 80 C ceilings. This is a
+shortened pressure diagnostic, not the full 60 s per gap operational
+recipe. Matched observed reference and 2700/0 control for each card.
+Energy is sampled native-load GPU energy, not wall power.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | J/1000 GEMMs | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---|
+| helper0 | observed | 114208 | 60.117 | 3376.014 | 29.56 | 60 | 20261126T063250Z-gpu-ai-screen-d5fbbd4a6058 |
+| helper0 | 2700/0 | 123456 | 60.146 | 3635.891 | 29.451 | 57 | 20261126T063352Z-gpu-ai-screen-d350b07e19af |
+| helper0 | 2700/-100 | 124544 | 60.036 | 3174.133 | 25.486 | 60 | 20261126T063454Z-gpu-ai-screen-988460896b7b |
+| helper0 | 2700/-125 | 124128 | 60.14 | 3105.575 | 25.019 | 53 | 20261126T063556Z-gpu-ai-screen-55c7d16d7b54 |
+
+All 16 cases pass on helper0, exact restoration of three candidates.
+Aggregate throughput is not lower at either undervolt than the matched
+clock-only arm; estimated energy per GEMM falls 13.5% and 15.1%.
+
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | J/1000 GEMMs | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---|
+| helper1 | observed | 125024 | 60.056 | 3948.833 | 31.585 | 64 | 20261126T063659Z-gpu-ai-screen-6377d90f4272 |
+| helper1 | 2700/0 | 123232 | 60.14 | 3621.457 | 29.387 | 60 | 20261126T063801Z-gpu-ai-screen-7d931ba66e88 |
+| helper1 | 2700/-100 | 120640 | 60.054 | 3074.649 | 25.486 | 57 | 20261126T063903Z-gpu-ai-screen-21b84208bd3b |
+| helper1 | 2700/-125 | 123616 | 60.034 | 3044.58 | 24.629 | 60 | 20261126T064005Z-gpu-ai-screen-94c387411526 |
+
+All 16 cases pass on helper1, exact restore of three candidates. Relative
+to matched 2700/0, -100 has about 2% lower aggregate rate and -125 has
+about 0.5% higher rate; energy per GEMM is 13.3% and 16.2% lower.
+Combined 32/32 cases, 978848 GEMMs. No production throughput or
+stability guarantee. All controls/identities verified after each arm.
+
+
+Sustained pressure: original 768-square BF16 hot recipe, batch 32,
+30 s warmup + 60 s measurement, 60 C floor and 80 C hotspot/memory
+ceilings. Fresh 1024- and 1536-square helper0 observed references
+completed native arithmetic but missed the continuous hot floor.
+The candidate interface correctly refused to proceed on these references.
+Returning to the previously passing exact 768-square per-card references
+allows a separate bounded target test. A verified native pass with only
+a hot-window nonpass is recorded as inconclusive; do not treat it as a
+thermal qualification or waive the temperature gate. No deeper arm
+runs after arithmetic, safety ceiling or restoration failure.
+
+| Role | Geometry | Clock/offset | Verified GEMMs | Hotspot C | Thermal | Capture |
+|---|---:|---|---:|---|---|---|
+| helper0 | 1024 | observed | 173024 | 52–62 | inconclusive | 20261126T064108Z-gpu-ai-screen-92a0c4677033 |
+| helper0 | 1536 | observed | 71392 | 50–63 | inconclusive | 20261126T064306Z-gpu-ai-screen-9d29ed2929b4 |
+| helper0 | 768 | 2700/-100 | 357248 | 50–59 | inconclusive | 20261126T064503Z-gpu-ai-screen-3b4095056ef5 |
+| helper0 | 768 | 2700/-125 | 359488 | 54–56 | inconclusive | 20261126T064634Z-gpu-ai-screen-7a2a2ace7fd6 |
+
+Both candidate native arithmetic passes cover 90 s, both exact
+restores verified on all four cards. Both memory peaks below ceiling
+(69 and 68 C). No full hot-window pass on helper0.
+
+
+| Role | Geometry | Clock/offset | Verified GEMMs | Hotspot C | Thermal | Capture |
+|---|---:|---|---:|---|---|---|
+| helper1 | 768 | 2700/0 | 364064 | 48–60 | inconclusive | 20261126T064807Z-gpu-ai-screen-3620203a2d26 |
+| helper1 | 768 | 2700/-100 | 367936 | 48–58 | inconclusive | 20261126T064938Z-gpu-ai-screen-4bed2afadce0 |
+| helper1 | 768 | 2700/-125 | 368032 | 48–58 | inconclusive | 20261126T065109Z-gpu-ai-screen-6ee54dfe2805 |
+
+All three completed 90 s with native arithmetic passing and exact
+restoration; memory peaks 50/52/52 C. Historical elevated-temperature
+nonpasses are retained, not rewritten.
+
+### Sustained qualification policy correction (2026-11-26)
+
+Owner decision: low observed operating temperature must not cause a
+normal pressure-test refusal. The canonical operational and extended
+recipes retain the historical hot group ID, architecture-specific
+geometry, warmup and measured durations, but no minimum temperature.
+The group ID is not a claim of verified elevated-temperature coverage.
+A separately selected elevated-temperature recipe retains the previous
+60 C coverage floor. Both use unchanged explicit upper ceilings and
+reported device limits. CLI warmup is independent of the optional floor.
+No artificial heating or altered cooling policy, no relaxed numerical,
+duration, thermal ceiling, receipt, lease or restoration gates. An old
+floor-bound nonpass remains an elevated-temperature nonpass. Fresh
+floor-free references and results are required for the new recipe;
+no reference-identity bypass. The 293 hardware/CLI tests passed, one
+skipped, including cool sustained warmup CLI capture and optional
+diagnostic resolution across architectures. Driver health and native
+family proof remain separate; no production promotion.
+
+
+### Floor-free sustained pressure — fresh matched references
+
+BF16 768 square, batch32, 30 s warmup + 60 s requested, no minimum
+temperature; unchanged 80 C hotspot/memory ceilings. New observed
+reference per card; no historical elevated-temperature receipt reused.
+All energy and GEMM counts include warmup, not final-only estimates.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | W | J/1000 GEMMs | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| helper0 | observed | 374368 | 90.007 | 12911.477 | 143.45 | 34.489 | 62 | 20261126T065242Z-gpu-ai-screen-6d60ef54dbc4 |
+| helper0 | 2700/0 | 364672 | 90.002 | 10779.219 | 119.767 | 29.559 | 59 | 20261126T065413Z-gpu-ai-screen-f66df41f8001 |
+| helper0 | 2700/-100 | 370208 | 90.005 | 9038.011 | 100.417 | 24.413 | 56 | 20261126T065545Z-gpu-ai-screen-06d026b199fd |
+| helper0 | 2700/-125 | 370752 | 90.005 | 8550.09 | 94.996 | 23.061 | 54 | 20261126T065716Z-gpu-ai-screen-6d1eab4ad7a2 |
+
+All four arms pass, 1480000 verified GEMMs, three exact candidate
+restorations; all four physical snapshots match. -100/-125 energy
+per GEMM 17.4%/22.0% below matched clock-only control, with about
+1.5%/1.7% higher observed aggregate rate. No inference or long soak
+claim; driver health incomplete.
+
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | W | J/1000 GEMMs | Peak C | Capture |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| helper1 | observed | 377088 | 90.001 | 13732.51 | 152.582 | 36.417 | 63 | 20261126T065848Z-gpu-ai-screen-f6e5fc6c311d |
+| helper1 | 2700/0 | 363488 | 90.005 | 10778.008 | 119.75 | 29.652 | 59 | 20261126T070019Z-gpu-ai-screen-7630e1d6b207 |
+| helper1 | 2700/-100 | 367744 | 90.004 | 8957.348 | 99.522 | 24.358 | 58 | 20261126T070151Z-gpu-ai-screen-db2198746352 |
+| helper1 | 2700/-125 | 368576 | 90.005 | 8427.627 | 93.636 | 22.865 | 58 | 20261126T070322Z-gpu-ai-screen-90a493da8e81 |
+
+All four arms pass, 1476896 verified GEMMs, three exact candidate
+restorations; all four device snapshots match. -100/-125 estimated
+energy per GEMM 17.9%/22.9% below matched clock-only control, with about
+1.2%/1.4% higher observed aggregate rate. Combined floor-free 8/8
+cases and 2956896 GEMMs, six exact candidate restores; all eight
+captures harvested. Together with previous 8/8 independent memory and
+32/32 burst cases, both finalists pass this bounded pressure screen.
+No claim of elevated-temperature, mixed-residency or long-soak coverage.
+Driver health remains incomplete. No production profile change.
