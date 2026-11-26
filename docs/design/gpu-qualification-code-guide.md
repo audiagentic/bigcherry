@@ -300,3 +300,25 @@ The screen and extended policies are capability-driven, not a model-specific
 kernel coverage claim. The existing RCS27 native-family planner remains the
 authority for model/release route selection. Candidate execution remains
 blocked pending cross-owner recovery and reference qualification.
+
+## 18. Phase telemetry and driver-health observation
+
+The independent screen now records timestamped junction and memory
+temperatures, raw hwmon power/clock/voltage interfaces and GPU busy percentage,
+with explicit sensor availability. A trapezoid estimate over the native
+load interval requires bracketing power samples with no missing or excessive
+gaps. Warmup splits use the requested duration boundary, not an observed
+kernel phase; counts remain aggregate. No estimate of energy per token or
+instantaneous rail power is implied.
+
+A private read-only non-consuming kernel-log cursor observes AMDGPU fault
+classes during each case. A matching reset, timeout, page fault or device
+loss stops the case. Unreadable or overrun log coverage is incomplete.
+Only classes/counts are retained, not raw unrelated log text. A clean
+matching window is not proof of complete hardware health.
+
+The managed helper0 screen plan completed all six groups: three passing
+groups and three signed-arithmetic mismatch groups. Report
+20261126T035431Z-gpu-ai-qualification-report-2b0b6674b9be correctly
+refused independent qualification. This hardware report predates the
+additive telemetry schema; a new hardware smoke is needed for that schema.

@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_035625_gpu-screens-retain-diagnostic_4054",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/design/gpu-qualification-code-guide.md",
+    "docs/reference/tooling/AI_POWER_SCREEN.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add timestamped GPU phase telemetry, gap-bounded sampled energy estimates and non-consuming driver-health observations to independent screens.",
+  "timestamp-utc": "2026-11-26T03:56:25.988010Z",
+  "user-summary-candidate": "GPU screens retain diagnostic load-interval energy estimates and explicit driver-health coverage."
+}

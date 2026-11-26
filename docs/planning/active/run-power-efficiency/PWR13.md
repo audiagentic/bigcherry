@@ -63,6 +63,8 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 
 2026-11-26: Implemented managed architecture/recipe-driven gpu-ai-qualify plan/run/report, digest-bound probe/profile/recipe/native scope, observed physical snapshots and VRAM-derived budgets, one leased idle-screen group, fail-closed harvested result aggregation. 235 hardware tests passed/1 skipped. Physical plan 20261126T034531Z-gpu-ai-qualification-plan-84c0394b3695 captured; GPU smoke queued behind active Gate E release acceptance, not yet proven. RCS27 model/release route execution remains its owner; candidate execution deliberately refused pending cross-owner recovery and reference gates.
 
+2026-11-26: Managed screen end-to-end on helper0: report 20261126T035431Z-gpu-ai-qualification-report-2b0b6674b9be, six harvested groups: matrix/direct/wmma-positive pass; dot2-signed/wmma-fp16-signed/wmma-bf16-signed mismatch. Implemented additive telemetry schema 1 (timestamped power, raw clock/voltage and busy interfaces, memory/junction temperatures, gap-bounded interpolated energy across native load and requested warmup boundary); private read-only kernel log cursor, explicit inaccessible/overrun status, AMDGPU fault class counts stop work. 239 offline hardware tests passed/1 skipped. Hardware telemetry smoke not yet completed; Gate E holds lease. Estimates are diagnostic, not measured energy per token, and no control writes.
+
 ## Change Log
 
 - 2026-11-26T01:45:56.843677+00:00 (created-by): Created by agent
@@ -73,3 +75,4 @@ Required cases complete with positive verified work; missing/unsupported/thermal
 - 2026-11-26T03:21:55.716861+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:42:09.263099+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T03:50:43.706946+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T03:56:02.771051+00:00 (updated-by): Updated: section:notes

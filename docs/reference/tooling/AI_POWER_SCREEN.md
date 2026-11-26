@@ -788,3 +788,14 @@ Each group is a separate screen receipt. Harvest those receipts, then use
 The report is itself a retained managed capture and reports missing groups,
 nonpasses, and unsupported cases. It always sets production_qualified false.
 No new power-control mechanism or scheduler is introduced.
+
+### Diagnostic phase telemetry
+
+Telemetry schema 1 adds timestamped raw interface readings and status,
+memory temperature timestamps, bracketed/gap-bounded native-load energy
+estimates, and requested-warmup interval estimates. These are estimates
+from average-power readings, not meter-grade energy. An incomplete trace
+has no joule value. Driver-health observation uses a private read-only
+kernel log cursor; unavailable/overrun coverage is explicit and observed
+AMDGPU fault classes stop the workload. The scope is system AMDGPU,
+not an inferred physical-card fault attribution.
