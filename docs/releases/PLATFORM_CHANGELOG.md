@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.79.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.78.0...bc-platform-1.79.0) (2026-11-26)
+
+
+### New and changed
+
+* **platform:** add managed GPU qualification recipes ([#1655](https://github.com/audiagentic/bigcherry/issues/1655)) ([9f159e5](https://github.com/audiagentic/bigcherry/commit/9f159e58714776302d3b1b626c3072ac9a490ba7))
+* **platform:** verify direct GPU integer wave and LDS instructions ([#1647](https://github.com/audiagentic/bigcherry/issues/1647)) ([9706830](https://github.com/audiagentic/bigcherry/commit/97068304b414b661319667bee609f05f0ad16659))
+* **platform:** verify native vector dot and tensor instructions ([#1653](https://github.com/audiagentic/bigcherry/issues/1653)) ([c0702e4](https://github.com/audiagentic/bigcherry/commit/c0702e4a6f4010c4e946cc3c3ad07f358f7e2404))
+* **platform:** verify rectangular GPU matrix layouts and padding ([#1650](https://github.com/audiagentic/bigcherry/issues/1650)) ([8eb2e9f](https://github.com/audiagentic/bigcherry/commit/8eb2e9fc3d4522371fa1dcb5f7367f526cb9b549))
+* **rsc02:** archive rad0009, delete the manifest entry, engine entry owned by rad0070 (B2) ([#1652](https://github.com/audiagentic/bigcherry/issues/1652)) ([0480e91](https://github.com/audiagentic/bigcherry/commit/0480e9144ed9afcaae1a35e9737a81cb3e577f1a))
+* **rsc02:** owner starts every engine on --config and a sealed admission (B) ([#1639](https://github.com/audiagentic/bigcherry/issues/1639)) ([38e0572](https://github.com/audiagentic/bigcherry/commit/38e05727400a4e9f6a7c09399b5d10147adb340a))
+
+
+### Fixes
+
+* **platform:** verify mixed GPU resident memory and compute ([#1651](https://github.com/audiagentic/bigcherry/issues/1651)) ([ee4fb05](https://github.com/audiagentic/bigcherry/commit/ee4fb0514a931a354ca6a5c7a5d686934bb7c68f))
+
 ## [1.78.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.77.0...bc-platform-1.78.0) (2026-11-26)
 
 
