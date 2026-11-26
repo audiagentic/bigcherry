@@ -471,6 +471,7 @@ diagnostics; no factory confirmation or production qualification.
 | gfx1100 helper1 | -25 | 635488 | 166.08 | 63–64 | pass | 20261126T010148Z-gpu-ai-screen-9a8a4492b230 |
 | gfx1100 helper0 | -50 | 635680 | 145.91 | 61–63 | pass | 20261126T010333Z-gpu-ai-screen-7585383d5229 |
 | gfx1100 helper1 | -50 | 636864 | 158.10 | 63–65 | pass | 20261126T010505Z-gpu-ai-screen-7ec9b6af2691 |
+| gfx1100 helper0 | -75 | 636672 | 138.57 | 60–61 | pass | 20261126T010638Z-gpu-ai-screen-e993831118d0 |
 
 Both restored exactly and both receipts were harvested. Relative to the
 2700 MHz / 0 mV arms, sampled board power decreased 8.5% and 6.3%;
@@ -482,3 +483,6 @@ under the existing owner. No production settings were changed.
 The -50 mV arms also passed with exact restoration and verified harvests.
 Against 2700 MHz / 0 mV, sampled watts fell 13.6% and 10.8%; completed
 GEMM counts changed +0.01% and +0.19%, respectively. No serving claim.
+
+The first -75 mV arm passed with exact restoration and verified harvest;
+its junction window was close to the lower bound.
