@@ -21,7 +21,7 @@
 #include <vector>
 
 namespace {
-constexpr int protocol_version = 4;
+constexpr int protocol_version = 5;
 constexpr size_t corpus_count = 3;
 constexpr size_t guard_bytes = 256;
 struct Failure : std::runtime_error {
@@ -239,6 +239,69 @@ __global__ void memory_transform(uint32_t* dst, const uint32_t* src, size_t word
          i < words; i += size_t(blockDim.x) * gridDim.x)
         dst[i] = ~src[i];
 }
+// Separate, nonblocking memory queue; never claim measured overlap from
+// enqueue order alone. Each epoch changes and verifies one resident chunk.
+constexpr size_t resident_chunk_words = size_t(1)<<20;
+__global__ void resident_xor(uint32_t* data, size_t words, uint32_t mask) {
+    for (size_t i=blockIdx.x*size_t(blockDim.x)+threadIdx.x;
+         i<words; i+=size_t(blockDim.x)*gridDim.x) data[i]^=mask;
+}
+struct Stream {
+    hipStream_t value = nullptr;
+    Stream() { HIP(hipStreamCreateWithFlags(&value,hipStreamNonBlocking)); }
+    ~Stream() { if (value) (void)hipStreamDestroy(value); }
+    Stream(const Stream&) = delete;
+};
+struct ResidentTraffic {
+    size_t words, chunks;
+    Buffer data;
+    Stream stream;
+    std::vector<uint32_t> host, masks;
+    uint64_t epochs = 0, checked = 0;
+    bool pending = false;
+    explicit ResidentTraffic(int mib)
+        : words((size_t(mib)<<20)/sizeof(uint32_t)),
+          chunks((words+resident_chunk_words-1)/resident_chunk_words),
+          data(words*sizeof(uint32_t)), host(std::min(words,resident_chunk_words)), masks(chunks,0) {
+        for (size_t c=0;c<chunks;++c) {
+            size_t off=c*resident_chunk_words, len=length(c);
+            for (size_t i=0;i<len;++i) host[i]=memory_word(off+i,0xa17e58c3u);
+            HIP(hipMemcpy(ptr(c),host.data(),len*sizeof(uint32_t),hipMemcpyHostToDevice));
+        }
+        check_all();
+    }
+    size_t length(size_t c) const { return std::min(resident_chunk_words,words-c*resident_chunk_words); }
+    uint32_t* ptr(size_t c) { return static_cast<uint32_t*>(data.p)+c*resident_chunk_words; }
+    uint32_t epoch_mask() const { return (uint32_t(epochs)*0x9e3779b9u+0x6a09e667u)|1u; }
+    void check(size_t c) {
+        size_t off=c*resident_chunk_words, len=length(c);
+        HIP(hipMemcpy(host.data(),ptr(c),len*sizeof(uint32_t),hipMemcpyDeviceToHost));
+        for (size_t i=0;i<len;++i)
+            if (host[i]!=(memory_word(off+i,0xa17e58c3u)^masks[c]))
+                throw Failure(2,"resident memory mismatch at word "+std::to_string(off+i));
+        checked+=len;
+    }
+    void check_all() {
+        if (pending) throw Failure(4,"resident queue not completed");
+        for (size_t c=0;c<chunks;++c) check(c);
+    }
+    void enqueue() {
+        if (pending) throw Failure(4,"resident epoch already pending");
+        size_t c=epochs%chunks, len=length(c);
+        resident_xor<<<std::min<size_t>((len+255)/256,4096),256,0,stream.value>>>(ptr(c),len,epoch_mask());
+        HIP(hipGetLastError());
+        pending=true;
+    }
+    void finish() {
+        if (!pending) throw Failure(4,"resident epoch missing");
+        HIP(hipStreamSynchronize(stream.value));
+        size_t c=epochs%chunks;
+        masks[c]^=epoch_mask();
+        check(c);
+        ++epochs;
+        pending=false;
+    }
+};
 void memory_screen(const std::string& bdf, const std::string& arch, int hip_version,
                    int driver_version, int mib, int headroom_mib, int seconds, int pause) {
     size_t free = 0, total = 0;
@@ -521,7 +584,7 @@ int main(int argc, char** argv) {
             std::cout << "CPU oracle self-test passed\n";
             return 0;
         }
-        if (argc != 15) throw Failure(3, "usage: ai-probe BDF arch dtype N seconds pause-ms provider headroom-MiB batch M K LDA LDB LDC");
+        if (argc != 16) throw Failure(3, "usage: ai-probe BDF arch dtype N seconds pause-ms provider headroom-MiB batch M K LDA LDB LDC resident-MiB");
         std::string bdf = argv[1], expected_arch = argv[2], dtype = argv[3];
         std::string provider = argv[7];
         const bool matrix = dtype!="memory" && dtype!="alu" && dtype!="wave" && dtype!="lds";
@@ -530,6 +593,8 @@ int main(int argc, char** argv) {
         Geometry g{parse_int(argv[10],0,2048),n,parse_int(argv[11],0,2048),
                    parse_int(argv[12],0,2304),parse_int(argv[13],0,2304),
                    parse_int(argv[14],0,2304)};
+        int resident_mib=parse_int(argv[15],0,65536);
+        if (resident_mib && !matrix) throw Failure(3,"resident traffic requires a matrix case");
         if (matrix) {
             if (!g.m || !g.k || g.lda<g.m || g.lda>g.m+256 ||
                 g.ldb<g.k || g.ldb>g.k+256 || g.ldc<g.m || g.ldc>g.m+256)
@@ -630,6 +695,15 @@ int main(int argc, char** argv) {
             }
             void* data() { return static_cast<uint8_t*>(out.p)+guard_bytes; }
         };
+        const size_t resident_bytes=size_t(resident_mib)<<20;
+        const size_t allocation=corpus_count*(g.a_elements()*f.in_bytes+g.b_elements()*f.in_bytes+
+                                2*g.c_elements()*f.out_bytes+2*guard_bytes)+
+                                std::max(size_t(1),workspace)+(batch>1 ? 2*sizeof(unsigned) : 0)+resident_bytes;
+        const size_t reserve=size_t(headroom)<<20;
+        size_t free_before=0,total=0;
+        HIP(hipMemGetInfo(&free_before,&total));
+        if (allocation>free_before || free_before-allocation<reserve)
+            throw Failure(3,"matrix/resident budget exceeds VRAM headroom");
         std::vector<std::unique_ptr<Slot>> slots;
         for (size_t i=0;i<corpus_count;++i)
             slots.push_back(std::make_unique<Slot>(g,dtype,f,i));
@@ -644,6 +718,12 @@ int main(int argc, char** argv) {
         std::unique_ptr<Buffer> counters;
         // Bounded ldc <= 2304, n <= 2048, batch <= 256: counter fits uint32.
         if (batch > 1) counters = std::make_unique<Buffer>(2 * sizeof(unsigned));
+        std::unique_ptr<ResidentTraffic> resident;
+        if (resident_mib) resident=std::make_unique<ResidentTraffic>(resident_mib);
+        size_t free_after=0,total_after=0;
+        HIP(hipMemGetInfo(&free_after,&total_after));
+        if (free_after<reserve || total_after!=total)
+            throw Failure(3,"matrix/resident allocation did not preserve headroom");
         auto verify_counts = [&](unsigned want_seen, unsigned want_bad) {
             unsigned counts[2] = {};
             HIP(hipDeviceSynchronize());
@@ -710,11 +790,15 @@ int main(int argc, char** argv) {
                   << "\",\"workspace\":" << workspace << ",\"algorithm\":\"" << algorithm
                   << "\",\"batch\":" << batch
                   << ",\"matrix_geometry\":[" << g.m << "," << g.n << "," << g.k << ","
-                  << g.lda << "," << g.ldb << "," << g.ldc << "]";
+                  << g.lda << "," << g.ldb << "," << g.ldc << "]"
+                  << ",\"allocated_bytes\":" << allocation
+                  << ",\"free_before_bytes\":" << free_before << ",\"free_after_bytes\":" << free_after
+                  << ",\"resident_bytes\":" << resident_bytes;
         auto start = mono_ns();
         int64_t iterations = 0, host_checks = 0;
         do {
             std::array<bool, corpus_count> used{};
+            if (resident) resident->enqueue();
             if (batch > 1) HIP(hipMemsetAsync(counters->p, 0, 2 * sizeof(unsigned)));
             for (int j=0; j<batch; ++j) {
                 const size_t index = size_t(iterations+j) % corpus_count;
@@ -735,14 +819,18 @@ int main(int argc, char** argv) {
             }
             if (batch > 1) verify_counts(unsigned(elements * batch), 0);
             else HIP(hipDeviceSynchronize());
+            if (resident) resident->finish();
             for (size_t i=0;i<corpus_count;++i) if (used[i]) {
                 compare_host(*slots[i], iterations);
                 ++host_checks;
             }
             iterations += batch;
             if (pause) std::this_thread::sleep_for(std::chrono::milliseconds(pause));
-        } while (iterations < int64_t(corpus_count) || mono_ns()-start < int64_t(seconds)*1000000000);
+        } while (iterations < int64_t(corpus_count) ||
+                 (resident && resident->epochs<resident->chunks) ||
+                 mono_ns()-start < int64_t(seconds)*1000000000);
         int64_t end = mono_ns();
+        if (resident) resident->check_all();
         for (auto& s : slots) check_inputs(*s);
         verifier_selfcheck();
         std::cout << ",\"iterations\":" << iterations << ",\"host_checks\":" << host_checks
@@ -750,7 +838,14 @@ int main(int argc, char** argv) {
         for (size_t i=0;i<corpus_count;++i) std::cout << (i ? "," : "") << slots[i]->launches;
         std::cout << "],\"corpus_host_checks\":[";
         for (size_t i=0;i<corpus_count;++i) std::cout << (i ? "," : "") << slots[i]->checks;
-        std::cout << "],\"device_elements_checked\":" << (batch>1 ? uint64_t(iterations)*logical : 0)
+        std::cout << "]";
+        if (resident)
+            std::cout << ",\"resident_chunk_words\":" << resident_chunk_words
+                      << ",\"resident_chunks\":" << resident->chunks
+                      << ",\"resident_epochs\":" << resident->epochs
+                      << ",\"resident_words_checked\":" << resident->checked
+                      << ",\"resident_full_sweeps\":" << resident->epochs/resident->chunks;
+        std::cout << ",\"device_elements_checked\":" << (batch>1 ? uint64_t(iterations)*logical : 0)
                   << ",\"host_elements_checked\":" << uint64_t(host_checks)*logical
                   << ",\"device_padding_checked\":" << (batch>1 ? uint64_t(iterations)*(elements-logical) : 0)
                   << ",\"host_padding_checked\":" << uint64_t(host_checks)*(elements-logical)

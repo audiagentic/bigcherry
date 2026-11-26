@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_032204_independent-gpu-screening-now_4816",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/design/gpu-qualification-code-guide.md",
+    "docs/planning/active/run-power-efficiency/PWR13.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add observe-only mixed resident memory and checked matrix workload, full allocation headroom and exact epoch/sweep verification; update protocol and evidence.",
+  "timestamp-utc": "2026-11-26T03:22:04.022805Z",
+  "user-summary-candidate": "Independent GPU screening now verifies active large resident memory alongside matrix workloads on all four cards."
+}
