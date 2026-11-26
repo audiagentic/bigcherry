@@ -254,3 +254,19 @@ model. Keep the native peer/collective, matrix ISA, transition, health
 and production-owner gates separate.
 
 Further ISA review: gfx1100 and gfx1201 require separate native WMMA operand and accumulator layouts (see libr3/r3_compat.h); gfx1030 has no WMMA and must not report an emulated tile as native coverage. Check actual emitted WMMA instructions and independently verify every output lane against an exact CPU tile oracle. Existing libr2 notes identify a historical gfx1030 fdot2 builtin miscompile; verify the emitted packed-dot form and exact output on that target instead of assuming the intrinsic is correct.
+
+
+## 16. Native tensor instruction and precision review
+
+Protocol 6/schema 7 adds vector FP, signed packed dot4, signed and
+nonnegative FP16 dot2, native FP16/BF16 WMMA (signed and nonnegative),
+and mixed unsigned/signed IU8 WMMA. All are independent CPU-oracle
+cases with real target ISA inspection. The two gfx1100 cards reproduce
+small signed cancellation differences under observed controls, in
+both FP16/BF16 WMMA and FP16 dot2; nonnegative cases and mixed IU8
+pass. gfx1201 passes signed cases too. gfx1030 native WMMA is
+unavailable, not emulated. Keep strict signed cases nonpass: an
+architecture-specific mathematical precision contract and matched
+output-repeatability oracle require separate review and evidence.
+Do not accept a tolerance inferred solely from these few mismatches,
+or reinterpret the nonnegative coverage as a signed pass.

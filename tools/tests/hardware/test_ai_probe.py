@@ -565,12 +565,12 @@ def test_probe_changed_during_handshake_refuses(tmp_path, mock_native_protocol):
 def test_instruction_case_strict_counts(dtype):
     n, iterations = 32, 8
     lanes = n*a.INSTRUCTION_BLOCK
-    allocated = lanes*20+512
+    allocated = lanes*(36 if dtype in a.WMMA_CASES else 20)+512
     payload = case(0)["native"] | {
         "dtype": dtype, "n": n, "provider": "hip-native",
         "algorithm": a.INSTRUCTION_ALGORITHMS[dtype], "iterations": iterations,
         "block_size": 256, "wave_size": 32, "host_checks": iterations,
-        "checked_lanes": lanes*iterations, "host_elements_checked": lanes*iterations*4,
+        "checked_lanes": lanes*iterations, "host_elements_checked": lanes*iterations*(8 if dtype in a.WMMA_CASES else 4),
         "guard_checks": iterations*2, "input_checks": 2, "allocated_bytes": allocated,
         "free_before_bytes": allocated+512*2**20, "free_after_bytes": 512*2**20,
     }

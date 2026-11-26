@@ -257,8 +257,8 @@ expected architecture before allocation. It selects a hipBLASLt heuristic or exp
 public default GEMM dispatch with atomics disabled. It records provider and
 library versions; hipBLASLt also records opaque algorithm bytes, while
 rocBLAS honestly records default dispatch, not an exact internal solution ID. It
-checks every active HIP/library operation. Native protocol 5 / screen
-observations schema 6 retains the three-corpus check and rotates three deterministic operand corpora: dense
+checks every active HIP/library operation. Native protocol 6 / screen
+observations schema 7 retains the three-corpus check and rotates three deterministic operand corpora: dense
 signed, sparse signed, and signed-diagonal A times dense B. Floating
 inputs are exactly representable 0 or +/-1/16, integer inputs 0 or +/-1.
 The CPU integer dot sum is exact over the supported dimension range. The
@@ -276,7 +276,7 @@ compared elements, are required in the receipt. All three corpora must
 execute, plus the elapsed duration. Memory retains batch 1 and at least
 two full passes. Positive pause is between batches. This is a stronger
 correctness workload, not a comparable throughput benchmark for old probes.
-Old schema-2 through schema-5 receipts are preserved as historical diagnostics; the
+Old schema-2 through schema-6 receipts are preserved as historical diagnostics; the
 protocol handshake refuses old native binaries before any transaction,
 and the new validator refuses an old reference.
 
@@ -707,3 +707,69 @@ All five captures harvested. A job-monitor restart interrupted queued
 launches for engine/helper2; no duplicate active processes or lease
 were present before resubmission. No mutation, hot floor, peak
 saturation, peer-transfer or serving proof is claimed.
+
+### PWR13 vector, packed dot and native matrix instructions (2026-11-26)
+
+Protocol 6/schema 7 adds vector-fp, dot4, dot2, dot2-pos, wmma-fp16,
+wmma-bf16, wmma-fp16-pos, wmma-bf16-pos and wmma-iu8. They use the
+same exact per-lane CPU verification path; WMMA returns eight words
+per lane and executes a native 16x16x16 wave32 tile with nonzero C.
+gfx11/gfx12 use their distinct fragments. IU8 uses unsigned A and
+signed B across the byte range with int32 accumulation. gfx1030
+refuses native WMMA; no scalar emulation is counted as coverage.
+Vector FP uses exact dyadic arithmetic. Packed dot2 uses explicit
+native asm on gfx1030 and native builtins elsewhere.
+
+ROCm 7.2.4, all three offload targets, CPU self-test and 222 hardware
+tests passed (one skipped). Disassembly confirms vector FMA/multiply,
+gfx1030 v_dot4c_i32_i8 and v_dot2_f32_f16; gfx1100/gfx1201
+v_dot4_i32_iu8 and native dot2 (gfx1100 dot2acc), and native
+FP16/BF16/IU8 WMMA on gfx1100/gfx1201 only.
+
+| Case | gfx1030 | gfx1100 (both physical cards) | gfx1201 |
+| --- | --- | --- | --- |
+| vector-fp / dot4 | pass | pass | pass |
+| dot2, signed | pass | mismatch | pass |
+| dot2-pos | pass | pass | pass |
+| FP16/BF16 WMMA, signed | not applicable | mismatch | pass |
+| FP16/BF16 WMMA, nonnegative | not applicable | pass | pass |
+| mixed IU8 WMMA | not applicable | pass | pass |
+
+Signed FP16 and BF16 WMMA on both gfx1100 cards produced the same
+0x3f7ffffa instead of exactly 0x3f800000 (1.0) in a cancellation
+case; signed FP16 dot2 also produced small repeatable discrepancies
+on both cards. These are observed-baseline failures, consistent with
+limited internal precision, not demonstrated undervolt faults. Do
+not relax the exact oracle or substitute a nonnegative pass for signed
+coverage. A future signed precision/repeatability contract must be
+independently justified and retain both mathematical error and exact
+matched reference output evidence. No stock/factory or production
+qualification is asserted.
+
+Managed captures (all harvested, unchanged controls):
+
+| Scope | Role | Outcome | Run ID |
+| --- | --- | --- | --- |
+| Initial vector/dot4/WMMA | helper0 | mismatch | 20261126T033215Z-gpu-ai-screen-17dbbec9efb4 |
+| Initial vector/dot4/WMMA | helper1 | mismatch | 20261126T033235Z-gpu-ai-screen-9859a20d434b |
+| Initial vector/dot4/WMMA | engine | pass | 20261126T033255Z-gpu-ai-screen-aca24c0f3c8f |
+| Initial vector/dot4 | helper2 | pass | 20261126T033331Z-gpu-ai-screen-0d164375b282 |
+| Detailed FP16 WMMA diagnostic | helper0 | mismatch | 20261126T033421Z-gpu-ai-screen-a3668d9ef3a7 |
+| Expanded vector/dot2 cohort | helper0 | mismatch | 20261126T033558Z-gpu-ai-screen-74792e2854d1 |
+| Expanded vector/dot2 cohort | helper1 | mismatch | 20261126T033615Z-gpu-ai-screen-c886d38294d2 |
+| Expanded vector/dot2/WMMA | engine | pass | 20261126T033630Z-gpu-ai-screen-9280586815e4 |
+| Expanded vector/dot2 | helper2 | pass | 20261126T033718Z-gpu-ai-screen-33e238f18b56 |
+| Nonnegative WMMA | helper0 | pass | 20261126T033740Z-gpu-ai-screen-b57f565609c7 |
+| Signed BF16 WMMA | helper0 | mismatch | 20261126T033753Z-gpu-ai-screen-a8896c1b493c |
+| Nonnegative WMMA | helper1 | pass | 20261126T033756Z-gpu-ai-screen-80c4457722fc |
+| Signed BF16 WMMA | helper1 | mismatch | 20261126T033809Z-gpu-ai-screen-faa56b21994f |
+| Nonnegative dot2 / mixed IU8 | helper0 | pass | 20261126T034002Z-gpu-ai-screen-e19a0cc59b80 |
+| Nonnegative dot2 / mixed IU8 | helper1 | pass | 20261126T034016Z-gpu-ai-screen-6a6b5b4ea0b9 |
+| Nonnegative dot2 / mixed IU8 | engine | pass | 20261126T034030Z-gpu-ai-screen-2bb703aef891 |
+| Nonnegative dot2 | helper2 | pass | 20261126T034044Z-gpu-ai-screen-c6346bc58f9b |
+
+70 passing cases and 7 mismatch cases; 28,578,021,376 host-verified
+words in passing cases across the staged binaries. Evidence is bound
+to each binary digest; a new binary cannot use an old reference.
+All workload launches were short separate leased observe-only
+diagnostics; sustained and 2 ms burst patterns, no hot floor.

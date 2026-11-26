@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261126_034217_gpu-stability-tests-directly-e_3068",
+  "files": [
+    "tools/bigcherry/hardware/ai_probe.cpp",
+    "tools/bigcherry/hardware/ai_probe.py",
+    "tools/tests/hardware/test_ai_probe.py",
+    "docs/reference/tooling/AI_POWER_SCREEN.md",
+    "docs/design/gpu-qualification-code-guide.md",
+    "docs/planning/active/run-power-efficiency/PWR13.md"
+  ],
+  "plan-item-ids": [
+    "PWR13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add exact vector FP, packed dot and architecture-native FP16/BF16/IU8 matrix instructions. Observe-only evidence distinguishes signed cancellation mismatches on gfx1100 from nonnegative and IU8 passes. Retain strict failures, no tolerance or control change.",
+  "timestamp-utc": "2026-11-26T03:42:17.417472Z",
+  "user-summary-candidate": "GPU stability tests directly exercise hardware tensor and packed-dot instructions, exposing reproducible signed precision differences on RDNA3."
+}

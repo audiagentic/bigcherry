@@ -20,15 +20,23 @@ from . import gpu_power, lease, power_probe, power_profiles
 from .power_transaction import PowerFailed, PowerRefused, PowerTransaction
 
 INSTRUCTION_ALGORITHMS = {"alu": "integer-wrap-v1", "wave": "wave-exchange-v1",
-                          "lds": "lds-exchange-v1"}
+                          "lds": "lds-exchange-v1", "vector-fp": "vector-dyadic-v1",
+                          "dot4": "signed-dot4-v1", "wmma-fp16": "wmma-fp16-tile-v1",
+                          "wmma-bf16": "wmma-bf16-tile-v1", "dot2": "half-dot2-v1",
+                          "wmma-fp16-pos": "wmma-fp16-nonnegative-v1",
+                          "wmma-bf16-pos": "wmma-bf16-nonnegative-v1",
+                          "dot2-pos": "half-dot2-nonnegative-v1",
+                          "wmma-iu8": "wmma-iu8-mixed-tile-v1"}
+WMMA_CASES = ("wmma-fp16", "wmma-bf16", "wmma-fp16-pos", "wmma-bf16-pos", "wmma-iu8")
+WMMA_ARCHES = ("gfx1100", "gfx1201")
 MATRIX_DTYPES = ("fp16", "bf16", "fp32", "fp8", "int8")
 DTYPES = (*MATRIX_DTYPES, "memory", *INSTRUCTION_ALGORITHMS)
 INSTRUCTION_BLOCK = 256
 INSTRUCTION_WORDS = 4
 PROVIDERS = ("hipblaslt", "rocblas")
 POLL_SECONDS = 0.25
-NATIVE_PROTOCOL = 5
-SCREEN_SCHEMA = 6
+NATIVE_PROTOCOL = 6
+SCREEN_SCHEMA = 7
 CORPUS_COUNT = 3
 BDF = re.compile(r"^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$")
 ARCH = re.compile(r"^gfx[0-9a-f]+$")
@@ -319,10 +327,13 @@ def validate_native(payload: dict, bdf: str, arch: str, dtype: str, n: int,
     if dtype in INSTRUCTION_ALGORITHMS:
         lanes = n * INSTRUCTION_BLOCK
         iterations = payload["iterations"]
-        allocated = lanes * (1 + INSTRUCTION_WORDS) * 4 + 2 * 256
+        words = INSTRUCTION_WORDS * (2 if dtype in WMMA_CASES else 1)
+        if dtype in WMMA_CASES and (arch not in WMMA_ARCHES or payload.get("wave_size") != 32):
+            raise ScreenError("native WMMA architecture/width coverage mismatch")
+        allocated = lanes * (1 + words) * 4 + 2 * 256
         required = {"block_size": INSTRUCTION_BLOCK, "host_checks": iterations,
                     "checked_lanes": lanes * iterations,
-                    "host_elements_checked": lanes * iterations * INSTRUCTION_WORDS,
+                    "host_elements_checked": lanes * iterations * words,
                     "guard_checks": 2 * iterations, "input_checks": 2,
                     "allocated_bytes": allocated, "workspace": 0}
         if (provider != "hip-native" or batch != 1 or
