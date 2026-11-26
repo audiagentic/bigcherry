@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -81,13 +82,29 @@ def rocm_tool(name: str) -> str:
     return str(tool)
 
 
-def device_index(arch: str) -> str:
-    """HIP's index of the first card of this architecture (rocminfo lists the GPU agents in HIP's order)."""
-    out = subprocess.run(["rocminfo"], capture_output=True, text=True, check=False).stdout
-    names = [m.group(1) for m in re.finditer(r"^\s+Name:\s+(gfx\w+)", out, re.M)]
-    if arch not in names:
-        raise HarnessError(f"no {arch} card in rocminfo ({names})")
-    return str(names.index(arch))
+def device_index(arch: str, bdf: str) -> str:
+    """Use HIP's actual BDF resolver, not rocminfo ordering."""
+    import ctypes
+    from bigcherry.hardware import lease
+    if not lease.held_by_this_process():
+        raise HarnessError("GPU lease not verified")
+    if not re.fullmatch(r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]",bdf):
+        raise HarnessError("explicit canonical physical BDF required")
+    if any(k in os.environ for k in ("HIP_VISIBLE_DEVICES","ROCR_VISIBLE_DEVICES","CUDA_VISIBLE_DEVICES","GPU_DEVICE_ORDINAL")):
+        raise HarnessError("inherited GPU visibility mask prevents unambiguous physical selection")
+    try:
+        sdk=os.environ.get("ROCM_PATH")
+        library=Path(sdk)/"lib/libamdhip64.so" if sdk else None
+        hip=ctypes.CDLL(str(library) if library and library.is_file() else "libamdhip64.so")
+    except OSError as exc:
+        raise HarnessError("HIP runtime unavailable for physical BDF resolution") from exc
+    index=ctypes.c_int(-1)
+    if hip.hipDeviceGetByPCIBusId(ctypes.byref(index),bdf.encode()) or index.value<0:
+        raise HarnessError("physical BDF not visible to HIP")
+    actual=ctypes.create_string_buffer(32)
+    if hip.hipDeviceGetPCIBusId(actual,len(actual),index) or actual.value.decode().lower()!=bdf:
+        raise HarnessError("HIP physical BDF readback differs")
+    return str(index.value)
 
 
 def release_dir(tag: str | None) -> Path:
@@ -237,6 +254,102 @@ def resolve_group_plan(inventory: dict[str, str], excluded: set[str], family_spe
             "runs": runs, "uncovered_units": sorted(selected - covered)}
 
 
+def affected_selection(tree: Path, inventory: dict[str,str], touched: list[str]) -> dict:
+    """Conservative pin/compose scope. Local includes are a lower bound, not a compiler depfile."""
+    from bigcherry.patch import compose_check
+    if not touched or any(not isinstance(f,str) or not f or Path(f).is_absolute()
+                          or ".." in Path(f).parts for f in touched):
+        raise HarnessError("invalid/empty affected path inventory")
+    known = set(compose_check.affected_units(tree,touched))
+    if not known <= inventory.keys():
+        raise HarnessError("affected units absent from canonical inventory")
+    # Without compiler dependency evidence, headers, registry, build flags,
+    # removed files and even unrecognized paths can affect every unit.
+    direct={f"libr4d/{u}{suffix}" for u in inventory for suffix in (".hip",".cpp")
+            if (tree/"libr4d"/(u+suffix)).is_file()}
+    widen=any(f not in direct for f in touched)
+    if not known:
+        widen=True
+    return {"touched":sorted(set(touched)),"local_include_units":sorted(known),
+            "units":sorted(inventory if widen else known),
+            "scope":"full_inventory_conservative" if widen else "local_include_closure"}
+
+
+def resolve_rows(rows, family_specs, origin_specs):
+    """Select exact configured row names, never guess from model/quant names.
+
+    A requested runtime row is an input claim, not proof of actual dispatch.
+    """
+    if len(rows)!=len(set(rows)) or any(not re.fullmatch(r"[A-Za-z0-9_]+",r) for r in rows):
+        raise HarnessError("duplicate or invalid requested row")
+    result=[]
+    units=set()
+    for row in rows:
+        matches=[]
+        for name,spec in sorted(family_specs.items()):
+            if row==spec["case"] or row in spec.get("replay",{}).get("rows",[]):
+                matches.append({"kind":"family","name":name,"units":spec["units"],
+                                "oracle_case":spec["case"]})
+        for name,origin in sorted(origin_specs.items()):
+            if row in origin["overlay_rows"]:
+                index=origin["overlay_rows"].index(row)
+                base=origin["base_rows"][index]
+                matches.append({"kind":"overlay","name":name,"units":origin["units"],
+                                "oracle_case":origin["selftest_case"],"base_row":base})
+        for m in matches:
+            units.update(m["units"])
+        # Other rows in the same translation unit do not inherit its oracle.
+        covered=len(matches)==1 and (matches[0].get("base_row",row)==matches[0]["oracle_case"])
+        result.append({"row":row,"routes":matches,"status":"configured_route" if covered else "uncovered"})
+    return sorted(units),result
+
+
+def model_graph_scope(path: Path) -> dict:
+    """Read the existing Radiance /graph export, not a runtime execution trace."""
+    raw=path.read_bytes()
+    graph=json.loads(raw)
+    model=graph["model"]
+    rank,world=model["rank"],model["world"]
+    if type(rank) is not int or type(world) is not int or not 0<=rank<world:
+        raise HarnessError("invalid graph rank/world")
+    ops,order=graph["ops"],graph["order"]
+    if not isinstance(ops,list) or not ops or not isinstance(order,list) or any(
+            type(i) is not int or not 0<=i<len(ops) for i in order):
+        raise HarnessError("invalid graph operation inventory")
+    if len(order)!=graph["counts"]["ops"]:
+        raise HarnessError("incomplete graph declaration order")
+    from collections import Counter
+    counts=Counter(order)
+    plugins={p["name"]:p for p in graph["plugins"]}
+    if len(plugins)!=len(graph["plugins"]):
+        raise HarnessError("ambiguous graph plugin identity")
+    declared=[]
+    for i,op in enumerate(ops):
+        if counts[i]<=0 or counts[i]!=op["count"] or not isinstance(op["bands"],list) or not op["bands"]:
+            raise HarnessError("incomplete graph band inventory")
+        for band in op["bands"]:
+            for domain in ("device","host"):
+                entry=band.get(domain)
+                if entry is None:
+                    continue
+                row,plugin=entry["kernel"],entry["plugin"]
+                if plugin not in plugins or not isinstance(row,str) or not re.fullmatch(r"[A-Za-z0-9_]+",row):
+                    raise HarnessError("invalid graph row or plugin")
+                declared.append({"row":row,"plugin":plugin,"domain":domain,
+                                 "op":op["op"],"geometry":entry.get("geometry",op["geometry"]),
+                                 "span":band["span"],"count":op["count"]})
+    if not declared:
+        raise HarnessError("graph has no resolved rows")
+    misses=graph["misses"]
+    if not isinstance(misses,list):
+        raise HarnessError("invalid graph misses")
+    return {"sha256":hashlib.sha256(raw).hexdigest(),"model":model,
+            "plugins":graph["plugins"],"declared":declared,"misses":misses,
+            "gaps":["declared bands are not physical execution evidence"]
+                   +(["other ranks require their own graph"] if world>1 else [])
+                   +(["unresolved graph bands"] if misses else [])}
+
+
 def stage_plan(args) -> int:
     tree = Path(args.tree).resolve(strict=True)
     components = ROOT / "engines" / ENGINE / "components"
@@ -252,7 +365,53 @@ def stage_plan(args) -> int:
     # proof of matched compiler flags or source/build identities.
     release_plugin(args.release, args.arch)
     origins = overlay_origins(tree, components, args.arch, inventory, overlays())
-    result = resolve_group_plan(inventory, excluded, families(), origins, args.group or [], args.unit or [])
+    specs=families()
+    touched=list(args.touched or [])
+    triage=None
+    if args.pin_triage:
+        source=Path(args.pin_triage).read_bytes()
+        triage=json.loads(source)
+        if triage.get("engine")!=ENGINE or not isinstance(triage.get("changed_files"),list):
+            raise HarnessError("invalid existing pin-triage report")
+        touched.extend(triage["changed_files"])
+    affected=affected_selection(tree,inventory,touched) if touched else None
+    graph_scope=model_graph_scope(Path(args.model_graph)) if args.model_graph else None
+    requested=set(args.row or [])
+    if len(requested)!=len(args.row or []):
+        raise HarnessError("duplicate requested row")
+    if graph_scope:
+        requested.update(r["row"] for r in graph_scope["declared"])
+    row_units,row_scope=resolve_rows(sorted(requested),specs,origins)
+    selected=sorted(set(args.unit or [])|set(row_units)|set(affected["units"] if affected else []))
+    # An entirely unknown row selection is still useful as explicit nonpass.
+    result = (resolve_group_plan(inventory,excluded,specs,origins,args.group or [],selected)
+              if selected or args.group else
+              {"selected_units":[],"excluded_from_base":[],"runs":[],"uncovered_units":[]})
+    if not selected and not args.group and not row_scope:
+        raise HarnessError("select at least one group, unit, affected path or row")
+    result["affected_scope"]=affected
+    planned={(r["kind"],r["name"]) for r in result["runs"]}
+    for row in row_scope:
+        if row["status"]=="configured_route" and not all((m["kind"],m["name"]) in planned for m in row["routes"]):
+            row["status"]="uncovered"
+    if graph_scope:
+        for row in row_scope:
+            providers={r["plugin"] for r in graph_scope["declared"] if r["row"]==row["row"]}
+            if providers:
+                expected={Path(PLUGIN[args.arch]).stem if r["kind"]=="family"
+                          else overlays()[r["name"]]["plugin"] for r in row["routes"]}
+                if not providers<=expected or any(r["domain"]!="device" for r in graph_scope["declared"]
+                                                  if r["row"]==row["row"]):
+                    row["status"]="uncovered"
+        result["model_graph"]=graph_scope
+    result["requested_rows"]=row_scope
+    if triage is not None:
+        result["pin_triage"]={"sha256":hashlib.sha256(source).hexdigest(),
+                             "current_sha":triage.get("current_sha"),"target_sha":triage.get("target_sha")}
+    # This records the reference bytes, not a claim that the composed tree
+    # or actual loaded model route matches the installed build.
+    result["reference_sha256"]=file_sha256(release_plugin(args.release,args.arch))
+    result["family_policy_sha256"]=file_sha256(FAMILIES_FILE)
     result.update(arch=args.arch, release=args.release, tree=str(tree), inventory_units=len(inventory),
                   inventory_kind="matching_libr3_membership" if args.manifest else "canonical_source_only",
                   outcome="diagnostic", qualification="not_run")
@@ -260,7 +419,7 @@ def stage_plan(args) -> int:
         common = ["--arch", args.arch, "--tree", str(tree), "--release", args.release]
         if item["kind"] == "family":
             item["build_args"] = ["build", "--family", item["name"], *common]
-            item["measure_args"] = ["measure", "<build-output>"]
+            item["measure_args"] = ["measure", "<build-output>","--bdf","<physical-bdf>"]
         else:
             # The installed base can intentionally omit the overlay's rows.
             # Require an explicit compatible base reference for these cases.
@@ -272,17 +431,28 @@ def stage_plan(args) -> int:
                 else:
                     common += ["--reference", "<compatible-base-plugin>"]
             item["build_args"] = ["overlay-build", "--overlay", item["name"], *common]
-            item["measure_args"] = ["overlay-measure", "<build-output>"]
+            item["measure_args"] = ["overlay-measure", "<build-output>","--bdf","<physical-bdf>"]
     print(json.dumps(result, indent=2, sort_keys=True))
-    return 1 if result["uncovered_units"] or any(r.get("other_rows_need_evidence") or r.get("reference_required") for r in result["runs"]) else 0
+    return 1 if graph_scope or result["uncovered_units"] or any(r["status"]!="configured_route" for r in row_scope) or any(r.get("other_rows_need_evidence") or r.get("reference_required") for r in result["runs"]) else 0
 
 
 # ------------------------------------------------------------------------------------------------------- composition
 
 def compose(patches: list[str], tree: Path | None, scratch: Path, without: list[str] = ()) -> Path:
-    """The source the plugin is built from: ``tree`` as given, or the production composition plus ``patches``."""
+    """Build from a private composition; never edit a shared source/cache tree."""
     if tree is not None:
-        return tree
+        if patches or without:
+            raise HarnessError("explicit composed source cannot also apply/remove patches")
+        source=tree.resolve(strict=True)
+        out=(scratch/"src").resolve()
+        if source==out or source in out.parents or out.exists():
+            raise HarnessError("build scratch must be new and outside the source tree")
+        # Do not follow arbitrary links out of the pinned/composed source.
+        for path in source.rglob("*"):
+            if path.is_symlink() and (Path(os.readlink(path)).is_absolute() or not path.resolve().is_relative_to(source)):
+                raise HarnessError("external source symlink cannot be copied into private build")
+        shutil.copytree(source,out,ignore=shutil.ignore_patterns(".git"),symlinks=True)
+        return out
     from bigcherry.core import engines, paths
     from bigcherry.patch import compose_check
     source = engines.load(paths.REPO_ROOT, ENGINE).promotion_source
@@ -463,7 +633,27 @@ VOCAB_CASES_BLOCK = ('        if (const char* uh_v = std::getenv("UH_VOCAB_CASES
                      '            }\n')
 
 
+DEVICE_ANCHOR = "int main(int argc, char** argv) {\n"
+DEVICE_CHECK = r"""#ifdef RAD_HAVE_HIP
+    if (const char* expected = std::getenv("UH_EXPECT_BDF")) {
+        int count=0; char actual[32]={}; hipDeviceProp_t props{};
+        const char* arch=std::getenv("UH_EXPECT_ARCH");
+        if (!arch || hipGetDeviceCount(&count)!=hipSuccess || count!=1 ||
+            hipSetDevice(0)!=hipSuccess || hipDeviceGetPCIBusId(actual,sizeof(actual),0)!=hipSuccess ||
+            hipGetDeviceProperties(&props,0)!=hipSuccess || std::strcmp(actual,expected) ||
+            std::string(props.gcnArchName).substr(0,std::string(props.gcnArchName).find(':'))!=arch) {
+            std::printf("FAIL physical GPU identity\n"); return 2;
+        }
+        std::printf("UNITDEVICE %s %s\n",actual,arch);
+    }
+#endif
+"""
+
+
 def inject_selftest(text: str) -> str:
+    if text.count(DEVICE_ANCHOR)!=1:
+        raise HarnessError("selftest main anchor missing or ambiguous")
+    text=text.replace(DEVICE_ANCHOR,DEVICE_ANCHOR+DEVICE_CHECK,1)
     if text.count(SYM_ANCHOR) != 1:
         raise HarnessError("the selftest changed: the dlsym check is not found exactly once")
     text = text.replace(SYM_ANCHOR, SYM_TOLERANT + SYM_ANCHOR, 1)
@@ -680,24 +870,64 @@ def hash_cases(spec: dict) -> str:
     return ",".join(cases)
 
 
-def selftest_env(arch: str, device: str, extra: dict | None = None) -> dict:
-    env = dict(os.environ)
-    env.update(HIP_VISIBLE_DEVICES=device, OPENBLAS_NUM_THREADS="8", UH_TOLERATE_ABSENT="1")
+def selftest_env(arch: str, device: tuple[str,str], extra: dict | None = None) -> dict:
+    env = {k:v for k,v in os.environ.items() if not k.startswith(("UH_","R4D_PERF_ONLY"))}
+    env.update(HIP_VISIBLE_DEVICES=device[0], UH_EXPECT_BDF=device[1], UH_EXPECT_ARCH=arch, OPENBLAS_NUM_THREADS="8", UH_TOLERATE_ABSENT="1")
+    if extra and set(extra)&{"HIP_VISIBLE_DEVICES","UH_EXPECT_BDF","UH_EXPECT_ARCH"}:
+        raise HarnessError("selftest extra environment cannot override physical identity")
     env.update(extra or {})
     return env
 
 
 def run_selftest(binary: Path, plugin: Path, args: list[str], env: dict, timeout: int) -> str:
-    done = subprocess.run([str(binary), str(plugin), *args], env=env, capture_output=True, text=True, timeout=timeout, check=False)
-    text = done.stdout + done.stderr
-    if done.returncode:
-        text += f"\nFAIL selftest process exit {done.returncode}\n"
+    from bigcherry.hardware import lease
+    if not lease.held_by_this_process():
+        raise HarnessError("GPU lease not verified before selftest")
+    # Poll while the child runs; terminate only this child on timeout/lease loss.
+    with tempfile.TemporaryFile() as log:
+        proc=subprocess.Popen([str(binary),str(plugin),*args],env=env,stdout=log,stderr=subprocess.STDOUT)
+        deadline=time.monotonic()+timeout
+        failure=None
+        try:
+            while proc.poll() is None:
+                if not lease.held_by_this_process() or time.monotonic()>=deadline:
+                    failure="lease lost or selftest timeout"
+                    break
+                time.sleep(0.25)
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait()
+        log.seek(0)
+        text=log.read().decode(errors="replace")
+    marker="UNITDEVICE "+env["UH_EXPECT_BDF"]+" "+env["UH_EXPECT_ARCH"]
+    if text.splitlines().count(marker)!=1:
+        text+="\nFAIL missing or mismatched physical GPU identity\n"
+    if proc.returncode or failure or not lease.held_by_this_process():
+        text+=f"\nFAIL selftest process exit {proc.returncode}: {failure or 'process/lease status'}\n"
     return text
 
 
+def file_sha256(path: Path) -> str:
+    with path.open("rb") as source:
+        return hashlib.file_digest(source,"sha256").hexdigest()
+
+
 def parse_hashes(text: str) -> tuple[dict[str, str], list[str]]:
-    hashes = {m.group(1): m.group(2) for m in re.finditer(r"^UNITHASH (.+) ([0-9a-f]{16})$", text, re.M)}
-    failures = [line for line in text.splitlines() if re.match(r"^\s*(FAIL|not ok)\b", line)]
+    hashes = {}
+    failures = [line for line in text.splitlines() if re.match(r"^\s*(FAIL|not ok|skip)\b", line,re.I) or re.fullmatch(r"\s*(?:[1-9]\d* failure\(s\), \d+|\d+ failure\(s\), [1-9]\d*) skipped\s*",line)]
+    for line in text.splitlines():
+        if not line.startswith("UNITHASH"):
+            continue
+        match=re.fullmatch(r"UNITHASH (.+) ([0-9a-f]{16})",line)
+        if not match:
+            failures.append("malformed hash record")
+            continue
+        name,value=match.groups()
+        if name in hashes:
+            failures.append(f"duplicate hash case: {name}")
+        else:
+            hashes[name]=value
     return hashes, failures
 
 
@@ -723,18 +953,33 @@ def estimate(windows: list[float], drop_first: bool = False) -> float:
     return min(windows)
 
 
-def point_time(binary: Path, plugin: Path, arch: str, device: str, spec: dict, point: dict, row: str, iters: int,
+REPLAY_MODES = ("cold","warm")
+
+
+def replay_command(spec,point,iters,mode):
+    args=[a.format(**point,iters=iters) for a in spec["command"]]
+    if args.count("--cold")!=1 or mode not in REPLAY_MODES:
+        raise HarnessError("replay needs one configured cold flush and an explicit mode")
+    i=args.index("--cold")
+    if i+1>=len(args) or not args[i+1].isdigit() or int(args[i+1])<=0:
+        raise HarnessError("invalid configured cold flush")
+    if mode=="warm":
+        del args[i:i+2]
+    return args
+
+
+def point_time(binary: Path, plugin: Path, arch: str, device: tuple[str,str], spec: dict, point: dict, row: str, iters: int,
                extra_env: dict | None = None) -> float:
-    args = [a.format(**point, iters=iters) for a in spec["command"]]
+    args = replay_command(spec,point,iters,point["mode"])
     label = spec["label"].format(**point)
     text = run_selftest(binary, plugin, args, selftest_env(arch, device, {"R4D_PERF_ONLY": row, **(extra_env or {})}), timeout=900)
     values = [float(m.group(1)) for line in text.splitlines() if label in line for m in re.finditer(r"(\d+(?:\.\d+)?)\s+us", line)]
-    if parse_hashes(text)[1] or not values or values[-1] <= 0:
+    if parse_hashes(text)[1] or len(values)!=1 or not math.isfinite(values[0]) or values[0]<=0:
         raise HarnessError(f"no valid time for {label} {point}: {text[-300:]}")
-    return values[-1]
+    return values[0]
 
 
-def replay_point(binary: Path, ref: Path, cand: Path, arch: str, device: str, spec: dict, point: dict, row: str,
+def replay_point(binary: Path, ref: Path, cand: Path, arch: str, device: tuple[str,str], spec: dict, point: dict, row: str,
                  *, iters: int, tol: float, max_windows: int, arm_env: dict | None = None) -> dict:
     """ABBA windows, each plugin in its own process, until each arm's last two windows agree (R9700: the first window
     is the power ramp and is dropped)."""
@@ -755,7 +1000,7 @@ def replay_point(binary: Path, ref: Path, cand: Path, arch: str, device: str, sp
 
 
 def replay_points(spec: dict, bits: list[int] | None = None, rows: list[int] | None = None) -> list[dict]:
-    return [{"N": n, "K": k, "M": m, "B": b} for n, k in spec["shapes"] for m in (rows or spec["rows_m"]) for b in (bits or spec["bits"])]
+    return [{"N":n,"K":k,"M":m,"B":b,"mode":mode} for n,k in spec["shapes"] for m in (rows or spec["rows_m"]) for b in (bits or spec["bits"]) for mode in REPLAY_MODES]
 
 
 def classify(ratio: float, tol: float) -> str:
@@ -764,14 +1009,24 @@ def classify(ratio: float, tol: float) -> str:
 
 # ------------------------------------------------------------------------------------------------------------ stages
 
+def artifact_identity(state):
+    paths={key:Path(state[key]) for key in ("plugin","reference_plugin","selftest","base_stage") if key in state}
+    return {key:file_sha256(path) for key,path in paths.items()} | {"family_policy":file_sha256(FAMILIES_FILE)}
+
+
+def require_artifacts(state):
+    if state.get("artifact_sha256")!=artifact_identity(state):
+        raise HarnessError("build artifact or family policy changed/missing identity; rebuild")
+
+
 def stage_build(args) -> Path:
     fam = families().get(args.family) if args.family else None
     units = list(fam["units"]) if fam else [u for chunk in (args.unit or []) for u in chunk.split(",")]
     if not units:
         raise HarnessError("name a --family or --unit")
     out = Path(args.out) if args.out else work_root() / "unit-harness" / f"{args.family or 'units'}-{args.arch}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
-    if (out / "measure.json").exists() or (out / "measure-replay.json").exists():
-        raise HarnessError("output already contains measurement evidence; select a new --out")
+    if any((out / f).exists() for f in ("build.json","measure.json","measure-replay.json","src")):
+        raise HarnessError("output already contains build/evidence; select a new --out")
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
@@ -789,24 +1044,28 @@ def stage_build(args) -> Path:
     state = {"family": args.family, "units": units, "arch": args.arch, "plugin": str(plugin), "selftest": str(binary),
              "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + str(ref_plugin), "reference_plugin": str(ref_plugin), "resources": diff,
              "build_seconds": round(built, 1)}
+    state["artifact_sha256"] = artifact_identity(state)
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built {', '.join(units)} for {args.arch} in {built:.0f} s (selftest {'cached' if built < 5 else 'ready'}): {plugin}")
     print(resource_summary(diff, cand))
     return out
 
 
-def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_windows: int = 14, verdict_tol: float = 0.04, skip_replay: bool = False,
+def stage_measure(out: Path, *, bdf: str, replay_iters: int = 15, tol: float = 0.015, max_windows: int = 14, verdict_tol: float = 0.04, skip_replay: bool = False,
                   skip_hash: bool = False, bits: list[int] | None = None, rows: list[int] | None = None) -> dict:
     if (out / "measure.json").exists():
         raise HarnessError("measurement already exists; use a new build output")
     state = json.loads((out / "build.json").read_text(encoding="utf-8"))
+    require_artifacts(state)
     fam = families().get(state["family"]) if state["family"] else None
     if not fam:
         raise HarnessError("measure needs a family (hash and replay matrices come from unit_families.toml)")
     arch = state["arch"]
-    device = device_index(arch)
+    device = (device_index(arch,bdf),bdf)
+    from bigcherry.hardware.ai_probe import snapshot
+    before,_=snapshot(bdf)
     binary, plugin, ref = Path(state["selftest"]), Path(state["plugin"]), Path(state["reference_plugin"])
-    result: dict = {"arch": arch, "device": device}
+    result: dict = {"arch": arch, "device":device[0],"bdf":bdf,"artifact_sha256":state["artifact_sha256"]}
     env = {"UH_HASH_CASES": hash_cases(fam["hash"])}
     texts = {}
     for arm, path in ((("ref", ref), ("cand", plugin)) if not skip_hash else ()):
@@ -831,11 +1090,14 @@ def stage_measure(out: Path, *, replay_iters: int = 15, tol: float = 0.015, max_
                                    max_windows=max_windows)
                 got["row"], got["verdict"] = row, classify(got["ratio"], verdict_tol)
                 result["replay"].append(got)
-                print(f"replay {row} N={point['N']} K={point['K']} M={point['M']} B={point['B']}: "
+                print(f"replay {row} {point['mode']} N={point['N']} K={point['K']} M={point['M']} B={point['B']}: "
                       f"{got['ref_us']} -> {got['cand_us']} us ({got['ratio']}) {got['verdict']}"
                       f"{'' if got['converged'] else ' UNCONVERGED'}", flush=True)
     elif not changed_rows:
         print("replay: no rows configured")
+    result["observed_start"]=before
+    result["observed_stop"]=snapshot(bdf)[0]
+    require_artifacts(state)
     (out / "measure.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
@@ -854,11 +1116,13 @@ def configured_measurement_outcome(measure: dict) -> tuple[str, list[str]]:
     if h["compared"] <= 0 or h["only_in_candidate"]:
         incomplete.append("no positive matching hash coverage")
     def key(point):
-        return tuple(point[k] for k in ("row", "N", "K", "M", "B"))
+        return tuple(point[k] for k in ("row", "N", "K", "M", "B", "mode"))
     required = measure.get("required_replay", [])
     actual = measure["replay"]
-    if not required or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
+    if not required or len({key(p) for p in required}) != len(required) or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
         incomplete.append("configured replay coverage incomplete")
+    if any(p.get("mode") not in REPLAY_MODES or type(p.get("converged")) is not bool or p.get("verdict") not in ("win","same","regress") for p in actual):
+        incomplete.append("invalid replay verdict")
     if any(not p["converged"] for p in actual):
         incomplete.append("replay did not converge")
     if any(p["converged"] and p["verdict"] == "regress" for p in actual):
@@ -887,6 +1151,16 @@ def summary(out: Path) -> tuple[str, bool]:
         measure = json.loads(measure_path.read_text(encoding="utf-8"))
         h = measure["hash"]
         outcome, reasons = configured_measurement_outcome(measure)
+        try:
+            identity_ok=bool(build.get("artifact_sha256")) and measure.get("artifact_sha256")==build["artifact_sha256"]==artifact_identity(build)
+        except OSError:
+            identity_ok=False
+        if not measure.get("observed_start") or measure.get("observed_start")!=measure.get("observed_stop"):
+            outcome="inconclusive"
+            reasons.append("physical controls/identity missing or changed")
+        if not identity_ok:
+            outcome="inconclusive"
+            reasons.append("measurement artifact identity missing or stale")
         if build["resources"]["removed"]:
             outcome = "inconclusive" if outcome == "checks_passed" else outcome
             reasons.append("removed resource records require review")
@@ -925,8 +1199,8 @@ def stage_overlay_build(args) -> Path:
     if not ov:
         raise HarnessError(f"unknown overlay {args.overlay!r} in unit_families.toml")
     out = Path(args.out) if args.out else work_root() / "unit-harness" / f"overlay-{args.overlay}-{args.arch}-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}"
-    if (out / "measure.json").exists() or (out / "measure-replay.json").exists():
-        raise HarnessError("output already contains measurement evidence; select a new --out")
+    if any((out / f).exists() for f in ("build.json","measure.json","measure-replay.json","src")):
+        raise HarnessError("output already contains build/evidence; select a new --out")
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     tree = compose(args.patch or [], Path(args.tree) if args.tree else None, out, args.without or [])
@@ -949,6 +1223,7 @@ def stage_overlay_build(args) -> Path:
     diff = diff_records(ref, cand, None)   # what the base has beyond the overlay is not "removed": the overlay owns a part
     state = {"overlay": args.overlay, "arch": args.arch, "plugin": str(staged), "base_stage": str(stage / PLUGIN[args.arch]), "selftest": str(binary), "reference_plugin": str(ref_plugin),
              "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + str(ref_plugin), "resources": diff, "kernels_compared": len(cand), "build_seconds": round(time.monotonic() - started, 1)}
+    state["artifact_sha256"] = artifact_identity(state)
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built overlay {ov['plugin']} for {args.arch}: {len(cand)} kernels matching {ov['kernels']!r}; against {state['release']}: "
           f"{len(diff['added'])} added, {len(diff['changed'])} changed, {len(diff['removed'])} removed, {diff['unchanged']} identical records")
@@ -968,17 +1243,74 @@ def consistent_round_hashes(texts: list[str]) -> tuple[dict[str, str], list[str]
     return first, failures
 
 
+def overlay_timing(texts, *, expect_timing):
+    import statistics
+    per_arm={}
+    gaps=[]
+    for arm,rounds in texts.items():
+        values=[]
+        for text in rounds:
+            row={}
+            for line in text.splitlines():
+                if not line.startswith("UNITTIME"):
+                    continue
+                m=re.fullmatch(r"UNITTIME (.+) ([0-9.]+)",line)
+                if not m:
+                    gaps.append(f"{arm}: malformed timing")
+                    continue
+                name,raw=m.groups()
+                try:
+                    value=float(raw)
+                except ValueError:
+                    value=0
+                if name in row or not math.isfinite(value) or value<=0:
+                    gaps.append(f"{arm}: duplicate or invalid timing {name}")
+                else:
+                    row[name]=value
+            if expect_timing and set(row)!=set(parse_hashes(text)[0]):
+                gaps.append(f"{arm}: timing cases differ from hash cases")
+            values.append(row)
+        per_arm[arm]=values
+    all_rounds=per_arm["ref"]+per_arm["cand"]
+    keys=set(all_rounds[0]) if all_rounds else set()
+    if ((expect_timing and not keys) or not all_rounds or
+            len(per_arm["ref"])!=len(per_arm["cand"]) or any(set(r)!=keys for r in all_rounds)):
+        gaps.append("overlay timing coverage differs by round/arm")
+    timing=[]
+    if not gaps:
+        for name in sorted(keys):
+            ref=statistics.median(r[name] for r in per_arm["ref"])
+            cand=statistics.median(r[name] for r in per_arm["cand"])
+            timing.append({"case":name,"ref_us":ref,"cand_us":cand,"ratio":cand/ref})
+    return timing,gaps
+
+
+def overlay_layout(texts):
+    values={arm:[sorted(re.findall(r"^UNITLAYOUT plain_bf16 rc=(-?\d+)$",t,re.M)) for t in rounds]
+            for arm,rounds in texts.items()}
+    all_rounds=values["ref"]+values["cand"]
+    first=all_rounds[0] if all_rounds else []
+    complete=all(len(v)==len(parse_hashes(text)[0]) and
+                 sum(line.startswith("UNITLAYOUT") for line in text.splitlines())==len(v)
+                 for arm,rounds in texts.items() for v,text in zip(values[arm],rounds))
+    gaps=[] if complete and first and "0" not in first and all(v==first for v in all_rounds) else ["overlay layout refusal coverage incomplete"]
+    return {arm:sorted(set(rounds[0])) if rounds else [] for arm,rounds in values.items()},gaps
+
+
 def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: bool = False, rows: list[int] | None = None,
-                          bits: list[int] | None = None, shape: int | None = None) -> dict:
+                          bits: list[int] | None = None, shape: int | None = None, *, bdf: str) -> dict:
     if (out / ("measure-replay.json" if replay_only else "measure.json")).exists():
         raise HarnessError("measurement already exists; use a new build output")
     state = json.loads((out / "build.json").read_text(encoding="utf-8"))
+    require_artifacts(state)
     ov = overlays()[state["overlay"]]
     rounds = ov.get("rounds", 4) if rounds is None else rounds
     if rounds <= 0:
         raise HarnessError("rounds must be positive")
     arch = state["arch"]
-    device = device_index(arch)
+    device = (device_index(arch,bdf),bdf)
+    from bigcherry.hardware.ai_probe import snapshot
+    before,_=snapshot(bdf)
     binary, cand_plugin, ref_plugin = Path(state["selftest"]), Path(state["plugin"]), Path(state["reference_plugin"])
     env_base: dict = {"UH_TIME_ITERS": "31"} if "cases" in ov else {}
     if "cases" in ov:
@@ -996,16 +1328,12 @@ def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: boo
     (out / "overlay-cand.log").write_text("\n".join(texts["cand"]), encoding="utf-8")
     ref_hashes, ref_fail = consistent_round_hashes(texts["ref"])
     cand_hashes, cand_fail = consistent_round_hashes(texts["cand"])
-    times: dict[str, dict[str, float]] = {"ref": {}, "cand": {}}
-    for arm in times:
-        for text in texts[arm]:
-            for m in re.finditer(r"^UNITTIME (.+) ([0-9.]+)$", text, re.M):
-                times[arm][m.group(1)] = min(times[arm].get(m.group(1), 1e18), float(m.group(2)))
-    timing = [{"case": name, "ref_us": times["ref"][name], "cand_us": times["cand"].get(name), "ratio": round(times["cand"][name] / times["ref"][name], 4)}
-              for name in sorted(times["ref"]) if name in times["cand"]]
-    layout = {arm: sorted(set(re.findall(r"^UNITLAYOUT plain_bf16 rc=(-?\d+)$", texts[arm][0] if texts[arm] else "", re.M))) for arm in ("ref", "cand")}
-    result = {"arch": arch, "plain_bf16_layout_rc": layout, "hash": compare_hashes(ref_hashes, cand_hashes),
-              "selftest_failures": {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}, "timing": timing, "replay": []}
+    timing, timing_gaps = overlay_timing(texts, expect_timing="cases" in ov)
+    layout, layout_gaps = overlay_layout(texts)
+    result = {"arch": arch, "device":device[0],"bdf":bdf,"artifact_sha256":state["artifact_sha256"],
+              "plain_bf16_layout_rc": layout, "hash": compare_hashes(ref_hashes, cand_hashes),
+              "selftest_failures": {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]},
+              "timing": timing, "coverage_gaps":timing_gaps+layout_gaps,"replay": []}
     h = result["hash"]
     print(f"overlay hash: {h['compared']} compared, {len(h['differ'])} differ, {len(h['missing_in_candidate'])} missing; selftest failures: "
           f"ref {len(ref_fail)}, overlay {len(cand_fail)}")
@@ -1015,6 +1343,9 @@ def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: boo
     if "replay-family" in ov:
         spec = dict(families()[ov["replay-family"]]["replay"])
         spec["shapes"] = ov.get("replay-shapes", spec["shapes"])
+        required=[{"row":"gemm_iqr_nt_m64" if point["M"]<=64 else row,**point}
+                  for row in spec["rows"] for point in replay_points(spec,ov.get("replay-bits"),ov.get("replay-rows"))]
+        result["required_replay"]=required
         if shape is not None:
             spec["shapes"] = [spec["shapes"][shape]]
         for row in spec["rows"]:
@@ -1026,8 +1357,16 @@ def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: boo
                                    arm_env={"cand": cand_env})
                 got["row"], got["verdict"] = ("gemm_iqr_nt_m64" if small else row), classify(got["ratio"], 0.04)
                 result["replay"].append(got)
-                print(f"overlay replay {got['row']} N={point['N']} K={point['K']} M={point['M']} B={point['B']}: {got['ref_us']} -> {got['cand_us']} us "
+                print(f"overlay replay {got['row']} {point['mode']} N={point['N']} K={point['K']} M={point['M']} B={point['B']}: {got['ref_us']} -> {got['cand_us']} us "
                       f"({got['ratio']}) {got['verdict']}{'' if got['converged'] else ' UNCONVERGED'}", flush=True)
+    if "replay-family" in ov:
+        key=lambda p: tuple(p[k] for k in ("row","N","K","M","B","mode"))
+        actual=result["replay"]
+        if len({key(p) for p in actual})!=len(actual) or {key(p) for p in actual}!={key(p) for p in required}:
+            result["coverage_gaps"].append("overlay replay coverage incomplete")
+    result["observed_start"]=before
+    result["observed_stop"]=snapshot(bdf)[0]
+    require_artifacts(state)
     (out / ("measure-replay.json" if replay_only else "measure.json")).write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     return result
 
@@ -1056,10 +1395,15 @@ def main(argv: list[str] | None = None) -> int:
     plan_p.add_argument("--overlay-reference", help="explicit compatible base plugin for excluded overlay rows; not a qualification proof")
     plan_p.add_argument("--group", action="append", help="select a build group; repeat to select several")
     plan_p.add_argument("--unit", action="append", help="select an affected upstream unit; repeat as needed")
+    plan_p.add_argument("--touched",action="append",help="composed upstream changed path; unknown/header scope widens")
+    plan_p.add_argument("--pin-triage",help="existing pin-triage --json report; imports changed_files")
+    plan_p.add_argument("--model-graph",help="saved Radiance /graph JSON (declared bands, not execution proof)")
+    plan_p.add_argument("--row",action="append",help="exact observed/model-selected runtime row name; repeat, no inferred coverage")
     build_p = commands.add_parser("build", help="build the units and check resource records (no card)")
     add_build_arguments(build_p)
     measure_p = commands.add_parser("measure", help="hash and replay on a build (holds the card: run under the gpu lease)")
     measure_p.add_argument("out")
+    measure_p.add_argument("--bdf",required=True)
     measure_p.add_argument("--iters", type=int, default=15)
     measure_p.add_argument("--tolerance", type=float, default=0.015)
     measure_p.add_argument("--max-windows", type=int, default=12)
@@ -1072,6 +1416,7 @@ def main(argv: list[str] | None = None) -> int:
     ob.add_argument("--overlay", required=True, help="an [overlay.*] of unit_families.toml")
     om = commands.add_parser("overlay-measure", help="hash and cold timing of the overlay row against the base row (holds the card: run under the gpu lease)")
     om.add_argument("out")
+    om.add_argument("--bdf",required=True)
     om.add_argument("--replay-only", action="store_true", help="skip the selftest rounds (rerun replay points)")
     om.add_argument("--rows", type=int, nargs="+", help="row counts to replay (default: the overlay's)")
     om.add_argument("--bits", type=int, nargs="+", help="code widths to replay (default: the overlay's)")
@@ -1079,6 +1424,7 @@ def main(argv: list[str] | None = None) -> int:
     om.add_argument("--rounds", type=int, default=None, help="selftest rounds per arm (default: the overlay's, else 4)")
     run_p = commands.add_parser("run", help="build, resource check, then hash and replay under the gpu lease")
     add_build_arguments(run_p)
+    run_p.add_argument("--bdf",required=True)
     run_p.add_argument("--ttl", default="40m", help="gpu lease ttl, one unit (default 40m)")
     run_p.add_argument("--est", default="20m")
     run_p.add_argument("--no-replay", action="store_true")
@@ -1093,7 +1439,7 @@ def main(argv: list[str] | None = None) -> int:
             stage_overlay_build(args)
             return 0
         if args.command == "overlay-measure":
-            result = stage_overlay_measure(Path(args.out), args.rounds, args.replay_only, args.rows, args.bits, args.shape)
+            result = stage_overlay_measure(Path(args.out), args.rounds, args.replay_only, args.rows, args.bits, args.shape,bdf=args.bdf)
             h = result["hash"]
             if args.replay_only:
                 print("unit harness overlay replay: diagnostic (replay-only is not qualification)")
@@ -1103,20 +1449,21 @@ def main(argv: list[str] | None = None) -> int:
             for r in regress:
                 print(f"  REGRESS {r['row']} N={r['N']} K={r['K']} M={r['M']} B={r['B']}: {r['ref_us']} -> {r['cand_us']} us ({r['ratio']})")
             partial = args.rows is not None or args.bits is not None or args.shape is not None or args.rounds is not None
-            ok = (not partial and not h["differ"] and not h["missing_in_candidate"] and not h["only_in_candidate"]
+            ok = (not partial and result["observed_start"]==result["observed_stop"] and not result["coverage_gaps"] and not h["differ"] and not h["missing_in_candidate"] and not h["only_in_candidate"]
                   and not any(result["selftest_failures"][arm] for arm in ("ref", "cand")) and h["compared"] > 0
                   and lay["ref"] == lay["cand"] and lay["cand"] and "0" not in lay["cand"] and not regress
-                  and all(r["converged"] for r in result["replay"]))
+                  and all(r["converged"] for r in result["replay"])
+                  and all(classify(r["ratio"],0.04)!="regress" for r in result["timing"]))
             print("unit harness overlay: " + ("checks_passed (not profile qualification)" if ok else "nonpass"))
             return 0 if ok else 1
         if args.command == "measure":
-            stage_measure(Path(args.out), replay_iters=args.iters, tol=args.tolerance, max_windows=args.max_windows,
+            stage_measure(Path(args.out), bdf=args.bdf,replay_iters=args.iters, tol=args.tolerance, max_windows=args.max_windows,
                           skip_replay=args.no_replay, skip_hash=args.no_hash, bits=args.bits, rows=args.rows)
             text, ok = summary(Path(args.out))
             print(text)
             return 0 if ok else 1
         out = stage_build(args)
-        command = [sys.executable, str(Path(__file__).resolve()), "measure", str(out)] + (["--no-replay"] if args.no_replay else [])
+        command = [sys.executable, str(Path(__file__).resolve()), "measure", str(out),"--bdf",args.bdf] + (["--no-replay"] if args.no_replay else [])
         lease = ["agent-lease", "acquire", "gpu", "--ttl", args.ttl, "--est", args.est, "--wait",
                  "--purpose", f"unit harness {args.family or 'units'} {args.arch}", "--", *command]
         code = subprocess.run(lease, check=False).returncode

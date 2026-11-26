@@ -53,7 +53,10 @@ Existing harness and outputs only; every required unit covered or explicitly non
 
 Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.
 
+2026-11-26: Extended existing unit harness with exact rows and saved Radiance /graph model-band selection; provider, geometry, rank and gaps retained. Require leased physical BDF and actual selftest device identity, artifact digests and observed controls; strict duplicate/missing/skipped hash and per-round timing/layout checks, cold/warm replay. 280 focused tests passed, one skipped. Real configured inventory and explicit IQR row plan resolved embed/tiled, M64/gated/unknown row remain uncovered. Graph importer fixture-tested; no new live graph or revised physical replay due to active GPU cohort. Remaining native oracles and matching reference/leased build validation.
+
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent
 - 2026-11-26T01:37:56.167096+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-26T05:07:03.703862+00:00 (updated-by): Updated: section:notes

@@ -79,3 +79,45 @@ unconverged checks cannot establish a pass; a new output directory preserves
 prior evidence. A passing configured check is still not a production or power
 profile qualification. See [the design](../../../../docs/design/radiance-kernel-group-qualification.md)
 for the remaining campaign, ownership and profile integration.
+
+### Follow-up: model and affected-family qualification
+
+The existing planner now accepts repeatable `--row`, `--touched`, and a
+`--pin-triage` JSON report. The latter imports the existing changed-files
+inventory. Local includes provide a lower bound; headers, deletions, registry
+changes or unknown paths conservatively widen to the full unit inventory.
+This is not a substitute for compiler dependency evidence.
+
+For model-driven selection, save the serving owner's existing Radiance
+`/graph` JSON and supply `--model-graph GRAPH.json`. Its declared bands carry
+actual selected row names, provider names, geometry, model rank/world and
+plugin metadata; the planner retains them and the graph digest, rejects
+malformed declaration coverage, and marks unknown or mismatched routes
+uncovered. A declared graph is not a physical execution trace; other ranks
+and unresolved bands remain gaps. No live server is started by the planner.
+
+Measurement commands now require `--bdf` with a physical PCI address and the
+existing named GPU lease. The harness resolves the HIP device and checks the
+selftest's actual BDF/architecture, records observed controls, hashes the
+build artifacts and family policy, and rejects missing or changed identities.
+Explicit composed source is copied into private build scratch before edits.
+Replays use the configured shapes in both cold and warm modes; repeated
+overlay timings and layout-refusal records must cover every expected hash
+case. Duplicate/malformed hashes, skipped required cases, missing timing,
+regressions and unconverged replay cannot be a pass.
+
+The existing `gpu-ai-qualify plan --native-plan PLAN.json` imports this scope
+into its managed capture, retaining unresolved rows, compatible-reference
+requirements and input identities. It never treats independent stability
+tests as native or production qualification.
+
+Validation: 115 canonical units and 109 configured units on the retained
+gfx1100 build; the stale manifest with six excluded units was refused.
+Explicit IQR overlay selection resolved embed and tiled routes, while M64,
+gated and an unknown attention row retained gaps. Managed capture
+20261126T050013Z-gpu-ai-qualification-plan-0cfc3ad6a040 retained incomplete
+native scope. Graph import was tested against the upstream export schema
+with fixtures, not a new live model capture. 280 focused tests passed,
+one skipped. Physical selftest identity, selected-family cold/warm replay
+and matched power/production evidence remain unverified by this change.
+No serving kernels, profile settings or release acceptance gates changed.

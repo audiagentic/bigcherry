@@ -53,7 +53,10 @@ One source per dimension; no duplicate taxonomy; no unsupported scope silently p
 
 Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.
 
+2026-11-26: PR1644 merged as f29a806e8. Follow-up uses compose_check local include closure, widens unresolved/header/removed paths to full inventory, imports existing pin-triage JSON changed_files. Real 115 canonical/109 configured units; stale manifest refused (six excluded units). Private composed build scratch prevents source-cache edits. Remaining: compiler dependency/complete lexical exception audit and automatic pin gate integration.
+
 ## Change Log
 
 - 2026-11-26T01:36:23.064898+00:00 (created-by): Created by agent
 - 2026-11-26T01:37:48.639355+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-26T05:06:55.737981+00:00 (updated-by): Updated: section:notes

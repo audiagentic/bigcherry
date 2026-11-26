@@ -166,3 +166,32 @@ def test_precision_recipe_mapping_only_gfx1100():
     raw["target"]["gfx1201"]["precision_references"]=True
     with pytest.raises(a.ScreenError,match="precision"):
         resolve("gfx1201",raw)
+
+def test_native_scope_retains_requested_rows_and_reference_identity():
+    doc={"arch":"gfx1100","outcome":"diagnostic","qualification":"not_run","release":"r",
+         "selected_units":["r4d_a"],"uncovered_units":[],"inventory_kind":"matching_libr3_membership",
+         "reference_sha256":"a"*64,"family_policy_sha256":"b"*64,
+         "runs":[{"kind":"overlay","name":"iqr","units":["r4d_a"],"selftest_case":"base",
+                  "base_rows":["base","extra"],"overlay_rows":["bc_base","bc_extra"],
+                  "other_rows_need_evidence":["extra"]}],
+         "requested_rows":[{"row":"bc_base","status":"configured_route","routes":[{"kind":"overlay","name":"iqr"}]},
+                           {"row":"unknown","status":"uncovered","routes":[]}],
+         "affected_scope":{"scope":"full_inventory_conservative"}}
+    got=q.native_scope(doc,"gfx1100")
+    assert got["status"]=="incomplete" and got["qualification"]=="not_run"
+    assert got["requested_rows"]==doc["requested_rows"] and got["reference_sha256"]=="a"*64
+    assert "uncovered requested rows" in got["gaps"]
+    assert "additional runtime rows need evidence" in got["gaps"]
+    with pytest.raises(a.ScreenError):
+        q.native_scope(doc|{"selected_units":["r4d_a","r4d_b"]},"gfx1100")
+    with pytest.raises(a.ScreenError):
+        q.native_scope(doc|{"requested_rows":[{"row":"bad","status":"configured_route","routes":[]}]},"gfx1100")
+    with pytest.raises(a.ScreenError):
+        q.native_scope(doc|{"reference_sha256":"fake"},"gfx1100")
+
+def test_unknown_native_rows_are_visible_even_with_no_unit_route():
+    doc={"arch":"gfx1201","outcome":"diagnostic","qualification":"not_run","release":"r",
+         "selected_units":[],"uncovered_units":[],"runs":[],
+         "requested_rows":[{"row":"unknown","status":"uncovered","routes":[]}]}
+    scope=q.native_scope(doc,"gfx1201")
+    assert scope["status"]=="incomplete" and scope["requested_rows"]==doc["requested_rows"]
