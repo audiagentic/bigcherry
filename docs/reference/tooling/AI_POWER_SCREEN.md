@@ -1364,3 +1364,36 @@ is withheld pending thermal remediation and passing native references.
 Initial old-tag, runtime-library and port preflight refusals were
 resolved without applying candidate settings: use current verified
 release, installed runtime libraries, and a free local port.
+
+### Supervised mixed compute/residency pressure
+
+Fresh per-card matched references. BF16 768 square, batch32, requested
+60 s, 21490 MiB resident allocation, 2048 MiB reserved headroom,
+no lower thermal floor, both upper ceilings 80 C. The existing
+resident workload verifies memory contents during compute and requires
+at least one full resident sweep. No unattended candidate admission.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | Hotspot/memory peak C | Resident words checked | Capture |
+|---|---|---:|---:|---:|---|---:|---|
+| helper0 | observed | 205248 | 60.009 | 7341.637 | 61/68 | 17991991296 | 20261126T071658Z-gpu-ai-screen-de7570c19abc |
+| helper0 | 2700/0 | 198944 | 60.009 | 6155.289 | 54/65 | 17785421824 | 20261126T071823Z-gpu-ai-screen-9c7985c76337 |
+| helper0 | 2700/-100 | 201760 | 60.009 | 5303.073 | 60/70 | 17877696512 | 20261126T071948Z-gpu-ai-screen-b2dd418eddd5 |
+| helper0 | 2700/-125 | 201824 | 60.008 | 4895.348 | 54/65 | 17879793664 | 20261126T072114Z-gpu-ai-screen-1a89b2724631 |
+
+Four of four pass, one full resident sweep per arm, three exact
+candidate restores, all four physical snapshots unchanged at exit.
+
+| Role | Clock/offset | Verified GEMMs | Native s | Estimated J | Hotspot/memory peak C | Resident words checked | Capture |
+|---|---|---:|---:|---:|---|---:|---|
+| helper1 | observed | 206048 | 60.006 | 7911.099 | 62/50 | 18018205696 | 20261126T072241Z-gpu-ai-screen-5800113d9e1f |
+| helper1 | 2700/0 | 198368 | 60.004 | 6287.741 | 57/50 | 17766547456 | 20261126T072406Z-gpu-ai-screen-55f9534c5435 |
+| helper1 | 2700/-100 | 201088 | 60.006 | 5288.378 | 58/52 | 17855676416 | 20261126T072532Z-gpu-ai-screen-28c522db084f |
+| helper1 | 2700/-125 | 201568 | 60.007 | 4993.573 | 58/54 | 17871405056 | 20261126T072657Z-gpu-ai-screen-498fdd065b9e |
+
+All eight cases pass, all eight complete one full resident sweep, six
+candidate restores and both all-card snapshot checks pass. Total
+1614848 verified GEMMs. Compared with matched clock-only control,
+-125 reduces estimated energy per GEMM by 21.6%/21.8% on helper0/1.
+Driver health remains incomplete; independent pressure is not
+production qualification. Both GPU leases released. Native thermal
+stops still block longer inference soak and matched phase comparisons.

@@ -112,6 +112,8 @@ Output reconciliation: remove caller-selected --output; use existing WSL01 runs/
 
 Native TP3 four-arm diagnostic: exact common 128-token response hash, all four thermal stops at unchanged 80 C (stock/0/-100 XTX0 memory; -125 R9700 junction), all four settings restored. Verified managed capture 20261126T071902Z-native-power-pressure-c8105ec7454a. Native performance and long soak withheld until thermal remediation; no production promotion.
 
+Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified GEMMs, 21490 MiB resident allocation per arm, one full sweep each, six exact candidate restores and both all-card snapshot checks; -125 estimated energy per GEMM 21.6%/21.8% below clock-only. Independent pressure complete for tested scope (8 sustained, 8 memory, 32 burst, 8 mixed); native thermal stops and incomplete driver health prevent production/long-soak qualification. All evidence retained, GPU free.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -144,3 +146,4 @@ Native TP3 four-arm diagnostic: exact common 128-token response hash, all four t
 - 2026-11-26T07:07:24.539911+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:15:20.394263+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T07:20:20.442976+00:00 (updated-by): Updated: section:notes
+- 2026-11-26T07:29:05.129999+00:00 (updated-by): Updated: section:notes
