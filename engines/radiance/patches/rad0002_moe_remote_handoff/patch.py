@@ -177,13 +177,13 @@ static constexpr bool kDiagBuild = true;
 static constexpr bool kDiagBuild = false;
 #endif
 
-// Provided by rad0009 (serving manifest), a declared dependency of this package.
+// Provided by rad0070 (the managed native entry), a declared dependency of this package.
 extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*);
 
 struct BcMoeRemoteGeneration {
     std::atomic<int> state{1}; /* 1 open, 2 closed */
     BcMoeRemotePlugin vt{};
-    /* From rad0009's strict manifest reader, read once when the generation opens: the generation's immutable policy.
+    /* From rad0070's installed admission, read once when the generation opens: the generation's immutable policy.
      * No environment fallback. */
     int64_t max_rows = 0;
     uint32_t skip_owned = 0, shadow = 0, mask_only = 0;

@@ -1,5 +1,5 @@
 """RSC03 / RSC08 A3: the engine's memory plan as the serving manifest v1 EnginePlan, measured (`--plan-memory FILE`) or
-checked at start-up against the expected one in the manifest the engine was started from (rad0009's
+checked at start-up against the expected one in the manifest the engine was started from (rad0070's
 bc_serving_expected_plan, from engine_view), through the shared v1 library bc_serving_v2 (components/serving), which
 radiance's core links."""
 from bigcherry.patcher import Edit, FilePatch
@@ -10,7 +10,7 @@ _BC_PLAN_MEMORY_H = r"""/* bc_plan_memory.h -- BigCherry managed patch rad0011 (
  *   --plan-memory FILE                          start-up stops after plan(): FILE gets the plan (v1 JSON, written by
  *                                               the generated encoder) and the process exits before any weight loads.
  *   (a start from a measured manifest)         the manifest's own expected plan and kv_backing_floor_ppm (engine_view,
- *                                               rad0009) are the check: right after the VRAM split, before any pool
+ *                                               rad0070) are the check: right after the VRAM split, before any pool
  *                                               is configured, the live plan is checked against them (spec section
  *                                               5.2) and the result printed once; a refusal exits with its exit code.
  * There is no flag that supplies an expected plan: only the manifest does. A start without --manifest or --plan-memory
@@ -27,8 +27,8 @@ struct WeightFootprint;
 class Program;
 }
 
-/* Takes --plan-memory off the command line (after rad0009's manifest reader has run: it hands --plan-memory on) and arms the
- * check when rad0009 holds an expected plan. 0, or the exit code of a usage fault, which has been printed once. */
+/* Takes --plan-memory off the command line (after rad0070's manifest reader has run: it hands --plan-memory on) and arms the
+ * check when rad0070 holds an expected plan. 0, or the exit code of a usage fault, which has been printed once. */
 int bc_plan_memory_take_flag(int* argc, char*** argv);
 
 /* Records what plan() sized, and started from a measured manifest checks it. Called once, right after its VRAM split resolves, with
@@ -59,13 +59,13 @@ namespace bc_plan {
 
 enum class Mode { none, measure, check };
 
-/* Takes --plan-memory FILE off argv, and arms the check with rad0009's expected plan and floor when the engine was started
+/* Takes --plan-memory FILE off argv, and arms the check with rad0070's expected plan and floor when the engine was started
  * from a measured manifest (the floor is checked by the shared validator). A measuring start and a start from a measured
- * manifest are different modes; rad0009 has already refused a measuring start with a measured manifest and a serving
+ * manifest are different modes; rad0070 has already refused a measuring start with a measured manifest and a serving
  * start with an unmeasured one. 0, or the exit code of the fault (errors.md section 5), printed once as
  * "radiance: config: ...". */
 int take_flags(int* argc, char*** argv);
-/* Arms the check with an expected plan and floor (take_flags does it from rad0009's; the card-free test from the admission vectors). */
+/* Arms the check with an expected plan and floor (take_flags does it from rad0070's; the card-free test from the admission vectors). */
 int arm(const bc::serving::v2::EnginePlan& expected, int64_t floor_ppm);
 /* MemAvailable in kB (/proc/meminfo; 0 when unreadable): at take_flags() (the process's first line) and now. */
 long long mem_available_kb_at_start();
@@ -91,7 +91,7 @@ _BC_PLAN_CHECK_CPP = r"""/* bc_plan_check.cpp -- see bc_plan_check.h (BigCherry 
 #include "bc_plan_check.h"
 
 #include "admission.h"
-#include "bc_serving_manifest.h"
+#include "bc_serving_engine.h"
 #include "serving_codec.h"
 #include "strict_json.h"
 
@@ -180,7 +180,7 @@ int take_flags(int* argc, char*** argv) {
         g_mode = Mode::measure;
         return 0;
     }
-    // a start from a measured manifest: its plan is the one to admit (rad0009 holds it; nothing else supplies one)
+    // a start from a measured manifest: its plan is the one to admit (rad0070 holds it; nothing else supplies one)
     v2::EnginePlan expected;
     int64_t floor_ppm = 0;
     if (bc_serving_expected_plan(&expected, &floor_ppm)) return arm(expected, floor_ppm);
@@ -238,7 +238,7 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 
 #include "bc_plan_check.h"
 #include "admission.h"
-#include "bc_serving_manifest.h"
+#include "bc_serving_engine.h"
 #include "serving_codec.h"
 
 #include "device/device.h"

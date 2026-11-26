@@ -11,7 +11,7 @@ A managed start binds the owner's derived host sizes and rank devices onto the p
 
 ## Outcome
 
-Validated on the shared acceptance of the native managed start (docs/evidence/2026-11-26-rsc02-b-acceptance). The owner starts every engine through it; it sits beside the manifest entry, rad0009, which it still requires for one include and one CMake line until that entry is archived.
+Validated on the shared acceptance of the native managed start (docs/evidence/2026-11-26-rsc02-b-acceptance). The owner starts every engine through it. It owns the engine's entry (the stock `--config` YAML entry run after the owner's flags are taken), the shared serving library link and the engine-side sources; the manifest entry it replaced (rad0009) is archived.
 
 ## Detail
 

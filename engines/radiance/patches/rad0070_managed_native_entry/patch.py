@@ -1,4 +1,4 @@
-"""RSC02: the managed native entry, beside the manifest entry for one change.
+"""RSC02: the managed native entry: the engine's only owner-facing entry (the manifest entry rad0009 is archived).
 
 The owner starts the stock `--config FILE` entry and adds one sealed document (`--bc-admission-fd`, see
 components/serving/v2/engine_admission.h). Everything with a policy lives in BigCherry's own component sources
@@ -6,23 +6,43 @@ components/serving/v2/engine_admission.h). Everything with a policy lives in Big
 has chosen its cards and no Engine exists yet, and the guards that keep a managed process from reloading or restarting
 itself: SIGHUP and the HTTP reload and model-admin routes refuse, and an engine that stops ends the process.
 
-Without the flag every hook returns at once and the stock entry is unchanged. rad0009 (the manifest entry) is retired
-in the change that moves the owner onto this entry; until then this package requires it for its include and CMake lines.
+Without the flag every hook returns at once and the stock entry is unchanged.
 """
 from __future__ import annotations
 
 from bigcherry.patcher import Edit, FilePatch
 
-_CORE_CMAKE = r"""
-# BigCherry rad0070 (RSC02): the managed native entry's bind reads the engine's Config, so it is built into rad_core here; the
-# rest of the entry (bc_serving_managed.cpp) is in the shared serving library every engine build already links.
-target_sources(rad_core PRIVATE "${_bc_serving}/bc_serving_managed_bind.cpp")
-if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
-  add_executable(bc_native_managed_test "${_bc_serving}/native_managed_test.cpp")
-  target_link_libraries(bc_native_managed_test PRIVATE rad_core bc_jcs)
-endif()"""
+_CORE_LINK = r"""
+# BigCherry rad0070 (RSC02): the managed native entry is BigCherry's own component source, linked into rad_core. The shared
+# serving library (BigCherry's components/serving/bc_serving_v2.cmake, one source list for the owner and the engine) holds
+# the strict readers, the engine admission document and the flag step; the engine-side files below read the engine's Config.
+if(NOT DEFINED BC_SERVING_V2_CMAKE)
+  message(FATAL_ERROR "rad0070: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "
+                      "is required (the shared serving library); the BigCherry lane passes it")
+endif()
+include("${BC_SERVING_V2_CMAKE}")
+target_link_libraries(rad_core PUBLIC bc_serving_v2)
+get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)
+target_sources(rad_core PRIVATE "${_bc_serving}/bc_serving_engine.cpp" "${_bc_serving}/bc_serving_managed_bind.cpp")
+target_include_directories(rad_core PUBLIC "${_bc_serving}")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
+  target_compile_definitions(rad_core PRIVATE BC_RAD_NATIVE_FLEET_CONFIG=1)
+  target_sources(rad_core PRIVATE "${_bc_serving}/native_fleet_config.cpp")
+  if(RAD_BUILD_TESTS)
+    add_executable(bc_native_fleet_config_test "${_bc_serving}/native_fleet_config_test.cpp")
+    target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)
+    target_compile_definitions(bc_native_fleet_config_test PRIVATE
+        BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")
+    add_executable(bc_native_managed_test "${_bc_serving}/native_managed_test.cpp")
+    target_link_libraries(bc_native_managed_test PRIVATE rad_core bc_jcs)
+  endif()
+endif()
+"""
 
 _TEST_REGISTRATION = r"""
+if(TARGET bc_native_fleet_config_test)
+  add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)
+endif()
 if(TARGET bc_native_managed_test)
   add_test(NAME bc_native_managed_test COMMAND bc_native_managed_test)
 endif()
@@ -31,15 +51,15 @@ endif()
 PATCHES = (
     FilePatch(
         path="core/CMakeLists.txt",
-        description="Build the managed native entry's component source into rad_core and its card-free test.",
+        description="Link the shared serving library and build the managed native entry's engine-side sources and tests into rad_core.",
         edits=(Edit(
-            id="build-bc-serving-managed",
-            anchor=r'^target_include_directories\(rad_core PUBLIC "\$\{_bc_serving\}"\)$',
-            text=_CORE_CMAKE,
-            guard=r"bc_serving_managed_bind\.cpp",
+            id="link-bc-serving",
+            anchor=r"^target_link_libraries\(rad_core PUBLIC rad_abi \$\{CMAKE_DL_LIBS\} Threads::Threads\)$",
+            text=_CORE_LINK,
+            guard=r"include\(\"\$\{BC_SERVING_V2_CMAKE\}\"\)",
             max_span_lines=1,
             expect_matches=1,
-            rationale="rad0009 defines _bc_serving and the include directory on exactly this line; the managed entry is its sibling source.",
+            rationale="rad_core's unique link line; the shared library is included and linked right after it, failing closed when the lane did not pass its .cmake.",
         ),),
     ),
     FilePatch(
@@ -50,9 +70,9 @@ PATCHES = (
             anchor=r"^get_property\(RAD_ALL_TESTS DIRECTORY PROPERTY TESTS\)$",
             text=_TEST_REGISTRATION,
             mode="insert_before",
-            guard=r"^if\(TARGET bc_native_managed_test\)$",
+            guard=r"^if\(TARGET bc_native_fleet_config_test\)$",
             expect_matches=1, max_span_lines=2,
-                rationale="Same unique pre-label-pass anchor rad0009 uses for its own reader test.",
+                rationale="The unique pre-label-pass anchor: the tests are registered after the upstream harness enables CTest.",
         ),),
     ),
     FilePatch(
@@ -60,12 +80,32 @@ PATCHES = (
         description="Bind the owner's admission to the parsed YAML before Fleet::run, once.",
         edits=(
             Edit(
-                id="include-bc-serving-managed",
-                anchor=r'^#include "bc_serving_manifest\.h"$',
-                text='\n#include "bc_serving_managed.h"',
-                guard=r'^#include "bc_serving_managed\.h"$',
-                expect_matches=1, max_span_lines=2,
-                rationale="rad0009's include is the stable neighbour; this package requires it.",
+                id="include-bc-serving-engine",
+                anchor=r'^#include "util/stallwatch\.h"$',
+                text='\n#include "bc_serving_engine.h"\n#include "bc_serving_managed.h"',
+                guard=r'^#include "bc_serving_engine\.h"$',
+                max_span_lines=2,
+                expect_matches=1,
+                rationale="The upstream last include is a stable typed extension point.",
+            ),
+            Edit(
+                id="bc-serving-owned-entry",
+                anchor=r'^int main\(int argc, char\*\* argv\) \{$',
+                text=('\n    return bc_serving_engine_entry(argc, argv, '
+                      '[](int argc, char** argv) -> int {'),
+                guard=r'bc_serving_engine_entry\(argc, argv,',
+                max_span_lines=2,
+                expect_matches=1,
+                rationale="The owner's flags are taken before the stock entry; the stock YAML startup is the callable, unchanged.",
+            ),
+            Edit(
+                id="bc-serving-stock-entry-end",
+                anchor=r'    return 0;\n\}\n?\Z',
+                mode="replace",
+                text='    return 0;\n    });\n}\n',
+                guard=r'(?m)^    \}\);$',
+                expect_matches=1, max_span_lines=3,
+                rationale="Close the stock YAML callable and the unique main entry; no copy of upstream startup body",
             ),
             Edit(
                 id="bind-bc-serving-managed",

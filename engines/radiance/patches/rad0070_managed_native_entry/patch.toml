@@ -7,6 +7,6 @@ origin = "local"
 backend = "agnostic"
 plan-item = "RSC02"
 plan-ids = ["RSC02"]
-requires = ["rad0009_serving_manifest"]
+requires = []
 conflicts = []
 tags = []

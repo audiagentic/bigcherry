@@ -14,8 +14,8 @@ shared v1 library `bc_serving_v1`.
   the generated encoder, prints what its start-up took from the host before the plan (`engine start-up took N MiB of MemAvailable`: the fall of
   MemAvailable since its first line, read at the end of the VRAM split before any pool is allocated, so page cache and mapped files do not count; for bc-serve's host ledger), and exits before any weight is loaded or the KV cache and arenas are allocated. bc-serve uses it
   as a measured fact, cached by container, engine build, card and planning inputs.
-- An engine started from a measured manifest (`radiance --manifest M --role engine`, rad0009) checks the plan that manifest
-  carries: rad0009 hands over `engine_view`'s expected plan and `kv_backing_floor_ppm` (the selected calibration, 0 when none
+- An engine started from a measured manifest (`radiance --manifest M --role engine`, rad0070) checks the plan that manifest
+  carries: rad0070 hands over `engine_view`'s expected plan and `kv_backing_floor_ppm` (the selected calibration, 0 when none
   is), and right after the VRAM split and **before any pool is configured** the live plan is checked against it (spec
   section 5.2): stable facts by exact equality (`BC_CFG_PLAN_MISMATCH`, exit 2) and admission on the live split, with
   `kv_required` from the calibrated backing floor (`BC_CFG_ADMISSION_REFUSED`, exit 4). The result is printed once:
@@ -36,7 +36,7 @@ See below.
 ## What it does
 
 `core/bc_plan_memory.{h,cpp}` and `core/bc_plan_check.{h,cpp}` (created by the patch) hold the logic. Upstream files gain
-only thin calls: `core/main.cpp` one include and one call that takes `--plan-memory` off the command line **after** rad0009's
+only thin calls: `core/main.cpp` one include and one call that takes `--plan-memory` off the command line **after** rad0070's
 manifest reader has run (the reader decides measuring or serving from that flag and hands it on) and arms the check from the
 manifest's plan; `core/engine_bringup.cpp` one include, one call at the end of `plan()`'s VRAM split that
 records (and, started from a measured manifest, checks) its sizes, and one call after `plan()` in `start()` that writes the plan and
