@@ -1052,3 +1052,53 @@ hot_n and hot_warmup_seconds; other architectures and burst, slim and
 screen remain unchanged. Operational and extended gfx1030 nominal
 budgets increase by 30 s. This is individual hot coverage, not a new
 combined operational report or candidate qualification.
+
+
+### Supervised first physical candidate (2026-11-26)
+
+After PWR15 first safety slice and gfx1030 thermal fix merged, audited
+known live platform/native journal roots and idle KFD under one verified
+lease, then ran explicit observe-current research using existing
+PowerTransaction. All four device snapshots matched after each arm.
+Only helper0 gfx1100 was selected. A temporary copy of the canonical
+profile YAML contained the research rule; the reported minimum cap was
+resolved from the live capability. No shipped/default profile changed.
+
+BF16 and FP32, rocBLAS, 1024 square, batch 32, 4 s per case, 0/2 ms
+gaps, 80 C hotspot/memory ceilings. All 12 cases passed.
+
+| Arm | Cap W | Verified GEMMs | Estimated GPU J | J/1000 GEMMs | Capture |
+|---|---:|---:|---:|---:|---|
+| A1 | 303 | 35136 | 1876.54 | 53.408 | 20261126T060938Z-gpu-ai-screen-0b3667fb2bef |
+| B | 272 | 36992 | 2016.99 | 54.525 | 20261126T060957Z-gpu-ai-screen-7bd2dfc788e9 |
+| A2 | 303 | 37312 | 2001.09 | 53.631 | 20261126T061016Z-gpu-ai-screen-cc42491fd5f6 |
+
+Candidate readback and original restoration verified; all captures harvested.
+Mean native-load estimated GPU power 117.1/126.0/124.9 W: the workload
+is below both caps, so no minimum-cap efficiency benefit established.
+Driver health incomplete. The manual known-root check is not proof of
+reciprocal automated owner admission; no automatic sweep or production
+promotion. The initial launcher import error preceded any GPU work and
+was corrected by setting the existing tools Python path.
+
+
+### Supervised matched-clock undervolt (2026-11-26)
+
+Same helper0, matrix geometry, formats, batch, gap and safety ceilings;
+3 s per case. Separate observed reference and two temporary candidate
+transactions, original snapshots checked after every arm. All 16 cases pass.
+
+| Arm | Max SCLK MHz | Offset mV | GEMMs | Estimated GPU J | J/1000 GEMMs | Capture |
+|---|---:|---:|---:|---:|---:|---|
+| A1 | 2935 | 0 | 26720 | 1458.25 | 54.575 | 20261126T061116Z-gpu-ai-screen-8055e39098d3 |
+| B | 2700 | 0 | 27488 | 1306.77 | 47.540 | 20261126T061131Z-gpu-ai-screen-6aa91b910b07 |
+| C | 2700 | -25 | 27872 | 1249.00 | 44.812 | 20261126T061146Z-gpu-ai-screen-6af684f8b475 |
+| A2 | 2935 | 0 | 28192 | 1492.50 | 52.941 | 20261126T061201Z-gpu-ai-screen-9ac3a20a26fc |
+
+Cap 303 W throughout, max hotspot 60/57/57/62 C. Both candidate
+transactions restored exactly, and all four device snapshots matched.
+Matched-clock C uses about 5.7% less estimated energy per GEMM than B;
+one short observation per setting is insufficient for a stable estimate.
+No production speed, quality or energy claim. Health remains incomplete.
+Repeat matched clock and voltage arms and screen promising candidates
+before longer native/model workload tests. No unattended sweep or promotion.
