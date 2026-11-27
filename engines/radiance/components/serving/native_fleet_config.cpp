@@ -220,7 +220,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
         };
 
         const nlohmann::json report = {
-            {"protocol", "bigcherry.native-fleet-inspect/v2"},
+            {"protocol", "bigcherry.native-fleet-inspect/v3"},
             {"snapshot", {{"sha256", managed.snapshot().sha256()},
                            {"resolution_root", managed.snapshot().resolution_root()}}},
             {"engine", {{"abi_version", RAD_ABI_VERSION},
@@ -259,6 +259,19 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                                       {"state_cache_dtype", stated("--state-cache-dtype", cfg.state_cache_dtype)},
                                       {"tp_wire_min_kb", cfg.given.contains("--tp-wire-min-kb")
                                           ? nlohmann::json(cfg.tp_wire_min_kb) : nlohmann::json(nullptr)}}},
+                         // Parser values, not the effective engine bring-up policy.
+                         {"scheduler", {{"interleave_authored", cfg.prefill_interleave_set},
+                                        {"interleave_steps", cfg.prefill_interleave},
+                                        {"interleave_share", cfg.prefill_interleave < 0
+                                            ? nlohmann::json(cfg.prefill_interleave_share) : nlohmann::json(nullptr)},
+                                        {"mixed_step_target_ms", cfg.mixed_step_target_ms},
+                                        {"mixed_step_target_authored", cfg.given.contains("--mixed-step-target-ms")},
+                                        {"room_gate", cfg.prefill_room_gate},
+                                        {"room_gate_authored", cfg.given.contains("--prefill-room-gate")},
+                                        {"long_prefill_token_threshold", cfg.long_prefill_token_threshold},
+                                        {"long_prefill_authored", cfg.given.contains("--long-prefill-token-threshold")},
+                                        {"preempt_wait_ms", cfg.preempt_wait_ms},
+                                        {"preempt_wait_authored", cfg.given.contains("--preempt-wait-ms")}}},
                          {"settings", {{"max_batched_tokens", cfg.max_tok},
                                        {"checkpoint_interval", cfg.checkpoint_interval},
                                        {"placement", cfg.placement},

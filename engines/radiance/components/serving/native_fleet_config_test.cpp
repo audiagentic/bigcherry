@@ -252,7 +252,7 @@ int main() {
     ::close(sealed_fd);
     check(result && *result == 0, "sealed native config inspection failed");
     const Json report = Json::parse(output.str());
-    check(report.at("protocol") == "bigcherry.native-fleet-inspect/v2" &&
+    check(report.at("protocol") == "bigcherry.native-fleet-inspect/v3" &&
               report.at("snapshot").at("sha256") == inspected_field.at("sha256") &&
               report.at("snapshot").at("resolution_root") == execution_root.string() &&
               report.at("engine").at("listener").at("port") == 8123 &&
@@ -264,6 +264,12 @@ int main() {
               report.at("engine").at("tuning").at("busy_prefill_chunk") == "512" &&
               report.at("engine").at("tuning").at("state_cache_dtype") == "f16" &&
               report.at("engine").at("tuning").at("tp_wire_min_kb") == 256 &&
+              report.at("engine").at("scheduler") == Json({
+                  {"interleave_authored", false}, {"interleave_steps", 0}, {"interleave_share", nullptr},
+                  {"mixed_step_target_ms", 17}, {"mixed_step_target_authored", true},
+                  {"room_gate", false}, {"room_gate_authored", false},
+                  {"long_prefill_token_threshold", 0}, {"long_prefill_authored", false},
+                  {"preempt_wait_ms", 5000}, {"preempt_wait_authored", false}}) &&
               report.at("engine").at("max_context") == 0 &&
               report.at("engine").at("settings") == Json({
                   {"max_batched_tokens", 2048}, {"checkpoint_interval", 2048},
@@ -272,6 +278,29 @@ int main() {
                   {"prefix_cache", true}, {"prefill_interleave", nullptr}}) &&
               report.dump().find(inspected_yaml) == std::string::npos,
           "native inspect report changed identity, ordering, parsed values or exposed source YAML");
+
+    for (const auto& mode : {std::string("0"), std::string("auto"), std::string("auto:1")}) {
+        const int fd = sealed_memfd(inspected_yaml + "    prefill-interleave: " + mode +
+                                  "\n    prefill-room-gate: on\n    long-prefill-token-threshold: 128\n    preempt-wait-ms: 0\n");
+        const auto arg = std::to_string(fd);
+        char* argv[] = {command, inspect, const_cast<char*>(arg.c_str()), nullptr};
+        std::ostringstream buf;
+        auto* saved = std::cout.rdbuf(buf.rdbuf());
+        const auto status = bc::serving::inspect_native_fleet_config_command(3, argv);
+        std::cout.rdbuf(saved);
+        ::close(fd);
+        check(status && *status == 0, "explicit scheduler inspection failed");
+        const auto scheduler = Json::parse(buf.str()).at("engine").at("scheduler");
+        const bool automatic = mode != "0";
+        check(scheduler == Json({
+                  {"interleave_authored", true}, {"interleave_steps", automatic ? -1 : 0},
+                  {"interleave_share", automatic ? Json(mode == "auto" ? 0.25 : 1.0) : Json(nullptr)},
+                  {"mixed_step_target_ms", 17}, {"mixed_step_target_authored", true},
+                  {"room_gate", true}, {"room_gate_authored", true},
+                  {"long_prefill_token_threshold", 128}, {"long_prefill_authored", true},
+                  {"preempt_wait_ms", 0}, {"preempt_wait_authored", true}}),
+              "explicit scheduler values lost in receipt");
+    }
 
     {   // the power profile file: the engine's parser converts it, on a second sealed descriptor, into the report
         const std::string profiles = "schema: 1\nprofiles:\n  stock: {default_mode: observe}\n  cap:\n    default_mode: observe\n"

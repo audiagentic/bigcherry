@@ -81,5 +81,9 @@ prefill chunk, recurrent state precision and TP compression threshold now join
 the native tuning projection. Reconciliation checks the presence and value of
 all projected fields. The projection is not a new authoring schema. It records
 authored intent; engine bring-up may still resolve defaults or refuse a
-combination. Mixed-step target and automatic interleave/share need further
-receipt coverage under RSC19, coordinated with the native-launch design.
+combination. The matched inspector v3 receipt also records parsed scheduler
+interleave steps/share, mixed-step target, room gate, long-prefill threshold and
+preemption wait, with explicit authorship flags. Omitted interleave, fixed zero,
+`auto` (share 0.25), and `auto:1` are distinguishable. This is parse-time evidence,
+not a claim of effective bring-up policy. The owner rejects malformed or
+inconsistent receipts; effective-value reconciliation remains under RSC19.

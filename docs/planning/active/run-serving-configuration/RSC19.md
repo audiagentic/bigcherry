@@ -55,7 +55,10 @@ First slice: four native tuning options projected, existing projection reconcile
 
 Owner build: bc_serving_test and bc_session_test linked. Matched Radiance host build: bc_native_fleet_config_test linked (222 build actions). Profile roster/variant/generator suite: 6 passed, 49 subtests passed. CTest execution denied by remote allowlist; C++ runtime/mutation and installed GPU gates remain pending. Changes confined to owned component and docs; no YAML production values or patch files changed. Reserved environment namespace now includes RADIANCE_*; use non-reserved names for API key references.
 
+Second slice: native inspector v3 projects parse-time scheduler values and authorship (interleave steps/share, mixed-step target, room gate, long-prefill threshold, preemption wait). Distinguishes omitted, zero, auto and auto:1 without upstream patches. Strict owner validation and parser/mutation tests added. Effective bring-up receipt/manifest reconciliation and capability qualification remain pending; runtime test execution requires authorized runner.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
 - 2026-11-27T12:58:57.211030+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T13:14:50.590396+00:00 (updated-by): Updated: section:notes

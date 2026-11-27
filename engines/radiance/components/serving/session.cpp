@@ -2425,7 +2425,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         return object.contains(key) && object.at(key).is_number_integer();
     };
     if (!exact_keys(doc, {"protocol", "snapshot", "engine"}) || !string_field(doc, "protocol") ||
-        doc.at("protocol") != "bigcherry.native-fleet-inspect/v2" ||
+        doc.at("protocol") != "bigcherry.native-fleet-inspect/v3" ||
         !exact_keys(doc.value("snapshot", Json::object()), {"sha256", "resolution_root"}) ||
         !string_field(doc.at("snapshot"), "sha256") || doc.at("snapshot").at("sha256") != snapshot.sha256() ||
         !string_field(doc.at("snapshot"), "resolution_root") ||
@@ -2436,7 +2436,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "kernels",
                                     "listener", "tp", "tp_wire", "cards", "rank_devices",
-                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "power_profiles", "power_site", "settings"}) ||
+                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "power_profiles", "power_site", "scheduler", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
@@ -2568,6 +2568,29 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     settings.prefix_cache = runtime.at("prefix_cache").get<bool>();
     if (!runtime.at("prefill_interleave").is_null())
         settings.prefill_interleave = bounded("prefill_interleave", 0);
+    const Json& scheduler = engine_report.at("scheduler");
+    if (!exact_keys(scheduler, {"interleave_authored", "interleave_steps", "interleave_share",
+                                "mixed_step_target_ms", "mixed_step_target_authored",
+                                "room_gate", "room_gate_authored", "long_prefill_token_threshold",
+                                "long_prefill_authored", "preempt_wait_ms", "preempt_wait_authored"}))
+        throw PlanFailed("native config inspector: incomplete scheduler projection");
+    for (const char* key : {"interleave_authored", "mixed_step_target_authored", "room_gate",
+                            "room_gate_authored", "long_prefill_authored", "preempt_wait_authored"})
+        if (!scheduler.at(key).is_boolean())
+            throw PlanFailed(std::string("native config inspector: invalid scheduler ") + key);
+    for (const char* key : {"mixed_step_target_ms", "long_prefill_token_threshold", "preempt_wait_ms"})
+        if (!scheduler.at(key).is_number_integer() || scheduler.at(key) < 0 ||
+            scheduler.at(key) > std::numeric_limits<int64_t>::max())
+            throw PlanFailed(std::string("native config inspector: invalid scheduler ") + key);
+    const auto& steps = scheduler.at("interleave_steps");
+    const auto& share = scheduler.at("interleave_share");
+    if (!steps.is_number_integer() || steps < -1 || steps > 64 ||
+        scheduler.at("mixed_step_target_ms") > 60000 ||
+        (steps == -1 ? (!share.is_number() || !(share > 0 && share <= 4)) : !share.is_null()))
+        throw PlanFailed("native config inspector: invalid scheduler interleave or mixed-step target");
+    const Json fixed = scheduler.at("interleave_authored") == true && steps >= 0 ? steps : Json(nullptr);
+    if (fixed != runtime.at("prefill_interleave"))
+        throw PlanFailed("native config inspector: inconsistent scheduler interleave projection");
     out.receipt = doc;
     return out;
 }

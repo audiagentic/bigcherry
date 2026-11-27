@@ -1484,7 +1484,7 @@ void session_engine_plan(Fixture& t) {
                 std::string refusal;
                 try {
                     const ss::EngineStart plan = ss::plan_engine_only(pre, pre_run, hooks);
-                    assert(plan.native_preflight_receipt.at("protocol") == "bigcherry.native-fleet-inspect/v2");
+                    assert(plan.native_preflight_receipt.at("protocol") == "bigcherry.native-fleet-inspect/v3");
                     assert(plan.argv.empty() && plan.helpers.empty());   // nothing was prepared to start
                 } catch (const ss::PlanFailed& error) {
                     refusal = error.what();
@@ -1555,6 +1555,12 @@ void session_engine_plan(Fixture& t) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tune_pin", ""}}.dump(); });
             refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
+            refused_for("invalid scheduler room_gate", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"room_gate", "on"}}.dump(); });
+            refused_for("invalid scheduler interleave", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", -1}, {"interleave_share", 5.0}}.dump(); });
+            refused_for("inconsistent scheduler interleave", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", 2}}.dump(); });
             refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });
             // Radiance's measured auto n-gram placement is admitted as an intent (the engine decides, the owner seals it).
             if (const std::string pass = preflight([](ss::Env& e) {

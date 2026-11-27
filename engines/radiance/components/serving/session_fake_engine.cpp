@@ -203,6 +203,16 @@ int main(int argc, char** argv) {
                                 {"prefix_cache", true}, {"prefill_interleave", nullptr}};
         if (const char* configured_settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS"))
             native_settings.update(json::parse(configured_settings));
+        json scheduler = {{"interleave_authored", !native_settings.at("prefill_interleave").is_null()},
+                          {"interleave_steps", native_settings.at("prefill_interleave").is_null()
+                              ? json(0) : native_settings.at("prefill_interleave")},
+                          {"interleave_share", nullptr},
+                          {"mixed_step_target_ms", 0}, {"mixed_step_target_authored", false},
+                          {"room_gate", false}, {"room_gate_authored", false},
+                          {"long_prefill_token_threshold", 0}, {"long_prefill_authored", false},
+                          {"preempt_wait_ms", 5000}, {"preempt_wait_authored", false}};
+        if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_SCHEDULER"))
+            scheduler.update(json::parse(configured));
         // The fake has no YAML parser: the profile document the real engine would convert comes from the test (default:
         // the stock-only file), and the profile descriptor must be a readable sealed memfd as a real call gets.
         json power_profiles = {{"schema", 1}, {"profiles", {{"stock", {{"default_mode", "observe"}}}}}};
@@ -218,7 +228,7 @@ int main(int argc, char** argv) {
             power_site = json::parse(configured);
         if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_POWER_PROFILES"))
             power_profiles = json::parse(configured);
-        json report = {{"protocol", "bigcherry.native-fleet-inspect/v2"},
+        json report = {{"protocol", "bigcherry.native-fleet-inspect/v3"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", cwd}}},
                        {"engine", {{"abi_version", RAD_ABI_VERSION},
@@ -238,6 +248,7 @@ int main(int argc, char** argv) {
                                     {"rank_devices", rank_devices},
                                     {"max_context", configured_integer("TEST_NATIVE_INSPECT_MAX_CONTEXT", 4096)},
                                     {"max_sequences", configured_integer("TEST_NATIVE_INSPECT_MAX_SEQUENCES", 1)},
+                                    {"scheduler", scheduler},
                                     {"settings", native_settings}}}};
         if (mode && std::strcmp(mode, "cards") == 0) report["engine"]["cards"] = json::array({"0"});
         std::cout << report.dump() << '\n';
