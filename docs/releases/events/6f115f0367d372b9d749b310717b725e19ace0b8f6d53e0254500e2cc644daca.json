@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261127_104331_run-native-scheduler-and-confi_3034",
+  "files": [
+    "tools/lab/radiance/scheduler_burst.py",
+    "tools/lab/radiance/scheduler_defaults.cpp",
+    "tools/tests/lab/test_scheduler_burst.py",
+    "docs/evidence/VTP60-native-host/summary.json"
+  ],
+  "plan-item-ids": [
+    "VTP60"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Replace ad hoc host test compile with attested source snapshot and native CMake/CTest; validate scheduler and configuration default contracts.",
+  "timestamp-utc": "2026-11-27T10:43:31.757359Z",
+  "user-summary-candidate": "Run native scheduler and configuration regression checks without GPU inference."
+}

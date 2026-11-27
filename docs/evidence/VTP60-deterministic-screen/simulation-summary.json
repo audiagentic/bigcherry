@@ -1,0 +1,753 @@
+{
+  "kind": "diagnostic-only",
+  "source_slice": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "native_sim_binary_sha256": "f30c857d415c968b894fb7721804263549fbcafa3671cdc063c1b61014cb4b6c",
+  "costs": {
+    "kind": "hypothesis-not-calibrated",
+    "basis": "2.2 4K single-request TTFT and decode-step medians; split intercept/slope assumed, not measured phase costs; 2.3 scheduler, fixed acceptance=2, no staging",
+    "profiles": {
+      "iq8r-tp2": {
+        "SIM_DEC0": 0.024,
+        "SIM_DECR": 0.001,
+        "SIM_PF0": 0.01,
+        "SIM_PFB": 0.00048
+      },
+      "iq8r-tp3": {
+        "SIM_DEC0": 0.018,
+        "SIM_DECR": 0.0024,
+        "SIM_PF0": 0.01,
+        "SIM_PFB": 0.0003
+      },
+      "iq8r-tp2-slower-prefill": {
+        "SIM_DEC0": 0.024,
+        "SIM_DECR": 0.001,
+        "SIM_PF0": 0.01,
+        "SIM_PFB": 0.000576
+      },
+      "iq8r-tp3-faster-prefill": {
+        "SIM_DEC0": 0.018,
+        "SIM_DECR": 0.0024,
+        "SIM_PF0": 0.01,
+        "SIM_PFB": 0.00024
+      }
+    }
+  },
+  "cases": 544,
+  "repetitions": 2,
+  "policies": 34,
+  "identical_full_screen": true,
+  "pytest_passed": 40,
+  "pareto": [
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0264027164999654,
+        1.0434542931549033,
+        0.25196,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": 2,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.1077360190339793,
+        1.1963236831600357,
+        0.22124,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2317571781663625,
+        1.433231319025985,
+        0.19344,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2317571781663625,
+        1.433231319025985,
+        0.19344,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.1978240280889791,
+        1.3664531336133974,
+        0.19928,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 0,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0,
+        1.0,
+        0.032,
+        0.99508
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2824143586426742,
+        1.518029919972627,
+        0.03,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2824143586426742,
+        1.518029919972627,
+        0.03,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2824143586426742,
+        1.518029919972627,
+        0.03,
+        0.28852
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9678917095932179,
+        0.9390765487482654,
+        0.25196,
+        0.52844
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9678917095932179,
+        0.9390765487482654,
+        0.25196,
+        0.52844
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9678917095932179,
+        0.9390765487482654,
+        0.25196,
+        0.52844
+      ]
+    },
+    {
+      "profile": "iq8r-tp2",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9678917095932179,
+        0.9390765487482654,
+        0.25196,
+        0.52844
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0361750894222679,
+        1.0578282965583192,
+        0.295352,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": 2,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0983458434706201,
+        1.168968903018227,
+        0.258488,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.240696146656664,
+        1.4230411268218266,
+        0.221624,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.240696146656664,
+        1.4230411268218266,
+        0.221624,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.240696146656664,
+        1.4230411268218266,
+        0.221624,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.204036125352819,
+        1.3564687031250502,
+        0.228232,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 0,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0,
+        1.0,
+        0.032,
+        1.186696
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2532670731252409,
+        1.4356455909961716,
+        0.03,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2532670731252409,
+        1.4356455909961716,
+        0.03,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2532670731252409,
+        1.4356455909961716,
+        0.03,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2532670731252409,
+        1.4356455909961716,
+        0.03,
+        0.338824
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9701994852261565,
+        0.9472122097950856,
+        0.295352,
+        0.627128
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9701994852261565,
+        0.9472122097950856,
+        0.295352,
+        0.627128
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9701994852261565,
+        0.9472122097950856,
+        0.295352,
+        0.627128
+      ]
+    },
+    {
+      "profile": "iq8r-tp2-slower-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9701994852261565,
+        0.9472122097950856,
+        0.295352,
+        0.627128
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0366570920530709,
+        1.0855301698886937,
+        0.166,
+        0.1924
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0138147996170155,
+        1.020796719390744,
+        0.196,
+        0.2116
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0322801258377787,
+        1.0761570005858232,
+        0.1888,
+        0.2116
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 2,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.1225550540281768,
+        1.364381956649092,
+        0.1468,
+        0.1924
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 2,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0982081794556149,
+        1.2806092560046867,
+        0.1576,
+        0.1924
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 0.25,
+        "SIM_MIXED_MS": 250,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0753658870195597,
+        1.2053309900410076,
+        0.1,
+        0.2572
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 0,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0,
+        1.0,
+        0.0372,
+        0.634
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.4342771166735058,
+        2.205916813122437,
+        0.0348,
+        0.1924
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2477089317466832,
+        1.7220269478617458,
+        0.0372,
+        0.208
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9705922582410067,
+        0.9071470415934387,
+        0.166,
+        0.3388
+      ]
+    },
+    {
+      "profile": "iq8r-tp3",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9705922582410067,
+        0.9071470415934387,
+        0.166,
+        0.3388
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0516844528143965,
+        1.1452605956471935,
+        0.13888,
+        0.16096
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0275311631243835,
+        1.0680841924398625,
+        0.1456,
+        0.16096
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0149164499446985,
+        1.0249856815578464,
+        0.19504,
+        0.20704
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": 2,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.1323947030161718,
+        1.4416523482245132,
+        0.12352,
+        0.16096
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 0,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.0,
+        1.0,
+        0.0372,
+        0.5176
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 150,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.3022150479777599,
+        2.0416666666666665,
+        0.0348,
+        0.16096
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": -1,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 200,
+        "SIM_MAXTOK": 2048
+      },
+      "objectives": [
+        1.2166920754491375,
+        1.7015320733104238,
+        0.0372,
+        0.20368
+      ]
+    },
+    {
+      "profile": "iq8r-tp3-faster-prefill",
+      "policy": {
+        "SIM_IL": 0,
+        "SIM_SHARE": 1,
+        "SIM_MIXED_MS": 100,
+        "SIM_MAXTOK": 4096
+      },
+      "objectives": [
+        0.9687621439033868,
+        0.8886741122565865,
+        0.13888,
+        0.27712
+      ]
+    }
+  ],
+  "raw_sha256": {
+    "cost-hypotheses.json": "150d2882f152f4f7eb7bd8b9e0f98f7e3291111269f48182139f02995e039dc2",
+    "policy-screen.json": "6578c05eec3c1f59857b6d5629baa66c0309b4aa0d8f4dec423afea32de3e672",
+    "policy-screen-validated.json": "6578c05eec3c1f59857b6d5629baa66c0309b4aa0d8f4dec423afea32de3e672",
+    "gpu-screen.py": "9e891316d2947a24257711f521a02f0f257d5a366b9176e9eaee92d2cd4835ae"
+  }
+}

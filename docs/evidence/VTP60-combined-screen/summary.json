@@ -1,0 +1,1253 @@
+{
+  "kind": "repeated-serving-screen-not-qualified",
+  "source_slice": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "notes": [
+    "3 repeated rounds per workload, one managed launch per arm; not ABBA; same seed and prompts per arm; prefix caching as configured, not a cold-prefill test. 512/192 historical workload targets matched but historical raw prompt identities unverified.",
+    "No independent quality gate; no production config change. The original TP3 tuned arm stopped after its short workload when job service restarted; the retry is a separate launch."
+  ],
+  "arms": [
+    {
+      "arm": "combined-qwen27b-2xtx-auto",
+      "profile": "qwen27b-2xtx.yaml",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 48.497,
+              "ttft_ms_max_median": 20020.3,
+              "event_gap_ms_p95_median": 29.343,
+              "decode_ms_per_step_median": 26.1955,
+              "decode_tokens_per_step_median": 4.8762,
+              "decode_tps_engine_median": 186.117,
+              "draft_acceptance_median": 0.6706,
+              "requests_running_mean_median": 5.726
+            }
+          },
+          "ok": true,
+          "raw_sha256": "c9a021fe402872c8e0c242014886c100bab94b21efc04691a5c9da31a89c832b"
+        },
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 128.521,
+              "ttft_ms_max_median": 26101.81,
+              "event_gap_ms_p95_median": 36.79,
+              "decode_ms_per_step_median": 27.9275,
+              "decode_tokens_per_step_median": 7.0309,
+              "decode_tps_engine_median": 251.755,
+              "draft_acceptance_median": 0.6182,
+              "requests_running_mean_median": 6.693
+            }
+          },
+          "ok": true,
+          "raw_sha256": "24c2e5f3d8b20fdfaa88c3e19000b28c84df07eff89e17bfba19eb2dcd6c7c72"
+        },
+        {
+          "prompt_target": 512,
+          "max_tokens": 192,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 318.721,
+              "ttft_ms_max_median": 2638.08,
+              "event_gap_ms_p95_median": 38.379,
+              "decode_ms_per_step_median": 33.033,
+              "decode_tokens_per_step_median": 18.5181,
+              "decode_tps_engine_median": 560.594,
+              "draft_acceptance_median": 0.6989,
+              "requests_running_mean_median": 5.0
+            }
+          },
+          "ok": true,
+          "raw_sha256": "84020d0b50444063373eec4bf7142d26b104f7ddc032811abb3a198f9424477c"
+        }
+      ]
+    },
+    {
+      "arm": "combined-qwen27b-2xtx-combined",
+      "profile": "qwen27b-2xtx.yaml",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 60.88,
+              "ttft_ms_max_median": 15135.34,
+              "event_gap_ms_p95_median": 233.271,
+              "decode_ms_per_step_median": 36.4694,
+              "decode_tokens_per_step_median": 22.7778,
+              "decode_tps_engine_median": 621.526,
+              "draft_acceptance_median": 0.6457,
+              "requests_running_mean_median": 6.588
+            }
+          },
+          "ok": true,
+          "raw_sha256": "e8520b27c1ef4feb93fc1e3f1e826697d182a753563073e3dd788a512655fe65"
+        },
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 172.127,
+              "ttft_ms_max_median": 16448.45,
+              "event_gap_ms_p95_median": 225.011,
+              "decode_ms_per_step_median": 38.0659,
+              "decode_tokens_per_step_median": 21.6561,
+              "decode_tps_engine_median": 567.21,
+              "draft_acceptance_median": 0.604,
+              "requests_running_mean_median": 7.115
+            }
+          },
+          "ok": true,
+          "raw_sha256": "8df3f8e07a24becd018b4ac2204a25559b2ecb71835881bb4c81c9ad1a4349f9"
+        },
+        {
+          "prompt_target": 512,
+          "max_tokens": 192,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 355.173,
+              "ttft_ms_max_median": 2017.25,
+              "event_gap_ms_p95_median": 37.732,
+              "decode_ms_per_step_median": 35.0177,
+              "decode_tokens_per_step_median": 23.5846,
+              "decode_tps_engine_median": 673.717,
+              "draft_acceptance_median": 0.7032,
+              "requests_running_mean_median": 5.895
+            }
+          },
+          "ok": true,
+          "raw_sha256": "c145634f70dfcc5294ff28b4610a88f597b4a56976916ded8ace80b2f8b77e68"
+        }
+      ]
+    },
+    {
+      "arm": "combined-qwen27b-tp3-auto",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 56.919,
+              "ttft_ms_max_median": 17082.75,
+              "event_gap_ms_p95_median": 24.908,
+              "decode_ms_per_step_median": 21.8696,
+              "decode_tokens_per_step_median": 4.8483,
+              "decode_tps_engine_median": 221.807,
+              "draft_acceptance_median": 0.6317,
+              "requests_running_mean_median": 6.069
+            }
+          },
+          "ok": true,
+          "raw_sha256": "166adf531a2af84771fc9f739b2764842c5754df134096084153140b53736c46"
+        },
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 148.314,
+              "ttft_ms_max_median": 22357.09,
+              "event_gap_ms_p95_median": 34.689,
+              "decode_ms_per_step_median": 24.0712,
+              "decode_tokens_per_step_median": 6.914,
+              "decode_tps_engine_median": 287.7,
+              "draft_acceptance_median": 0.6133,
+              "requests_running_mean_median": 6.38
+            }
+          },
+          "ok": true,
+          "raw_sha256": "3d378f73eb1f05f1370d75d985ec654bad1777708dfd1f18dfa1bd0296413e00"
+        },
+        {
+          "prompt_target": 512,
+          "max_tokens": 192,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 347.917,
+              "ttft_ms_max_median": 2138.93,
+              "event_gap_ms_p95_median": 40.011,
+              "decode_ms_per_step_median": 32.788,
+              "decode_tokens_per_step_median": 18.6951,
+              "decode_tps_engine_median": 570.182,
+              "draft_acceptance_median": 0.7072,
+              "requests_running_mean_median": 5.105
+            }
+          },
+          "ok": true,
+          "raw_sha256": "697399569194258f182ee60541797a3831a1318abaa6a0a5ae6d714f934e36d6"
+        }
+      ]
+    },
+    {
+      "arm": "combined-qwen27b-tp3-offmixed200",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": false,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 512,
+          "max_tokens": 192,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ],
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ],
+            [
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192,
+              192
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 350.28,
+              "ttft_ms_max_median": 1987.82,
+              "event_gap_ms_p95_median": 40.298,
+              "decode_ms_per_step_median": 37.6158,
+              "decode_tokens_per_step_median": 24.2381,
+              "decode_tps_engine_median": 644.14,
+              "draft_acceptance_median": 0.697,
+              "requests_running_mean_median": 6.632
+            }
+          },
+          "ok": true,
+          "raw_sha256": "eaf93430b7d1c58ffe33c2becfa2ca1f02d365463bc0a97751ab3fba43bdb7c2"
+        }
+      ]
+    },
+    {
+      "arm": "combined-retry-qwen27b-tp3-offmixed200",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 61.224,
+              "ttft_ms_max_median": 15155.57,
+              "event_gap_ms_p95_median": 215.191,
+              "decode_ms_per_step_median": 34.9278,
+              "decode_tokens_per_step_median": 23.2273,
+              "decode_tps_engine_median": 663.669,
+              "draft_acceptance_median": 0.6428,
+              "requests_running_mean_median": 6.955
+            }
+          },
+          "ok": true,
+          "raw_sha256": "38174219a99f8e089150b4a3debc53909652d524d0c3144b09719a28a022cfbc"
+        },
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 178.884,
+              "ttft_ms_max_median": 15724.46,
+              "event_gap_ms_p95_median": 164.334,
+              "decode_ms_per_step_median": 37.4878,
+              "decode_tokens_per_step_median": 21.1031,
+              "decode_tps_engine_median": 574.025,
+              "draft_acceptance_median": 0.6137,
+              "requests_running_mean_median": 7.28
+            }
+          },
+          "ok": true,
+          "raw_sha256": "6b2a15538bf966ae7925f746295e301e806ef8b60ac7dd01bb3d419b04f52f84"
+        }
+      ]
+    }
+  ]
+}

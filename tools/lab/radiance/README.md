@@ -175,3 +175,38 @@ Do not place credentials in side environment overrides. Use equal fixture,
 seed, warm-up, flush footprint, filters and runtime policy on both sides.
 An omitted flag uses rad-kbench's own default, so specify it to make a
 measurement fully pinned.
+
+## Native host scheduler/configuration screen (VTP59/VTP60)
+
+Use the candidate's materialized source, independently expected source slice,
+and serving component checkout. The launcher creates a private HIP-off
+CMake/Ninja build and executes native CTest targets; it no longer accepts an
+existing archive or parses its link command.
+
+See scheduler_burst.py --help for the current source, expected-slice,
+component-repo, output and prefix-path arguments. Output must be a new
+directory outside both inputs. The component digest can be pinned explicitly.
+Use the native bc_host CTest label for local repeat tests on the unchanged
+build. A local rerun is not a new source-attested receipt.
+
+Reuse upstream sched_test sim_burst_of_long_prompts for exploratory scheduler
+sweeps, rad-tune for kernel variants, rad-kbench for replay and native diagnose
+for measured serving costs. See docs/design/radiance-fast-qualification.md
+section 10 for scope, limitations and remaining native extensions.
+
+### Deterministic native scheduler screen
+
+Use the native host launcher with `--native-sim` to stage the optional
+test-only extension of Radiance's own `sim_burst_of_long_prompts`.
+Run `scheduler_screen.py --binary <host-build>/tests/sched_test --costs
+<cost-hypotheses.json> --output <screen.json>`. The input kind must be
+`hypothesis-not-calibrated`, with named profiles containing SIM_DEC0,
+SIM_DECR, SIM_PF0 and SIM_PFB. See VTP60 deterministic evidence for a
+working input. The screen verifies output completion and trace continuity,
+repeats each case, hashes ordered steps and emission records, and returns
+nondominated policies across wall time, TTFT and emission gaps.
+The first matrix uses fixed acceptance=2, synchronous bursts, no staging
+or prefix cache and no age-dependent admission. All costs are hypotheses,
+not a hardware prediction. Only compare real model/layout candidates on
+the actual managed engine before production qualification. No global
+default is selected by this tool.
