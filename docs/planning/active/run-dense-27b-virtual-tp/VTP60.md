@@ -59,6 +59,8 @@ Owner direction: reuse Radiance tooling first. Native 2.3 source slice 90bca121c
 
 Native sim_burst extension implemented with mixed-step cost injection, strict synchronous burst completion, output traces and schedule SHA-256, frozen synthetic cost curves and Pareto search. 34 policies x 4 workloads x 4 cost hypotheses = 544 cells, two runs per cell, all hashes and metrics identical; rerun with stricter parser byte-identical. 40 Python tests passed. Evidence docs/evidence/VTP60-deterministic-screen/simulation-summary.json. No simulated age clock, real per-phase calibration, acceptance distribution or canonical gate integration yet; do not promote based on synthetic results. VTP59 hardware screen uses exact 2.3 candidate. Extend native simulation only, not a second scheduler.
 
+2.3 candidate IQ8R TP2 prefill execution screen: six managed starts, 30 reports/90 one-token requests. First cache-enabled screen exposes 6K prefix reuse; corrected cold arms use no-prefix-cache=true. Median TTFT (128/512/2048/4096/6144): base 99.01/270.96/987.86/1991.60/3064.25 ms; pipeline on min256 100.29/220.50/755.67/1535.91/2430.31; same with 4096 batch 97.69/219.72/756.20/1486.87/2385.49. Best 4K TTFT -25.3%, 6K -22.2%; no short regression established. TTFT is not pure kernel timing. Scraped counters can lag/include calibration. Native rad-tune and rad-kbench CLI only accept bf16/i8 KV; native rad-tune command also denied by allowlist. Reuse shared set_build_kv_format for exact FP8 declaration, add TP ownership/pipeline settings and rank-aware geometry as needed, validate same serving graph and independent correctness before tuning cache use. Do not tune wrong graph. Next combine pipeline with prior scheduler finalist and test matched mixed arrivals, ABBA, quality; do not alter production yet. Evidence docs/evidence/VTP60-prefill-screen/summary.json.
+
 ## Change Log
 
 - 2026-11-27T10:22:17.436914+00:00 (created-by): Created by agent
@@ -71,3 +73,4 @@ Native sim_burst extension implemented with mixed-step cost injection, strict sy
 - 2026-11-27T10:53:26.112245+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:53:34.034298+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-11-27T11:04:47.040381+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T11:17:37.522329+00:00 (updated-by): Updated: section:notes
