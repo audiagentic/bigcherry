@@ -55,6 +55,8 @@ Motivation: 2020.23.1 IQ8R TP3, yarn:2, bf16_i8, 524288, 16/8/4 slots and batch5
 
 Code-level review RV4697: reuse existing fresh-prefill/recompute guards and KVManager; measure rectangular BatchBuilder overhead before changing ABI; replace fixed-inclusive kv_one/L assumptions in shared mode; rank feasibility must use same-rank costs. See docs/design/radiance-shared-kv-capacity-code-guide.md. No implementation yet.
 
+RV4698 second review: rad0029 already solves a subset of per-rank capacity; rad0011 common gate runs earlier. Revised design reuses it, avoids new scheduler where not needed, corrects first-test profile mismatch and demands actual calibration and physical ledger. Scope first shared-mode qualification to supported dense full-paged discrete paths, extend capability-driven across models/tiers only with gates. See guide H. No code or GPU changes.
+
 ## Change Log
 
 - 2026-11-27T03:33:31.874138+00:00 (created-by): Created by agent
@@ -63,3 +65,5 @@ Code-level review RV4697: reuse existing fresh-prefill/recompute guards and KVMa
 
 - RV4697
 - 2026-11-27T03:42:47.951296+00:00 (updated-by): Updated: section:steps, section:notes, section:validation
+- RV4698
+- 2026-11-27T03:48:04.634120+00:00 (updated-by): Updated: section:notes

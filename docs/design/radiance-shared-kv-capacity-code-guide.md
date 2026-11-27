@@ -167,3 +167,126 @@ memory pressure; use ENG04/ENG03 and MEN17 release gates. Compare predicted
 allocation vs actual at allocation granularity; measured driver uncertainty
 reported separately, no unsupported percentage guarantee. Don't promote a
 new default until cross-family gates and reviewed thresholds pass.
+
+## H. Second review: patch ownership and minimum change first (2026-11-27)
+
+The first design missed an important reuse seam. rad0029_rank_own_split
+(VTP33, validated) already computes an independent dense rank pool from
+its own weights and additional free memory, uses KVManager::paged_tokens
+and pool_mib_for_tokens, chooses the least common token count, and trims
+each rank to it. It deliberately excludes experts, unified memory,
+explicit gpu-memory-mib, and weights not fitting the common pool.
+It runs AFTER rad0011 bc_plan_memory_note and its refit_serving_pools gate,
+which is the observed refusal. Therefore it cannot rescue the refused
+512K launch. VTP33 records successful 8 x 128K prompts and capacity gains;
+those are historical, not a current 512K proof. Do not add a third split
+algorithm or replace the allocator wholesale.
+
+Stage A first: establish the effective calibration, exact rank facts,
+pool inverse and current rad0029 candidate on the same input without
+allocating or bypassing admission. The checked-in calibration seeds
+for kv_backing_floor are scoped to FlashNext-4gpu latency/balanced;
+do not infer a nonzero dense floor from their existence. Capture the
+selected provenance (including local calibration) and the actual one-
+session minimum. If the existing algorithm suffices once correctly ordered,
+refactor it into a pure reusable feasibility step before final admission.
+Only extend the solver where evidence or generic policy requires it.
+The failed experiment used the short qwen27b-tp3 base with changed L,
+S, dtype and YaRN; it did not include long-profile prefill-governor or
+prefill-interleave settings. Reproduce on that exact archived input,
+then compare matched long-bf16i8 baseline and extended variant with
+only intended axes changed. Do not conflate those results.
+
+### Patch/package boundaries
+
+- rad0029: retain legacy behavior, refactor the existing dense own-split
+  seam into a proposal/solver reused by explicit shared mode; account for
+  actual per-rank overhead, not just free-memory delta. Preserve VTP33
+  tests and promotion evidence. A new generic upstream-shaped patch may
+  supersede this block only after legacy parity; do not delete the old
+  evidence or leave two competing writers of rank_cfg_.
+- New narrowly scoped generic engine patch(es): typed native capacity
+  option and shared allocation orchestration, plus separate runtime
+  correction only if the audit proves a deficiency. Use the next free
+  patch ID allocated at implementation, declared requires/conflicts and
+  plan-ids; no arbitrary fixed number in this plan. Prefer upstream
+  acceptance; retire overlapping local edits after equivalent gates.
+- rad0011 owns instrumentation, plan producer, sealed admission and
+  rank receipts. Separate initial fact capture from final admission:
+  evaluate the final candidate rank vector before pools or weights,
+  not the common intermediate. Do not move live checks after allocation.
+  Existing legacy common checks stay for legacy mode; shared mode must
+  validate a complete rank ledger, not call both competing splitters.
+- rad0070 native managed entry: check inspect/measure/start parity and
+  owner verification; avoid overlapping native-entry edits. Respect
+  rad0036 governor and rad0028 rank-consistent draft dependencies.
+  No new runtime library, fork or alternate launch entrypoint.
+- Composition gate: patch-lint, existing package tests incl.
+  test_vtp33_rank_own_split.py, production and affected experiment
+  patch-chain application/rebase checks, anchor uniqueness, compile
+  checks and standard build/qualification gates. Update patch metadata
+  and owned-unit boundaries using the existing composition standard.
+
+### Startup accuracy and invariants
+
+The present rad0011 rank receipt computes overhead from arena, staging,
+queue count*queue bytes and a common stage; it does not explicitly report
+all terms used by vram_budget.cpp (queue scratch, prefetch, drift,
+headroom, pinned charge etc.). Do not reuse that partial receipt as
+the authoritative new per-rank ledger. Derive accounting from the same
+budget routine, expose both total capacity and measured free and their
+relationship; do not subtract already-held bytes twice from free.
+Keep units exact checked integer bytes, MiB pool rounding, and checked
+wide sums. Verify zero/nonzero weights-pool minimum, explicit memory
+caps, fleet grants and staged residency. Compare free at plan/start,
+revalidate sealed minimum, bounded retry through existing owner on drift.
+Auto is maximum under selected placement policy, NOT permission to
+discard all optional expert residency; declare the placement trade-off
+and preserve MoE quality/performance. No assumption that CPU offload
+is available or desirable. For the first implementation constrain
+shared mode to qualified full-paged dense discrete GPU paths including
+TP1/TP2/TP3; capability-driven refusal for unsupported groups. Broaden
+in separate qualified steps, not a model name switch.
+
+Engine::configure_kv caps every rank at the least paged_tokens before
+carve. Its current kv_planned_tokens_ check is conditional on a rank
+pool being smaller than cfg_'s common pool; shared mode must verify
+EVERY rank against the sealed target, including enlarged/equal pools,
+then verify the actual post-carve block geometry and state slots.
+Compare rank order and group handles/kind/block size/table bounds,
+not merely the scalar token count. Use exact group vector where needed;
+a packed token capacity is not a guarantee for arbitrary fragmented
+sessions. For C=auto expose achieved capacity, not hypothetical maximum
+from stale measurement; if sealed plan cannot fit live, remeasure/refuse.
+For an explicit minimum do not silently shrink. Retain generator
+branch minima and no-paged-group sentinel behavior.
+
+### Runtime review: avoid unnecessary change
+
+Scheduler::init already binary-searches the maximum one-sequence
+capacity using can_ever_fit; add_locked refuses an impossible prompt,
+fresh_prefill_can_fit uses whole prompt plus next position and actual
+runner/same-step demand, not L*S. Reuse the existing progress mechanisms.
+Treat RSC18 as audit-and-fix-only: test existing behavior first; if no
+defect, deliver accounting/observability and tests, not a scheduler
+rewrite. KVManager::can_grow uses ceil_div and COW whereas ensure uses
+window_table_len plus recycle_window for runtime windows; use shared
+read-only demand geometry or explicitly qualify the differences before
+claiming equivalent admission. Preserve recoverable preflight elastic
+growth semantics, avoid expensive rollback or refcount scans on hot path.
+Keep context ceiling vs physical one-request fit distinct in API and
+error codes; test exact L including output and speculative boundary,
+including prefill next-position requirement. Existing scheduler can
+truncate output to context room: don't silently clamp requested length
+under new contract; retain documented legacy semantics, explicitly
+define shared-mode context overflow behavior. Distinguish permanently
+impossible request from transient resource pressure, queue/timeout
+with existing front protocol; no assumption of a new HTTP status.
+
+Qualification should include a deterministic synthetic two-rank case
+where min capacity and max KV/weights occur on different ranks, where
+common refit rejects and same-rank proposal fits; a physical-shortfall
+control; old rad0029 successful case; 1 page/1 MiB boundary; rank
+mismatch and drift; unchanged legacy configurations. Add negative
+tests for 512K+128K if the physical budget cannot back it. Do not label
+a smaller or sequential workload as passing the mixed-resident goal.
