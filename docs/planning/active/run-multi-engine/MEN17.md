@@ -100,6 +100,8 @@ Integrated baseline repair validated: 251 Python tests and 34 subtests passed wi
 
 Actual integrated candidate 927a24bf85c2ac29d3dbe0b779063323 completed 93/93 declared offline component tests (5 libr3, 48 MoE, 40 serving); engine, owner and 71 plugins unchanged after test build. Independent historical BF16 Qwen reference (8240 scored positions, 4 docs) scored using installed bc-radiance-2020.24.1 2.2 and enhanced 2.3, same native YAML, FP8 KV, one seq, speculation and prefix off. IQ8R mean KLD 0.0013790939135882837/top1 97.22087378640776%, IQ6R-V4 0.0015840392022430626/96.90533980582524%, both exact aggregate, per-doc and byte-identical per-position row files across versions; four clean owner exits. Evidence baseline-qwen-quality.json. No formal promotion claim, references predate MRC08. Native lab identity now shares installed-release verification (49 tests passed), no second verifier.
 
+Matched TP2 regression screen: released 2.2 bc-radiance-2020.24.1 vs candidate 927a24bf85c2ac29d3dbe0b779063323 default vs tuned pipe on/min256 batch4096 interleave off mixed250; three repeats at 2/4 streams, 4096/128 and 512/128; 36 rounds, all exact prompt hashes and per-stream token counts matched, paired native receipts and six portable exports, zero preemptions. Long aggregate 2/4: old49.662/42.315, default50.790/42.763, tuned49.998/56.798; four-stream worst TTFT 11.0095/10.9684/7.7688s, p95 gap28.606/27.465/273.160ms. Short aggregate 148.286/229.950,153.690/232.900,159.728/218.523. Existing inversion persists at default; tuned restores scaling but materially worsens latency, not promote. Need narrower latency-safe scheduling, repeat ABBA and mixed/quality qualification. Evidence baseline-matched-tp2.json. Failed lab setup and record attempts preserved; no GPU lease left. Native record validity still unverified, no formal acceptance claim.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -130,3 +132,4 @@ Actual integrated candidate 927a24bf85c2ac29d3dbe0b779063323 completed 93/93 dec
 - 2026-11-27T15:24:06.385547+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:24:47.511828+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T20:10:02.027053+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T20:17:40.797946+00:00 (updated-by): Updated: section:notes

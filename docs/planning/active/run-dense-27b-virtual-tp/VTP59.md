@@ -88,6 +88,8 @@ VTP60 live trace qualification (node/live-prefill-trace e802b5b34, docs/evidence
 
 RV4754: required baseline gate is resolving documented concurrent medium-prompt regression with matched old/new evidence and no unacceptable short/long/quality regression. Preserve FlashNext four-card layout; TP3 27B focus. Existing screens guide selection but single runs and tracing are not qualified. New shared KV mode and exhaustive policy/arrival tuning are follow-ups, not reasons to delay baseline unless a regression is demonstrated.
 
+Matched TP2 regression screen: released 2.2 bc-radiance-2020.24.1 vs candidate 927a24bf85c2ac29d3dbe0b779063323 default vs tuned pipe on/min256 batch4096 interleave off mixed250; three repeats at 2/4 streams, 4096/128 and 512/128; 36 rounds, all exact prompt hashes and per-stream token counts matched, paired native receipts and six portable exports, zero preemptions. Long aggregate 2/4: old49.662/42.315, default50.790/42.763, tuned49.998/56.798; four-stream worst TTFT 11.0095/10.9684/7.7688s, p95 gap28.606/27.465/273.160ms. Short aggregate 148.286/229.950,153.690/232.900,159.728/218.523. Existing inversion persists at default; tuned restores scaling but materially worsens latency, not promote. Need narrower latency-safe scheduling, repeat ABBA and mixed/quality qualification. Evidence baseline-matched-tp2.json. Failed lab setup and record attempts preserved; no GPU lease left. Native record validity still unverified, no formal acceptance claim.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -111,3 +113,4 @@ RV4754: required baseline gate is resolving documented concurrent medium-prompt 
 - 2026-11-27T14:10:04.816913+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:18:57.650130+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:13:21.107632+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T20:17:48.556882+00:00 (updated-by): Updated: section:notes
