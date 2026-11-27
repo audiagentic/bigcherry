@@ -1,0 +1,28 @@
+{
+  "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+  "source_slice": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+  "owner_sha256": "6cf2765850f8b46e40c7f8736d1bb6d657a2e3018615091a84472421688cdd08",
+  "build_status": "succeeded",
+  "profiles": {
+    "flashnext-2xtx-combine": 0,
+    "flashnext-2xtx-rdna2-head": 0,
+    "flashnext-2xtx-rdna2-tail-combine": 0,
+    "flashnext-2xtx-rdna2-tail": 0,
+    "flashnext-2xtx": 0,
+    "flashnext-4gpu-bf16i8": 0,
+    "flashnext-4gpu": 0,
+    "flashnext-r9700": 0,
+    "flashnext-tp2xtx-r9700": 0,
+    "flashnext-tp2xtx": 0,
+    "qwen27b-2xtx": 0,
+    "qwen27b-tp3-capacity": 0,
+    "qwen27b-tp3-iq6r": 0,
+    "qwen27b-tp3-long-bf16": 0,
+    "qwen27b-tp3-long-bf16i8": 0,
+    "qwen27b-tp3-long-iq6r": 0,
+    "qwen27b-tp3-long": 0,
+    "qwen27b-tp3": 0
+  },
+  "scope": "device-free native admission preflight, not GPU compatibility or quality proof"
+}

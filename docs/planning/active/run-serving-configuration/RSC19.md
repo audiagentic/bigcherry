@@ -63,6 +63,8 @@ Coordinate with VTP59/VTP60: use existing MRC06 lab adapter capture_tuning_recei
 
 Fresh and replay owner session selection now records the matched parsed scheduler and sealed YAML SHA-256. Existing lab adapter automatically derives stable scheduler expectations, refuses mismatched snapshot/manifest/explicit intent, preserves omitted interleave as bring-up-resolved. Old owner needs explicit expectations. Added managed parser and bind refusal for proceed-with-incompatible-configuration; native declaration remains capability authority (FP8/packed KV, f16 state, per-rank kernel coverage, lossy wire, FP8 attention and shard geometry). Strict JSON safe-integer gate already refuses oversized wire threshold; do not duplicate parser. Python 31 passed, owner CTest 5/5 passed, native CTest 2/2 passed. No upstream patch or production YAML change. Next canonical candidate build, all-profile explain and automatic receipt GPU proof; do not promote until quality/latency gates.
 
+Canonical Radiance 2.3 stock build plan 927a24bf85c2ac29d3dbe0b779063323 succeeded; 18/18 staged native config explain preflights passed. Matched enhanced owner TP3 IQ8R FP8 KV 75/50/75ms fresh starts, automatic scheduler reconciliation with empty explicit expectations, both receipts verified for all three runs. 4K/512 aggregate 188.774/180.289/180.855 t/s; max TTFT 14.574/15.768/15.763s; p95 event gaps 41.509/161.219/162.438ms. 512/128 aggregate 279.875/270.253/279.928 t/s; max TTFT 1.979/2.157/1.980s; p95 gaps 40.065/165.666/40.445ms. Six reports match previous prompt hashes/token counts, zero preemptions, clean owner stops. Long workload scheduling regimes persist; 75ms short result repeats, not a universal winner. Evidence docs/evidence/RSC19-VTP59-matched-owner/{build-preflight,summary}.json. Next mixed arrivals/interleave/phase tracing and independent quality then TP2/TP3/other model qualification. No production promotion.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
@@ -71,3 +73,4 @@ Fresh and replay owner session selection now records the matched parsed schedule
 - 2026-11-27T13:22:28.116046+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:39:37.473752+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:49:43.098266+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T14:09:47.084434+00:00 (updated-by): Updated: section:notes
