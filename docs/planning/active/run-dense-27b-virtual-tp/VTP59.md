@@ -76,6 +76,8 @@ Use VTP60 native-first tuning path: rad-tune for kernel variants only, rad-kbenc
 
 Combined 2.3 TP2 (pipeline on/min256 + 0/250ms/4096) and default: 3 reps each 512/192,4K/128,4K/512. Aggregate 355.173/60.880/172.127 vs 318.721/48.497/128.521; max TTFT 2.017/15.135/16.448s vs 2.638/20.020/26.102s. P95 long gaps 233/225ms vs29/37; no preemptions, matching actual prompts. Historical 2020.8.5 same target 512/192 TP2 335.7 aggregate/569 engine decode vs 355.173/673.717; old prompt identities not verified. TP3 default 347.917/570.182 vs tuned 350.280/644.140; old 361.2/574. TP3 tuned original interrupted after short workload; retry separate. Do not promote without ABBA, mixed arrival/quality and latency budgets. Evidence docs/evidence/VTP60-combined-screen/summary.json.
 
+TP3 retry completed 3 reps each: 4K/128 aggregate 61.224 vs 56.919, engine decode 663.669 vs 221.807, TTFT 15.156 vs17.083s, p95 gap215 vs25ms; 4K/512 aggregate178.884 vs148.314, engine decode574.025 vs287.700, TTFT15.724 vs22.357s, p95 gap164 vs35ms. Retry separate launch after interrupted tuned short arm; all completed reports matched prompts and zero preemptions; not fresh-start ABBA. Prior single-run 189.469 not repeat median. TP2+TP3 totals 36 completed rounds. Do not select universal default; investigate latency-oriented profile and per-step efficiency.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -93,3 +95,4 @@ Combined 2.3 TP2 (pipeline on/min256 + 0/250ms/4096) and default: 3 reps each 51
 - 2026-11-27T10:53:41.556574+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:08:19.072053+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:47:13.447881+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T11:49:17.864160+00:00 (updated-by): Updated: section:notes

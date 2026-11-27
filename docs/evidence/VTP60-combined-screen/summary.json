@@ -1039,6 +1039,215 @@
           "raw_sha256": "eaf93430b7d1c58ffe33c2becfa2ca1f02d365463bc0a97751ab3fba43bdb7c2"
         }
       ]
+    },
+    {
+      "arm": "combined-retry-qwen27b-tp3-offmixed200",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ],
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 61.224,
+              "ttft_ms_max_median": 15155.57,
+              "event_gap_ms_p95_median": 215.191,
+              "decode_ms_per_step_median": 34.9278,
+              "decode_tokens_per_step_median": 23.2273,
+              "decode_tps_engine_median": 663.669,
+              "draft_acceptance_median": 0.6428,
+              "requests_running_mean_median": 6.955
+            }
+          },
+          "ok": true,
+          "raw_sha256": "38174219a99f8e089150b4a3debc53909652d524d0c3144b09719a28a022cfbc"
+        },
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ],
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ],
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 3,
+              "aggregate_tps_median": 178.884,
+              "ttft_ms_max_median": 15724.46,
+              "event_gap_ms_p95_median": 164.334,
+              "decode_ms_per_step_median": 37.4878,
+              "decode_tokens_per_step_median": 21.1031,
+              "decode_tps_engine_median": 574.025,
+              "draft_acceptance_median": 0.6137,
+              "requests_running_mean_median": 7.28
+            }
+          },
+          "ok": true,
+          "raw_sha256": "6b2a15538bf966ae7925f746295e301e806ef8b60ac7dd01bb3d419b04f52f84"
+        }
+      ]
     }
   ]
 }
