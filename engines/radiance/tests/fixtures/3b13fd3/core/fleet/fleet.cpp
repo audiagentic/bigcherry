@@ -8,6 +8,7 @@
 #include "rad_internal.h"
 #include "server/front.h"
 #include "server/history.h"
+#include "server/metrics.h"
 #include "util/stallwatch.h"
 
 #include "rad_device.h"
@@ -18,6 +19,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <cstdlib>
 #include <chrono>
 #include <set>
 #include <condition_variable>
@@ -159,14 +161,49 @@ double card_temp_mc(const std::string& hwmon) {
     return sysfs_number(hwmon + "/temp1_input");
 }
 
-/* What the driver reports of a card right now: busy share, power and temperature, on the routes of
- * a dashboard being watched and nowhere on a request's path. A card that reports none adds none. */
+/* The hwmon sensor `<kind>N_input` whose `<kind>N_label` reads `label`, -1 when none does. amdgpu
+ * labels its clocks (freq1 sclk, freq2 mclk) and temperatures (edge, junction, mem); the label,
+ * not the index, says which is which. */
+double hwmon_labelled(const std::string& hwmon, const char* kind, const char* label) {
+    for (int i = 1; i <= 8; ++i) {
+        const std::string t = hwmon + "/" + kind + std::to_string(i);
+        std::ifstream f(t + "_label");
+        std::string l;
+        if (!(f >> l) || l != label) continue;
+        return sysfs_number(t + "_input");
+    }
+    return -1;
+}
+
+/* The current level of a pp_dpm_* clock table, in MHz: the line the driver marks with `*`
+ * ("1: 2683Mhz *"). -1 when the file cannot be read or marks no line. */
+double dpm_current_mhz(const std::string& path) {
+    std::ifstream f(path);
+    std::string line;
+    while (std::getline(f, line)) {
+        if (line.find('*') == std::string::npos) continue;
+        const size_t colon = line.find(':');
+        if (colon == std::string::npos) return -1;
+        char* end = nullptr;
+        const double v = std::strtod(line.c_str() + colon + 1, &end);
+        return end != line.c_str() + colon + 1 ? v : -1;
+    }
+    return -1;
+}
+
+/* What the driver reports of a card right now: busy shares, power, temperatures, clocks and fan, on
+ * the routes of a dashboard being watched and nowhere on a request's path. A figure the driver does
+ * not report adds no key: mem_busy_percent is missing on some amdgpu and kernel pairs, and a card
+ * with no fan of its own (a passive one) has no pwm1. The clocks are the hwmon averages, else the
+ * current DPM level, which is coarser: a level is a ceiling the firmware may run under. */
 void card_telemetry(int card, json& o) {
     namespace fs = std::filesystem;
     const std::string bdf = dev_pci_address(card);
     if (bdf.empty()) return;
     const std::string dev = "/sys/bus/pci/devices/" + bdf;
     if (const double busy = sysfs_number(dev + "/gpu_busy_percent"); busy >= 0) o["busy"] = busy / 100.0;
+    if (const double busy = sysfs_number(dev + "/mem_busy_percent"); busy >= 0) o["mem_busy"] = busy / 100.0;
+    double sclk_hz = -1, mclk_hz = -1;
     std::error_code ec;
     for (const auto& h : fs::directory_iterator(dev + "/hwmon", ec)) {
         const std::string hp = h.path().string();
@@ -174,8 +211,18 @@ void card_telemetry(int card, json& o) {
         if (uw < 0) uw = sysfs_number(hp + "/power1_input");
         if (uw >= 0) o["power_w"] = uw / 1e6;
         if (const double mc = card_temp_mc(hp); mc >= 0) o["temp_c"] = mc / 1000.0;
+        if (const double mc = hwmon_labelled(hp, "temp", "mem"); mc >= 0) o["temp_mem_c"] = mc / 1000.0;
+        sclk_hz = hwmon_labelled(hp, "freq", "sclk");
+        mclk_hz = hwmon_labelled(hp, "freq", "mclk");
+        const double pwm = sysfs_number(hp + "/pwm1"), pwm_max = sysfs_number(hp + "/pwm1_max");
+        if (pwm >= 0 && pwm_max > 0) o["fan_pct"] = std::min(100.0, pwm / pwm_max * 100.0);
+        else if (const double rpm = sysfs_number(hp + "/fan1_input"); rpm >= 0) o["fan_rpm"] = rpm;
         break;
     }
+    const double sclk = sclk_hz >= 0 ? sclk_hz / 1e6 : dpm_current_mhz(dev + "/pp_dpm_sclk");
+    const double mclk = mclk_hz >= 0 ? mclk_hz / 1e6 : dpm_current_mhz(dev + "/pp_dpm_mclk");
+    if (sclk >= 0) o["sclk_mhz"] = sclk;
+    if (mclk >= 0) o["mclk_mhz"] = mclk;
 }
 
 /* A fleet's hardware queues are opened while their card has room, never on a full one.
@@ -194,12 +241,26 @@ void card_telemetry(int card, json& o) {
  * fills, which live for seconds. Each queue takes about 41 MiB of VRAM for as long as it is open
  * (24 of them 0.99 GiB of a card, measured), so no more are opened ahead once a card has
  * kMaxQueuesAhead: a file with that many streams at once opens the rest as its streams ask.
- * One model never parks, so its cards see no restores and it opens what it uses. */
+ * One model never parks, so its cards see no restores and it opens what it uses.
+ *
+ * A model that leaves a card quiet closes them back to what the fleet keeps at its tightest, on a
+ * park as on an unload, so the reserve is never the reason the next entry cannot land: an entry
+ * that claims a whole card (`gpu-memory-mib`) is short of exactly the reserve's bytes on its way
+ * back on, and the card is emptiest, and so the safest moment to open late, the moment it is left.
+ * The next bring-up opens what its own reservation leaves room for (Fleet::reopen_queues clips on
+ * it).
+ *
+ * `memory.queue-reserve` sets this reserve from the file (Fleet::queue_reserve_), for a fleet whose
+ * entries claim whole cards; the tightest value stays 1, since a card with nothing ready opens its
+ * next stream's queue on whatever the resident model has left of the card, which is the case this
+ * reserve exists to avoid. */
 constexpr int64_t kQueueBytes     = 41 * kMiB;
 constexpr int     kReserveQueues  = 8;
 constexpr int     kMaxQueuesAhead = 24;
-/* What a model that needs nearly all of its cards leaves kept (Fleet::close_idle_queues). */
+/* What a model that needs nearly all of its cards leaves kept (Fleet::close_idle_queues), and what
+ * a model leaves on the cards it goes away from; the fleet clamps it to its own reserve. */
 constexpr int     kKeepQueues     = 4;
+static_assert(kMaxQueuesAhead == 24, "config.cpp bounds memory.queue-reserve at 24, this ceiling");
 
 /* `more` queues opened on card `c` beside the `idle` it keeps; how many were. A stream takes a
  * kept queue before it opens one, so the kept ones are held while the new ones are opened. */
@@ -279,6 +340,8 @@ public:
     int run();
 
 private:
+    friend struct FleetHostFillTestAccess;
+    friend struct FleetMemoryTestAccess;
     struct Model;
 
     /* The broker one load hands its engine: the fleet's grant, for that model. */
@@ -429,7 +492,7 @@ private:
      * coming back costs it, within [5 s, 30 s]. */
     bool   in_quantum(const Model& m, const server::Front::Activity& a, uint64_t now) const;
     bool   take_from(Model& victim, const std::map<int, int64_t>& want, const std::string& why);
-    void   unload(Model& m, int64_t drain_ms, const std::string& why);
+    bool   unload(Model& m, int64_t drain_ms, const std::string& why);
     /* 1 when `want` left, 0 when less could leave (nothing more to page out), -1 when the model
      * should unload instead (a park would cost more than its reload) or the park failed. */
     int    park(Model& m, const std::map<int, int64_t>& want, const std::string& why);
@@ -455,8 +518,12 @@ private:
     void   wait_pages(const std::map<int, int64_t>& before, const std::map<int, int64_t>& expect);
     void   trim_spares(const std::vector<int>& cards);
     bool   card_quiet(int card, const Model* but);
+    /* Whether an op can put work on a card the model is not already on. */
+    static bool op_may_place(int op);
     int    close_idle_queues(const Model& m, const std::map<int, int64_t>& need);
     void   reopen_queues(const std::vector<int>& cards);
+    /* A model that leaves cards quiet closes their kept queues back to `keep`; the number closed. */
+    int    trim_quiet_queues(Model& m, const std::vector<int>& cards, int keep, const char* why);
 
     void   fail(Model& m, const std::string& why);
     bool   choose_cards(Model& m, const Config& cfg, std::vector<int>* out, std::string* why);
@@ -496,13 +563,36 @@ private:
     int64_t free_on(int card) const;
     bool   use_broker() const { return models_.size() > 1; }
 
+    /* The configuration, read and replaced by the scheduler thread (and the load workers it joins
+     * before a reload swaps it). Other threads read only `view_` and `op_`. */
     FleetConfig       fc_;
+    /* What the HTTP threads read of fc_. `op_` never changes (reload refuses a server: change), so
+     * the per-request operator rule reads it without a lock; `view_` changes on reload. */
+    struct OperatorView {
+        std::string              host, api_key;
+        std::vector<std::string> allow_hosts;
+    };
+    struct View {
+        std::vector<Group> groups;
+        std::string        disk_tier, path;
+        int64_t            load_timeout_ms = 0;
+    };
+    const OperatorView op_;
+    mutable std::mutex view_mu_;
+    View               view_;
+    View   view() const { std::lock_guard<std::mutex> lk(view_mu_); return view_; }
+    void   publish_view();
     /* The dashboard's hour of history (server/history.h), sampled by history_loop(). */
     server::History   history_;
     const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     server::Front     front_;
     std::vector<int>  cards_;
     int64_t           headroom_ = 96 * kMiB;
+    /* memory.queue-reserve: what each card holds ready, and the most an offload or a last-resort
+     * trim leaves behind (never more than the reserve, so a small reserve means small standing
+     * holdings rather than a reserve the trims overshoot). */
+    int               queue_reserve_ = kReserveQueues;
+    int               queue_keep_    = kKeepQueues;
     /* §8.6: the models still to warm, in order (under mu_; the scheduler thread changes it). */
     std::deque<std::string> warm_;
     std::string             warming_;     /* the one loading now, under mu_ */
@@ -526,8 +616,16 @@ private:
 };
 
 Fleet::Fleet(FleetConfig fc)
-    : fc_(std::move(fc)), front_(transport_options(fc_), fc_.keepalive_ms) {
+    : fc_(std::move(fc)),
+      op_{ fc_.models.front().cfg.host, fc_.models.front().cfg.api_key,
+           fc_.models.front().cfg.allow_hosts },
+      front_(transport_options(fc_), fc_.keepalive_ms) {
+    publish_view();
     dev_stuck_exit_ms.store(fc_.stuck_exit_ms, std::memory_order_relaxed);
+    dev_pinned_numa_node.store(fc_.pinned_numa_node, std::memory_order_relaxed);
+    if (fc_.pinned_numa_node >= 0)
+        RAD_INFO("memory: pinned host memory prefers NUMA node %d (memory.pinned-numa-node), "
+                 "not the node nearest each card", fc_.pinned_numa_node);
     bool any = false;
     int64_t head = 0;
     for (const ModelEntry& e : fc_.models) {
@@ -539,6 +637,10 @@ Fleet::Fleet(FleetConfig fc)
         }
     }
     if (any) headroom_ = head;
+    if (fc_.queue_reserve > 0) {
+        queue_reserve_ = (int)std::min<int64_t>(fc_.queue_reserve, kMaxQueuesAhead);
+        queue_keep_ = std::min(kKeepQueues, queue_reserve_);
+    }
     if (fc_.host_mib > 0) {
         host_budget_ = fc_.host_mib * kMiB;
     } else {
@@ -551,6 +653,12 @@ Fleet::Fleet(FleetConfig fc)
         const int64_t host = pages > 0 && page > 0 ? (int64_t)pages * page : 0;
         host_budget_ = std::min(host, cgroup_least_room()) / 4 * 3;
     }
+}
+
+void Fleet::publish_view() {
+    View v{ fc_.groups, fc_.disk_tier, fc_.path, fc_.load_timeout_ms };
+    std::lock_guard<std::mutex> lk(view_mu_);
+    view_ = std::move(v);
 }
 
 Fleet::Model* Fleet::find(const std::string& name) {
@@ -832,14 +940,14 @@ void Fleet::trim_spares(const std::vector<int>& cards) {
     if (!gave.empty()) wait_pages(before, gave);
 }
 
-/* Card `c` holds kReserveQueues kept queues again, as far as its free room goes; under room_mu_.
+/* Card `c` holds the fleet's queue reserve again, as far as its free room goes; under room_mu_.
  * Before a load, whose room is made and not yet taken, and at the start. */
 void Fleet::reopen_queues(const std::vector<int>& cards) {
     if (fc_.models.size() < 2) return;
     for (int c : cards) {
         int open = 0, idle = 0;
         dev_stream_counts(c, &open, &idle);
-        int more = std::min(kReserveQueues - idle, kMaxQueuesAhead - open);
+        int more = std::min(queue_reserve_ - idle, kMaxQueuesAhead - open);
         more = (int)std::min<int64_t>(more, room_on(c) / kQueueBytes);
         if (more <= 0) continue;
         const int n = open_queues(c, more, idle);
@@ -849,17 +957,36 @@ void Fleet::reopen_queues(const std::vector<int>& cards) {
     }
 }
 
-/* Whether nothing can launch on card `c` now but model `but` (null: nothing at all): no other
- * model has an engine with a rank there, parked or not, and none is on its way anywhere. Under
- * room_mu_, which a load or a return needs before it takes room. */
+/* Whether an op of a model's can put work on a card it is not already on. Only a load or a
+ * restore chooses cards, and while either is in flight the cards it chose are not yet known, so
+ * both answer for every card. A park, an unload, a yield, a fill or a promote works on the cards
+ * the model already holds. */
+bool Fleet::op_may_place(int op) {
+    return op == kLoad || op == kRestore;
+}
+
+/* Whether a queue of card `c` may be destroyed now, model `but` (null: no model) aside: which is
+ * what the two queue trims ask, and nothing else. Under room_mu_, which a load or a return needs
+ * before it takes room.
+ *
+ * Deliberately narrow: an op on another card (a park, unload, yield or fill elsewhere) must not
+ * hold this card's kept queues closed, or a full-card claim loses its queue reserve. A parked
+ * model does not answer either: it holds no streams, and no trim goes below kKeepQueues, which is
+ * more than its restore's streams take.
+ *
+ * What does answer for the card: a model in bring-up, which opens its streams there now; a load or
+ * a restore in flight, whose cards are not yet known; and a resident engine with a rank there. The
+ * device answers for the rest - a_stream_trim destroys nothing while any queue of the card holds a
+ * packet (core/device/aql.cpp). */
 bool Fleet::card_quiet(int c, const Model* but) {
     std::lock_guard<std::mutex> lk(mu_);
     for (const auto& o : models_) {
         if (o.get() == but) continue;
-        if (o->op.load() != kIdle || o->starting.load()) return false;
-        if (o->engine && (o->cards.empty() ||
-                          std::find(o->cards.begin(), o->cards.end(), c) != o->cards.end()))
-            return false;
+        if (o->starting.load()) return false;
+        const bool near = o->cards.empty() ||
+                          std::find(o->cards.begin(), o->cards.end(), c) != o->cards.end();
+        if (const int op = o->op.load(); op != kIdle && (op_may_place(op) || near)) return false;
+        if (o->engine && !o->parked && near) return false;
     }
     return true;
 }
@@ -877,7 +1004,7 @@ int Fleet::close_idle_queues(const Model& m, const std::map<int, int64_t>& need)
     std::vector<int> closed;
     for (auto& [c, bytes] : need) {
         if (room_on(c) >= bytes || !card_quiet(c, &m)) continue;
-        if (const int k = dev_stream_trim(c, kKeepQueues); k > 0) {
+        if (const int k = dev_stream_trim(c, queue_keep_); k > 0) {
             n += k;
             closed.push_back(c);
         }
@@ -886,6 +1013,28 @@ int Fleet::close_idle_queues(const Model& m, const std::map<int, int64_t>& need)
         RAD_INFO("model %s: %d kept queue(s) closed on card(s) %s for the room they held (%s)",
                  m.entry.name.c_str(), n, cards_str(closed).c_str(),
                  humanb((int64_t)n * kQueueBytes).c_str());
+    return n;
+}
+
+/* Card `c`'s kept queues, closed down to `keep` while nothing can launch on it; the number
+ * closed, over `cards`. `m` is the model that just left (it answers for nothing on them). */
+int Fleet::trim_quiet_queues(Model& m, const std::vector<int>& cards, int keep, const char* why) {
+    std::lock_guard<std::recursive_mutex> room(room_mu_);
+    int n = 0;
+    std::vector<int> closed;
+    for (int c : cards)
+        if (card_quiet(c, &m)) {
+            const int k = dev_stream_trim(c, keep);
+            if (k > 0) {
+                n += k;
+                closed.push_back(c);
+            }
+        }
+    if (n > 0)
+        RAD_INFO("model %s: %s, %d kept queue(s) closed on card(s) %s (%s of the cards left free, "
+                 "%d kept for the next streams)",
+                 m.entry.name.c_str(), why, n, cards_str(closed).c_str(),
+                 humanb((int64_t)n * kQueueBytes).c_str(), keep);
     return n;
 }
 
@@ -924,6 +1073,11 @@ void Fleet::reclaim_flex(const Model& m, const std::map<int, int64_t>& need) {
             if (sh <= 0) break;
             const bool preempt = !experts && o->entry.priority < m.entry.priority;
             const int64_t got = o->engine->flex_release(sh, preempt, 10000, /*kv=*/!experts);
+            if (got < 0) {
+                RAD_WARN("model %s: flex recall failed; no released memory is credited: %s",
+                         o->entry.name.c_str(), rad_strerror((int)got));
+                continue;
+            }
             if (got > 0)
                 RAD_INFO("model %s: gave back %s of its %s flex for %s", o->entry.name.c_str(),
                          humanb(got).c_str(), experts ? "experts'" : "cache's", m.entry.name.c_str());
@@ -987,8 +1141,9 @@ int Fleet::make_room(Model& m, const std::map<int, int64_t>& need, std::string* 
              * needs nearly all of its cards, MiniMax-H3's 29.2 GiB of 31.9, was refused beside
              * ten parked models that held under a GiB each. With nothing staying, every model on
              * these cards parks and the last resort below unloads them before the demand fails.
-             * A warm load takes no such step. */
-            if (warm || !staying.empty()) return RAD_E_NOMEM;
+             * For a warm load nothing stays only when every model here is itself warm (the rest
+             * are kept above), so it takes the same step over them. */
+            if (!staying.empty()) return RAD_E_NOMEM;
             for (const Resident& r : res)
                 for (size_t id : unit_ids(r)) {
                     Model& victim = *models_[id];
@@ -1031,7 +1186,13 @@ int Fleet::make_room(Model& m, const std::map<int, int64_t>& need, std::string* 
             continue;
         if (touches(o.cards, need)) parked.push_back(&o);
     }
-    if (warm) parked.clear();
+    /* A warm load unloads only parked models the warm-up brought in and no request has named:
+     * one loaded later in the file, parked in part to make room for this one, would otherwise
+     * leave the first model of the file cold. */
+    if (warm)
+        parked.erase(std::remove_if(parked.begin(), parked.end(),
+                                    [](Model* o) { return !o->warm.load(); }),
+                     parked.end());
     std::sort(parked.begin(), parked.end(), [](Model* a, Model* b) { return a->parked_ns < b->parked_ns; });
     /* Only if what they still hold closes the gap: unloading them for less loses their copies
      * and frees nothing that matters (another model's room is what is missing). When the cards
@@ -1159,8 +1320,7 @@ bool Fleet::take_from(Model& victim, const std::map<int, int64_t>& want, const s
     /* Short: what is left of it on the card is not pageable; make_room unloads a parked model
      * only as the last resort, so it keeps its copy. */
     if (r == 0) return false;
-    unload(victim, fc_.drain_timeout_ms, why);
-    return true;
+    return unload(victim, fc_.drain_timeout_ms, why);
 }
 
 int Fleet::park(Model& m, const std::map<int, int64_t>& want, const std::string& why) {
@@ -1253,14 +1413,24 @@ int Fleet::park(Model& m, const std::map<int, int64_t>& want, const std::string&
              humanb(got.disk).c_str(),
              got.quiet_s, got.slab_s, got.out_s, settle_s, humanb(host_held()).c_str(),
              humanb(host_budget_).c_str());
+    /* Its queues go with it: a parked model holds none, and the card is empty of work, which is
+     * the one moment a queue may be destroyed without risk. Four are left for its restore's own
+     * streams (two a rank, a third where it runs a second lane). */
+    (void)trim_quiet_queues(m, m.cards, queue_keep_, "parked");
     if (got.host > 0) start_spill(m);
     return short_of ? 0 : 1;
 }
 
-void Fleet::unload(Model& m, int64_t drain_ms, const std::string& why) {
+bool Fleet::unload(Model& m, int64_t drain_ms, const std::string& why) {
     std::lock_guard<std::recursive_mutex> room(room_mu_);
     join_spill(m);
-    if (!m.engine) return;
+    if (!m.engine) return true;
+    if (m.engine->memory_fence_status() < 0 && !m.engine->stopping() &&
+        m.engine->retry_memory_fence() < 0) {
+        RAD_ERR("model %s: unload refused: a failed device fence still protects its memory",
+                m.entry.name.c_str());
+        return false;
+    }
     const auto t0 = std::chrono::steady_clock::now();
     RAD_INFO("model %s: unloading: %s", m.entry.name.c_str(), why.c_str());
     std::map<int, int64_t> before;
@@ -1277,6 +1447,13 @@ void Fleet::unload(Model& m, int64_t drain_ms, const std::string& why) {
     }
     m.engine->request_stop(drain_ms);
     if (m.serve.joinable()) m.serve.join();
+    if (m.engine->prepare_unload() < 0) {
+        /* All producers are joined, but the device can still read the allocations. Keeping
+         * this process serving other engines would conceal a terminal device failure. */
+        front_.fail(m.entry.name, "device streams did not drain during unload", 15000);
+        fatal("model %s: refusing unsafe unload after producer shutdown; exiting for restart",
+              m.entry.name.c_str());
+    }
     std::shared_ptr<Engine> gone;
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -1295,11 +1472,13 @@ void Fleet::unload(Model& m, int64_t drain_ms, const std::string& why) {
         m.cards.clear();
         ++m.unloads;
     }
-    /* A card it leaves empty keeps the reserve of queues and no more: the queues its streams
-     * held, and those of the models before it, are closed while nothing can launch there. */
-    for (int c : was_on)
-        if (card_quiet(c, &m)) (void)dev_stream_trim(c, kReserveQueues);
+    /* A card it leaves empty keeps what its restore-class streams need and no more: the queues its
+     * streams held, and those of the models before it, are closed while nothing can launch there;
+     * a fixed reserve of eight queues (328 MiB) would exceed what an entry claiming a whole card
+     * can pay when it comes back. */
+    (void)trim_quiet_queues(m, was_on, queue_keep_, "unloaded");
     RAD_INFO("model %s: unloaded in %.2f s", m.entry.name.c_str(), secs_since(t0));
+    return true;
 }
 
 void Fleet::join_spill(Model& m) {
@@ -1631,8 +1810,8 @@ int Fleet::grant(Model& m, const VramAsk& ask, int64_t* grant, std::string* why)
                            ask.max_tokens, ask.experts, ask.expert_floor, m.entry.flex.kv_min_tokens,
                            m.entry.flex.experts_min_mib);
     }
-    /* It no longer waits on anyone's bring-up: it holds the lock. Its own guess stops counting
-     * while it plans the exact claim. */
+    /* The model now holds the lock itself, so it stops counting as a bring-up in progress and
+     * its provisional reservation is dropped while it plans the exact claim. */
     m.starting.store(false);
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -1828,7 +2007,10 @@ void Fleet::restore_op(Model& m) {
     if (rrc < 0) {
         RAD_INFO("model %s: no room to come back on card(s) %s (%s); it loads fresh",
                  m.entry.name.c_str(), cards_str(m.cards).c_str(), why.c_str());
-        unload(m, 0, "it could not come back on its cards");
+        if (!unload(m, 0, "it could not come back on its cards")) {
+            front_.fail(m.entry.name, "device fence prevents restore reload", 15000);
+            return;
+        }
         room.unlock();
         load_op(m);
         return;
@@ -1850,7 +2032,10 @@ void Fleet::restore_op(Model& m) {
     host_reserve_.fetch_sub(Engine::kRefillHost);
     if (urc < 0) {
         RAD_ERR("model %s: could not come back: %s", m.entry.name.c_str(), w.c_str());
-        unload(m, 0, "it could not come back");
+        if (!unload(m, 0, "it could not come back")) {
+            front_.fail(m.entry.name, "device fence prevents restore reload", 15000);
+            return;
+        }
         room.unlock();
         load_op(m);
         return;
@@ -1889,6 +2074,7 @@ void Fleet::load_op(Model& m) {
     const auto t0 = std::chrono::steady_clock::now();
     front_.loading(name);
     Config cfg = m.entry.cfg;
+    cfg.card_headroom_mib = fc_.card_headroom_mib;
     if (cfg.proceed_incompatible) Engine::print_unsupported_banner();
     if (!resolve_hf_model(cfg)) {
         fail(m, "its repository could not be fetched (see the log)");
@@ -2185,7 +2371,15 @@ void Fleet::fill_tick() {
             best_used = used;
         }
     }
-    if (best) (void)start_op(*best, kFill);
+    if (best) {
+        /* Optional warming commits host mappings and submits copies. Do not start another batch
+         * while a response holds any engine: "quiet" above excludes pending lifecycle work,
+         * not active serving. A request arriving after this check may overlap the current batch;
+         * the next batch waits for it. Demand-driven restore is unaffected. */
+        for (const auto& model : models_)
+            if (front_.activity(model->entry.name).leases > 0) return;
+        (void)start_op(*best, kFill);
+    }
 }
 
 /* A live restore's rest that found no device memory (an allocation of another model's took it
@@ -2292,6 +2486,7 @@ void Fleet::reap() {
         Model& m = *mp;
         if (m.op.load() != kIdle || !m.engine || !m.ended || !m.ended->load()) continue;
         if (m.serve.joinable()) m.serve.join();
+        join_spill(m);   /* the background copy thread holds the engine */
         {
             std::lock_guard<std::mutex> lk(mu_);
             m.engine.reset();
@@ -2322,8 +2517,12 @@ std::string Fleet::reload() {
     const Config& a = fc_.models.front().cfg;
     const Config& b = nf.models.front().cfg;
     if (a.host != b.host || a.port != b.port || a.api_key != b.api_key ||
-        a.http_threads != b.http_threads || a.cors != b.cors || nf.cards != fc_.cards)
+        a.http_threads != b.http_threads || a.cors != b.cors || a.allow_hosts != b.allow_hosts ||
+        nf.cards != fc_.cards)
         return "server: and cards: changes need a restart";
+    /* A loaded single-model engine has already split its pools against these reserves. */
+    if (nf.card_headroom_mib != fc_.card_headroom_mib)
+        return "memory.card-headroom-mib changes need a restart";
     for (const ModelEntry& e : nf.models)
         for (int c : e.cards)
             if (std::find(cards_.begin(), cards_.end(), c) == cards_.end())
@@ -2344,7 +2543,8 @@ std::string Fleet::reload() {
     for (size_t i = 0; i < models_.size();) {
         Model& m = *models_[i];
         if (std::find(keep.begin(), keep.end(), m.entry.name) != keep.end()) { ++i; continue; }
-        unload(m, fc_.drain_timeout_ms, "removed from the file");
+        if (!unload(m, fc_.drain_timeout_ms, "removed from the file"))
+            return "model " + m.entry.name + ": device fence prevents removal";
         front_.remove(m.entry.name);
         history_.forget(m.entry.name);
         RAD_INFO("model %s: removed", m.entry.name.c_str());
@@ -2366,7 +2566,8 @@ std::string Fleet::reload() {
             continue;
         }
         if (m->entry.args != e.args || m->entry.cards != e.cards) {
-            unload(*m, fc_.drain_timeout_ms, "its configuration changed");
+            if (!unload(*m, fc_.drain_timeout_ms, "its configuration changed"))
+                return "model " + m->entry.name + ": device fence prevents reconfiguration";
             RAD_INFO("model %s: reconfigured", e.name.c_str());
             std::lock_guard<std::mutex> lk(mu_);
             m->claim = 0;
@@ -2378,7 +2579,9 @@ std::string Fleet::reload() {
         front_.update(e.name, e.aliases, nf.load_timeout_ms, required);
     }
     fc_ = std::move(nf);
+    publish_view();
     dev_stuck_exit_ms.store(fc_.stuck_exit_ms, std::memory_order_relaxed);
+    dev_pinned_numa_node.store(fc_.pinned_numa_node, std::memory_order_relaxed);
     for (const ModelEntry& e : fc_.models)
         if (e.pin) demand(e.name);
     RAD_INFO("reload: %s applied, %zu model(s)", fc_.path.c_str(), fc_.models.size());
@@ -2498,7 +2701,7 @@ std::string Fleet::metrics() {
     o += "# HELP radiance_fleet_wait_seconds How long requests waited for their model to open (a "
          "load or a restore; 0 when it was open).\n# TYPE radiance_fleet_wait_seconds histogram\n";
     for (const auto& [name, a] : act) {
-        const std::string lbl = "model=\"" + name + "\"";
+        const std::string lbl = "model=\"" + server::esc_label(name) + "\"";
         for (size_t k = 0; k < server::Front::kWaitLe.size(); ++k)
             o += "radiance_fleet_wait_seconds_bucket{" + lbl + ",le=\"" +
                  fmt("%g", server::Front::kWaitLe[k]) + "\"} " + std::to_string(a.wait_le[k]) + "\n";
@@ -2510,7 +2713,9 @@ std::string Fleet::metrics() {
     auto family = [&](const char* name, const char* type, const char* help,
                       const std::function<std::string(const Model&)>& v) {
         o += std::string("# HELP ") + name + " " + help + "\n# TYPE " + name + " " + type + "\n";
-        for (auto& m : models_) o += std::string(name) + "{model=\"" + m->entry.name + "\"} " + v(*m) + "\n";
+        for (auto& m : models_)
+            o += std::string(name) + "{model=\"" + server::esc_label(m->entry.name) + "\"} " +
+                 v(*m) + "\n";
     };
     family("radiance_fleet_model_resident", "gauge", "Whether the model is serving (1) or not (0).",
            [](const Model& m) { return std::string(m.resident ? "1" : "0"); });
@@ -2623,15 +2828,19 @@ json Fleet::status() {
         /* Runtime LoRA: an adapter is a model as far as choosing one goes, and /v1/models lists
          * each as a child under `base:adapter` (server.cpp). The fleet view must say the same,
          * or a view built on it is blind to what this machine answers to. A child owns nothing:
-         * no cards, no bytes, no policy of its own; its state and counters are the parent's,
-         * because the parent is what serves it. */
+         * no cards, no bytes, no policy of its own. Its state is the parent's, because the parent
+         * is what serves it; its in-flight count is its own -- the leases taken under its name
+         * (Front::adapter_leases) -- so a view can tell which adapter is running. A request for
+         * the base names no adapter and lights up no child, and one adapter's traffic never
+         * lights up another's. Its waiting is the parent's queue: while the parent is not open
+         * nothing reaches any child. */
         for (const std::string& a : adapters_of(n)) {
             json ad;
             ad["id"]        = n + ":" + a;
             ad["parent"]    = n;
             ad["adapter"]   = true;
             ad["state"]     = j["state"];
-            ad["in_flight"] = j["in_flight"];
+            ad["in_flight"] = front_.adapter_leases(n, a);
             ad["waiting"]   = j["waiting"];
             models.push_back(std::move(ad));
         }
@@ -2653,8 +2862,9 @@ json Fleet::status() {
         card_telemetry(c, o);
         cards.push_back(std::move(o));
     }
+    const View v = view();
     json groups = json::array();
-    for (const Group& g : fc_.groups)
+    for (const Group& g : v.groups)
         groups.push_back({ { "name", g.name },
                            { "kind", g.kind == Group::Kind::Together ? "together" : "exclusive" },
                            { "members", g.members } });
@@ -2664,7 +2874,7 @@ json Fleet::status() {
      * load's pools twice until it ends. `copies_bytes` is the parked and kept copies alone. */
     json host = { { "budget_bytes", host_budget_ }, { "copies_bytes", dev_page_host_bytes() },
                   { "held_bytes", host_held() - host_reserve_.load() } };
-    if (!fc_.disk_tier.empty()) host["disk_tier"] = fc_.disk_tier;
+    if (!v.disk_tier.empty()) host["disk_tier"] = v.disk_tier;
     json warm = json::object();
     {
         std::lock_guard<std::mutex> lk(mu_);
@@ -2680,8 +2890,7 @@ json Fleet::status() {
 }
 
 bool Fleet::operator_ok(const server::HttpRequest& q) const {
-    const Config& c = fc_.models.front().cfg;
-    return !c.api_key.empty() || server::local_operator(q, c.host, c.allow_hosts);
+    return !op_.api_key.empty() || server::local_operator(q, op_.host, op_.allow_hosts);
 }
 
 void Fleet::add_routes() {
@@ -2737,11 +2946,13 @@ void Fleet::add_routes() {
         for (const std::string& n : front_.names()) known |= n == name;
         if (!known) return bad(q, 404, "no model '" + name + "' is configured");
         if (action == "load") {
+            front_.retry(name);
             demand(name);
             /* Waits for the load unless ?wait=0. */
             if (q.query.count("wait") && q.query.at("wait") == "0")
                 return server::HttpResponse::json_body(202, json({ { "id", name }, { "state", "loading" } }).dump());
-            const auto until = std::chrono::steady_clock::now() + std::chrono::milliseconds(fc_.load_timeout_ms);
+            const auto until = std::chrono::steady_clock::now() +
+                               std::chrono::milliseconds(view().load_timeout_ms);
             for (;;) {
                 const server::Front::Activity a = front_.activity(name);
                 if (a.state == server::Front::State::Open) break;
@@ -2766,7 +2977,10 @@ void Fleet::add_routes() {
                 int expect = kIdle;
                 if (!m->op.compare_exchange_strong(expect, unl ? kUnload : kEvict)) return std::string("busy");
                 std::string res;
-                if (unl) unload(*m, fc_.drain_timeout_ms, "asked by the admin route");
+                if (unl) {
+                    if (!unload(*m, fc_.drain_timeout_ms, "asked by the admin route"))
+                        res = "device fence prevents unload; memory remains owned";
+                }
                 else if (!m->parked && park(*m, {}, "asked by the admin route") < 0) res = "could not park (see the log)";
                 m->op.store(kIdle);
                 return res;
@@ -2793,7 +3007,7 @@ void Fleet::add_routes() {
         if (auto g = guard(q)) return *g;
         const auto r = run_cmd([this] { return reload(); }, 3600000);
         if (!r.second.empty()) return bad(q, 400, "reload refused: " + r.second);
-        return ok({ { "reloaded", fc_.path } });
+        return ok({ { "reloaded", view().path } });
     });
 }
 
@@ -2867,8 +3081,14 @@ void Fleet::stop_all() {
 }
 
 int Fleet::run() {
+    /* The fleet serves one architecture: the first card its file lists chooses it (the fleet's
+     * cards:, else the first model that lists cards), so models can be kept to the RDNA4 cards
+     * of a machine whose card 0 is another family's. */
+    int prefer = fc_.cards.empty() ? -1 : fc_.cards.front();
+    for (const ModelEntry& e : fc_.models)
+        if (prefer < 0 && !e.cards.empty()) prefer = e.cards.front();
     std::vector<int> usable;
-    if (Engine::usable_cards(&usable) < 0) {
+    if (Engine::usable_cards(&usable, prefer) < 0) {
         RAD_ERR("no usable card");
         return 1;
     }
@@ -2877,7 +3097,8 @@ int Fleet::run() {
         cards_.clear();
         for (int c : fc_.cards) {
             if (std::find(usable.begin(), usable.end(), c) == usable.end()) {
-                RAD_ERR("%s: cards lists %d, which is not a usable card here", fc_.path.c_str(), c);
+                RAD_ERR("%s: cards lists %d, which is not a usable card here (a discrete card of "
+                        "the first listed card's architecture)", fc_.path.c_str(), c);
                 return 2;
             }
             cards_.push_back(c);
@@ -2894,8 +3115,8 @@ int Fleet::run() {
     for (const ModelEntry& e : fc_.models) {
         for (int c : e.cards)
             if (std::find(cards_.begin(), cards_.end(), c) == cards_.end()) {
-                RAD_ERR("models.%s: cards lists %d, which is not a usable card here",
-                        e.name.c_str(), c);
+                RAD_ERR("models.%s: cards lists %d, which is not a usable card here (a discrete "
+                        "card of the first listed card's architecture)", e.name.c_str(), c);
                 return 2;
             }
         const size_t have = e.cards.empty() ? cards_.size() : e.cards.size();
@@ -2949,7 +3170,10 @@ int Fleet::run() {
     front_.set_describe([this](const std::string& n) { return describe(n); });
     front_.set_metrics([this] { return metrics(); });
     add_routes();
-    RAD_INFO("fleet: %zu model(s) on card(s) %s; %s", fc_.models.size(), cards_str(cards_).c_str(),
+    RAD_INFO("fleet: %zu model(s) on card(s) %s; each card keeps %d hardware queue(s) ready (%s of "
+             "a card), an offload leaves %d; %s",
+             fc_.models.size(), cards_str(cards_).c_str(), queue_reserve_,
+             humanb((int64_t)queue_reserve_ * kQueueBytes).c_str(), queue_keep_,
              preload.empty() ? "each loads when a request first names it"
                              : (std::to_string(preload.size()) + " load now, the rest on demand").c_str());
 

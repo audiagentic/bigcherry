@@ -174,8 +174,8 @@ PATCHES = (
             ),
             _edit(
                 "ltx-c01-include",
-                "#include <arch/rad_fp8.h>\n",
-                "#include <arch/rad_fp8.h>\n"
+                "#include <arch/rad_linear.h>\n",
+                "#include <arch/rad_linear.h>\n"
                 "#include \"bc_ltx_tp3_c01.h\" /* BC_LTX3_C01_INCLUDE */\n",
                 "BC_LTX3_C01_INCLUDE",
             ),

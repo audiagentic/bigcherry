@@ -146,8 +146,10 @@ struct RadBuilder {
     std::string      generator_name;
 
     /* Adapter key names (rad_lora_root, rad_lora_alias): (native, spellings), and each alias as
-     * (native, from, to, from_lo, from_hi, to_lo). */
+     * (native, from, to, from_lo, from_hi, to_lo). Runtime targets (rad_lora_source_targeted):
+     * module leaf names, empty when no adapter is configured. */
     std::vector<std::pair<std::string, std::string>> lora_roots;
+    std::set<std::string> lora_targets;
     struct LoraAliasRec { std::string native, from, to; int64_t from_lo, from_hi, to_lo; };
     std::vector<LoraAliasRec> lora_aliases;
 
@@ -174,6 +176,9 @@ struct RadCtx {
     const RadBatch* batch = nullptr;
     int             rank  = 0;
     int             world = 1;
+    int             slot_base = 0;   /* the engine's RadBuildCtx::slot_base: slot_base + rank is its
+                                        Model slot, so a second engine in this process serves its
+                                        own (rad_slot below) */
     std::vector<RecIssue> issues;
     std::vector<int>      routed_layers;
     std::string           step_fail;
@@ -365,6 +370,40 @@ extern "C" int rad_lora_alias(RadBuilder* b, const char* native, const char* fro
     if (!b || !native || !from || !to) return RAD_E_INVAL;
     b->lora_aliases.push_back({ native, from, to, from_lo, from_hi, to_lo });
     return RAD_OK;
+}
+
+/* Mirrors lora::source_targeted. A token model matches the leaf and excludes towers, mtp, draft,
+ * embed_tokens and lm_head; "*" matches nothing there. A generator (a declared root) matches "*"
+ * or the leaf, and only under a root. */
+extern "C" int rad_lora_source_targeted(RadBuilder* b, const char* src) {
+    if (!b || !src || !*src || b->lora_targets.empty()) return 0;
+    const std::string s(src);
+    if (s.size() < 8 || s.compare(s.size() - 7, 7, ".weight") != 0) return 0;
+    const std::string mod = s.substr(0, s.size() - 7);
+    if (mod.empty()) return 0;
+    const size_t dot = mod.rfind('.');
+    const std::string leaf = dot == std::string::npos ? mod : mod.substr(dot + 1);
+    auto excluded = [&]() {
+        if (leaf == "embed_tokens" || leaf == "lm_head") return true;
+        static const char* tower[] = { "visual", "vision_tower", "vision_model", "audio_tower",
+                                        "audio_model", "embed_vision", "embed_audio",
+                                        "multi_modal_projector", "mm_projector" };
+        for (size_t at = 0; at < s.size();) {
+            size_t d = s.find('.', at);
+            if (d == std::string::npos) d = s.size();
+            const std::string c = s.substr(at, d - at);
+            if (at == 0 && (c == "mtp" || c == "draft")) return true;
+            for (const char* t : tower) if (c == t) return true;
+            if (d == s.size()) break;
+            at = d + 1;
+        }
+        return false;
+    };
+    if (b->lora_roots.empty()) return !excluded() && b->lora_targets.count(leaf) ? 1 : 0;
+    if (!b->lora_targets.count("*") && !b->lora_targets.count(leaf)) return 0;
+    for (const auto& r : b->lora_roots)
+        if (!r.first.empty() && s.compare(0, r.first.size(), r.first) == 0) return 1;
+    return 0;
 }
 
 /* Recorded: gemma4's prefill overlap names the buffers its second lane reduces in place. */
@@ -561,8 +600,9 @@ extern "C" int rad_step_fail(RadCtx* c, const char* what) {
 }
 extern "C" const RadBatch* rad_batch(RadCtx* c)      { return c->batch; }
 extern "C" int             rad_rank(RadCtx* c)       { return c->rank; }
-/* One engine: the slot is the rank (RadBuildCtx::slot_base zero). */
-extern "C" int             rad_slot(RadCtx* c)       { return c->rank; }
+/* slot_base + rank, the engine's own rad_slot: a second engine in this process addresses its
+ * Model slot. Every other test leaves slot_base zero, so its slot is its rank. */
+extern "C" int             rad_slot(RadCtx* c)       { return c->slot_base + c->rank; }
 extern "C" int             rad_world_size(RadCtx* c) { return c->world; }
 extern "C" int             rad_ctx_wgp_count(RadCtx*) { return 32; }
 /* The context itself, so a copy issued on the step's stream is recorded in it (rad_memcpy_async). */

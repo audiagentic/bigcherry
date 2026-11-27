@@ -64,9 +64,9 @@ def manifest_library_sources() -> list[Path]:
 
 PACKAGES = REPO / "engines" / "radiance" / "patches"
 FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "4a61d72"
-#: the files rad0002/rad0004 edit, exactly as the current pin (Radiance 2.2.0, b6b8751) has them: the remote-MoE
+#: the files rad0002/rad0004 edit, exactly as the current pin (Radiance 2.3.0, 3b13fd3) has them: the remote-MoE
 #: extension binds the engine's instance slots, which the 1.14.0 fixture predates.
-FIXTURE_PIN = REPO / "engines" / "radiance" / "tests" / "fixtures" / "b6b8751"
+FIXTURE_PIN = REPO / "engines" / "radiance" / "tests" / "fixtures" / "3b13fd3"
 PIN_PACKAGES = ("rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics", "rad0070_managed_native_entry")
 
 # rad0001 is superseded by radiance 1.7.0 (Engine::~Engine drains the mover stream itself) and is not applied.
@@ -78,12 +78,12 @@ RAD0011 = "rad0011_plan_memory"
 #: package -> (file, a line that must be unique in it as applied, its replacement that breaks the anchor)
 CASES = {
     RAD0002: (
-        "arch/common/rad_block_moe_fp8.h",
+        "arch/common/rad_block_moe_q.h",
         "rad_op op_ar = 0, op_add = 0;",
         "rad_op op_ar = 0, op_add = 0, int changed_shape;",
     ),
     RAD0004: (
-        "arch/common/rad_block_moe_fp8.h",
+        "arch/common/rad_block_moe_q.h",
         "if (shared && !sh_dn_first) sh_down.step(c_, w.sff, w.sout, T, r0, rows);",
         "if (shared && !sh_dn_first) sh_down.step(c_, w.sff, w.sout, T, r0, rows + 0);",
     ),
@@ -99,38 +99,38 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 
 
 # Git blob prefixes of the exact package outputs against Radiance 1.14.0 (the release commit 4a61d72); rad0002/rad0004
-# against 2.2.0 (b6b8751, FIXTURE_PIN);
+# against 2.3.0 (3b13fd3, FIXTURE_PIN);
 # mismatches detect a port that merely matches guards while silently changes output.
 # (before, after): `before` is the file as the package finds it (None: the package creates it; for a package with
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "74d5cd6"),
-        "arch/common/bc_moe_remote_block.h": (None, "0a78605"),
-        "arch/common/rad_arch.h": ("f847a16", "12a4cf7"),
-        "arch/common/rad_block_hc.h": ("2ab3568", "da4f843"),
-        "arch/common/rad_block_moe_fp8.h": ("aff7d2c", "ddd6734"),
-        "core/engine.cpp": ("e649224", "9176ef0"),
-        "core/engine.h": ("ca6c09f", "430b4bd"),
-        "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
+        "arch/common/bc_moe_remote_block.h": (None, "4432a0b"),
+        "arch/common/rad_arch.h": ("2f976c8", "72c4e9d"),
+        "arch/common/rad_block_hc.h": ("4819e74", "523cfe5"),
+        "arch/common/rad_block_moe_q.h": ("c68a664", "cb1c572"),
+        "core/engine.cpp": ("e0abf79", "a27107c"),
+        "core/engine.h": ("635db2a", "45c77c7"),
+        "core/engine_bringup.cpp": ("e1637fd", "8e3c44d"),
         "core/place/bc_moe_remote.cpp": (None, "5e9e660"),
         "core/place/bc_moe_remote_engine.h": (None, "20e811a"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
-        "core/place/planner.cpp": ("dc03b5a", "3edb433"),
-        "core/runtime/ctx.cpp": ("f0dbf74", "9677854"),
-        "core/runtime/ctx.h": ("55bc2a3", "82b91f5"),
+        "core/place/planner.cpp": ("85ba75c", "fb9a403"),
+        "core/runtime/ctx.cpp": ("8448060", "ee70606"),
+        "core/runtime/ctx.h": ("e7cd0df", "464f0c5"),
         # Only the upstream include block is needed for this test-only edit.
-        "tests/arch_fakes.h": ("dbeb37f", "4933f3a"),
+        "tests/arch_fakes.h": ("0058824", "d320fed"),
     },
     RAD0004: {
-        "arch/common/bc_moe_remote_diag.h": (None, "a041c77"),
-        "arch/common/rad_block_moe_fp8.h": ("ddd6734", "8c182dd"),
+        "arch/common/bc_moe_remote_diag.h": (None, "e96b5d5"),
+        "arch/common/rad_block_moe_q.h": ("cb1c572", "c35941e"),
     },
     RAD0070: {
-        "core/CMakeLists.txt": ("fd6e8c6", "2e34cde"),
+        "core/CMakeLists.txt": ("28155e5", "d241867"),
         "core/main.cpp": ("12feef0", "fc18ddd"),
-        "tests/CMakeLists.txt": ("de0479a", "60b0c69"),
-        "core/fleet/fleet.cpp": ("1a22b32", "1caf3ff"),
+        "tests/CMakeLists.txt": ("d60af91", "473da55"),
+        "core/fleet/fleet.cpp": ("da9fcfc", "ababf03"),
     },
 }
 
@@ -138,7 +138,7 @@ PIN_BLOBS = {
 RAD0002_CORE_FILES = (
     "arch/common/rad_arch.h",
     "arch/common/rad_block_hc.h",
-    "arch/common/rad_block_moe_fp8.h",
+    "arch/common/rad_block_moe_q.h",
     "core/engine.cpp",
     "core/engine.h",
     "core/engine_bringup.cpp",
@@ -289,7 +289,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 if not p.create and not p.path.startswith("tests/")
             }
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 40)
+            self.assertEqual(sum(core_edits.values()), 39)
             self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
@@ -325,7 +325,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
         temp, root = self._tree(FIXTURE_PIN)
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
-            moe = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+            moe = (root / "arch/common/rad_block_moe_q.h").read_text(encoding="utf-8")
             # Remote hand-off must not globally change the normal router/top-k arithmetic.
             self.assertIn("const bool rfused = op_router_fused && rows <= router_fused_rows;", moe)
             self.assertIn("} else if (op_topk_scatter && rows <= topk_scatter_rows) {", moe)
@@ -576,9 +576,9 @@ int main() {
     def test_rad0004_diagnostics_are_compiled_out_without_the_macro(self):
         temp, root = self._prepared(RAD0004)
         try:
-            pre = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+            pre = (root / "arch/common/rad_block_moe_q.h").read_text(encoding="utf-8")
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0004)), root)))
-            post = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
+            post = (root / "arch/common/rad_block_moe_q.h").read_text(encoding="utf-8")
             added = self._added_lines(pre, post)
             # every line it adds to the upstream header sits inside an #ifdef BC_MOE_REMOTE_DIAG ... #endif
             depth = 0
@@ -594,7 +594,7 @@ int main() {
             self.assertEqual(sum(1 for line in added if line.strip() == "#ifdef BC_MOE_REMOTE_DIAG"), 4)
             self.assertEqual(
                 {p.path for p in _load(RAD0004)},
-                {"arch/common/bc_moe_remote_diag.h", "arch/common/rad_block_moe_fp8.h"},
+                {"arch/common/bc_moe_remote_diag.h", "arch/common/rad_block_moe_q.h"},
             )
             diag = (root / "arch/common/bc_moe_remote_diag.h").read_text(encoding="utf-8")
             self.assertIn("#error", diag)

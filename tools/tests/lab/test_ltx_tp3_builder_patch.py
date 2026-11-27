@@ -34,7 +34,7 @@ def package():
 
 def fake_upstream() -> str:
     # Exact anchor contract; only the tested functions are present.
-    return """#include <arch/rad_fp8.h>
+    return """#include <arch/rad_linear.h>
 struct Lin {
     int64_t    N = 0, K = 0;
     int declare(int group, const Act& in, rad_buf y, int64_t max_rows, bool small = false) {

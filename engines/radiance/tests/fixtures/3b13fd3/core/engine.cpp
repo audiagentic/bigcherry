@@ -3,6 +3,7 @@
  * their own files (engine_priv.h).
  */
 #include "engine_priv.h"
+#include "place/expert_memory.h"
 #include "gen/driver.h"
 #include "gen/audio_driver.h"
 #include "gen/video_driver.h"
@@ -271,14 +272,75 @@ Engine::Engine(Config cfg)
  * the compute stream waits for it, so memory leaving the card must wait for it here: a gather over
  * a range just unbacked is a GPU memory fault. The compute stream goes first because the copy is
  * ordered after it. */
-void Engine::drain_streams() {
-    const int dev = dev_current();
-    for (auto& rk : ranks_) {
-        (void)rad_stream_sync(rk->ctx.stream());
-        if (RadStream t = rk->mover.transfer_stream()) (void)rad_stream_sync(t);
-        rk->tierx.quiesce();
+int Engine::drain_streams() {
+    const int device = dev_current();
+    int status = RAD_OK;
+    for (auto& rank : ranks_) {
+        auto check = [&](int rc, const char* stream) {
+            if (rc >= 0) return;
+            RAD_ERR("memory handoff: rank %d %s did not drain: %s (%s)", rank->index,
+                    stream, rad_strerror(rc), rad_dev_last_error());
+            if (status >= 0) status = rc;
+        };
+        if (RadStream stream = rank->ctx.stream()) check(rank->ctx.quiesce(), "compute streams");
+        if (RadStream stream = rank->mover.transfer_stream()) check(rad_stream_sync(stream), "expert transfer stream");
+        check(rank->tierx.quiesce(), "KV transfer stream");
     }
-    (void)rad_dev_set(dev);
+    if (map_fence_pending_.load(std::memory_order_acquire)) {
+        const int rc = dev_settle_maps();
+        if (rc >= 0) map_fence_pending_.store(false, std::memory_order_release);
+        else if (status >= 0) status = rc;
+    }
+    if (device >= 0 && rad_dev_set(device) < 0 && status >= 0) status = RAD_E_DEVICE;
+    memory_fence_status_.store(status, std::memory_order_release);
+    return status;
+}
+
+int Engine::drain_tier_streams() {
+    const int device = dev_current();
+    int status = RAD_OK;
+    for (auto& rank : ranks_) {
+        const int rc = rank->tierx.quiesce();
+        if (rc < 0) {
+            RAD_ERR("KV ownership handoff: rank %d transfer did not drain: %s", rank->index,
+                    rad_strerror(rc));
+            if (status >= 0) status = rc;
+        }
+    }
+    if (device >= 0 && rad_dev_set(device) < 0 && status >= 0) status = RAD_E_DEVICE;
+    if (status < 0) memory_fence_status_.store(status, std::memory_order_release);
+    return status;
+}
+
+int Engine::report_tier_jobs(std::vector<TierJob>& jobs, const std::vector<char>& ok,
+                             uint64_t now) {
+    /* A failed restore may have written a follower's shard even when the leader failed first.
+     * Shared block IDs cannot be recycled until every rank's transfer has stopped. */
+    bool failed = ok.size() < jobs.size();
+    for (char good : ok) failed = failed || !good;
+    if (failed) RAD_TRY(drain_tier_streams());
+    return ranks_[0]->tierx.report_pass(jobs, ok, now);
+}
+
+int Engine::prepare_unload() {
+    if (!producers_stopped()) return RAD_E_STATE;
+    return drain_streams();
+}
+
+int Engine::retry_memory_fence() {
+    if (producers_stopped()) return prepare_unload();
+    /* A parked loop sleeps in hold_point and cannot service a quiet callback. Refuse
+     * promptly; unload can retry after an explicit producer shutdown. */
+    if (parked_.load(std::memory_order_acquire)) return RAD_E_STATE;
+    if (stopping_.load(std::memory_order_acquire) || !serving_.load(std::memory_order_acquire))
+        return RAD_E_STATE;
+    return run_quiet([] { return RAD_OK; });
+}
+
+int Engine::release_deferred_quietly() {
+    RAD_TRY(drain_streams());
+    sched_.release_deferred();
+    return RAD_OK;
 }
 
 std::vector<int> Engine::rank_devices() const {
@@ -292,7 +354,13 @@ std::vector<int> Engine::rank_devices() const {
  * drained before the loop answers, so the fleet may page the memory out at once. */
 void Engine::hold_point(StallWatch* watch) {
     if (!hold_req_.load(std::memory_order_acquire)) return;
-    drain_streams();
+    if (hold_status_.load(std::memory_order_acquire) < 0) return;
+    const int status = drain_streams();
+    if (status < 0) {
+        hold_status_.store(status, std::memory_order_release);
+        hold_cv_.notify_all();
+        return;
+    }
     hold_ack_.store(true, std::memory_order_release);
     /* A park lasts as long as the fleet keeps the model off its cards. The loop sleeps until the
      * hold clears or the engine stops, waking once a second besides to mark the step watch, so a
@@ -364,17 +432,21 @@ int Engine::park(int64_t drain_ms, const PageOut& req, PageResult* got, std::str
             return RAD_E_STATE;
         }
     }
+    hold_status_.store(RAD_OK, std::memory_order_release);
     hold_req_.store(true, std::memory_order_release);
     sched_.wake();
     for (int i = 0; i < 60000 && !hold_ack_.load(std::memory_order_acquire); ++i) {
-        if (loop_status_.load(std::memory_order_acquire) < 0) break;
+        if (loop_status_.load(std::memory_order_acquire) < 0 ||
+            hold_status_.load(std::memory_order_acquire) < 0) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
     if (!hold_ack_.load(std::memory_order_acquire)) {
         hold_release();
         front_->attach(name, front_aliases_, srv_);
-        *why = "the step loop did not come to rest";
-        return RAD_E_STATE;
+        const int status = hold_status_.load(std::memory_order_acquire);
+        *why = status < 0 ? "the device streams did not drain; memory remains resident"
+                          : "the step loop did not come to rest";
+        return status < 0 ? status : RAD_E_STATE;
     }
     const auto t1 = clk::now();
     EngineScope es(owner_, name.c_str());
@@ -383,22 +455,40 @@ int Engine::park(int64_t drain_ms, const PageOut& req, PageResult* got, std::str
      * (nothing runs, so no block is live), and the activation arena above its fixed region:
      * transients live within one step, and the loop rests between steps. A unit still in a slot
      * the arena lent keeps the arena copied. */
+    /* Reclaim can itself submit copies. Any failure aborts the handoff before paging or
+     * discarding memory, and leaves the engine owned and charged for a fenced retry. */
+    auto refuse = [&](int status, const char* operation) {
+        memory_fence_status_.store(status, std::memory_order_release);
+        (void)xflex_settle();
+        *why = std::string(operation) + "; memory remains owned";
+        hold_release();
+        front_->attach(name, front_aliases_, srv_);
+        return status;
+    };
     std::vector<std::pair<const void*, int64_t>> spare;
     for (auto& r : ranks_) {
-        if (rad_dev_set(r->device) < 0) continue;
+        if (rad_dev_set(r->device) < 0) return refuse(RAD_E_DEVICE, "selecting the park device failed");
         if (r->mover.flex_capacity() > 0) {
-            (void)r->mover.reclaim(Mover::kLendKV, 0, &r->heat);
-            (void)r->mover.reclaim(Mover::kLendArena, 0, &r->heat);
-            (void)r->mover.reclaim(Mover::kLendFleet, 0, &r->heat);
+            for (int lender : {Mover::kLendKV, Mover::kLendArena, Mover::kLendFleet})
+                if (const int rc = r->mover.reclaim(lender, 0, &r->heat); rc < 0)
+                    return refuse(rc, "recalling expert slots failed");
         }
-        /* The fleet's loan is unbacked, not copied: nothing in it outlives the recall. */
-        if (r->xflex.committed() > 0 && r->mover.loan_held(Mover::kLendFleet) == 0)
-            (void)r->xflex.decommit(0, r->xflex.size());
-        if (r->heat.enabled() && r->mover.drop_slab(&r->heat, &spare) < 0)
-            RAD_WARN("rank %d: the expert slab could not be emptied for the park; it is copied", r->index);
+        if (r->heat.enabled())
+            if (const int rc = r->mover.drop_slab(&r->heat, &spare); rc < 0)
+                return refuse(rc, "emptying the expert slab failed");
         const int64_t fixed = r->program.arena_fixed_bytes, top = r->ctx.arena_bytes();
         if (r->ctx.arena_base() && top > fixed && r->mover.loan_held(Mover::kLendArena) == 0)
             spare.push_back({ (const char*)r->ctx.arena_base() + fixed, top - fixed });
+    }
+    if (const int rc = drain_streams(); rc < 0) return refuse(rc, "post-recall device fence failed");
+    for (auto& r : ranks_) {
+        if (rad_dev_set(r->device) < 0) return refuse(RAD_E_DEVICE, "selecting the park device failed");
+        if (r->mover.loan_held(Mover::kLendFleet) == 0) {
+            if (const int rc = r->mover.set_loan(Mover::kLendFleet, 0); rc < 0)
+                return refuse(rc, "withdrawing the expert loan failed");
+            if (const int rc = r->xflex.decommit(0, r->xflex.size()); rc < 0)
+                return refuse(rc, "unbacking the expert loan failed");
+        }
     }
     if (!spare.empty()) dev_page_discard(owner_, spare);
     xflex_restore_.clear();
@@ -412,7 +502,9 @@ int Engine::park(int64_t drain_ms, const PageOut& req, PageResult* got, std::str
     if (rc < 0) {
         /* Whatever left comes back, and the model serves as before. */
         *why = std::string("paging out failed: ") + rad_dev_last_error();
-        (void)page_back_in(nullptr);
+        if (page_back_in(nullptr) < 0)
+            fatal("model %s: paging rollback failed; refusing to resume with missing weights or backing",
+                  name.c_str());
         hold_release();
         front_->attach(name, front_aliases_, srv_);
         return rc;
@@ -432,16 +524,21 @@ int64_t Engine::flex_release(int64_t bytes, bool preempt, int64_t wait_ms, bool 
     const bool has_kv = kv && ranks_[0]->kv.flex();
     if (!has_kv && xflex_bytes_.load() <= 0) return 0;
     std::unique_lock<std::mutex> lk(flex_mu_);
+    if (flex_pending_.load(std::memory_order_acquire)) return RAD_E_STATE;
     flex_want_ = bytes;
     flex_preempt_ = preempt;
     flex_kv_ = has_kv;
-    flex_got_ = -1;
+    /* One owner holds this handoff until completion or timeout. A service that was waiting
+     * on the mutex must recheck pending before touching this or a subsequent request. */
+    flex_got_ = 0;
+    flex_done_ = false;
+    flex_status_ = RAD_OK;
     flex_pending_.store(true, std::memory_order_release);
     flex_cv_.wait_for(lk, std::chrono::milliseconds(wait_ms), [&] {
-        return flex_got_ >= 0 || stopping_.load(std::memory_order_acquire);
+        return flex_done_ || stopping_.load(std::memory_order_acquire);
     });
     flex_pending_.store(false, std::memory_order_release);
-    return flex_got_ > 0 ? flex_got_ : 0;
+    return flex_done_ && flex_status_ < 0 ? flex_status_ : std::max<int64_t>(flex_got_, 0);
 }
 
 /* On the step loop's thread, between steps with nothing issued ahead: the expert slab's fleet loan
@@ -451,12 +548,25 @@ int64_t Engine::flex_release(int64_t bytes, bool preempt, int64_t wait_ms, bool 
 void Engine::flex_service() {
     if (!flex_pending_.load(std::memory_order_acquire)) return;
     std::lock_guard<std::mutex> lk(flex_mu_);
-    if (flex_got_ >= 0) return;
-    drain_streams();
+    if (!flex_pending_.load(std::memory_order_acquire) || flex_done_) return;
+    flex_status_ = drain_streams();
+    if (flex_status_ < 0) {
+        flex_done_ = true;
+        flex_cv_.notify_all();
+        return;
+    }
     /* The experts' loan first: giving it back is an address change for each unit in it. */
     const int64_t xgot = xflex_give(flex_want_);
+    if (xgot < 0) {
+        flex_status_ = (int)xgot;
+        memory_fence_status_.store(flex_status_, std::memory_order_release);
+        flex_done_ = true;
+        flex_cv_.notify_all();
+        return;
+    }
     if (xgot >= flex_want_ || !flex_kv_) {
         flex_got_ = xgot;
+        flex_done_ = true;
         flex_cv_.notify_all();
         return;
     }
@@ -503,6 +613,7 @@ void Engine::flex_service() {
     flex_got_ = xgot + std::max<int64_t>(before - ranks_[0]->pools.kv().committed(), 0);
     RAD_INFO("flex: asked for %s, the cache could give %lld of %lld tokens, gave back %s",
              humanb(flex_want_).c_str(), (long long)take, (long long)want, humanb(flex_got_).c_str());
+    flex_done_ = true;
     flex_cv_.notify_all();
 }
 
@@ -521,35 +632,112 @@ int64_t Engine::xflex_settle() {
  * bytes given back on each card. The slab does not grow again for five seconds, so the model that
  * asked for the room gets it first. */
 int64_t Engine::xflex_give(int64_t bytes) {
-    const int64_t cur = xflex_bytes_.load(std::memory_order_acquire);
-    if (bytes <= 0 || cur <= 0) return 0;
-    const int64_t g = std::max<int64_t>(VMem::granularity(), 1);
-    int64_t to = std::max<int64_t>(cur - (bytes + g - 1) / g * g, 0);
-    for (auto& r : ranks_) {
-        if (rad_dev_set(r->device) < 0) continue;
-        if (const int st = r->mover.reclaim(Mover::kLendFleet, to, &r->heat); st < 0)
-            RAD_WARN("expert flex: rank %d could not recall its slab to %s: %s", r->index,
-                     humanb(to).c_str(), rad_strerror(st));
-        /* What a unit still holds stays backed. */
-        to = std::max(to, (r->mover.loan_held(Mover::kLendFleet) + g - 1) / g * g);
+    const int64_t current = xflex_bytes_.load(std::memory_order_acquire);
+    if (bytes <= 0 || current <= 0) return 0;
+    const int64_t granule = std::max<int64_t>(VMem::granularity(), 1);
+    const int64_t amount = bytes >= current ? current : align_up(bytes, granule);
+    const int64_t target = std::max<int64_t>(current - amount, 0);
+    std::vector<int64_t> keep(ranks_.size()), offer(ranks_.size());
+    int64_t previous_usable = current;
+    /* Physical backing can differ after a failed grow. A recall may reduce, never increase,
+     * each rank's published capacity. Any still-held units remain physically backed. */
+    for (size_t index = 0; index < ranks_.size(); ++index) {
+        auto& rank = *ranks_[index];
+        if (rad_dev_set(rank.device) < 0) return RAD_E_DEVICE;
+        const int64_t suffix = rank.xflex.committed_suffix();
+        const int64_t usable = std::min(rank.mover.loan_offered(Mover::kLendFleet), suffix);
+        previous_usable = std::min(previous_usable, usable);
+        offer[index] = std::min(target, usable);
+        if (rank.mover.flex_capacity() > 0) {
+            const int status = rank.mover.reclaim(Mover::kLendFleet, offer[index], &rank.heat);
+            if (status < 0) return status;
+        }
+        const int64_t held = align_up(rank.mover.loan_held(Mover::kLendFleet), granule);
+        if (held > suffix) return RAD_E_STATE;
+        keep[index] = std::max(offer[index], held);
     }
-    for (auto& r : ranks_) {
-        if (rad_dev_set(r->device) < 0) continue;
-        const int64_t top = r->xflex.size();
-        (void)r->mover.set_loan(Mover::kLendFleet, to);
-        if (const int st = r->xflex.decommit(std::max<int64_t>(top - cur, 0), cur - to); st < 0)
-            RAD_WARN("expert flex: rank %d could not unback %s: %s (%s)", r->index,
-                     humanb(cur - to).c_str(), rad_strerror(st), rad_dev_last_error());
+    for (size_t index = 0; index < ranks_.size(); ++index)
+        RAD_TRY(ranks_[index]->mover.set_loan(Mover::kLendFleet, offer[index]));
+    int status = RAD_OK;
+    for (size_t index = 0; index < ranks_.size(); ++index) {
+        auto& rank = *ranks_[index];
+        int rc = rad_dev_set(rank.device);
+        if (rc >= 0) rc = rank.xflex.decommit(0, std::max<int64_t>(rank.xflex.size() - keep[index], 0));
+        if (rc < 0) {
+            RAD_WARN("expert flex: rank %d backing recall failed: %s (%s)", rank.index,
+                     rad_strerror(rc), rad_dev_last_error());
+            if (status >= 0) status = rc;
+        }
     }
     (void)rad_dev_set(ranks_[0]->device);
-    const int64_t left = xflex_settle();
-    xflex_restore_.recalled(cur, left);
+    const int64_t remaining = xflex_settle();
     xflex_retry_ns_ = rad_mono_ns() + 5000000000ull;
-    const int64_t got = std::max<int64_t>(cur - left, 0);
-    if (got > 0)
-        RAD_INFO("expert flex: the slab gave back %s a card, keeps %s", humanb(got).c_str(),
-                 humanb(left).c_str());
-    return got;
+    if (status < 0) return status;
+    const int64_t released = std::max<int64_t>(current - remaining, 0);
+    if (released > 0) xflex_restore_.recalled(previous_usable, *std::min_element(offer.begin(), offer.end()));
+    if (released > 0)
+        RAD_INFO("expert flex: the slab gave back %s a card, keeps %s", humanb(released).c_str(),
+                 humanb(remaining).c_str());
+    return released;
+}
+
+/* Full suffix commits are idempotent. In particular, a previous partial TP operation may have
+ * left fewer pages on one rank than the fleet's conservative maximum reports. Never skip those
+ * pages just because another rank still has them. A failed grow keeps its partial backing
+ * charged and its old loans unchanged; rolling back the whole range could unmap live experts. */
+int Engine::xflex_grow_to(int64_t bytes, ExpertMemoryOps& memory) {
+    if (bytes <= 0 || memory.rank_count() != ranks_.size()) return RAD_E_INVAL;
+    int64_t missing = 0;
+    for (size_t rank = 0; rank < ranks_.size(); ++rank) {
+        const VMem& range = memory.memory(rank);
+        if (bytes > range.size()) return RAD_E_INVAL;
+        missing = std::max(missing, bytes - range.committed_bytes(range.size() - bytes, bytes));
+    }
+    const bool granted = missing > 0;
+    if (granted && !broker_->flex_grow(rank_devices(), missing)) return RAD_E_FULL;
+    struct Reservation {
+        VramBroker* broker;
+        ~Reservation() { if (broker) broker->flex_done(); }
+    } reservation{granted ? broker_ : nullptr};
+    for (size_t rank = 0; rank < ranks_.size(); ++rank) {
+        int status = memory.select(rank);
+        if (status >= 0) {
+            VMem& range = memory.memory(rank);
+            status = memory.commit(rank, range.size() - bytes, bytes);
+        }
+        if (status < 0) {
+            if (const int fence = memory.settle(); fence < 0) {
+                map_fence_pending_.store(true, std::memory_order_release);
+                memory_fence_status_.store(fence, std::memory_order_release);
+            }
+            xflex_settle();
+            return status;
+        }
+    }
+    /* A previous commit may have mapped its pages but failed the translation-settle step.
+     * Even an entirely idempotent retry must complete that fence before exposing the pages. */
+    const int settled = memory.settle();
+    if (settled < 0) {
+        map_fence_pending_.store(true, std::memory_order_release);
+        memory_fence_status_.store(settled, std::memory_order_release);
+        xflex_settle();
+        return settled;
+    }
+    if (map_fence_pending_.load(std::memory_order_acquire) && drain_streams() < 0)
+        return memory_fence_status();
+    for (size_t rank = 0; rank < ranks_.size(); ++rank) {
+        const VMem& range = memory.memory(rank);
+        if (!range.is_committed(range.size() - bytes, bytes)) {
+            xflex_settle();
+            return RAD_E_STATE;
+        }
+    }
+    for (auto& rank : ranks_) {
+        if (rank->mover.loan_offered(Mover::kLendFleet) < bytes)
+            RAD_TRY(rank->mover.set_loan(Mover::kLendFleet, bytes));
+    }
+    xflex_settle();
+    return RAD_OK;
 }
 
 /* Every tenth of a second on the step loop. While recently busy, or restoring backing a
@@ -567,55 +755,50 @@ void Engine::xflex_tick(bool busy) {
     if (now - xflex_ns_ < 100000000ull) return;
     xflex_ns_ = now;
     const int64_t cur = xflex_bytes_.load(std::memory_order_acquire);
+    // Physical charge is the maximum across ranks. Only a settled suffix offered on
+    // every rank is usable, and can satisfy an idle restoration watermark.
+    int64_t usable = map_fence_pending_.load(std::memory_order_acquire) ? 0 : cur;
+    for (const auto& rank : ranks_)
+        usable = std::min({usable, rank->xflex.committed_suffix(),
+                           rank->mover.loan_offered(Mover::kLendFleet)});
     const bool idle_restore = now - xflex_busy_ns_ > 5000000000ull;
-    const int64_t restore_limit = xflex_restore_.limit(cur, xflex_cap_);
+    const int64_t restore_limit = xflex_restore_.limit(usable, xflex_cap_);
     const int64_t limit = idle_restore ? restore_limit : xflex_cap_;
-    // Clear a previous busy demand even when retry or occupancy stops this attempt.
-    // Background restoration must not ask the fleet to evict an idle peer.
     if (idle_restore) xflex_want_.store(0, std::memory_order_release);
-    if (cur >= limit) {
+    if (usable >= limit) {
         xflex_want_.store(0, std::memory_order_release);
         return;
     }
     if (now < xflex_retry_ns_ || (idle_restore && !xflex_restore_.ready(now))) return;
     const Mover& m0 = ranks_[0]->mover;
     const int64_t g = std::max<int64_t>(VMem::granularity(), 1);
-    const int64_t step = std::min<int64_t>(((int64_t)1 << 30) / g * g, limit - cur);
+    const int64_t step = std::min<int64_t>(((int64_t)1 << 30) / g * g, limit - usable);
     /* Still filling: what the loans offer and no unit holds, past the slots kept free for swaps. */
     const int64_t kept = m0.turnover_bytes();
-    if (m0.flex_offered_bytes() - m0.flex_used_bytes() > kept + step / 2) return;
-    if (!broker_->flex_grow(rank_devices(), step)) {
-        xflex_want_.store(xflex_restore_.refused(now, idle_restore, xflex_cap_ - cur),
-                          std::memory_order_release);
-        if (!idle_restore) xflex_retry_ns_ = now + 1000000000ull;
-        return;
-    }
-    struct Landed { VramBroker* b; ~Landed() { b->flex_done(); } } landed{ broker_ };
-    const int64_t to = cur + step;
-    bool ok = true;
-    for (auto& r : ranks_) {
-        if (rad_dev_set(r->device) < 0) { ok = false; break; }
-        const int64_t top = r->xflex.size();
-        if (r->xflex.commit(std::max<int64_t>(top - to, 0), std::min(step, top)) < 0) { ok = false; break; }
-    }
-    if (!ok) {
-        RAD_WARN("expert flex: backing %s more a card failed (%s); trying again later",
-                 humanb(step).c_str(), rad_dev_last_error());
-        for (auto& r : ranks_) {
-            if (rad_dev_set(r->device) < 0) continue;
-            const int64_t top = r->xflex.size();
-            (void)r->xflex.decommit(std::max<int64_t>(top - to, 0), step);
-        }
-        (void)rad_dev_set(ranks_[0]->device);
-        xflex_retry_ns_ = now + 5000000000ull;
-        return;
-    }
-    for (auto& r : ranks_) {
-        if (rad_dev_set(r->device) < 0) continue;
-        (void)r->mover.set_loan(Mover::kLendFleet, to);
-    }
+    if (usable == cur && m0.flex_offered_bytes() - m0.flex_used_bytes() > kept + step / 2) return;
+    struct RankMemory final : ExpertMemoryOps {
+        std::vector<std::unique_ptr<Rank>>& ranks;
+        explicit RankMemory(std::vector<std::unique_ptr<Rank>>& r) : ranks(r) {}
+        size_t rank_count() const override { return ranks.size(); }
+        VMem& memory(size_t rank) override { return ranks[rank]->xflex; }
+        int select(size_t rank) override { return rad_dev_set(ranks[rank]->device); }
+    } memory(ranks_);
+    const int64_t to = usable + step;
+    const int status = xflex_grow_to(to, memory);
     (void)rad_dev_set(ranks_[0]->device);
-    xflex_bytes_.store(to, std::memory_order_release);
+    if (status < 0) {
+        if (status == RAD_E_FULL) {
+            xflex_want_.store(xflex_restore_.refused(now, idle_restore, xflex_cap_ - usable),
+                              std::memory_order_release);
+            if (!idle_restore) xflex_retry_ns_ = now + 1000000000ull;
+        } else {
+            xflex_want_.store(0, std::memory_order_release);
+            xflex_retry_ns_ = now + 5000000000ull;
+            RAD_WARN("expert flex: growing to %s a card failed: %s (%s)",
+                     humanb(to).c_str(), rad_strerror(status), rad_dev_last_error());
+        }
+        return;
+    }
     xflex_want_.store(0, std::memory_order_release);
     (void)xflex_restore_.limit(to, xflex_cap_);
     if (idle_restore && to >= restore_limit)
@@ -731,6 +914,7 @@ int Engine::unpark_with(std::string* why, int64_t* left) {
 }
 
 int Engine::run_quiet(const std::function<int()>& fn) {
+    std::lock_guard<std::mutex> caller(quiet_call_mu_);
     std::unique_lock<std::mutex> lk(quiet_mu_);
     quiet_fn_ = &fn;
     quiet_done_ = false;
@@ -752,8 +936,8 @@ void Engine::quiet_service() {
     std::lock_guard<std::mutex> lk(quiet_mu_);
     if (quiet_done_ || !quiet_fn_) return;
     const int dev = dev_current();
-    drain_streams();
-    quiet_rc_ = (*quiet_fn_)();
+    quiet_rc_ = drain_streams();
+    if (quiet_rc_ >= 0) quiet_rc_ = (*quiet_fn_)();
     (void)rad_dev_set(dev);
     quiet_done_ = true;
     quiet_cv_.notify_all();
@@ -772,6 +956,11 @@ Engine::Readback::~Readback() {
 }
 
 Engine::~Engine() {
+    /* A destructor cannot retain ownership for a retry. Do not unwind through allocations
+     * the device might still use: the established device-fault policy is a process restart. */
+    if (!producers_stopped() || drain_streams() < 0)
+        fatal("model %s: refusing to free memory after a failed device fence; exiting for restart",
+              cfg_.served_model_name.c_str());
     depth_log_stats("final");
     /* The control vector's per-rank direction copies. Uploaded at declare, outside any arena, so
      * nothing else frees them; each rank's copy is freed with that rank's device bound, since the
@@ -1351,6 +1540,7 @@ int Engine::step_loop() {
         const uint64_t woke = issued ? 0 : sched_.wake_seq();
         if (issued) sched_.promote_next();
         else        b = sched_.step();
+        if (memory_fence_status() < 0) return fail_loop(memory_fence_status());
         if (!b) {
             /* Idle: back off in small steps instead of spinning; the first wait is short so a new
              * request into an empty engine is not delayed. */
@@ -1365,8 +1555,7 @@ int Engine::step_loop() {
              * may be what blocks the next admission. Drain the streams first so no in-flight pass
              * still reads them. */
             if (sched_.has_deferred()) {
-                for (auto& rk : ranks_) (void)rad_stream_sync(rk->ctx.stream());
-                sched_.release_deferred();
+                if (const int rc = release_deferred_quietly(); rc < 0) return fail_loop(rc);
             }
             tier_tick();
             /* A park waits here once the tiers' copies have landed, before the idle work that
@@ -1984,13 +2173,28 @@ int Engine::save_checkpoints() {
         const int ss = sched_.locked([&]() -> int {
             for (const StepEntry& e : plan.e) {
                 if (e.ckpt_slot < 0 || e.ckpt_tok < 0) continue;
+                if (ckpt_save_skip_) continue;     /* marked by the caller; nothing copied */
                 if (!state_slots_of(e.seq, &ckpt_slots_)) continue;
                 /* The window behind the checkpoint position. This step's chunk reaches it, and
-                 * a window slides only from a step's first query, so a miss is a broken
-                 * invariant; skipping would commit a slot holding another sequence's pages. */
+                 * a window slides only from a step's first query, so a miss in a trunk group is a
+                 * broken invariant, and committing the slot would leave it holding another
+                 * sequence's pages. */
+                bool bad_drafter = false;
                 if (ranks_[0]->kv.has_window_snapshot() &&
                     !ranks_[0]->kv.window_rows(e.seq, e.ctx_len + e.ckpt_tok + 1,
-                                               &ckpt_win_)) {
+                                               &ckpt_win_, &bad_drafter)) {
+                    /* Only the drafter's window missing: the drafter is an optimisation, so skip
+                     * this checkpoint (not committed, counted) instead of failing the engine. */
+                    if (bad_drafter) {
+                        const int n_bad = ++ckpt_win_missing_;
+                        if (n_bad <= 4 || n_bad % 64 == 0)
+                            RAD_WARN("sequence %llu: the drafter's window behind checkpoint %d is "
+                                     "not held; checkpoint not committed (occurrence %d; first 4, "
+                                     "then every 64th)", (unsigned long long)e.seq,
+                                     (int)(e.ctx_len + e.ckpt_tok + 1), n_bad);
+                        sched_.skip_ckpt_commit_locked(e.seq, (int64_t)e.ctx_len + e.ckpt_tok + 1);
+                        continue;
+                    }
                     RAD_ERR("sequence %llu: the window behind checkpoint %d is not held",
                             (unsigned long long)e.seq, (int)(e.ctx_len + e.ckpt_tok + 1));
                     return RAD_E_STATE;
@@ -2488,6 +2692,17 @@ int Engine::arena_step(const RadBatch* b) {
     return RAD_OK;
 }
 
+/* Starts the planned tier copy on every rank's transfer stream; a rank that fails to start keeps
+ * its error in copy_st. */
+void Engine::issue_planned_copy(TierPump& P) {
+    P.copy_st.assign(ranks_.size(), 0);
+    for (size_t i = 0; i < ranks_.size(); ++i) {
+        const int st = ranks_[i]->tierx.issue_copy(P.copy, ranks_[i]->ctx.stream());
+        if (st < 0) P.copy_st[i] = st;
+    }
+    if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
+}
+
 int Engine::arena_level(int64_t rows) const { return arena_level_for(arena_rows_, rows); }
 
 /* The arena loan grows only after large steps stop. A prefill is chunks with decode steps between,
@@ -2552,7 +2767,7 @@ void Engine::tier_tick() {
             const std::vector<char> ok(P.copy.size(), good ? 1 : 0);
             {
                 const auto lk = sched_.hold();
-                lead.tierx.report_pass(P.copy, ok, now);
+                if (report_tier_jobs(P.copy, ok, now) < 0) return;
             }
             P.copy.clear();
         }
@@ -2564,14 +2779,7 @@ void Engine::tier_tick() {
             const auto lk = sched_.hold();
             lead.tiers.plan_writeback(P.max_copy, &P.copy);
         }
-        if (!P.copy.empty()) {
-            P.copy_st.assign(ranks_.size(), 0);
-            for (size_t i = 0; i < ranks_.size(); ++i) {
-                const int st = ranks_[i]->tierx.issue_copy(P.copy, ranks_[i]->ctx.stream());
-                if (st < 0) P.copy_st[i] = st;
-            }
-            if (ranks_.size() > 1) (void)rad_dev_set(lead.device);
-        }
+        if (!P.copy.empty()) issue_planned_copy(P);
     }
 
     /* ---- what is not live leaves VRAM -------------------------------------------------------- */
@@ -2597,7 +2805,7 @@ void Engine::tier_tick() {
         if (!jobs.empty()) {
             const std::vector<char> ok(jobs.size(), 1);
             const auto lk = sched_.hold();
-            lead.tierx.report_pass(jobs, ok, now);
+            if (report_tier_jobs(jobs, ok, now) < 0) return;
         }
     }
 }
@@ -2634,19 +2842,14 @@ bool Engine::flush_copies() {
             }
             if (ranks_.size() > 1) (void)rad_dev_set(lead.device);
             const std::vector<char> ok(P.copy.size(), good ? 1 : 0);
-            lead.tierx.report_pass(P.copy, ok, rad_mono_ns());
+            if (report_tier_jobs(P.copy, ok, rad_mono_ns()) < 0) return false;
             P.copy.clear();
             landed = landed || good;
         }
         if (!lead.tiers.writeback_waiting()) break;
         lead.tiers.plan_writeback(P.max_copy, &P.copy);
         if (P.copy.empty()) break;
-        P.copy_st.assign(ranks_.size(), 0);
-        for (size_t i = 0; i < ranks_.size(); ++i) {
-            const int st = ranks_[i]->tierx.issue_copy(P.copy, ranks_[i]->ctx.stream());
-            if (st < 0) P.copy_st[i] = st;
-        }
-        if (ranks_.size() > 1) (void)rad_dev_set(lead.device);
+        issue_planned_copy(P);
     }
     return landed;
 }
@@ -2839,7 +3042,8 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
             }
             /* Back to rank 0's device: the admission continues by growing rank 0's pool. */
             if (ranks_.size() > 1) (void)rad_dev_set(ranks_[0]->device);
-            ranks_[0]->tierx.report_pass(jobs, ok, rad_mono_ns());
+            if (report_tier_jobs(jobs, ok, rad_mono_ns()) < 0)
+                return RestoreResult::Cut;
             /* Rebind every entry that came back, not only the leading run: the tiers already
              * marked each resident at its new blocks. A job's blocks are one per entry slot. */
             const std::vector<int32_t>& cg = pc.entry_groups();
@@ -2850,7 +3054,7 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
                 if (rb != RAD_OK) {
                     /* No entry to land in: release the reserved blocks and forget the tier record,
                      * which would otherwise release them later from under their next owner. */
-                    ranks_[0]->tierx.quiesce();
+                    if (drain_tier_streams() < 0) return RestoreResult::Cut;
                     for (size_t k = 0; k < cg.size() && k < j.blocks.size(); ++k)
                         if (j.blocks[k] >= 0) ranks_[0]->kv.release_block(cg[k], j.blocks[k]);
                     ranks_[0]->tiers.forget(j.key);
@@ -2955,6 +3159,7 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
     done_.reserve((size_t)cfg_.max_seqs);
 
     rank_threads_.clear();
+    producers_stopped_.store(false, std::memory_order_release);
     for (int i = 0; i < cfg_.tp; ++i)
         rank_threads_.emplace_back([this, i] {
             EngineScope es(owner_, cfg_.served_model_name.c_str());
@@ -2993,6 +3198,7 @@ int Engine::serve(std::unique_ptr<StallWatch> watch) {
     if (stepper.joinable()) stepper.join();
     for (auto& t : rank_threads_) if (t.joinable()) t.join();
     rank_threads_.clear();
+    producers_stopped_.store(true, std::memory_order_release);
     xstats_close();
     /* A step-loop error takes precedence over the transport's status. */
     const int ls = loop_status_.load(std::memory_order_acquire);
@@ -3102,7 +3308,7 @@ std::string Engine::engine_info() const {
         if (!pl || pl->name.empty() || pl->n_layers <= 0) continue;
         Json k;
         k["name"]     = pl->name;
-        k["kind"]     = bld_kv_kind_name(pl->kind);
+        k["kind"]     = kv_kind_name(pl->kind);
         k["n_layers"] = pl->n_layers;
         k["bytes"]    = pl->pool_bytes;
         if (pl->paged()) {
@@ -3288,6 +3494,8 @@ int Engine::run_server() {
      * hold the session table the sessions view reads. */
     server::SchedulerBridge sched_bridge(&sched_, ranks_.empty() ? nullptr : &ranks_[0]->sampler,
                                         ranks_.empty() ? nullptr : &ranks_[0]->tiers);
+    /* The dashboard names LoRA slots the same way the scheduler indexes them. */
+    sched_bridge.set_lora_names([this] { return lora_names(); });
     server::TokenizerBridge tok_bridge(vocab_);
     server::ChatTemplateBridge chat_bridge;
     server::GrammarBridge grammar_bridge(vocab_view_.get());
@@ -3416,6 +3624,7 @@ int Engine::run_server() {
 
             s.link.present        = true;
             s.link.world          = (int)ranks_.size();
+            s.link.ranks.clear();
             s.link.ar_calls       = ranks_[0]->ctx.ar_calls();
             s.link.ar_bytes       = ranks_[0]->ctx.ar_bytes();
             s.link.h2d_bytes = s.link.d2h_bytes = s.link.ssd_reads = 0;
@@ -3445,6 +3654,59 @@ int Engine::run_server() {
                 s.link.prefetch_bytes += (int64_t)rms.prefetch_bytes;
                 s.link.staged_bytes   += (int64_t)rms.staged_bytes;
                 if (rk->heat.enabled()) s.link.stream_bytes += (int64_t)rk->heat.stats().stream_bytes;
+                /* Rank by rank as well (LinkStat::Rank). */
+                server::LinkStat::Rank lr;
+                lr.ar_calls       = rk->ctx.ar_calls();
+                lr.ar_bytes       = rk->ctx.ar_bytes();
+                lr.h2d_bytes      = (int64_t)rms.h2d_bytes;
+                lr.d2h_bytes      = (int64_t)rms.d2h_bytes;
+                lr.prefetch_bytes = (int64_t)rms.prefetch_bytes;
+                lr.staged_bytes   = (int64_t)rms.staged_bytes;
+                lr.promotions     = (int64_t)rms.promotions;
+                lr.demotions      = (int64_t)rms.demotions;
+                const bool live = rk->heat.enabled();
+                if (live) {
+                    const HeatStats rhs = rk->heat.stats();
+                    lr.stream_bytes    = (int64_t)rhs.stream_bytes;
+                    lr.routed          = (int64_t)rhs.routed;
+                    lr.routed_resident = (int64_t)rhs.routed_resident;
+                }
+                for (size_t u = 0; u < rk->plan.units.size(); ++u) {
+                    const MoveUnit& mu = rk->plan.units[u];
+                    if (mu.expert < 0 || mu.layer < 0) continue;
+                    const Tier t = live ? rk->heat.tier_published((int32_t)u) : mu.tier;
+                    lr.units++;
+                    if (t == Tier::VRAM) lr.units_vram++;
+                    else if (t == Tier::HostPinned) lr.units_pinned++;
+                }
+                s.link.ranks.push_back(lr);
+            }
+            /* Card to card: what each rank's collectives sent to each rank (Ctx::traffic). */
+            {
+                static const char* const kRoute[] = { "oneshot", "twoshot", "twoshot_coded", "lossy", "gather" };
+                const int w = (int)ranks_.size();
+                std::vector<Ctx::LinkTraffic> tr;
+                for (auto& rk : ranks_) tr.push_back(rk->ctx.traffic());
+                s.link.ar_routes.clear();
+                s.link.ar_uncounted_calls = 0;
+                s.link.ar_traffic = w <= Ctx::kTrafficRanks && !tr.empty() && tr[0].present;
+                if (s.link.ar_traffic) {
+                    for (int i = 0; i < Ctx::kTrafficRoutes; ++i) s.link.ar_routes.push_back({ kRoute[i], 0, 0 });
+                    for (int r = 0; r < w; ++r) {
+                        auto& lr = s.link.ranks[(size_t)r];
+                        lr.ar_to.assign((size_t)w, 0);
+                        for (int q = 0; q < w; ++q) {
+                            lr.ar_to[(size_t)q] = tr[(size_t)r].to[q];
+                            lr.ar_out_bytes += tr[(size_t)r].to[q];
+                            lr.ar_in_bytes  += tr[(size_t)q].to[r];
+                        }
+                        for (int i = 0; i < Ctx::kTrafficRoutes; ++i) {
+                            s.link.ar_routes[(size_t)i].calls += tr[(size_t)r].route_calls[i];
+                            s.link.ar_routes[(size_t)i].bytes += tr[(size_t)r].route_bytes[i];
+                        }
+                        s.link.ar_uncounted_calls += tr[(size_t)r].uncounted;
+                    }
+                }
             }
             /* KV streaming: only rank 0's resolve counters are read -- every rank sees the same
              * misses by design -- so the figure takes the world factor to reach all cards, the
@@ -3664,6 +3926,12 @@ int Engine::run_server() {
             for (const auto& [n, w] : u) uses.push_back({ n, w });
             return gen_lora_acquire(uses, slot, hold, note, e);
         };
+        o.gen_lora_validate = [this](const std::vector<std::pair<std::string, double>>& choices,
+                                     std::string* err) {
+            std::vector<LoraUse> uses;
+            for (const auto& [name, weight] : choices) uses.push_back({name, weight});
+            return gen_lora_validate(uses, err);
+        };
         o.gen_lora_names = [this] { return gen_lora_names(); };
         o.lora_load = [this](const std::string& n, const std::string& d, std::string* e) {
             return lora_load(n, d, e);
@@ -3715,7 +3983,8 @@ int Engine::run_server() {
          * are refused by name: LFM2-VL takes pictures only, and a token-budget processor (Gemma
          * 4's) sizes by soft tokens (--image-tokens, --video-max-frame-tokens), not pixel
          * bands. */
-        if ((vc.family == mm::Family::Lfm2 || vc.family == mm::Family::Glm5Next) &&
+        if ((vc.family == mm::Family::Lfm2 || vc.family == mm::Family::Glm5Next ||
+             vc.family == mm::Family::Inkling2) &&
             (cfg_.video_min_pixels || cfg_.video_max_pixels || cfg_.video_min_frames ||
              cfg_.video_max_frames || cfg_.video_fps || cfg_.video_max_frame_tokens)) {
             RAD_ERR("media: this model's processor takes pictures, not video, so the --video-* "
@@ -3765,6 +4034,16 @@ int Engine::run_server() {
                 RAD_ERR("media: this model's processor sizes images by a token budget, so "
                         "--image-min-pixels and --image-max-pixels do nothing; use "
                         "--image-tokens");
+                return RAD_E_INVAL;
+            }
+            if (cfg_.image_tokens) vc.max_image_tokens = *cfg_.image_tokens;
+        } else if (vc.family == mm::Family::Inkling2) {
+            /* Inkling 2 pads rather than resizes, so only the cap in cells (--image-tokens)
+             * applies; the pixel bands would do nothing. */
+            if (cfg_.image_min_pixels || cfg_.image_max_pixels) {
+                RAD_ERR("media: this model's processor pads a picture to whole 40-pixel cells "
+                        "rather than resizing it, so --image-min-pixels and --image-max-pixels "
+                        "do nothing; use --image-tokens to cap its cells");
                 return RAD_E_INVAL;
             }
             if (cfg_.image_tokens) vc.max_image_tokens = *cfg_.image_tokens;
@@ -3881,6 +4160,12 @@ int Engine::run_server() {
                      ranks_[0]->program.encoder_name.c_str(), mm_proc->config().image_soft_tokens,
                      mm_proc->config().video_soft_tokens, mm_proc->config().fps,
                      mm_proc->config().max_frames, (long long)encd.max_patches);
+        else if (mm_proc->config().family == mm::Family::Inkling2)
+            RAD_INFO("media: images through '%s'; a picture is padded to whole %d-pixel cells, "
+                     "one token a cell, at most %d cells (larger pictures shrink to that); %lld "
+                     "patches a pass", ranks_[0]->program.encoder_name.c_str(),
+                     mm_proc->config().factor(), mm_proc->config().max_image_tokens,
+                     (long long)encd.max_patches);
         else if (mm_proc->config().family == mm::Family::Radio)
             RAD_INFO("media: %s%s through '%s'; an image becomes one tile of %d..%d patches "
                      "(a quarter as many tokens), a video frame about %d patches, %d frames a "
@@ -4041,7 +4326,10 @@ int Engine::run_server() {
         in.max_tokens = gd.max_tokens;
         /* Edits need the conditioning network to read pictures, unless only the generator's
          * own encoder reads them. */
-        in.refs_encoder_only = gd.layout == RAD_GEN_LAYOUT_JOINT_STEP;
+        in.refs_encoder_only = gd.layout == RAD_GEN_LAYOUT_JOINT_STEP && in.tmpl_image.empty();
+        // A JOINT_STEP image template declares grounded vision plus latent references (Krea).
+        // Other JOINT_STEP generators keep their encoder-only reference preparation.
+        in.refs_fit_output = gd.layout == RAD_GEN_LAYOUT_JOINT_STEP && !in.refs_encoder_only;
         in.max_refs = mm_proc || in.refs_encoder_only ? gd.max_refs : 0;
         in.ref_shrink_only = gd.ref_shrink_only != 0;
         in.ref_area = gd.ref_area;
@@ -4228,7 +4516,9 @@ int Engine::run_server() {
         in.shift_audio = vd.shift_audio;
         in.upscale_max = vd.upscale_max;
         in.upscale_refine = vd.upscale_refine;
-        in.step_evals = vd.sched_kind == 1;
+        in.step_evals = vd.sched_kind != 0;
+        in.unipc_only = vd.sched_kind == RAD_VIDEO_SCHEDULE_UNIPC;
+        in.guidance_cfg_only = vd.guidance == RAD_VIDEO_GUIDANCE_CFG;
         in.guidance = vd.guidance != 0;
         for (int i = 0; i < 8; ++i) in.guidance_default[i] = vd.guidance_default[i];
         in.default_negative = pg.vgen_str.default_negative;
@@ -4305,17 +4595,22 @@ int Engine::run_server() {
         if (!efforts.empty()) {
             std::string list;
             for (const std::string& e : efforts) list += (list.empty() ? "" : ", ") + e;
-            RAD_INFO("chat: the template takes reasoning_effort %s, and none or minimal turn "
-                     "thinking off%s%s", list.c_str(), mapped.empty() ? "" : "; mapped: ",
-                     mapped.c_str());
+            RAD_INFO("chat: the template takes reasoning_effort %s; %s%s%s", list.c_str(),
+                     server::off_efforts_note(srv.template_off_efforts()).c_str(),
+                     mapped.empty() ? "" : "; mapped: ", mapped.c_str());
             /* What a request naming no effort gets, which a client cannot see: a template may
              * render a level into a system prompt (Qwen3.8's renders xhigh). */
             const std::string& dflt = srv.template_default_effort();
             if (cfg_.reasoning_effort.empty() && !dflt.empty())
                 RAD_INFO("chat: a request naming no reasoning_effort renders as '%s', the "
                          "template's own default (--reasoning-effort sets another)", dflt.c_str());
-        } else if (!mapped.empty()) {
-            RAD_INFO("chat: reasoning_effort mapped: %s", mapped.c_str());
+        } else {
+            /* A template that takes any word publishes no set, but an operator still needs to
+             * know when "none" is a level and not the thinking switch. */
+            if (!srv.template_off_efforts().empty())
+                RAD_INFO("chat: the template takes any reasoning_effort; %s",
+                         server::off_efforts_note(srv.template_off_efforts()).c_str());
+            if (!mapped.empty()) RAD_INFO("chat: reasoning_effort mapped: %s", mapped.c_str());
         }
         if (const std::string why = srv.check_reasoning_effort_map(); !why.empty()) {
             RAD_ERR("--reasoning-effort-map %s", why.c_str());

@@ -607,7 +607,7 @@ inline bool bc_moe_remote_publish_placeholder(const BcMoeRemoteGeneration* gen, 
 """
 
 _BC_MOE_REMOTE_BLOCK_H = r"""/* bc_moe_remote_block.h -- the MoE block's side of the BigCherry remote-expert extension point
- * (abi/bc_moe_remote.h). MoeFP8 holds one BcMoeRemote and calls it at four places; HyperConn asks
+ * (abi/bc_moe_remote.h). MoeQ holds one BcMoeRemote and calls it at four places; HyperConn asks
  * bc_moe_remote_hc_open. Everything else (what is handed off, when, and how the helper's rows rejoin the block's
  * output) is decided here, in the engine's C ABI and in the libr3moe plugin.
  *
@@ -625,7 +625,7 @@ _BC_MOE_REMOTE_BLOCK_H = r"""/* bc_moe_remote_block.h -- the MoE block's side of
 #ifndef BC_MOE_REMOTE_BLOCK_H
 #define BC_MOE_REMOTE_BLOCK_H
 
-#include "rad_fp8.h"
+#include "rad_linear.h"
 #include "bc_moe_remote.h"
 
 #include <cstdint>
@@ -635,7 +635,7 @@ _BC_MOE_REMOTE_BLOCK_H = r"""/* bc_moe_remote_block.h -- the MoE block's side of
 namespace rad {
 namespace arch {
 
-/* RADIANCE_DEBUG_ROUTING's print (rad_block_moe_fp8.h, defined after this header is included): the inject calls it first
+/* RADIANCE_DEBUG_ROUTING's print (rad_block_moe_q.h, defined after this header is included): the inject calls it first
  * on a fused step, while the router weights are still the router's, which also spends the layer's one print. */
 inline void moe_debug_weights(RadCtx* c_, int layer, int64_t top_k, rad_buf ids, rad_buf ew, bool f32);
 
@@ -684,7 +684,7 @@ struct BcMoeRemote {
      * a block; if one is, merge fails the step (fail closed) rather than let the write read un-added rows. */
     template <class Moe>
     bool refuses(const Moe& m, int64_t T) const { return m.op_combine && fused(m, T); }
-    /* MoeFP8::issues_ar: a handed-off step that does not fuse, behind a HyperConn write (which then leaves the
+    /* MoeQ::issues_ar: a handed-off step that does not fuse, behind a HyperConn write (which then leaves the
      * reduction, bc_moe_remote_hc_open), runs the block's own all-reduce. A norm-fused consumer keeps its fold. */
     template <class Moe>
     bool forces_ar(const Moe& m, int64_t T) const {
@@ -705,11 +705,11 @@ struct BcMoeRemote {
         if (materialize) {
             aq = decl_b(b, materialize->f("blk.%d.moe_mailbox.q", layer), RAD_F8E4M3, {g.max_tok, g.n_embd});
             as = decl_b(b, materialize->f("blk.%d.moe_mailbox.s", layer), RAD_F32,
-                        {g.max_tok, g.n_embd / RAD_FP8_BLOCK});
-            if (aq && as && g.n_embd % RAD_FP8_BLOCK == 0)
+                        {g.max_tok, g.n_embd / RAD_SCALE_GROUP});
+            if (aq && as && g.n_embd % RAD_SCALE_GROUP == 0)
                 quantize = rw(b, RAD_OP(b, c.expert_rot ? "had_quant_act_fp8" : "quant_act_fp8",
                                RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
-                                          RAD_INT("group", RAD_FP8_BLOCK), RAD_STR("dtype", g.dtype)),
+                                          RAD_INT("group", RAD_SCALE_GROUP), RAD_STR("dtype", g.dtype)),
                                RAD_NOWEIGHTS),
                               {w.h.x}, {aq, as});
         }
@@ -788,13 +788,13 @@ struct BcMoeRemote {
         if (quantize)
             RAD_ISSUE_N(c_, quantize, rows, brow_slice(w.h.x, r0, rows, g.n_embd),
                         brow_slice(aq, r0, rows, g.n_embd),
-                        brow_slice(as, r0, rows, g.n_embd / RAD_FP8_BLOCK));
+                        brow_slice(as, r0, rows, g.n_embd / RAD_SCALE_GROUP));
         RAD_ISSUE_N(c_, fused(m, T) ? publish_fused : publish, rows,
                     brow_slice(w.ids, r0, rows, k),
                     brow_slice(w.ew, r0, rows, k),
                     brow_slice(w.h.x, r0, rows, g.n_embd),
                     brow_slice(aq, r0, rows, g.n_embd),
-                    brow_slice(as, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                    brow_slice(as, r0, rows, g.n_embd / RAD_SCALE_GROUP),
                     brows(aq, T));
         if (!active(T)) return;
         if (inv.kind != RAD_OPK_NONE)
@@ -901,7 +901,7 @@ PATCHES = (
         ),),
     ),
     FilePatch(
-        path="arch/common/rad_block_moe_fp8.h",
+        path="arch/common/rad_block_moe_q.h",
         description="Call the remote-MoE extension point from the MoE block: declare, publish, merge, all-reduce.",
         edits=(
             Edit(
@@ -937,7 +937,6 @@ PATCHES = (
                     "\n                      : gin_q != w.h.q || gin_s != w.h.s) ? &nm : nullptr));"
                 ),
                 guard=r"RAD_ARCH_TRY\(bc_remote\.declare_publish\(b, \*this, l,",
-                applies_if=r"rad_buf gin_q = 0, gin_s = 0;",
                 expect_matches=1,
                 rationale="Declare scratch and publish at their issue position, with a separate E4M3 pair when the local pair differs.",
             ),
@@ -950,19 +949,8 @@ PATCHES = (
                     "                          scatter_inv ? brows(w.inv, rows * k) : RAD_NONE);\n"
                 ),
                 guard=r"bc_remote\.after_route\(c_, \*this, T, r0, rows, ecnt,",
-                applies_if=r"bool[ \t]+scatter_inv = false",
                 expect_matches=1,
                 rationale="The remasked scatter must write the same inverse slot table as the original scatter.",
-            ),
-            Edit(
-                id="bc-remote-after-route",
-                applies_if=r"\A(?![\s\S]*bool[ \t]+scatter_inv = false)",
-                anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
-                mode="insert_before",
-                text="    bc_remote.after_route(c_, *this, T, r0, rows, ecnt);\n",
-                guard=r"bc_remote\.after_route\(c_, \*this, T, r0, rows, ecnt\);",
-                expect_matches=1,
-                rationale="n4 is the first routed-GEMM code after the router, scatter and rotated quantisation, so routes and the exact q/s operand are ready.",
             ),
             Edit(
                 id="bc-remote-merge",
@@ -990,7 +978,7 @@ PATCHES = (
         edits=(
             Edit(
                 id="include-bc-moe-remote-block-hc",
-                anchor=r'^#include "rad_fp8\.h"$',
+                anchor=r'^#include "rad_linear\.h"$',
                 text='\n#include "bc_moe_remote_block.h"',
                 guard=r'^#include "bc_moe_remote_block\.h"$',
                 expect_matches=1,
