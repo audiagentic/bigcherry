@@ -57,9 +57,9 @@ def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None 
 ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 N2 build context", edits=(
     _edit(
         "n2-ctx-field",
-        "    int      span_pass_step;\n"
+        "    int      dspark_walk;\n"
         "} RadBuildCtx;",
-        "    int      span_pass_step;\n"
+        "    int      dspark_walk;\n"
         "\n"
         "    /* ---- BC_VTP14_N2_CTX (BigCherry rad0018) */\n"
         "    /* --tp-ownership NAME: an asymmetric tensor-parallel ownership profile (rad_arch.h geom_from), or\n"
@@ -74,8 +74,8 @@ ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 N2
 ABI_LAYOUT = FilePatch(path="abi/rad_abi_layout_rows.h", language="none", description="VTP14 N2 ABI layout fingerprint", edits=(
     _edit(
         "n2-layout-tp-ownership",
-        "ABI_FIELD(RadBuildCtx, span_pass_step)\n",
-        "ABI_FIELD(RadBuildCtx, span_pass_step)\n"
+        "ABI_FIELD(RadBuildCtx, dspark_walk)\n",
+        "ABI_FIELD(RadBuildCtx, dspark_walk)\n"
         "ABI_FIELD(RadBuildCtx, tp_ownership)\n",
         guard="ABI_FIELD(RadBuildCtx, tp_ownership)\n",
     ),
@@ -395,10 +395,8 @@ QWEN = FilePatch(path="arch/qwen35_bf16/qwen35_bf16.cpp", language="none", descr
 ATTN = FilePatch(path="arch/common/rad_block_attn_gated.h", language="none", description="VTP14 N2 attention spans", edits=(
     _edit(
         "n2-attn-spans",
-        "    w_o      = decl_w(b, nm.f(\"blk.%d.attn_output.weight\", l), RAD_BF16, {g.n_embd, q_dim},\n"
-        "                      RAD_ACCESS_PER_TOKEN, RAD_SHARD_COL,  grp_layer(l));\n",
-        "    w_o      = decl_w(b, nm.f(\"blk.%d.attn_output.weight\", l), RAD_BF16, {g.n_embd, q_dim},\n"
-        "                      RAD_ACCESS_PER_TOKEN, RAD_SHARD_COL,  grp_layer(l));\n"
+        "    w_o = out.w;\n",
+        "    w_o = out.w;\n"
         "    /* BC_VTP14_N2_ATTN_SPANS: --tp-ownership. Each query head's gate rows sit beside it (2 * head_dim\n"
         "     * rows a head), and each rank's query heads share its own KV heads. */\n"
         "    if (g.tp_owned) {\n"
@@ -416,10 +414,8 @@ ATTN = FilePatch(path="arch/common/rad_block_attn_gated.h", language="none", des
 GDN = FilePatch(path="arch/common/rad_block_gdn.h", language="none", description="VTP14 N2 delta-net spans", edits=(
     _edit(
         "n2-gdn-spans",
-        "    w_out      = decl_w(b, nm.f(\"blk.%d.ssm_out.weight\", l),        RAD_BF16, {g.n_embd, v_dim},\n"
-        "                        RAD_ACCESS_PER_TOKEN, RAD_SHARD_COL,  grp_layer(l));\n",
-        "    w_out      = decl_w(b, nm.f(\"blk.%d.ssm_out.weight\", l),        RAD_BF16, {g.n_embd, v_dim},\n"
-        "                        RAD_ACCESS_PER_TOKEN, RAD_SHARD_COL,  grp_layer(l));\n"
+        "    w_out = out.w;\n",
+        "    w_out = out.w;\n"
         "    /* BC_VTP14_N2_GDN_SPANS: --tp-ownership. ssm_in is q|k|v|a|b (five row parts) and the convolution\n"
         "     * q|k|v (three); this rank's key heads start at own_gdn_k_lo and value heads at own_gdn_v_lo. */\n"
         "    if (g.tp_owned) {\n"
@@ -445,10 +441,8 @@ GDN = FilePatch(path="arch/common/rad_block_gdn.h", language="none", description
 MLP = FilePatch(path="arch/common/rad_block_mlp.h", language="none", description="VTP14 N2 feed-forward spans", edits=(
     _edit(
         "n2-mlp-spans",
-        "    w_down    = decl_w(b, nm.f(\"blk.%d.ffn_down.weight\", l),    RAD_BF16, {g.n_embd, g.n_ff},\n"
-        "                       RAD_ACCESS_PER_TOKEN, RAD_SHARD_COL,  grp_layer(l));\n",
-        "    w_down    = decl_w(b, nm.f(\"blk.%d.ffn_down.weight\", l),    RAD_BF16, {g.n_embd, g.n_ff},\n"
-        "                       RAD_ACCESS_PER_TOKEN, RAD_SHARD_COL,  grp_layer(l));\n"
+        "    w_down    = dn.w;\n",
+        "    w_down    = dn.w;\n"
         "    /* BC_VTP14_N2_MLP_SPANS: --tp-ownership. gate|up are two equal row parts, each spanned alike. */\n"
         "    if (g.tp_owned) {\n"
         "        RAD_ARCH_TRY(rad_weight_shard_span(b, w_gate_up, g.own_ff_lo, g.own_ff_lo + g.n_ff));\n"
