@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0062_iq6r_converter_gpu_arch"
+order = 62
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "hip"
+plan-ids = ["XDP10"]
+requires = []
+conflicts = []
+tags = ["quantization"]

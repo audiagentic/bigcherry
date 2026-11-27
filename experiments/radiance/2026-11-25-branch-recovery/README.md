@@ -5,7 +5,7 @@ Inert archive, not production or lab entrypoints.
 | Branch | Exact tip | Disposition |
 |---|---|---|
 | feat/iq6r-v4-qualification | `1d1ef307952501f66d110ab7eaef37e0a01e8903` | 2026-11-27: worktree retired (abandoned; quarantine ref below). All 43 files captured: 41 byte-identical in `agent/iq6r-converter-fix`, 2 older evidence versions pinned in the #1250 patch. Tag `archive/wt-iq6r-v4-qualification-20261124` on origin. |
-| agent/iq6r-converter-fix | `99b2fe6257afec191f33070896450d9bf27b1054` | 2026-11-27: lane dormant but expected to resume; pushed to origin as the resumption point, tagged `archive/wt-iq6r-converter-fix-20261127`, worktree retired after capture verification. Strict superset of the v4 line. See the [IQ6R converter lane note](../../../docs/evidence/2026-11-27-iq6r-converter-lane/README.md). |
+| agent/iq6r-converter-fix | `99b2fe6257afec191f33070896450d9bf27b1054` | 2026-11-27: lane dormant but expected to resume; content incorporated into main (stale W8A8 recipe pin corrected, imports made card-free), tip tagged `archive/wt-iq6r-converter-fix-20261127`, worktree retired after capture verification. Strict superset of the v4 line. See the [IQ6R converter lane note](../../../docs/evidence/2026-11-27-iq6r-converter-lane/README.md). |
 | agent/rum02-archive-superseded | `a8f3c6f3cab82d0e2cba3e7a2c9dc47c22a6ede2` | Five retired packages identical on main. |
 | agent/rum11-e4m3-page16 | `5d9735720d5a4390b5e2acf762f451297d45cc0f` | Generalized store and tests shipped. |
 | agent/model-identity-cache | `27153c157bafacf4cbf314e9f622b346a333fede` | Superseded by stat identity #1275; inert delta. |

@@ -396,3 +396,141 @@ path = "tools/lab/radiance/unit_harness.py"
 anchor = "EMBED_CASES_ANCHOR = \"            iqr_embed_case(pl, f, 512, 640, 3.25f);\\n        }\\n\""
 category = "B"
 reason = "lab harness: the selftest text its edit anchors on, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive.py"
+anchor = 'path = MICRO_ROOT / f"micro-{num:04d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive.py"
+anchor = 'artifact = DIR / f"adaptive-{len(history):04d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive.py"
+anchor = 'base = DIR / f"adaptive-{len(history):04d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive.py"
+anchor = 'complete = prefix.with_suffix(".rad")'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive.py"
+anchor = 'pending = DIR / f"adaptive-{idx:04d}.incomplete.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive.py"
+anchor = '(DIR / f"adaptive-{idx-2:04d}.rad").unlink(missing_ok=True)'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_adaptive_handoff.py"
+anchor = 'file = stem.with_suffix(".rad")'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_controller.py"
+anchor = 'FINAL = WORK / "qwen3.8-27b-iq6r-v4-experimental.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_controller.py"
+anchor = 'artifact = STAGED / f"stage-{len(done):02d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_controller.py"
+anchor = 'artifact = STAGED / "stage-16.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_convert_experimental.py"
+anchor = 'ARTIFACT = ROOT / "qwen3.8-27b-iq6r-v4-experimental.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_convert_experimental.py"
+anchor = 'TEMP = ROOT / "qwen3.8-27b-iq6r-v4-unverified.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_crash_probe.py"
+anchor = 'output = root / f"crash-focus-{args.mode}-unqualified.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_micro_controller.py"
+anchor = 'final = MICRO_ROOT / f"micro-{len(sources):04d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_micro_convert.py"
+anchor = 'ORIGINAL_STAGE_ONE = STAGES_ROOT / "stage-01.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_micro_convert.py"
+anchor = 'path = MICRO_ROOT / f"micro-{previous:04d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_micro_convert.py"
+anchor = 'output = MICRO_ROOT / f"{name}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_micro_convert.py"
+anchor = 'incomplete = MICRO_ROOT / f"{name}.incomplete.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_micro_convert.py"
+anchor = '(MICRO_ROOT / f"micro-{args.stage - 2:04d}.rad").unlink(missing_ok=True)'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_staged_convert.py"
+anchor = 'FINAL = ROOT / "qwen3.8-27b-iq6r-v4-experimental.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_staged_convert.py"
+anchor = 'complete = STAGES_ROOT / f"stage-{i:02d}.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_staged_convert.py"
+anchor = 'pending = STAGES_ROOT / f"stage-{i:02d}.incomplete.rad"'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/iq6r_v4_staged_convert.py"
+anchor = '(STAGES_ROOT / f"stage-{i-2:02d}.rad").unlink(missing_ok=True)'
+category = "E"
+reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
