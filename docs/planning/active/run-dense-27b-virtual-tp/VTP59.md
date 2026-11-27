@@ -82,6 +82,8 @@ TP3 IQ8R cold FP8 KV, eight streams, pipeline on/min256, batch2048, interleave o
 
 RSC19 integration on node/serving-config-enhancement a3969b3c6: native /diagnostics before/after checks via existing lab-record adapter against exact manifest and explicit scheduler expectation. 100/150ms single-repeat TP3 IQ8R FP8 cold arms: 4K/512 aggregate 179.990/186.543, p95 gap 161.933/41.349ms; 512/128 aggregate 281.492/269.749, p95 gap 166.390/174.782ms. Same prompt hashes and token counts as ABBA, zero preemptions; no new default. Evidence owned once by RSC19 at docs/evidence/RSC19-VTP59-latency/summary.json after integration. Continue 75ms, interleave, mixed arrival, phase and independent quality gates using the shared receipt path; use matched inspector v3 once integrated.
 
+RSC19 matched owner build 927a24bf85c2ac29d3dbe0b779063323, evidence commit c96b60638 on node/serving-config-enhancement: 75/50/75ms TP3 IQ8R FP8 cold, six reports all automatic pre/post receipt verified, identical prompt hashes and token counts vs earlier arms, zero preemptions. Short aggregate 279.875/270.253/279.928 t/s, p95 gaps 40.065/165.666/40.445ms; long aggregate 188.774/180.289/180.855 t/s, gaps 41.509/161.219/162.438ms. 75ms stable short results but two long scheduling regimes; no production promotion. Continue mixed arrivals, explicit auto interleave and phase attribution, independent quality and topology qualification; evidence docs/evidence/RSC19-VTP59-matched-owner/summary.json after integration.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -102,3 +104,4 @@ RSC19 integration on node/serving-config-enhancement a3969b3c6: native /diagnost
 - 2026-11-27T11:49:17.864160+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:31:22.876011+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:40:02.220162+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T14:10:04.816913+00:00 (updated-by): Updated: section:notes
