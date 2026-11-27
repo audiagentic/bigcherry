@@ -86,7 +86,9 @@
     },
     "metrics": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": {
+        "$ref": "#/$defs/metric_group"
+      },
       "required": [
         "decode",
         "prefill",
@@ -102,6 +104,10 @@
         "ttft": {
           "$ref": "#/$defs/metric_group"
         }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
       }
     },
     "provenance": {
@@ -121,13 +127,31 @@
       "minLength": 1
     },
     "metric_specs": {
-      "$ref": "#/$defs/metric_specs"
+      "$ref": "#/$defs/metric_specs",
+      "additionalProperties": {
+        "$ref": "#/$defs/metric_group_specs"
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
     },
     "validity": {
       "$ref": "#/$defs/validity"
     },
     "calibration_record": {
       "$ref": "#/$defs/calibration_selection"
+    },
+    "extensions": {
+      "type": "object",
+      "description": "Optional namespaced payloads. Each namespace owns its schema version and data contract; extension data is not implicitly queryable.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_.-]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/versioned_extension"
+      }
     }
   },
   "$defs": {
@@ -208,7 +232,7 @@
       "additionalProperties": {
         "type": "number"
       },
-      "description": "Named numeric metrics; empty object means phase was not measured. Units belong in metric names.",
+      "description": "Named numeric metrics within a semantic group; an empty group means it was not measured.",
       "propertyNames": {
         "type": "string",
         "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
@@ -287,12 +311,26 @@
             },
             "minItems": 2
           }
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "aggregation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },
     "metric_specs": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": {
+        "$ref": "#/$defs/metric_group_specs"
+      },
       "required": [
         "decode",
         "prefill",
@@ -329,6 +367,10 @@
             "$ref": "#/$defs/metric_spec"
           }
         }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
       }
     },
     "validity": {
@@ -407,6 +449,33 @@
         },
         "reason_detail": {
           "type": "string"
+        }
+      }
+    },
+    "metric_group_specs": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/metric_spec"
+      }
+    },
+    "versioned_extension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "data"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "data": {
+          "type": "object"
         }
       }
     }

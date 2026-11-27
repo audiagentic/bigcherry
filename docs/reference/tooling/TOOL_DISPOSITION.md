@@ -689,6 +689,29 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/xtx27_prefill.py` | **TRANSITIONAL** | XDP01 dual-XTX prefill measurement and fixture harness; lab-only. |
 | `tools/lab/radiance/xtx27_quant_plan.py` | **TRANSITIONAL** | XDP03 card-free quantization/precision budget and risk planner; experiment-only. |
 | `tools/lab/radiance/xtx27_quant_select.py` | **TRANSITIONAL** | XDP03 fail-closed mixed-precision candidate selector and evidence gate; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_adaptive.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): adaptive checkpoint conversion, run only after micro controller handoff; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_adaptive_controller.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): fail-closed adaptive IQ6R controller; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_adaptive_handoff.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): controlled handoff from a live micro stage to adaptive checkpoints; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_audit_artifact.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): card-free, fail-closed post-conversion RAD2 artifact structure audit; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_controller.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): detached, fail-closed controller for staged conversion; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_convert_experimental.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): release-locked conversion, runs only within an exclusive GPU lease; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_crash_probe.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): isolated GPTQ SIGSEGV reproducer with gdb backtrace capture; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_fetch_hessians.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): fetch and checksum the pinned public 27B calibration Hessians; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_head_view.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): read-only classified checkpoint view with the original DFlash2 source head; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_micro_controller.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): fail-closed controller for one-tensor micro-checkpoints; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_micro_convert.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): single-GPTQ-tensor, independently sealed conversion, one stage per invocation; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_offline.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): card-free source/recipe/calibration inventory; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_offload.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): validates device code images before a GPU-assisted conversion; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_prepare_grams.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): converts pinned upper-triangle Hessian safetensors to RADGRAM2; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_prepare_quality.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): card-free audit of the pinned held-out reference corpus and golden layout; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_rdna3_preflight.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): offline gfx1100 IQR code-image and exported-hook admission preflight; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_rdna3_registry.cpp` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): RDNA3 registry reference that never opens the plugin runtime; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_stage_recipes.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): cumulative runnable stage recipes on the pinned W8A8 trunk; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_staged_convert.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): resumable, stage-sealed full-model conversion on managed gfx1201; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_validate_hessians.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): validates all 257 public RADGRAM2 Hessians before conversion; experiment-only. |
+| `tools/lab/radiance/iq6r_v4_verify_grams.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): card-free sample audit of converted Grams against source Hessians; experiment-only. |
+| `tools/lab/radiance/hip_wrong_arch/launch_probe.hip` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): HIP launch probe that must error, not SIGSEGV, on a wrong-architecture build; experiment-only. |
+| `tools/lab/radiance/hip_wrong_arch/run_matrix.py` | **TRANSITIONAL** | IQ6R-V4 lane (XDP10/XDP11): isolated ROCm HIP wrong-architecture A/B under an exclusive GPU lease; experiment-only. |
 | `tools/lab/rad42-bar-push/chunk_contract.py` | **TRANSITIONAL** | RAD42 CPU-only chunk-contract model and replay fixture; lab-only. |
 | `tools/lab/rad42-bar-push/critical_path_model.py` | **TRANSITIONAL** | RAD42 CPU-only stage/critical-path timing model; lab-only. |
 | `tools/lab/rad42-bar-push/test_chunk_contract.py` | **TRANSITIONAL** | RAD42 card-free chunk-contract regression checks; lab-only. |

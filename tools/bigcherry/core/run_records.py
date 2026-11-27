@@ -24,7 +24,7 @@ from .context import resolve_work_root
 SCHEMA_PATH = Path(__file__).parent / "schemas" / "run-record-v1.schema.json"
 STORE_DIR = Path("run-records") / "v1"
 _HEX64 = re.compile(r"[0-9a-f]{64}\Z")
-_METRIC = re.compile(r"(decode|prefill|ttft)\.[a-zA-Z_][a-zA-Z0-9_]*\Z")
+_METRIC = re.compile(r"[a-z][a-z0-9_]*\.[a-zA-Z_][a-zA-Z0-9_]*\Z")
 
 
 class RecordError(ValueError):
@@ -190,10 +190,12 @@ def validate_record(record: Any) -> dict[str, Any]:
     # MRC05/#1226: exact per-phase metric direction and gate are mandatory.
     if "metric_specs" not in record:
         raise RecordError("metric_specs is required: every metric needs an explicit direction and gate")
-    for phase in ("decode", "prefill", "ttft"):
-        if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
-            raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
-        for spec in record["metric_specs"][phase].values():
+    if set(record["metric_specs"]) != set(record["metrics"]):
+        raise RecordError("metric_specs groups must match metrics groups")
+    for group, values in record["metrics"].items():
+        if set(record["metric_specs"][group]) != set(values):
+            raise RecordError(f"metric_specs.{group}: direction missing or extra metric")
+        for spec in record["metric_specs"][group].values():
             if type(spec["gated"]) is not bool:
                 raise RecordError("metric gate must be a boolean")
 
@@ -433,13 +435,13 @@ class RunRecordStore:
         since: str | None = None,
         until: str | None = None,
     ) -> list[dict[str, Any]]:
-        """Filter verified records by identity, workload, named phase metric and UTC time.
+        """Filter verified records by identity, workload, named metric group and UTC time.
 
         Each result has sha256 and record keys. This reader deliberately has
         no path-based record API or producer-specific interpretation.
         """
         if metric is not None and not _METRIC.fullmatch(metric):
-            raise RecordError("metric must be phase.name (decode, prefill or ttft)")
+            raise RecordError("metric must be group.name (for example decode.tokens_per_second or quality.kld_mean)")
         for label, stamp in (("since", since), ("until", until)):
             if stamp is not None:
                 _check_schema(

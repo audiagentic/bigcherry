@@ -189,3 +189,26 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           PYTHONPATH=tools python3 -m bigcherry.release.manifest_reconcile . "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+      # Queue one release at a time: all release lines share the version manifest.
+      # The next main push reruns release-please and reconciles the remaining PRs.
+      - name: queue eligible release PR
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          actor=$(gh api user --jq .login)
+          prs=$(gh pr list --base main --state open --label 'autorelease: pending' --json number,author,headRefName,isCrossRepository,isDraft,autoMergeRequest,mergeStateStatus --limit 100)
+          eligible=$(jq --arg actor "$actor" '[.[] | select(.author.login == $actor and (.isCrossRepository | not) and (.isDraft | not) and (.headRefName | test("^release-please--branches--main--components--bc-(radiance|llamacpp|platform)$")))]' <<< "$prs")
+          if jq -e 'any(.[]; .autoMergeRequest != null)' <<< "$eligible" >/dev/null; then exit 0; fi
+          number=$(jq -r 'sort_by(.number) | first | .number // empty' <<< "$eligible")
+          if [ -z "$number" ]; then exit 0; fi
+          # List results can report UNKNOWN while GitHub computes mergeability.
+          state=$(gh pr view "$number" --json mergeStateStatus,headRefOid)
+          case "$(jq -r .mergeStateStatus <<< "$state")" in
+            CLEAN|BLOCKED|BEHIND)
+              gh pr merge "$number" --auto --squash --match-head-commit "$(jq -r .headRefOid <<< "$state")"
+              ;;
+            *) echo "::warning::Release PR $number is not ready for automatic merge";;
+          esac

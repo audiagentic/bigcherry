@@ -4,6 +4,8 @@ See also [GPU qualification code-level implementation guide](gpu-qualification-c
 
 Extends [kernel composition](radiance-kernel-composition.md), [bump integration](radiance-bump-integration.md) and [AI power screen](../reference/tooling/AI_POWER_SCREEN.md). RCS19–25 delivered the foundations; do not reopen their completed records. RCS08/RCS10, KAB01, FKE01, MEN bump work and PWR07/08/10/12/PWR02 remain their existing owners. This design introduces no alternate build graph, engine runtime authority, profile format, launch manifest, cache or evidence database.
 
+> **Bump scope (2026-11-27):** [Fast-gate review](../evidence/2026-11-27-radiance-230-bump/FAST-GATES.md) controls execution: use current named families/overlay or smallest existing owner harness; resource-only is diagnostic. Don't extend to all models/architectures or build full engine for isolated code. Unknown dependency widens compile scope; missing oracle requires only affected real test. One full release build and targeted installed checks at promotion; no power qualification unless affected. Existing qualification and fail-closed rules remain.
+
 ## 1. Inventory and ownership
 
 The three grouping axes are deliberately different:
