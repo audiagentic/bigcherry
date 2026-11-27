@@ -17,7 +17,7 @@ Executed observational patch-rebase-check for each source and --all against exac
 
 Zero upstream-absorbed verdicts. Lexical failures are not evidence of supersession; clean patches are not runtime-qualified. Re-run after fixing dependencies to reveal masked failures. This is source-level assessment, not compile/GPU/model qualification.
 
-Executable prework: [ABI and dependency preflight](PREFLIGHT.md) establishes measured combined ABI45 headers and the rad0016/17 anchor repair in isolated scratch. Production implementation remains pending.
+Executable prework: [ABI and dependency preflight](PREFLIGHT.md) establishes measured combined ABI45 headers and the rad0016/17 anchor repair in isolated scratch. Production implementation remains pending. [TP preflight](TP-PREFLIGHT.md) extends the scratch composition through rad0018, passes BF16 Qwen host syntax, and maps rad0019's remaining semantic conflicts.
 
 ## 1. ABI — first critical gate
 
@@ -47,6 +47,8 @@ Propose pristine ABI44 and composed ABI45 if retained extensions alter layout. O
 No whole package proven superseded. Archive original packages unchanged only after equivalence/coverage proof; reason, successor and evidence in archive ledger. Keep old installed 2.2 runtime for rollback.
 
 ## 3. Retired model encodings — release blocker
+
+**Source correction from TP preflight:** native DenseQ::declare explicitly exempts plain MXFP4 for DFlash2 drafters. Do not infer global MXFP4 retirement from general LinearQ refusal; preserve active optional/draft capabilities under the parity guide. See [TP preflight](TP-PREFLIGHT.md).
 
 **Follow-up:** actual metadata inspection and owner-approved retirement policy are in [MODEL-COMPATIBILITY.md](MODEL-COMPATIBILITY.md). All four configured files exist; no retired weight plane set was observed, and the existing Flash-Next codebook has a plausible native int8-activation migration. The initial filename-based risk below is superseded by these observations; actual candidate graph and runtime proof remain required.
 
