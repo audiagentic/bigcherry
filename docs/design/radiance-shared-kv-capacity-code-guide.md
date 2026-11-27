@@ -1,8 +1,9 @@
 # Shared KV capacity: code-level implementation guide (RSC16)
 
 Proposed, not implemented. Read radiance-shared-kv-capacity.md first. Source anchors
-checked against the local materialized Radiance tree used for recent work and
-BigCherry main e79e736c2; re-resolve against the actual target pin before edits.
+originally checked against Radiance 2.2; section K records verified 2.3 target
+source and overrides stale implementation anchors/assumptions. Recheck the final
+merged recipe and source identity before edits.
 Keep upstream changes as managed patches under engines/radiance/patches, following
 existing pin/composition gates. Do not edit a materialized source or generated
 fixture by hand. RSC17 owns startup allocation; RSC18 owns live accounting;
@@ -605,3 +606,176 @@ slot target and exhaustion. Check long output, short progress and
 numerical quality with matched context/YaRN controls. A capacity
 refusal is valid physical evidence, not successful target acceptance.
 Set explicit performance/no-regression criteria before run.
+
+## K. Radiance 2.3 reuse map and execution order (2026-11-27)
+
+This section is the target-specific implementation map; A-J retain the requirements,
+historical evidence and mathematical tests. Do not implement each review as a separate
+work package. RSC17 owns startup and retention facts; RSC18 owns runtime verification;
+RSC16 owns integration and retirement. The bump is independent of shared mode.
+
+### K1. Verified source, not assumed upstream parity
+
+Reviewed controller `e481494914bfa1d3195e947c76876fd5ad17ce2f`,
+branch bump/radiance-20261127, pin `3b13fd32663ef52252a7f0be255523480aa22ffe`
+(v2.3.0), compared pristine Git revisions b6b8751 and 3b13fd3. Base materialization
+plan 445dc21264c89b571a8077b7f573b9af, source slice
+90bca121c9dcee4cac6cf2b41a8d7b3e, tree 4725962c4b5da8b9506b5427e56d771015c78a07:
+all 34 recorded patch implementation digests matched the branch's
+`bigcherry.patch.patchset.catalog`. Alternate slice c0f67098ba8c37faf9d82d7d4cb7230a
+differed in rad0046 only; compared 14 host source/test files byte-for-byte, all equal.
+This verifies the reviewed base chain, not every recipe/overlay or installed binary.
+Recheck final merged pin, recipe selection, source identity and dependent patches
+before edits; do not freeze the bump or duplicate its canonical build.
+Bump CANONICAL-LANE evidence records 504 syntax passes at an earlier controller,
+not shared-capacity acceptance. No new builds, device runs or tests executed here.
+
+### K2. What changed natively from 2.2 to 2.3
+
+| Native seam | Verified behavior | Use / extension |
+|---|---|---|
+| `mem/vram_budget.cpp` | New headroom lookup per device; rank room subtracts max(configured, host reserve); common room uses minimum after each rank's reserve. | Reuse these rules, not raw free or an independent reserve formula. Common split still combines worst costs; prove actual limiting rank. |
+| `vram_budget_rank_spare_mib` | Native named-card surplus; rad0029 adds defaulted named-only switch and calls with false for dense own split. | Preserve default expert behavior, explicit cap/claim/broker/unified exclusions. Extract proposal, do not fork helper. |
+| `KVManager::can_grow` | Now caps non-runtime windows and uses window_table_len for runtime rings; includes COW. | Remove assumption it has old uncapped window behavior. Test real keep_from/recycle geometry rather than impose a new window rule. |
+| `Scheduler::blocks_still_needed/refill_cap` | New shared runner-demand and drafter hit-cap helpers. | Reuse both; do not add an independent prefill/recompute demand implementation. |
+| `IKVManager::ensure_admission` | Explicit waiting_for_fleet propagated through KVBinding, ensure and grow_for. | Keep distinct local FULL, external capacity wait and allocator failure. No new status taxonomy for the same condition. |
+| `TierExec::quiesce/report_pass/close` | Native transfer-fence failure propagation and fatal guard before freeing unsafe buffers. | Preserve; no early release on cancellation or failed restore. |
+| `Engine::drafter_window_snap` | New checkpoint-draft-window option allows drafter snapshots beside linear state. | Probe with resolved policy on all ranks; include snapshot geometry in cache identity. Do not reimplement checkpoint policy. |
+
+### K3. RSC17: one geometry and one proposal
+
+Confirmed materialized anchors in engine_bringup.cpp: 2338-39 calls
+vram_budget_resolve then bc_plan_memory_note; bc_plan_memory.cpp:51-75 runs
+refit_serving_pools, exits on error, writes common cfg pools. Only then 2368-2514
+sets rank_cfg_, native expert redistribution and rad0029 dense own-split.
+The latter requires multiple ranks, no broker/claim/explicit GPU cap, no experts
+or unified memory, and sufficient common static-weight pool. It derives each
+weight MiB, adds returned weight room and native spare room, finds least rank
+token count, uses inverse to trim pools, applies only if improved. It cannot
+recover a refusal before that block. Native expert re-split has different
+placement constraints; do not broaden it or remove tier floors.
+
+- Reproduce the archived managed refusal with the matched long profile against
+  the merged 2.3 pin. Record each rank's full VramFacts, actual reserve, program
+  declarations, refit inputs/ppm/deficit and candidate own-split, including failed
+  probe status; distinguish actual cause from possible conservative rejection.
+- Preserve legacy ordering and calibration when C omitted. For explicit shared
+  mode, extract existing rank proposal into a side-effect-free computation ahead
+  of admission; use native rank_room/reserve/spare semantics, existing
+  vram_budget_trial/resolve and rank-split primitives. One writer of final
+  rank_cfg_, no second resolver, do not merely move a mutating hook later.
+  If a supported dense proposal fits, admit on its sealed per-rank facts; if not,
+  report rank/group/byte shortfall. Unsupported expert/fleet/unified/streamed
+  combinations fail closed initially; legacy remains supported. Qwen hybrid
+  state/window groups within the fixed-backed discrete text path are required.
+- mem/kv.cpp:459-540: paged_split divides remaining bytes by double cost,
+  then floors each group to tokens/block_size; inverse checks scalar t >= target.
+  Both unchanged in pristine 2.3. At 65 tokens/B16, 4 pages cannot hold the
+  target. Zero ranks inherit a common table, not an independent capacity.
+  Extend native geometry with checked integer group vector and exact reservation
+  sequence: ceil target/B for full groups, existing window/stream/state rules,
+  group-by-group RAD_ALIGN_UNIT, checkpoint stage, precharged maps, ID and
+  slot-offset limits. Compare actual reservation plan and carve; no guessed scalar
+  margin. Keep old scalar API/behavior for legacy unless parity proves safe
+  replacement; one geometry producer, not competing byte formulas.
+  Fixed == budget is refused by carve_into (547-558), while inverse can pass
+  fixed equality; invalid/empty/unbounded and overflow must be explicit.
+- Preallocate gate before first pools.configure at 2530-2543; plan() already
+  allocates physical pools, so bc_plan_memory_done at 5591-5595 is NOT this
+  gate. Recheck live per-rank facts before allocating; note_ranks currently
+  runs before configure, not proof of success. configure_kv:4910-4953 probes
+  actual pool availability and caps scalar least, but only tests planned
+  tokens when rank pool shrank. Verify ALL rank/group actual block vectors,
+  backed bytes and table compatibility after carve, then later front readiness.
+  Distinguish proposal, allocated pools, carved/backed pages and ready receipts.
+- Keep native plan_groups (99 onward), packed page bytes via declaration,
+  state copies and window rules. Reuse set_drafter_window_snapshot and
+  declare_ring_windows consistently. No kernel/ABI change merely to set C;
+  preserve rad0048 ABI45 and rad0049-54 packed layout contracts.
+
+### K4. RSC17: retention and measurement, not another allocator
+
+Engine::configure_kv:5097-5132 calls prefix.configure then entry_groups (LCM
+entry geometry, repeated short-block groups), TierExec::slot_layout and
+IdleTiers::configure. slot_layout:113-168 sums replicated identical-width
+groups once and per-rank owned shards, skips streamed groups, rejects invalid
+replication; entry_bytes is max per-rank staging width, slot_bytes the full
+engine slot. Preserve this and HostArena::open floor(cap/slot), checkpoint
+store separately, native unified collapse. Use planned entry geometry from
+same declarations and verify actual configured entry layout; if no safe
+pre-carve reuse seam, expose a pure native helper and call it in both places.
+Do not infer retained byte cost from kv_one/L or round minimum up past cap.
+Use resolved chunk_geometry_resolve/checkpoint_slots_want, including new
+drafter snapshot policy, and independently verify actual host slots/room.
+Keep RSC12 configuration/measurement cache and historical readers; migrate
+reachable scalar S8/P1/manifest callers in one versioned shared-mode contract,
+only after inventory of actual callers. No separate retention configuration.
+
+### K5. RSC18: validate unchanged scheduler first
+
+At scheduler.cpp:1985-2018 fresh gate follows hit adoption, evicts bounded
+cache rounds, distinguishes impossible empty-pool fit, idle refusal and busy
+wait. At 2147-2275 blocks_still_needed counts remaining prompt/next position
+and one additional block for runners, fresh also includes took_ this step;
+recompute credits only actual capped/grid/checkpoint-adoptable prefix. Full
+groups alone consume full-context demand; WINDOW/RING recycle. Preserve
+rad0036 governor after room gate, rad0028 draft rules, native
+AdmissionFailure::ExternalCapacity and existing exact error propagation.
+Do not add a redundant admission gate or reserve max output per slot.
+
+ensure:1537-1627 recycles windows in pass 0, calls grow_for in pass 1 (may
+recall backing and change loan/short_peak), then commits table/COW/state
+refs and pending copies in pass 2. Therefore the comment "leaves sequence
+as it was" is not literally all-state atomic. Safe window recycling and
+monotone loan recall may be legitimate on failure: test retained readable
+keys, unchanged committed tokens and ownership, valid pending/copy fences,
+conservation and retry before requiring rollback. can_grow is now
+window-aware but ensure without runtime window uses actual recycled first
+position, not the same min(window_seq_cap) expression. Verify at real
+chunk boundaries/keep_from and partial COW; share read-only helper only if
+a demonstrated mismatch requires it. Preserve native transfer error fences.
+No full allocator transaction or hot-path scan unless failure proves need.
+
+Metrics: kv.cpp:850-920 has free_usable, held=live-free, total and available
+free+recallable (bounded by flex_room). cache_only_blocks tracks references
+held solely by cache. Scheduler::metrics_locked:4520 uses total-held
+including lent, adapter:50-100 selects binding nonwindow utilization, min
+capacity across groups, sums group bytes not ranks. Preserve those legacy
+semantics and expose actual backed/free/held/lent/cache-only with existing
+metrics surface; avoid summing logical tokens across groups/ranks. Distinguish
+backed from reserved even in fixed/elastic paths. Test 65+1 at B16 = 6 pages,
+not 5, plus COW, retained cache, state slots and progress headroom; C is a
+packed target not arbitrary mixed-demand promise. Leave block-table layout
+alone unless measured S*L fixed overhead is dominant.
+
+### K6. Focused test ladder; one integrated build
+
+1. RSC17: card-free mem_test exact inverse cases
+   kv_pool_mib_for_tokens_is_the_inverse_of_paged_tokens,
+   kv_pool_mib_for_tokens_holds_across_block_sizes,
+   kv_pool_mib_for_tokens_with_a_zero_group_beside_a_paged_one and
+   kv_ranks_with_unequal_pools_carve_the_least_ranks_blocks_under_a_cap:
+   retain legacy assertions, extend actual vector/rounded carve boundaries.
+   Reuse test_vtp33_rank_own_split and its real vram_budget.cpp fixture for
+   asymmetric room, named/unnamed reserves, explicit cap/claim and one-byte
+   shortfall. Test preallocation drift and actual carve, not only inverse.
+   Retention use mem_test replicated/zero, snapshot and arena tests plus
+   existing native measurement/S5/cache replay fixtures; explicit stale
+   policy/source/rank receipt failures. No GPU for synthetic geometry.
+2. RSC18: existing sched_test fresh/preempt whole-prompt and running-headroom,
+   fresh window, refill-capped split/windowed drafter, allocator error,
+   external-capacity wait/cancel, backing failure and ahead-step cancel tests;
+   mem_test rollback/window/COW/cache random interleavings; paging_fence_test.
+   Add only missing mixed-length and multi-group failure/retry cases, exact
+   metric invariants and supported shared-mode path tests. Preserve governor,
+   draft and existing legacy tests. Tests named here are present at 2.3;
+   their execution remains pending, not inferred from syntax.
+3. RSC16: lint/composition for affected patch chain and targeted host/device
+   syntax only when touched. Reuse bump canonical lane and its pinned build
+   workflow; one integrated candidate build after card-free gates. Lease GPU
+   only for actual startup/allocation and mixed long active decode + short
+   progress, unique then shared prompts, baseline legacy and supported family
+   matrix. Use existing ENG03/04/MEN17 acceptance and qualify no changed format
+   twice. Recheck actual rank pages and host retention receipts; refusal is
+   actionable evidence, not a successful 512K test. No full-engine test after
+   each host change; do not skip required final integration gates.

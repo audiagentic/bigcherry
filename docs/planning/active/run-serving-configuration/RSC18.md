@@ -19,9 +19,7 @@ RSC16 stage C owner, depends on RSC17 capacity contract. Reuse KVManager and Sch
 
 ## Steps
 
-1. Test unchanged scheduler with RSC17 shared capacity. 2. Fix proven demand/accounting/progress gaps only; reuse existing allocator and prefill/recompute guards. 3. Measure rectangular block tables; no ABI redesign without evidence. 4. Extend existing metrics and tests for exact pages, cancellation, fairness, overflow, exhaustion, speculation and deferred release. 5. Hand off to RSC16.
-
-- I4: Verify existing admission using common group-demand geometry; fix only demonstrated differences and standardize metrics via existing server adapters.
+1. Run existing 2.3 mem/sched/paging-fence fixtures unchanged with RSC17 geometry; reuse blocks_still_needed/refill_cap, can_grow window logic, ensure_admission and native external-capacity/error states. 2. Add only missing exact page-demand, multi-group failure/retry and progress cases; fix demonstrated mismatch, preserve legitimate safe recycling/recall. 3. Reuse existing occupancy/availability/cache-only counters and adapter; keep legacy metrics, expose actual backed vs recallable. 4. Measure rectangular overhead only; hand off integrated mixed-length qualification to RSC16.
 
 ## Detailed Solution & Technical Design
 
@@ -65,6 +63,8 @@ Consolidated cleanup I4: metrics and demand accounting belong here; RHP16/20 liv
 
 Fourth review guide J2/J4: explicit minimum is packed capacity, not arbitrary mixed workload guarantee. Account actual sum of per-session rounded pages, sharing/COW and progress; preserve legacy flex and distinguish backed vs reserved, actual recallable. Reuse existing cache_only_blocks counters.
 
+Guide K2/K5/K6 replaces old assumption can_grow lacks window cap: 2.3 adds native cap and runtime window geometry; verify real keep_from versus ensure. Pass 0 recycles and pass 1 recalls, so do not require global transaction rollback if safety/retry proven. Native Fleet wait and transfer fences must survive. No second scheduler, demand gate, metric stream or blanket ABI redesign.
+
 ## Change Log
 
 - 2026-11-27T03:42:08.275428+00:00 (created-by): Created by agent
@@ -73,3 +73,4 @@ Fourth review guide J2/J4: explicit minimum is packed capacity, not arbitrary mi
 - 2026-11-27T04:00:52.358563+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:effort_risk, section:notes
 - 2026-11-27T04:01:25.833107+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - 2026-11-27T04:18:47.331154+00:00 (updated-by): Updated: section:notes, section:validation
+- 2026-11-27T07:13:21.540426+00:00 (updated-by): Updated: section:steps, section:notes
