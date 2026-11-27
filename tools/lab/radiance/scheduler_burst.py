@@ -148,6 +148,7 @@ def main() -> None:
     ap.add_argument("--component-repo", type=Path, required=True)
     ap.add_argument("--expected-component-sha256", help="independently expected serving component digest")
     ap.add_argument("--output", type=Path, required=True, help="new local run directory")
+    ap.add_argument("--native-sim", action="store_true", help="stage native simulator extension")
     ap.add_argument("--cc", default="gcc-14")
     ap.add_argument("--cxx", default="g++-14")
     ap.add_argument("--jobs", type=int, default=2)
@@ -176,6 +177,9 @@ def main() -> None:
     # Recheck the live source once copied; do not build against a moving cache.
     verify_source_attestation(source, a)
     stage_fixture(tree)
+    if args.native_sim:
+        from scheduler_sim import stage_sim
+        stage_sim(tree)
     env = dict(os.environ, ROCR_VISIBLE_DEVICES="99", HIP_VISIBLE_DEVICES="",
                OMP_WAIT_POLICY="PASSIVE", OMP_NUM_THREADS="4", RAD_TEST_STRICT="1")
     for key in ("RAD_TEST_FILTER", "RAD_SCHED_SIM", "RAD_TEST_LEVEL"):
@@ -192,7 +196,9 @@ def main() -> None:
                "fixture_sha256": digest(FIXTURE), "default_fixture_sha256": digest(DEFAULT_FIXTURE),
                "interleave_block_sha256": digest(tree / "tests/bc_interleave_default.inc"), "serving_component_sha256": before,
                "component_repo_revision": component_revision,
-               "tests": list(TESTS), "status": "failed"}
+               "tests": list(TESTS), "status": "failed",
+               "native_sim": args.native_sim,
+               "staged_scheduler_test_sha256": digest(tree / "tests/sched_test.cpp")}
     try:
         receipt["configure_s"] = run_logged(configure, root / "configure.log", env)
         receipt["build_s"] = run_logged(["cmake", "--build", str(build), "--target",

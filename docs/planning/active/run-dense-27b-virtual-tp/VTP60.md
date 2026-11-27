@@ -57,6 +57,8 @@ Native exact build, fake linkage, no model/GPU; fail missing/skipped tests, stal
 
 Owner direction: reuse Radiance tooling first. Native 2.3 source slice 90bca121c9dcee4cac6cf2b41a8d7b3e verified; commit 724ebe40c replaced manual linking with attested native CMake/CTest. Seven native cases, 18,221 assertions, 0.21 s rerun; 31 Python checks; injected default drift rejected and restored. Initial host build 151 s. Fresh combined launcher and full profile audit remain. Upstream sim_burst supports seeded acceptance and configurable linear costs; mixed target and clock not yet wired. Prefer upstream-compatible changes over new BigCherry implementations. Evidence docs/evidence/VTP60-native-host/summary.json.
 
+Native sim_burst extension implemented with mixed-step cost injection, strict synchronous burst completion, output traces and schedule SHA-256, frozen synthetic cost curves and Pareto search. 34 policies x 4 workloads x 4 cost hypotheses = 544 cells, two runs per cell, all hashes and metrics identical; rerun with stricter parser byte-identical. 40 Python tests passed. Evidence docs/evidence/VTP60-deterministic-screen/simulation-summary.json. No simulated age clock, real per-phase calibration, acceptance distribution or canonical gate integration yet; do not promote based on synthetic results. VTP59 hardware screen uses exact 2.3 candidate. Extend native simulation only, not a second scheduler.
+
 ## Change Log
 
 - 2026-11-27T10:22:17.436914+00:00 (created-by): Created by agent
@@ -68,3 +70,4 @@ Owner direction: reuse Radiance tooling first. Native 2.3 source slice 90bca121c
 - 2026-11-27T10:53:09.767000+00:00 (updated-by): Updated: section:steps
 - 2026-11-27T10:53:26.112245+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:53:34.034298+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-27T11:04:47.040381+00:00 (updated-by): Updated: section:notes

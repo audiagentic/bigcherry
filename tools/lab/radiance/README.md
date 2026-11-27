@@ -193,3 +193,20 @@ Reuse upstream sched_test sim_burst_of_long_prompts for exploratory scheduler
 sweeps, rad-tune for kernel variants, rad-kbench for replay and native diagnose
 for measured serving costs. See docs/design/radiance-fast-qualification.md
 section 10 for scope, limitations and remaining native extensions.
+
+### Deterministic native scheduler screen
+
+Use the native host launcher with `--native-sim` to stage the optional
+test-only extension of Radiance's own `sim_burst_of_long_prompts`.
+Run `scheduler_screen.py --binary <host-build>/tests/sched_test --costs
+<cost-hypotheses.json> --output <screen.json>`. The input kind must be
+`hypothesis-not-calibrated`, with named profiles containing SIM_DEC0,
+SIM_DECR, SIM_PF0 and SIM_PFB. See VTP60 deterministic evidence for a
+working input. The screen verifies output completion and trace continuity,
+repeats each case, hashes ordered steps and emission records, and returns
+nondominated policies across wall time, TTFT and emission gaps.
+The first matrix uses fixed acceptance=2, synchronous bursts, no staging
+or prefix cache and no age-dependent admission. All costs are hypotheses,
+not a hardware prediction. Only compare real model/layout candidates on
+the actual managed engine before production qualification. No global
+default is selected by this tool.
