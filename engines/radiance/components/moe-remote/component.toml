@@ -8,7 +8,7 @@ engine = "radiance"
 # the cards the ENGINE itself serves (the build configures the engine for the union of the components targets); the helper and the mailbox plugin are built for
 # every card type in engines/radiance/archs.toml (CMakeLists.txt)
 targets = ["gfx1100", "gfx1201"]
-built-against = "v2.3.0"
+built-against = "3b13fd32663ef52252a7f0be255523480aa22ffe"
 outputs = ["kernels/libr3moe.so", "helpers/r3_moe_worker"]
 
 [build]
@@ -329,4 +329,4 @@ protocol-flags = ["--role", "--settings-fd"]
 owned-flags = ["--compare", "--describe", "--layer", "--replay", "--replay-sweep", "--route-selftest", "--rows", "--synthetic-protect"]
 runtime-env = ["GPU_MAX_HW_QUEUES", "R3_MOE_PROBE", "RAD_R4D_TRACE"]
 wire-constants = ["moe_remote_shm.h::kMagic = 0x31454f4d33485253", "moe_remote_shm.h::kVersion = 26", "moe_remote_shm.h::kPage = 4096", "moe_remote_shm.h::kMaxTopK = 16", "moe_remote_shm.h::kMaxRows = 4096", "moe_remote_shm.h::kMaxLayers = 128"]
-abi-version = 43
+abi-version = 44

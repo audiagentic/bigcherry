@@ -1,4 +1,4 @@
-"""Exact-source replay and always-on checks for the local ABI44 header patch."""
+"""Exact-source replay and always-on checks for the local ABI45 header patch."""
 from __future__ import annotations
 
 import re
@@ -28,6 +28,7 @@ ABI_FIELDS = {
     ),
     "RadKVGroupDecl": ("kv_layout",),
     "RadArchProbe": ("kv_layout_ok",),
+    "RadBatch": ("cu_seqlens_h",),
 }
 
 FINGERPRINT_PROBE = r"""#include "rad_abi_layout.h"
@@ -51,7 +52,7 @@ def compile_release_probe(cc: str, root: Path, source: Path) -> Path:
     return executable
 
 
-class Abi44ContractTests(unittest.TestCase):
+class Abi45ContractTests(unittest.TestCase):
     def test_promoted_package_dependency_and_recipe_membership(self):
         closure = patchset.expand_composition("radiance", (PACKAGE,), directory=PATCHES)
         resolved = patchset.resolve_exact("radiance", closure.expanded, directory=PATCHES)
@@ -61,10 +62,10 @@ class Abi44ContractTests(unittest.TestCase):
         self.assertLess(ordered.index(BATCH), ordered.index(PACKAGE))
         assert_promoted_recipe(self, PACKAGE)
 
-    def test_frozen_abi43_prefix_extends_once_and_release_fixture_runs(self):
+    def test_frozen_abi44_prefix_extends_once_and_release_fixture_runs(self):
         checkout = radiance_checkout()
         if checkout is None:
-            self.skipTest("set RADIANCE_SRC to a checkout with the frozen ABI43 commit")
+            self.skipTest("set RADIANCE_SRC to a checkout with the frozen ABI44 commit")
         cc = shutil.which("cc")
         if cc is None:
             self.skipTest("a C compiler is required for the header fixture")
@@ -74,7 +75,7 @@ class Abi44ContractTests(unittest.TestCase):
             fingerprint_probe.write_text(FINGERPRINT_PROBE, encoding="utf-8")
             executable = compile_release_probe(cc, root, fingerprint_probe)
             version, previous_hash = subprocess.check_output([executable], text=True).split()
-            self.assertEqual(version, "43")
+            self.assertEqual(version, "44")
 
             patches = load_patch_files(PACKAGE)
             first = apply_all(patches, root)
@@ -90,7 +91,7 @@ class Abi44ContractTests(unittest.TestCase):
             self.assertEqual(snapshot, {patch.path: (root / patch.path).read_bytes() for patch in patches})
 
             abi_header = (root / "abi/rad_abi.h").read_text()
-            self.assertEqual(re.findall(r"^#define RAD_ABI_VERSION (\d+u)$", abi_header, re.M), ["44u"])
+            self.assertEqual(re.findall(r"^#define RAD_ABI_VERSION (\d+u)$", abi_header, re.M), ["45u"])
             fingerprint_rows = (root / "abi/rad_abi_layout_rows.h").read_text().splitlines()
             for struct, fields in ABI_FIELDS.items():
                 rows = [row for row in fingerprint_rows if row.startswith(f"ABI_FIELD({struct}, ")]
@@ -101,12 +102,26 @@ class Abi44ContractTests(unittest.TestCase):
 
             executable = compile_release_probe(cc, root, fingerprint_probe)
             version, current_hash = subprocess.check_output([executable], text=True).split()
-            self.assertEqual(version, "44")
+            self.assertEqual(version, "45")
+            self.assertEqual(current_hash, "6c431f97e8b670d4")
             self.assertNotEqual(current_hash, previous_hash)
 
             fixture = root / "tests/bc_kv_layout_contract_test.c"
             executable = compile_release_probe(cc, root, fixture)
             self.assertEqual(subprocess.check_output([executable], text=True).strip(), current_hash)
+
+            # Run the upstream C/C++ ABI suite against actual composed headers/table.
+            cxx = shutil.which("c++")
+            self.assertIsNotNone(cxx, "requires C++ compiler for ABI parity")
+            c_obj = root / "abi_c.o"
+            subprocess.run([cc, "-std=c11", "-pedantic-errors", "-I", str(root / "abi"),
+                            "-c", str(root / "tests/abi_c_test.c"), "-o", str(c_obj)], check=True)
+            abi_suite = root / "abi-layout-test"
+            subprocess.run([cxx, "-std=c++17", "-O2", "-I", str(root / "abi"),
+                            str(root / "tests/abi_layout_test.cpp"), str(c_obj),
+                            "-o", str(abi_suite)], check=True)
+            checked = subprocess.run([str(abi_suite)], capture_output=True, text=True, timeout=10)
+            self.assertEqual(checked.returncode, 0, checked.stdout + checked.stderr)
 
             # A wrong expectation must fail in the same NDEBUG build.
             failed_fixture = root / "test_wrong_row_size.c"

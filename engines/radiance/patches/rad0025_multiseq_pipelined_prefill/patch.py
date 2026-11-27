@@ -45,9 +45,9 @@ def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
 ABI = FilePatch(path="abi/rad_runtime.h", language="none", description="VTP31 host cu_seqlens", edits=(
     _edit(
         "msp-abi",
-        "    const int32_t* ckpt_cu;\n"
+        "    const int32_t* vl_mask;\n"
         "} RadBatch;\n",
-        "    const int32_t* ckpt_cu;\n"
+        "    const int32_t* vl_mask;\n"
         "    /* BC_VTP31_MSP_ABI (rad0025): [n_seq + 1] host copy of cu_seqlens, or null (a driver that does\n"
         "     * not fill it), so a plugin can cut a step between sequences without reading the card. */\n"
         "    const int32_t* cu_seqlens_h;\n"
@@ -73,9 +73,9 @@ KEY = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP31
                 edits=(
     _edit(
         "msp-key-size",
-        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 496,\n",
-        "/* BC_VTP31_MSP_KEY_SIZE (rad0025): RadBatch::cu_seqlens_h, keyed below. */\n"
         "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 504,\n",
+        "/* BC_VTP31_MSP_KEY_SIZE (rad0025): RadBatch::cu_seqlens_h, keyed below. */\n"
+        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 512,\n",
         guard="BC_VTP31_MSP_KEY_SIZE",
     ),
     _edit(
@@ -99,7 +99,7 @@ KEY = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP31
     ),
 ))
 
-PIECES = FilePatch(path="arch/common/rad_fp8.h", language="none", description="VTP31 sequence cut", edits=(
+PIECES = FilePatch(path="arch/common/rad_linear.h", language="none", description="VTP31 sequence cut", edits=(
     _edit(
         "msp-pieces",
         "    bool in_ready = false;\n"
@@ -114,7 +114,7 @@ PIECES = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
     ),
 ))
 
-ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none", description="VTP31 sequence cut",
+ATTN = FilePatch(path="arch/common/rad_block_attn_gated_q.h", language="none", description="VTP31 sequence cut",
                  edits=(
     _edit(
         "msp-attn-takes",
@@ -160,7 +160,7 @@ ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none",
     ),
 ))
 
-GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", description="VTP31 sequence cut", edits=(
+GDN = FilePatch(path="arch/common/rad_block_gdn_q.h", language="none", description="VTP31 sequence cut", edits=(
     _edit(
         "msp-gdn-takes",
         "        return pieces && pieces->cu && pieces->cuts(batch->n_tok) &&\n"

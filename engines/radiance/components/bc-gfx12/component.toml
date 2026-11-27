@@ -4,7 +4,7 @@ schema = 1
 name = "bc-gfx12"
 engine = "radiance"
 targets = ["gfx1201"]
-built-against = "v2.3.0"
+built-against = "3b13fd32663ef52252a7f0be255523480aa22ffe"
 outputs = ["kernels/libbcgfx12.so"]
 
 [build]
@@ -28,4 +28,4 @@ patch-provided-files = []
 protocol-flags = []
 owned-flags = []
 runtime-env = ["BC_GFX12_MOE_GEMV"]
-abi-version = 43
+abi-version = 44
