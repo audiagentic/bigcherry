@@ -4,8 +4,8 @@
 version = 2
 engine = "radiance"
 # Radiance 2.2.0 migration candidate: upstream ABI43, patched ABI44, frozen source commit b6b8751cccb0e834a13ae9e5afca824ee9a487aa.
-pinned = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
-pinned-version = "2.2.0"
+pinned = "v2.3.0"
+pinned-version = "2.3.0"
 
 # Validated serving patches, including the production remote-MoE hand-off.
 [patch-set.serving-core]

@@ -5,7 +5,7 @@ schema = 1
 name = "bc-iqr"
 engine = "radiance"
 targets = ["gfx1100", "gfx1201"]
-built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+built-against = "v2.3.0"
 outputs = ["kernels/libbciqr.so"]
 
 [build]

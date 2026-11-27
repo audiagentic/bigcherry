@@ -4,7 +4,7 @@ schema = 1
 name = "bc-gfx12"
 engine = "radiance"
 targets = ["gfx1201"]
-built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+built-against = "v2.3.0"
 outputs = ["kernels/libbcgfx12.so"]
 
 [build]
