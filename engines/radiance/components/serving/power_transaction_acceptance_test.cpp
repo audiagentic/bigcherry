@@ -102,7 +102,7 @@ Role role(std::string_view name) {
 void assert_error(Status error, ConfigErrorCode code, std::string_view reason) {
     if (!error)
         throw std::runtime_error("expected typed error " + std::string(reason));
-    expect(error->code == code, "expected different typed error code");
+    expect(error->code == code, "expected typed error for " + std::string(reason) + "; got: " + error->message);
     expect(error->message.find(reason) != std::string::npos, "unexpected typed reason: " + error->message);
 }
 Json load_json(const fs::path& path) {
@@ -1028,6 +1028,25 @@ void python_refusal_and_recovery_parity() {
            "Python successful crash recovery event projection");
 }
 
+void peer_platform_admission() {
+    Temporary t;
+    auto fixture = load_json(fs::path(__FILE__).parent_path() / "testdata/power_qualified_inputs.json").at("cases").at(0);
+    auto hardware = make_hardware(fixture);
+    DiskRecords records(t.root / "power/journals", t.root / "power/receipts");
+    const auto peer = t.root / "flashnext/power/journals/platform-run.json";
+    Json doc = {{"schema_version", 1}, {"run_id", "platform-run"}, {"state", "restore_failed"},
+                {"devices", Json::array()}, {"events", Json::array()}, {"touched", Json::array()}};
+    write_text(peer, doc.dump());
+    SessionPower blocked(make_plan(fixture), "blocked", hardware, records, [] { return true; }, [] { return true; });
+    assert_error(blocked.begin(), ConfigErrorCode::admission_refused, "unresolved power journal");
+    expect(hardware.issued.empty(), "platform journal blocks native writes");
+    write_text(peer, "invalid JSON");
+    expect(!records.unresolved_journals(), "malformed platform journal refuses");
+    doc["state"] = "restored";
+    write_text(peer, doc.dump());
+    SessionPower clean(make_plan(fixture), "clean", hardware, records, [] { return true; }, [] { return true; });
+    expect(!clean.begin() && !clean.finish(), "resolved platform record permits native transaction");
+}
 void real_records_are_safe() {
     Temporary t;
     const auto fixture =
@@ -1044,7 +1063,7 @@ void real_records_are_safe() {
     const auto written_before = hardware.issued.size();
     assert_error(bc::serving::power::recover(
                      path, hardware, records, [] { return true; }, [] { return true; }),
-                 ConfigErrorCode::admission_refused, "original shader clock");
+                 ConfigErrorCode::invalid_format, "identity mismatch");
     expect(hardware.issued.size() == written_before,
            "disk journal tamper cannot write out-of-range restored state");
     fs::rename(path, t.root / "journals/real.json");
@@ -1107,6 +1126,19 @@ void receipts_qualify() {
     expect(!qualifying_receipt(receipts, pci, settings(250), ""), "an empty identity qualifies nothing");
     auto receipt = load_json(receipts / "good.power.json");
     expect(receipt.at("workload") == "some-config", "the receipt names the workload as evidence");
+    const auto clean_receipt = receipt;
+    for (const auto* kind : {"restore_failed", "recovery"}) {
+        receipt = clean_receipt;
+        receipt["transaction"]["events"].push_back({{"kind", kind}, {"bdf", "0000:06:00.0"}});
+        write_text(receipts / "good.power.json", receipt.dump());
+        expect(!qualifying_receipt(receipts, pci, settings(250), identity),
+               "another card failure or recovery disqualifies the whole transaction");
+    }
+    receipt = clean_receipt;
+    receipt["observations"]["stop"]["cards"][0]["identity"] = "replacement board";
+    write_text(receipts / "good.power.json", receipt.dump());
+    expect(!qualifying_receipt(receipts, pci, settings(250), identity), "stop identity must match");
+    receipt = clean_receipt;
     receipt["observations"]["stop"]["cards"][0]["power_cap_uw"] = 1;
     write_text(receipts / "good.power.json", receipt.dump());
     expect(!qualifying_receipt(receipts, pci, settings(250), identity), "an inexact restore does not qualify");
@@ -1142,9 +1174,25 @@ void recovery_binding_disk() {
                  ConfigErrorCode::invalid_format, "identity mismatch");
     expect(load_json(journal).at("state") == "applied",
            "forged receipt binding cannot mark recovery journal resolved");
-    expect(hardware.issued.size() > count,
-           "receipt tamper identified after safe readback restoration, before journal completion");
+    expect(hardware.issued.size() == count,
+           "receipt tamper identified before restoration writes");
     write_text(receipt_path, original_receipt.dump(2));
+    // Old absolute-clock journals had no identity; the original receipt,
+    // not a fresh probe, must supply it for recovery.
+    auto legacy = load_json(journal);
+    for (auto& dev : legacy["devices"]) dev.erase("identity");
+    write_text(journal, legacy.dump(2));
+    auto loaded = records.load(journal);
+    expect(bool(loaded) && !loaded.value().devices.front().before.identity.empty(),
+           "legacy journal binds identity from original receipt");
+    auto& card = hardware.card(loaded.value().devices.front().policy.device.pci);
+    const auto identity = card.identity;
+    card.identity = "replacement board";
+    assert_error(bc::serving::power::recover(journal, hardware, records,
+                 [] { return true; }, [] { return true; }),
+                 ConfigErrorCode::admission_refused, "physical identity changed");
+    expect(hardware.issued.size() == count, "replacement board gets no writes");
+    card.identity = identity;
     expect(!bc::serving::power::recover(
                journal, hardware, records, [] { return true; }, [] { return true; }),
            "recovery with the original manifest receipt completes");
@@ -1524,6 +1572,7 @@ int main() {
         injected_interface_exception_matrix();
         python_refusal_and_recovery_parity();
         real_records_are_safe();
+        peer_platform_admission();
         recovery_binding_disk();
         receipts_qualify();
         diagnostics();

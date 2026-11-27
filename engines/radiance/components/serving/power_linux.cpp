@@ -287,18 +287,24 @@ v2::Status LinuxHardware::do_execute(const PowerCommand& command) {
         return operation.error();
     const auto target = root_ / operation.value().path.relative_path();
     detail::FileDescriptor fd(::open(target.c_str(), O_WRONLY | O_CLOEXEC | O_NOFOLLOW));
+    const auto failure = [&](const char* action, int error) {
+        return problem(Code::io_failure, target, std::string(action) + " [" +
+                       command.pci.value + " " + operation.value().value + "]: " +
+                       std::error_code(error, std::generic_category()).message());
+    };
     if (!fd)
-        return problem(Code::io_failure, target, "cannot open power sysfs control");
+        return failure("cannot open power sysfs control", errno);
     const std::string contents = operation.value().value + "\n";
-    size_t written = 0;
-    while (written < contents.size()) {
-        const auto n = ::write(fd.get(), contents.data() + written, contents.size() - written);
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0)
-            return problem(Code::io_failure, target, "power sysfs write failed");
-        written += static_cast<size_t>(n);
-    }
+    ssize_t written;
+    do {
+        written = ::write(fd.get(), contents.data(), contents.size());
+    } while (written < 0 && errno == EINTR);
+    if (written < 0)
+        return failure("power sysfs write failed", errno);
+    // sysfs commands are atomic records, not a byte stream. Never submit
+    // a second command consisting of the unconsumed suffix of a short write.
+    if (static_cast<size_t>(written) != contents.size())
+        return failure("short power sysfs write", EIO);
     return std::nullopt;
 }
 

@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_000512_power-recovery-rejects-mismatc_8082",
+  "files": [
+    "engines/radiance/components/serving/power_linux.cpp",
+    "engines/radiance/components/serving/power_qualification.cpp",
+    "engines/radiance/components/serving/power_records.cpp",
+    "engines/radiance/components/serving/power_transaction.cpp",
+    "engines/radiance/components/serving/power_transaction.h",
+    "engines/radiance/components/serving/power_transaction_acceptance_test.cpp"
+  ],
+  "plan-item-ids": [
+    "PWR15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Harden native recovery binding, full represented control readback, transaction-wide qualification refusal and sysfs write diagnostics.",
+  "timestamp-utc": "2026-11-27T00:05:12.442185Z",
+  "user-summary-candidate": "Power recovery rejects mismatched originals and failed transactions cannot qualify another card."
+}

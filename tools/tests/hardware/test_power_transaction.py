@@ -96,6 +96,32 @@ class TxTest(unittest.TestCase):
 
     S = gpu_power.Setting
 
+    def test_native_peer_journal_blocks_platform_apply(self):
+        root = self.jd.parent
+        self.jd = root / "flashnext/power/journals"
+        native = root / "power/journals"
+        native.mkdir(parents=True)
+        p = native / "native-run.json"
+        doc = {"schema_version": 1, "run_id": "native-run",
+               "state": "restore_failed", "devices": [], "events": [], "touched": [],
+               "manifest_digest": "sha256:" + "a" * 64, "profile_digest": "sha256:" + "b" * 64}
+        p.write_text(json.dumps(doc))
+        with self.assertRaisesRegex(PowerRefused, "unresolved power journal"):
+            self.tx().prepare({A: self.S(vddgfx_offset_mv=-50)}, [A])
+        self.assertEqual(self.drv.log, [])
+        p.write_text("not JSON")
+        with self.assertRaises(PowerRefused):
+            self.tx().prepare({A: self.S(vddgfx_offset_mv=-50)}, [A])
+        doc["state"] = "restored"
+        p.write_text(json.dumps(doc))
+        t = self.tx()
+        t.prepare({A: self.S(vddgfx_offset_mv=-50)}, [A])
+        doc["state"] = "applying"
+        p.write_text(json.dumps(doc))
+        with self.assertRaises(PowerRefused):
+            t.apply()
+        self.assertEqual(self.drv.log, [])
+
     def test_rdna4_signed_offset_and_coupled_restore(self):
         bdf = "0000:09:00.0"
         p = self.root / "sys/bus/pci/devices" / bdf / "pp_od_clk_voltage"

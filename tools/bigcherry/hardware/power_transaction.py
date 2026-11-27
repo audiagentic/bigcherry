@@ -130,27 +130,57 @@ class PowerTransaction:
     def _event(self, kind: str, **detail) -> None:
         self.events.append({"kind": kind, **detail})
 
+    def _peer_journal_dir(self) -> Path | None:
+        # New physical applies use the shared host work root, never a private
+        # run directory. Fake-sysfs callers retain their isolated test roots.
+        if self.root.resolve() == Path("/"):
+            root = os.environ.get("BC_WORK_ROOT")
+            if not root or not Path(root).is_absolute() or not Path(root).is_dir():
+                raise PowerRefused(["physical apply requires an existing absolute BC_WORK_ROOT"])
+            expected = Path(root).resolve() / "flashnext/power/journals"
+            if self.journal_dir.absolute() != expected or self.journal_dir.resolve() != expected:
+                raise PowerRefused(["physical apply requires the shared platform journal directory"])
+            return Path(root).resolve() / "power/journals"
+        # The peer's native records are not written or recovered here.
+        parts = self.journal_dir.absolute().parts
+        if parts[-3:] == ("flashnext", "power", "journals"):
+            return self.journal_dir.absolute().parents[2] / "power/journals"
+        return None
+
     def stale_journals(self) -> list[Path]:
+        paths = [self.journal_dir]
+        peer = self._peer_journal_dir()
+        if peer is not None:
+            paths.append(peer)
+        return [p for directory in paths for p in self._stale_in(directory, native=(directory == peer))]
+
+    @staticmethod
+    def _stale_in(directory: Path, *, native: bool) -> list[Path]:
         out = []
+        if directory.is_symlink():
+            return [directory]
         try:
-            entries = sorted(self.journal_dir.iterdir())
+            entries = sorted(directory.iterdir())
         except FileNotFoundError:
             return out
         except OSError:
-            return [self.journal_dir]
+            return [directory]
         for p in entries:
             if p.suffix != ".json":
                 continue
             try:
-                if p.is_symlink():
-                    raise ValueError("journal symlink")
+                if p.is_symlink() or not p.is_file() or p.stat().st_size > 1024 * 1024:
+                    raise ValueError("journal must be a bounded regular file")
                 doc = read_json(p)
                 if (not isinstance(doc, dict) or doc.get("schema_version") != 1
                         or doc.get("state") not in _SAFE_IDLE or doc.get("run_id") != p.stem
                         or not isinstance(doc.get("devices"), list)
                         or not isinstance(doc.get("events"), list)
                         or not isinstance(doc.get("touched"), list)
-                        or (doc["state"] == "prepared" and doc["touched"] != [])):
+                        or (doc["state"] == "prepared" and doc["touched"] != [])
+                        or (native and not all(isinstance(doc.get(key), str) and
+                                               re.fullmatch(r"sha256:[0-9a-f]{64}", doc[key])
+                                               for key in ("manifest_digest", "profile_digest")))):
                     out.append(p)
             except (OSError, ValueError, TypeError):
                 out.append(p)  # unreadable journal: treat as unresolved

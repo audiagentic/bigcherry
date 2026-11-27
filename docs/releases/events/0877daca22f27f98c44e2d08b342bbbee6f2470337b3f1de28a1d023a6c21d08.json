@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_001536_native-power-recovery-reconcil_1858",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/power_records.cpp",
+    "engines/radiance/components/serving/power_transaction_acceptance_test.cpp",
+    "tools/bigcherry/hardware/power_transaction.py",
+    "tools/tests/hardware/test_power_transaction.py",
+    "tools/lab/radiance/pwr01-baseline.sh"
+  ],
+  "plan-item-ids": [
+    "PWR15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Expose leased native recovery and reciprocally refuse unresolved peer journals at the shared work root.",
+  "timestamp-utc": "2026-11-27T00:15:36.594646Z",
+  "user-summary-candidate": "Native power recovery reconciles original records; peer journal admission prevents conflicting new applies."
+}

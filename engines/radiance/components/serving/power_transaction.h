@@ -190,7 +190,8 @@ enum class EventKind : uint8_t {
     restored,
     restore_failed,
     restore_refused,
-    rollback
+    rollback,
+    recovery
 };
 struct Event {
     EventKind kind;

@@ -28,6 +28,9 @@ class Libr3ComponentTests(unittest.TestCase):
             for path in component.root.rglob("*"):
                 if path.is_file() and path.suffix in {".cpp", ".hip", ".h", ".rw"}:
                     read |= set(_GETENV.findall(path.read_text(encoding="utf-8", errors="replace")))
+            # Host journal location is owner infrastructure, not an engine setting.
+            if name == "serving":
+                read.discard("BC_WORK_ROOT")
             # Engine-side R3_* switches in S1 are no longer component settings.
             # The remaining BC_GFX12_MOE_GEMV binding still uses a registry
             # carrier; every other manifest-bound component setting is typed.

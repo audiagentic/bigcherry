@@ -19,6 +19,9 @@
 #include "v2/s8_rules.h"
 #include <algorithm>
 #include <charconv>
+#include <cerrno>
+#include <csignal>
+#include <limits>
 #include <cstdlib>
 #include <ctime>
 
@@ -88,8 +91,80 @@ void usage() {
            "                 the score on a lab-profile plan measured afresh; the score fails unless every step committed\n"
             "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
             "                 --kld-record DIR --kld-corpus FILE   record a KL reference (DIR existing and empty)\n"
+           "  power-recover --run-dir DIR --work-root DIR --run-id ID --processes-exited\n"
+           "         Recover an unresolved native power journal under a verified GPU lease.\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
+}
+
+// Explicit native recovery; no fresh plan or alternate writer.
+int power_recover_command(int argc, char** argv) {
+    namespace ss = bc::serving::session;
+    namespace power = bc::serving::power;
+    fs::path run_dir, work_root;
+    std::string run_id;
+    bool confirmed = false;
+    for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto need = [&]() {
+            if (++i >= argc) throw std::runtime_error(arg + " requires a value");
+            return std::string(argv[i]);
+        };
+        if (arg == "--help" || arg == "-h") { usage(); return 0; }
+        if (arg == "--run-dir" && run_dir.empty()) run_dir = need();
+        else if (arg == "--work-root" && work_root.empty()) work_root = need();
+        else if (arg == "--run-id" && run_id.empty()) run_id = need();
+        else if (arg == "--processes-exited" && !confirmed) confirmed = true;
+        else throw std::runtime_error("power-recover: unexpected or duplicate option " + arg);
+    }
+    if (run_dir.empty() || work_root.empty() || !confirmed ||
+        run_id.empty() || run_id.size() > 128 ||
+        run_id.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+        throw std::runtime_error("power-recover requires --run-dir DIR --work-root DIR --run-id ID --processes-exited");
+    if (!ss::owner_has_gpu_lease())
+        throw std::runtime_error("power-recover requires a verified GPU lease");
+    const auto idle = [] {
+        // Missing/unreadable process inventory does not establish idleness.
+        std::error_code ec;
+        const fs::directory_iterator it("/sys/class/kfd/kfd/proc", ec);
+        return !ec && it == fs::directory_iterator{};
+    };
+    const auto exited = [&] {
+        const auto record = ss::read_record(run_dir);
+        if (!record || !record->is_object() || record->value("schema_version", 0) != 1)
+            return false;
+        const auto owner = record->at("owner_pid").get<int64_t>();
+        if (owner <= 1 || owner > std::numeric_limits<pid_t>::max())
+            return false;
+        // Even a reused owner PID refuses; no signals are sent.
+        if (::kill(static_cast<pid_t>(owner), 0) == 0 || errno != ESRCH)
+            return false;
+        const auto& processes = record->at("processes");
+        if (!processes.is_array()) return false;
+        for (const auto& child : processes) {
+            if (!child.is_object() || !child.contains("start_time") ||
+                !child.at("start_time").is_number_unsigned() ||
+                !child.contains("pid") || !child.contains("pgid"))
+                return false;
+            const auto pid = child.at("pid").get<int64_t>();
+            const auto pgid = child.at("pgid").get<int64_t>();
+            if (pid <= 1 || pid > std::numeric_limits<pid_t>::max() || pgid != pid)
+                return false;
+        }
+        return ss::alive_recorded(*record).empty() && idle();
+    };
+    power::LinuxHardware hardware("/");
+    const auto root = fs::absolute(work_root) / "power";
+    power::DiskRecords records(root / "journals", root / "receipts");
+    // Re-check live lease and KFD idleness at every recovery write.
+    const auto error = power::recover(records.journal_path(run_id), hardware, records,
+                                      [&] { return ss::owner_has_gpu_lease() && idle(); }, exited);
+    if (error) {
+        std::cerr << "power-recover refused or failed: " << error->path << ": " << error->message << '\n';
+        return 1;
+    }
+    std::cout << "power-recover: exact restoration verified; journal and receipt reconciled (not qualification)\n";
+    return 0;
 }
 
 // RSC02: serve | start | stop | status
@@ -401,7 +476,16 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     auto power = std::make_shared<ss::ManifestPower>(
         hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply, config_name);
     ss::Session session;
-    session.power_hook.begin_manifest = [power](const fs::path&, const bc::serving::v2::Manifest& plan, bc::serving::v2::PlanUse use) {
+    session.power_hook.begin_manifest = [power, work_root](const fs::path&, const bc::serving::v2::Manifest& plan, bc::serving::v2::PlanUse use) -> bc::serving::v2::Status {
+        if (plan.spec.plan.power.mode == bc::serving::v2::PowerMode::kApply) {
+            const char* configured = std::getenv("BC_WORK_ROOT");
+            std::error_code ec;
+            const auto root = configured && *configured ? fs::path(configured) : fs::path{};
+            if (root.empty() || !root.is_absolute() || work_root.empty() ||
+                !fs::is_directory(root, ec) || ec || !fs::equivalent(root, work_root, ec) || ec)
+                return bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::admission_refused,
+                    "session.power", "physical apply requires --work-root matching existing absolute BC_WORK_ROOT");
+        }
         return power->begin(plan, use);
     };
     session.power_hook.verify_serving = [power](const fs::path& path) { return power->verify_serving(path); };
@@ -596,6 +680,8 @@ int main(int argc, char** argv) {
             const std::string cmd(argv[1]);
             if (cmd == "explain")
                 return explain_command(argc, argv);
+            if (cmd == "power-recover")
+                return power_recover_command(argc, argv);
             if (cmd == "helper-exec")
                 return bc::serving::session::helper_exec_command(argc, argv);
             if (cmd == "serve" || cmd == "start" || cmd == "quality" || cmd == "stop" || cmd == "status")
