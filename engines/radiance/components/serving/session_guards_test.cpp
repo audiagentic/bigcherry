@@ -159,9 +159,10 @@ void producer_contract_case(std::string_view which) {
         });
         std::string why;
         model.proof_grace = std::chrono::seconds(5);
-        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, nullptr, &why) == HistogramVerdict::fresh,
-               "a proof that catches up within the grace qualifies");
+        // join before checking: a failed expect must report itself, not unwind past a joinable thread (std::terminate)
+        const bool caught_up = histogram_verdict(rank, now, std::chrono::seconds(30), model, nullptr, &why) == HistogramVerdict::fresh;
         producer.join();
+        expect(caught_up, "a proof that catches up within the grace qualifies");
         publish_like_engine(rank, counts, kOtherNonce);
         model.proof_grace = std::chrono::milliseconds(60);
         const auto t0 = std::chrono::steady_clock::now();
@@ -182,11 +183,12 @@ void producer_contract_case(std::string_view which) {
         });
         const auto before = std::chrono::steady_clock::now();
         std::string why;
-        expect(histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::seconds(5), nullptr, &why) ==
-                   HistogramVerdict::fresh,
-               "the startup check waits for the first counted snapshot and then qualifies it");
-        expect(std::chrono::steady_clock::now() - before < std::chrono::seconds(4), "and does not wait out the bound");
+        const bool qualified = histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::seconds(5),
+                                                         nullptr, &why) == HistogramVerdict::fresh;
+        const bool within_bound = std::chrono::steady_clock::now() - before < std::chrono::seconds(4);
         engine.join();
+        expect(qualified, "the startup check waits for the first counted snapshot and then qualifies it");
+        expect(within_bound, "and does not wait out the bound");
         // still empty at the end of the wait: pending (the caller refuses, with the reason)
         publish_like_engine(rank, zero);
         const auto t0 = std::chrono::steady_clock::now();
