@@ -73,7 +73,7 @@ def work_root() -> Path:
 
 def rocm_tool(name: str) -> str:
     from bigcherry.patch import compose_check
-    clang = compose_check.compiler()
+    clang = compose_check.compiler("radiance")
     if clang is None:
         raise HarnessError("no ROCm compiler (set ROCM_PATH)")
     tool = clang.parent / name

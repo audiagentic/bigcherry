@@ -8,7 +8,7 @@
 #pragma unroll
                 for (uint32_t t = 0; t < MT; ++t) part[t] = (f8v)(0.0f);
 @@ replace
-                constexpr bool kNativeAcc = MT == 2 && FKB == 2 && I8 && MH == 1 && TB == 0;
+                constexpr bool kNativeAcc = MT == 2 && FKB == 2 && MH == 1 && TB == 0;
                 f8v part[MT];
                 r3_v8f part11[MT];
                 const r3_v8f zero11 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
@@ -21,10 +21,10 @@
 
 @@ find 1
                     const lm_s8v bf =
-                        e4m3x8_to_bf16<I8>((uint32_t)raw[0], (uint32_t)raw[1]);
+                        codes8_to_bf16((uint32_t)raw[0], (uint32_t)raw[1]);
 @@ replace
                     const lm_s8v bf =
-                        e4m3x8_to_bf16<I8>((uint32_t)raw[0], (uint32_t)raw[1]);
+                        codes8_to_bf16((uint32_t)raw[0], (uint32_t)raw[1]);
                     r3_v16bf b11;
                     if constexpr (kNativeAcc) b11 = __builtin_bit_cast(
                         r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, bf), lane));

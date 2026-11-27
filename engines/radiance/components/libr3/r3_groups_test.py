@@ -42,7 +42,7 @@ def main() -> None:
     assert groups == expected, f"Unexpected/missing groups: {groups ^ expected}"
     for unit, family in {
         "r4d_gemm_w8a8_tiled": "gemm_quant",
-        "r4d_gemm_fp8a8": "gemm_quant",
+        "r4d_gemm_i8a8": "gemm_quant",
         "r4d_gemm_bf16_nt_m16": "gemm_dense",
         "r4d_dflash_select_bf16": "speculation",
         "r4d_attn_paged_h256_gqa6": "attention",

@@ -237,7 +237,7 @@ class CompositionGates:
         from ..patch import compose_check
 
         engine = self.context.engine
-        if compose_check.compiler() is None:
+        if compose_check.compiler(engine) is None:
             raise BumpCheckError("no ROCm clang++ (set ROCM_PATH): the composition compile gate cannot run")
         source = engines.load(paths.REPO_ROOT, engine).promotion_source
         ids = compose_check.production_ids(engine, source) if source else []

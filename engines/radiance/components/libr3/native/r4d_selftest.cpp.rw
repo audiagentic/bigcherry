@@ -164,11 +164,11 @@ static void w8_perf(const Plugin& pl, int64_t N, int64_t K, int64_t M, int iters
 @@ end
 
 @@ find 1
-                "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
+                "  --perfw8 N K M [iters]:  the int8 trunk GEMMs (W8A8 and the i8a8 / IQ8R rows) at\n"
 @@ replace
                 "  --perfmxfp4 N K M [iters]: the MXFP4 prefill row, including activation pre-pass,\n"
                 "             with all weight planes rotated past cache; R3_BT selects implementation.\n"
-                "  --perfw8 N K M [iters]:  the 8-bit trunk GEMMs -- block E4M3 W8A8 and the int8\n"
+                "  --perfw8 N K M [iters]:  the int8 trunk GEMMs (W8A8 and the i8a8 / IQ8R rows) at\n"
 @@ end
 
 # RR09-A: native gfx11 WMMA arithmetic roof. r3_wmma_perf.hip is linked only into libr3's

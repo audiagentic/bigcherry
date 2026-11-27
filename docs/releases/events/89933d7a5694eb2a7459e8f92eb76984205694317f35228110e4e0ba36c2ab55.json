@@ -1,0 +1,42 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_064529_radiance-kernel-sources-now-re_8998",
+  "files": [
+    "docs/evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md",
+    "docs/evidence/2026-11-27-radiance-230-bump/NATIVE-RECONCILIATION.md",
+    "docs/evidence/2026-11-27-radiance-230-bump/native-compose-results.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/port-compose-sdk.py",
+    "docs/evidence/2026-11-27-radiance-230-bump/port-native.py",
+    "docs/evidence/2026-11-27-radiance-230-bump/port-owned-iqr.py",
+    "docs/evidence/2026-11-27-radiance-230-bump/port-scale-diagnostic.py",
+    "engines/radiance/components/bc-iqr/bc_gemm_8a8_prefill.h",
+    "engines/radiance/components/bc-iqr/bc_iqr_embed.hip",
+    "engines/radiance/components/bc-iqr/bc_iqr_gemm.hip",
+    "engines/radiance/components/bc-iqr/bc_iqr_vocab.hip",
+    "engines/radiance/components/libr3/native-shelved/r4d_gemm_mxfp4a8_gemv.gated-v2.2.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw",
+    "engines/radiance/components/libr3/native/r4d_gemm_i8a8.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_gemm_mxfp4a8_gemv.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_logits_gemm_i8.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw",
+    "engines/radiance/components/libr3/r3_groups_test.py",
+    "engines/radiance/patches/rad0061_iq8r_f32_scale/patch.py",
+    "engines/radiance/patches/rad0061_iq8r_f32_scale/patch.toml",
+    "engines/radiance/patches/unit-sharing.toml",
+    "tools/bigcherry/engine_adapters/radiance_bump.py",
+    "tools/bigcherry/patch/compose_check.py",
+    "tools/lab/radiance/unit_families.toml",
+    "tools/lab/radiance/unit_harness.py",
+    "tools/tests/patch/test_compose_check.py",
+    "tools/tests/patch/test_unit_ownership.py"
+  ],
+  "plan-item-ids": [
+    "MEN24",
+    "RCS26",
+    "RUM15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Ported native and owned kernels to Radiance 2.3, removed unsupported gated and duplicate fused branches, reconciled diagnostic IQ8R F32 scale, select named recipe SDK; 44 patch packages compose, 64 focal HIP syntax passes; device parity pending.",
+  "timestamp-utc": "2026-11-27T06:45:29.573772Z",
+  "user-summary-candidate": "Radiance kernel sources now reconcile with 2.3; the composition gate uses the configured ROCm SDK and obsolete encoding-specific code is archived."
+}

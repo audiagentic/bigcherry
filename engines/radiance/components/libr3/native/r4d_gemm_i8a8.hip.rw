@@ -27,17 +27,7 @@
                                         live && (n0 + r) < nb);   // libr3: the token guard always
 @@ end
 
-@@ find 2
-                if (!Full && n0 + wn + j * 16u >= nb) continue;
-@@ replace
-                if (n0 + wn + j * 16u >= nb) continue;   // libr3: the token guard always
-@@ end
 
-@@ find 1
-                if (!Full && tok >= nb) continue;
-@@ replace
-                if (tok >= nb) continue;   // libr3: the token guard always
-@@ end
 
 @@ find 1
             if (!Full && col >= nb) continue;
@@ -76,7 +66,7 @@
 @@ end
 
 @@ find 1
-                    raw[j] = mma8<true>(frag_of(ac[ks / 4u], ks % 4u), bq[j & 1u][ks], raw[j]);
+                    raw[j] = mma_i8(frag_of(ac[ks / 4u], ks % 4u), bq[j & 1u][ks], raw[j]);
 @@ replace
                     raw11[j] = __builtin_amdgcn_wmma_i32_16x16x16_iu8_w32(
                         true, r3_bytes_12_to_11(__builtin_bit_cast(r3_i2, frag_of(ac[ks / 4u], ks % 4u)), lane),
@@ -84,12 +74,14 @@
 @@ end
 
 @@ find 1
-        const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
+        /* The lane's eight rows' bf16 scales of this group are consecutive in the tile-major
+         * plane: one 16-byte load. */
 @@ replace
 #pragma unroll
         for (uint32_t j = 0; j < NT; ++j)
             raw[j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(raw11[j], lane));
-        const uint4 q4 = *(const uint4*)(Sa + ((size_t)rt * ngrp + g) * 16u + acc_row(lane, 0));
+        /* The lane's eight rows' bf16 scales of this group are consecutive in the tile-major
+         * plane: one 16-byte load. */
 @@ end
 
 # VTP37: the K-parallel scale-group weight/token look-ahead is an occupancy cost on gfx1100.
