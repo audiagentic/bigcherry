@@ -1,0 +1,28 @@
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=5120 M=1]
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=5120 M=8]
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=5120 M=33]
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=5120 M=64]
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=5120 M=100]
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=2560 M=1]
+  ok    i8 logits layout is codes plus the row's scale tail
+  ok    i8 logits relayout inverts to the planes it was handed
+  ok    logits_gemm_i8 vs host ref over its planes
+  ok    logit_rerank_i8 vs host ref over the stored head [N=2560 M=8]

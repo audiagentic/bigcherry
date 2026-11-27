@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import json
+from dataclasses import replace
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -80,9 +82,9 @@ class RadianceAdapter(EngineAdapter):
         the reference implementation; tools/lab/radiance/README.md) and ``--tp 1``, with the emptied GPU variables so
         no device plugin can open a card. Served through the OpenAI route ``/v1/completions`` (the one engine-bench
         drives); the served model id comes from ``/v1/models``."""
-        return build_cpu_smoke(
+        spec = build_cpu_smoke(
             context, build_dir, model_root,
-            engine_args=("--kernels", "libavx,libref", "--tp", "1"), extra_env={}, env_unset_prefixes=("RADIANCE_", "R3_", "BIGCHERRY_"),
+            engine_args=(), extra_env={}, env_unset_prefixes=("RADIANCE_", "R3_", "BIGCHERRY_"),
             completion=CompletionApi(
                 path="/v1/completions", prompt_field="prompt", token_field="max_tokens",
                 fixed=(("temperature", 0), ("seed", SMOKE_SEED), ("stream", False)),
@@ -96,6 +98,25 @@ class RadianceAdapter(EngineAdapter):
                 r"(?m)^I device: .*\[0:gfx\d",
             )),
         )
+
+        if spec is None:
+            return None
+
+        def native_args(output: Path, host: str, port: int) -> tuple[str, ...]:
+            # The checked-in native fixture is the sole authority for smoke settings.
+            # Fill only the ephemeral port and the hash-verified model path.
+            if host != "127.0.0.1" or spec.args:
+                raise ValueError("Radiance CPU smoke uses the native fixture, not legacy flags")
+            fixture = context.project_root / "engines/radiance/tests/fixtures/cpu-smoke.yaml"
+            source = fixture.read_text(encoding="utf-8")
+            if source.count("__SMOKE_PORT__") != 1 or source.count("__SMOKE_MODEL__") != 1:
+                raise ValueError("invalid CPU smoke YAML fixture placeholders")
+            config = output / "cpu-smoke.yaml"
+            config.write_text(source.replace("__SMOKE_PORT__", str(port)).replace(
+                "__SMOKE_MODEL__", json.dumps(str(spec.model))), encoding="utf-8")
+            return ("--config", str(config))
+
+        return replace(spec, argument_builder=native_args)
 
     def source_checks(self, context: ProjectContext) -> tuple[SourceCheck, ...]:
         return ()

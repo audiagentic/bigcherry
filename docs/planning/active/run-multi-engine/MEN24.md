@@ -99,6 +99,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-27 sync review RV4701: merged main 437799b4e without conflict (release manifest fix #1724). Production patch rebase 33/34 clean, one remaining rad0002 MoE handoff. ABI45 and TP/collective/pipeline/KV host checkpoints recorded in ../../../evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md. Next: rad0002, affected native rewrites and owned providers; retire only unsupported encoding-exclusive code with source/evidence archived (RETIREMENT.md); retain plain MXFP4 drafter and mixed INT8/IQR paths. Then exact canonical build reuse and final candidate-bound roster/quality/performance gates. No entire plan is complete; do not count source composition as runtime qualification.
 
+2026-11-27 first executable gates: base candidate e6598253c linked base/BC overlays/libr2. Native CPU YAML smoke and converted pinned IQ8R fixture pass real deterministic completions; gfx1201 base IQR/int8/IQ8R/logits 205 distinct checks, zero failures; GPU tiny fixture refused h64 attention (CPU-only, not production geometry). libr3 DS41 gfx12 prefetch-only codegen port; full link and exact candidate ABI, overlay/native GPU parity and production model graph/lifecycle remain. Evidence FIRST-RUNTIME-TESTS.md.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -120,3 +122,4 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-27T06:12:42.519052+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T06:14:45.981191+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T06:15:56.224380+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T08:01:27.930195+00:00 (updated-by): Updated: section:notes

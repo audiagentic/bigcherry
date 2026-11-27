@@ -164,6 +164,8 @@ class CpuSmokeSpec:
     #: inherited variables whose name starts with one of these are removed before the server starts, so an ambient
     #: engine setting (device list, layer count, dispatch controls) cannot reach the smoke
     env_unset_prefixes: tuple[str, ...] = ()
+    # Native-config engines generate their launch arguments after the runner picks a port.
+    argument_builder: Callable[[Path, str, int], tuple[str, ...]] | None = None
 
 
 def build_cpu_smoke(

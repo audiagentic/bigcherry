@@ -1,0 +1,10 @@
+server:
+  port: __SMOKE_PORT__
+  host: 127.0.0.1
+  kernels: "libavx,libref"
+models:
+  tiny:
+    model: __SMOKE_MODEL__
+    tp: 1
+    max-model-len: 512
+    max-num-seqs: 1

@@ -1,0 +1,14 @@
+# RDNA3 lacks gfx12 s_prefetch_data. This lambda is a cache hint only;
+# the demand loads and arithmetic below remain unchanged. Keep native gfx12 intact.
+@@ find 1
+    auto prefetch = [&](int s) {
+        const uint8_t* p = prow + (long long)min(s + 3, S - 1) * psb;
+#pragma unroll 1
+        for (int i = 0; i < 32; ++i) {
+            __builtin_amdgcn_s_prefetch_data(p, pfl);
+            if (i < prmax) p += A.w_ld;
+        }
+    };
+@@ replace
+    auto prefetch = [](int) {};
+@@ end
