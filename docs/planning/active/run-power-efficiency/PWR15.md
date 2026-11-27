@@ -65,6 +65,8 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 
 2026-11-27: native D1 recovery PASS under exclusive GPU lease using new bc-serve power-recover. Pre-recovery journal and receipt byte-identical to original archived copies. Independent full physical identity and controls for all four GPUs matched original before and after. Native exit 0, journal and receipt restored, original failure and recovery events retained, non-qualifying. Lease free. Raw proof retained in work-root archive PWR15-native-recovery-20261127; managed harvest blocked by remote policy. Native component build and acceptance pass; 140 targeted pytest cases pass. Shared-root reciprocal admission implemented, offline tested; legacy private roots inventory and reviewed release deployment remain gates. No new candidate settings or production promotion.
 
+2026-11-27 PR #1701 initial full CI found three host environment contract failures and two simulated hardware fixtures missing identity. Declare BC_WORK_ROOT as owner infrastructure (not a manifest setting); add stable fake identities without relaxing real admission. Targeted CI reproduction: 165 Python tests and 61 subtests passed; native transaction, manifest power and session group 1 passed. GPU held by another model run; no candidate hardware writes.
+
 ## Change Log
 
 - 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
@@ -80,3 +82,4 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 - RV4693
 - 2026-11-27T00:05:12.419653+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T00:15:12.379866+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T00:33:31.410965+00:00 (updated-by): Updated: section:notes

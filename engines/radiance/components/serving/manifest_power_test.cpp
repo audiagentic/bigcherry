@@ -56,6 +56,7 @@ class Cards final : public ps::Hardware {
         ++reads;
         ps::CardSnapshot card{};
         card.pci = pci;
+        card.identity = "fixture-board:" + pci.value;
         card.amdgpu = true;
         card.hwmon = "hwmon0";
         for (auto& value : card.controls) {

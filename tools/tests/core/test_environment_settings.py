@@ -50,6 +50,9 @@ class EnvironmentSettingsGuard(unittest.TestCase):
                 continue
             text = (ROOT / rel).read_text(encoding="utf-8", errors="replace")
             for name in _READ.findall(text):
+                # Host-local owner journal admission, never a manifest or child setting.
+                if name == "BC_WORK_ROOT" and rel == "engines/radiance/components/serving/main.cpp":
+                    continue
                 if name in bound:
                     continue
                 unexplained.setdefault(name, []).append(rel)

@@ -1945,6 +1945,7 @@ class PowerIntegrationHardware final : public bc::serving::power::Hardware {
         using namespace bc::serving::power;
         CardSnapshot result;
         result.pci = address;
+        result.identity = "fixture-board:" + address.value;
         result.amdgpu = true;
         result.hwmon = "hwmon2";
         result.controls[static_cast<size_t>(ControlId::voltage)] = Capability{-100, -200, 0, true};
