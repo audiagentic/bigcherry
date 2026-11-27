@@ -270,7 +270,7 @@ def register(sub) -> None:
     querying = actions.add_parser("query", help="filter only SHA-verified v1 records")
     common(querying)
     querying.add_argument("--run-id", help="WSL01 run identity")
-    querying.add_argument("--metric", help="phase-qualified metric, e.g. decode.tokens_per_second")
+    querying.add_argument("--metric", help="group-qualified metric, e.g. decode.tokens_per_second or quality.kld_mean")
 
     listing = actions.add_parser("list", help="list verified run records")
     common(listing)
@@ -304,8 +304,8 @@ def register(sub) -> None:
     compare.add_argument("--record", action="append", default=[], metavar="SHA256",
                          help="exact candidate record sha256; repeat")
 
-    history = actions.add_parser("history", help="one phase-qualified metric over time with drift flags")
+    history = actions.add_parser("history", help="one group-qualified metric over time with drift flags")
     common(history, require_scope=True)
-    history.add_argument("--metric", required=True, help="e.g. decode.tokens_per_second")
+    history.add_argument("--metric", required=True, help="e.g. decode.tokens_per_second or quality.kld_mean")
     history.add_argument("--baseline", type=Path, help="optional portable baseline for drift thresholds")
     history.add_argument("--window", type=int, default=3, help="earlier-launch trailing reference (minimum 2)")

@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_043148_fixed-extensible-metric-group_8779",
+  "files": [
+    "tools/bigcherry/core/schemas/run-record-v1.schema.json"
+  ],
+  "plan-item-ids": [
+    "MEN29"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Adjusted the shared metric_specs definition so the repository's local schema validator and JSON Schema both accept future metric groups while preserving validation of all declared metric specs.",
+  "timestamp-utc": "2026-11-27T04:31:48.699560Z",
+  "user-summary-candidate": "Fixed extensible metric group validation so quality metric specs are accepted by both the JSON Schema and runtime validator."
+}
