@@ -37,7 +37,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(404); self.end_headers(); return
         body = (f"radiance:draft_tokens_total {self.drafted}\nradiance:draft_accepted_total {self.accepted}\n"
                 f"radiance:engine_steps_decode_total {self.steps}\nradiance:engine_step_seconds_decode_total {self.seconds}\n"
-                f"radiance:decode_tokens_total {self.tokens}\n").encode()
+                f"radiance:decode_tokens_total {self.tokens}\n"
+                "radiance:engine_steps_mixed_total 0\n").encode()   # pure decode ratios need an observed zero
         self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def do_POST(self):

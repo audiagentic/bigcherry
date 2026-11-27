@@ -360,7 +360,7 @@ def _release_identity(root: Path, meta: dict, receipt_path: Path | None, *, allo
         raise WorkloadError("release bundle does not bind the source build")
     return {**meta, "binary_hash": bundle["binary_sha256"],
             "source_commit": bundle["built_from"]["pinned"],
-            "runtime_artifacts": {"radiance": bundle["binary_sha256"]}}, {
+            "runtime_artifacts": {engines.RADIANCE: bundle["binary_sha256"]}}, {
         "release_manifest": raw, "release_receipt": receipt}
 
 

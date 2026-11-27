@@ -288,7 +288,7 @@ def validate_qualified_entries(layout: engines.EngineLayout, prepared: list, out
     cannot qualify a release. Validate the whole selected cohort before
     running any entry.
     """
-    if layout.name != "radiance":
+    if layout.name != engines.RADIANCE:
         return
     problems = []
     for entry, config, sets in prepared:
@@ -407,21 +407,21 @@ def accept(
     declaration, config or baseline file is bad, before any hardware is used."""
     prepared = prepare(repo_root, layout, only)
     validate_qualified_entries(layout, prepared, output)
-    if layout.name == "radiance" and candidate is None:
+    if layout.name == engines.RADIANCE and candidate is None:
         raise AcceptanceError("Radiance acceptance requires a verified candidate lane receipt")
     binary = candidate.verify(layout) if candidate else None
-    if candidate and layout.name == "radiance" and not (candidate.build_dir / layout.runtime_home).is_dir():
+    if candidate and layout.name == engines.RADIANCE and not (candidate.build_dir / layout.runtime_home).is_dir():
         raise AcceptanceError("candidate runtime home missing")
     output.mkdir(parents=True, exist_ok=True)
     started = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    bound = {} if binary is None or layout.name != "radiance" else {
+    bound = {} if binary is None or layout.name != engines.RADIANCE else {
         "RAD_BIN": str(binary), "RAD_HOME": str((candidate.build_dir / layout.runtime_home).resolve()),
         "RADIANCE_HOME": str((candidate.build_dir / layout.runtime_home).resolve()),
     }
     saved = {k: os.environ.get(k) for k in bound}
     try:
         os.environ.update(bound)
-        results = [run_entry(entry, config, sets, output, require_admitted=layout.name == "radiance")
+        results = [run_entry(entry, config, sets, output, require_admitted=layout.name == engines.RADIANCE)
                    for entry, config, sets in prepared]
     finally:
         for key, value in saved.items():

@@ -21,7 +21,7 @@ class EngineRecipesTests(unittest.TestCase):
         recipes = engines.load(paths.REPO_ROOT, engines.RADIANCE).recipes_path(paths.REPO_ROOT)
         data = tomllib.loads(recipes.read_text(encoding="utf-8"))
         self.assertRegex(cfg.pinned, r"^[0-9a-f]{40}$")
-        self.assertEqual(data["pinned-version"], "2.2.0")
+        self.assertRegex(data["pinned-version"], r"^\d+\.\d+\.\d+$")   # moved by pin-bump's declare phase
         self.assertEqual(set(cfg.sources), {"radiance-native", "radiance", "radiance-diag", "radiance-routing-evidence", "radiance-vtp44-evidence"})
         self.assertEqual(set(cfg.runtime_profiles), {"flashnext-2xtx", "qwen38-27b-2xtx"})
         flash = cfg.runtime_profiles["flashnext-2xtx"].server_args

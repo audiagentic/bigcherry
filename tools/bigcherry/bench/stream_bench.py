@@ -450,6 +450,8 @@ def _record_target(args):
 
 def _export_summary(directory, run_id, config, report, build_id, recorded_at, identity=None):
     """Export only fields with controlled values or numeric measurements."""
+    from ..core import engines
+
     from tempfile import NamedTemporaryFile
     import re
 
@@ -477,7 +479,7 @@ def _export_summary(directory, run_id, config, report, build_id, recorded_at, id
     ]
     raw = (json.dumps({
         "schema_version": 1, "run_id": run_id, "settings": settings,
-        "engine": "radiance", "recorded_at": recorded_at,
+        "engine": engines.RADIANCE, "recorded_at": recorded_at,
         "build_id": build_id if re.fullmatch(r"[a-f0-9]{16,64}", build_id) else None,
         "ok": report["ok"], "summary": report["summary"], "rounds": rounds,
         "identity": identity or {},
