@@ -167,4 +167,3 @@ memory pressure; use ENG04/ENG03 and MEN17 release gates. Compare predicted
 allocation vs actual at allocation granularity; measured driver uncertainty
 reported separately, no unsupported percentage guarantee. Don't promote a
 new default until cross-family gates and reviewed thresholds pass.
-
