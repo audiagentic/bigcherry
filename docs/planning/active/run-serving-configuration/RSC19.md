@@ -67,6 +67,8 @@ Canonical Radiance 2.3 stock build plan 927a24bf85c2ac29d3dbe0b779063323 succeed
 
 Qwen FlashNext true TP4 native lab arm (2 gfx1100, gfx1201, gfx1030) on matched 2.3 build 927a24bf85c2ac29d3dbe0b779063323 refused before GPU launch: architecture gfx1030 cannot run the engine (archs.toml roles). Existing flashnext-4gpu is TP1+3 helpers. No role override; libr2 only builds helper MoE/activation quant units, no full engine coverage. Future TP4 requires full gfx1030 provider coverage, per-rank graph/collective and numerical qualification, then explicit role admission. Four-card control at FP8 KV, 8192 context bound, 8 streams, batch2048, no prefix cache, interleave/mixed target off completed 4096/512 workload: aggregate 173.412 t/s, max TTFT 11.417s, p95 event gap 66.229ms, zero preemptions, 8x512 outputs. Job daemon lost record before short workload/final receipt; owner stopped cleanly, GPU free. Not a qualified control or TP4 performance result. Evidence docs/evidence/RSC19-FN-topology/summary.json.
 
+Owner direction: retain existing FlashNext four-card TP1+3-helper layout; concentrate tuning on dense Qwen 27B TP3 (two gfx1100 plus gfx1201). No true TP4 expansion required for this campaign. Matched owner 2.3 build 927a24bf85c2ac29d3dbe0b779063323, 75ms target, FP8 KV, 8 streams, pipeline min256, batch2048. Auto:0.25/auto:1/room-on (interleave off) long aggregate 160.398/132.717/184.784 t/s, worst TTFT 18.927/26.169/14.808s, p95 gap 133.871/34.020/41.409ms; short aggregate 262.525/255.018/278.946 t/s, worst TTFT 2.387/2.807/2.154s, p95 gap 40.201/30.592/169.665ms. Six reports automatic paired receipts passed, zero preemptions, clean stops. Single repetition per arm; auto interleave poor aggregate tradeoff; room gate mixed results. Archive docs/evidence/RSC19-VTP59-admission/summary.json. Continue arrival/admission controls, mixed workloads, quality and provider/geometry qualification on TP3. No production promotion.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
@@ -77,3 +79,4 @@ Qwen FlashNext true TP4 native lab arm (2 gfx1100, gfx1201, gfx1030) on matched 
 - 2026-11-27T13:49:43.098266+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:09:47.084434+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:27:55.436958+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T14:47:04.187572+00:00 (updated-by): Updated: section:notes
