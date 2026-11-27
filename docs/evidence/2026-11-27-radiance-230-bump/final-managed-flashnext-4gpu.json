@@ -1,0 +1,170 @@
+{
+  "profile": "flashnext-4gpu.yaml",
+  "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+  "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+  "owner_sha256": "cec301e004ff956fcee6c2595a77276c63447237eeb300aaa6ca450ad1050faf",
+  "requests": [
+    {
+      "prompt": "The capital of France is",
+      "response": {
+        "id": "cmpl-82eae47a03768d25e715408a",
+        "object": "text_completion",
+        "created": 1795770650,
+        "model": "flashnext",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": " Paris. The capital of Germany is Berlin. The capital of Italy is Rome. The capital of Spain is Madrid. The capital of Portugal is Lisbon. The capital",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 32,
+          "total_tokens": 37,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 5,
+          "prompt_ms": 28.780075,
+          "prompt_per_token_ms": 5.756015,
+          "prompt_per_second": 173.73130542571553,
+          "predicted_n": 32,
+          "predicted_ms": 272.76611299999996,
+          "predicted_per_token_ms": 8.798906870967741,
+          "predicted_per_second": 113.65048120915228,
+          "ttft_ms": 28.95093,
+          "total_ms": 301.717043,
+          "draft_n": 33,
+          "draft_n_accepted": 22
+        }
+      }
+    },
+    {
+      "prompt": "The capital of France is",
+      "response": {
+        "id": "cmpl-dbc30ef8b552c62c610c9b4d",
+        "object": "text_completion",
+        "created": 1795770650,
+        "model": "flashnext",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": " Paris. The capital of Germany is Berlin. The capital of Italy is Rome. The capital of Spain is Madrid. The capital of Portugal is Lisbon. The capital",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 32,
+          "total_tokens": 37,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 5,
+          "prompt_ms": 25.763814,
+          "prompt_per_token_ms": 5.1527628,
+          "prompt_per_second": 194.0706449751578,
+          "predicted_n": 32,
+          "predicted_ms": 272.15381099999996,
+          "predicted_per_token_ms": 8.779155193548386,
+          "predicted_per_second": 113.90617638641116,
+          "ttft_ms": 27.609817,
+          "total_ms": 299.763628,
+          "draft_n": 33,
+          "draft_n_accepted": 22
+        }
+      }
+    },
+    {
+      "prompt": "Explain why the sky looks blue.",
+      "response": {
+        "id": "cmpl-9e781afc390b50a3d1a2d788",
+        "object": "text_completion",
+        "created": 1795770651,
+        "model": "flashnext",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": "\n\n<think>\nThe user is asking a common science question about why the sky appears blue. I need to explain Rayleigh scattering in a clear, accessible way.",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 8,
+          "completion_tokens": 32,
+          "total_tokens": 40,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 8,
+          "prompt_ms": 28.618972,
+          "prompt_per_token_ms": 3.5773715,
+          "prompt_per_second": 279.5348484215296,
+          "predicted_n": 32,
+          "predicted_ms": 294.450737,
+          "predicted_per_token_ms": 9.498410870967742,
+          "predicted_per_second": 105.28076891857125,
+          "ttft_ms": 30.438705,
+          "total_ms": 324.889442,
+          "draft_n": 36,
+          "draft_n_accepted": 21
+        }
+      }
+    }
+  ],
+  "ok": true,
+  "startup_s": 219.484336360998,
+  "stop_exit": 0,
+  "owner_exit": 0,
+  "raw_result_sha256": "29421603c1093df8f9fc28f69ea6d0a195a5aa0808b765389bdb28f3c5e0ea0b",
+  "managed_selection": {
+    "config": "flashnext-4gpu",
+    "engine_cards": [
+      "0000:09:00.0"
+    ],
+    "helper_cards": [
+      "0000:03:00.0",
+      "0000:06:00.0",
+      "0000:17:00.0"
+    ],
+    "manifest_digest": "sha256:778ad60eec824a23b9c90f78ffc4abcf46209a4ffe4e5a26483fca0062152ed9",
+    "model": "qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "manifest_sha256": "02eec67f64f82b39ccea908229e43aedbbd56a42454d976ca27648ba8112fc49",
+    "state": "running",
+    "roles": [
+      "native config inspector",
+      "native config inspector",
+      "helper0 measuring",
+      "helper1 measuring",
+      "helper2 measuring",
+      "native v3 measuring engine",
+      "helper0 measuring",
+      "helper1 measuring",
+      "helper2 measuring",
+      "native v3 measuring engine",
+      "helper0",
+      "helper1",
+      "helper2",
+      "engine"
+    ],
+    "feature_states": "See raw session receipt"
+  },
+  "final_session_state": "stopped",
+  "session_sha256": "98f45d9cebe9ee8aae4d48865fec0200d2bf90f8c9517bd7d665f799800e2e8c"
+}

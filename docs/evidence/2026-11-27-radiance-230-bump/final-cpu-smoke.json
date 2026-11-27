@@ -1,0 +1,55 @@
+{
+  "args": [],
+  "binary": "<candidate>/bin/radiance",
+  "completion_s": 0.4,
+  "completions": [
+    {
+      "first": "the largest city in France.  The city is located in the heart of the",
+      "prompt": "The capital of France is",
+      "second": "the largest city in France.  The city is located in the heart of the"
+    },
+    {
+      "first": "6, 7, 8, 9, 9, ",
+      "prompt": "1, 2, 3, 4, 5,",
+      "second": "6, 7, 8, 9, 9, "
+    },
+    {
+      "first": "very different type of music.\n\nContext:\nThe first recorded in ",
+      "prompt": "Once upon a time there was a",
+      "second": "very different type of music.\n\nContext:\nThe first recorded in "
+    }
+  ],
+  "engine": "radiance",
+  "env_overrides": {
+    "CUDA_VISIBLE_DEVICES": "",
+    "GPU_DEVICE_ORDINAL": "",
+    "HIP_VISIBLE_DEVICES": "",
+    "ROCR_VISIBLE_DEVICES": ""
+  },
+  "failures": [],
+  "gpu_log_hits": [],
+  "launch_args": [
+    "--config",
+    "<run>/cpu-smoke.yaml"
+  ],
+  "log": "<run>/server.log",
+  "model": {
+    "actual_sha256": "f6221c8484f74e0942307b6d2035260200d801ff79610fa8c64618aa1bc0c6a7",
+    "expected_sha256": "f6221c8484f74e0942307b6d2035260200d801ff79610fa8c64618aa1bc0c6a7",
+    "path": "smoke/tiny-iq8r-230.rad"
+  },
+  "ok": true,
+  "peak_rss_bytes": 425627648,
+  "peak_rss_note": "VmHWM",
+  "schema": 1,
+  "shutdown": {
+    "clean": true,
+    "forced": false,
+    "method": "sigint",
+    "requested": true,
+    "returncode": 0
+  },
+  "startup_s": 1.011,
+  "wall_s": 1.943,
+  "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7"
+}

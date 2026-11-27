@@ -1,0 +1,151 @@
+{
+  "profile": "qwen27b-2xtx.yaml",
+  "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+  "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+  "model_bytes": 30876340224,
+  "plugins": {
+    "libbciqr.so": "369550ef13f872bd9cfd97a78442412d85863b7341f9cec35052755a6ba3e935",
+    "libr3.so": "7db4dcc99bf272ab8c85aee103ce66fe9ba796ee1685092b4e8fbd41d801df70",
+    "libr4d.so": "f3cba1b4bc47ddac0467f7b50120c04b4242bfd6e75b9c74f80024c2b9db2c59",
+    "libref.so": "022dbfa0cf6f0208013339b65feae9497e6659fa7e848ad95bee6e21c68254dc"
+  },
+  "requests": [
+    {
+      "elapsed_s": 0.3688724780222401,
+      "prompt": "The capital of France is",
+      "response": {
+        "id": "cmpl-58ddcfd0f2b1eac7903f1a9d",
+        "object": "text_completion",
+        "created": 1795770018,
+        "model": "qwen27b",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": " Paris.\nThe capital of Germany is Berlin.\nThe capital of Italy is Rome.\nThe capital of Spain is Madrid.\nThe capital of Portugal is",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 32,
+          "total_tokens": 37,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 5,
+          "prompt_ms": 78.833164,
+          "prompt_per_token_ms": 15.7666328,
+          "prompt_per_second": 63.42508338242012,
+          "predicted_n": 32,
+          "predicted_ms": 287.34248299999996,
+          "predicted_per_token_ms": 9.269112354838708,
+          "predicted_per_second": 107.88519566039946,
+          "ttft_ms": 79.219825,
+          "total_ms": 366.562308,
+          "draft_n": 36,
+          "draft_n_accepted": 22
+        }
+      }
+    },
+    {
+      "elapsed_s": 0.3178592659533024,
+      "prompt": "The capital of France is",
+      "response": {
+        "id": "cmpl-a7af0adb35ec3656dd8b96c7",
+        "object": "text_completion",
+        "created": 1795770019,
+        "model": "qwen27b",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": " Paris.\nThe capital of Germany is Berlin.\nThe capital of Italy is Rome.\nThe capital of Spain is Madrid.\nThe capital of Portugal is",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 32,
+          "total_tokens": 37,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 5,
+          "prompt_ms": 27.564968999999998,
+          "prompt_per_token_ms": 5.512993799999999,
+          "prompt_per_second": 181.3896471278455,
+          "predicted_n": 32,
+          "predicted_ms": 287.458629,
+          "predicted_per_token_ms": 9.272858999999999,
+          "predicted_per_second": 107.84160526974476,
+          "ttft_ms": 28.190416,
+          "total_ms": 315.649045,
+          "draft_n": 36,
+          "draft_n_accepted": 22
+        }
+      }
+    },
+    {
+      "elapsed_s": 0.29626095795538276,
+      "prompt": "Write a short explanation of why the sky looks blue.",
+      "response": {
+        "id": "cmpl-d2cb27420bf84e0492da19c6",
+        "object": "text_completion",
+        "created": 1795770019,
+        "model": "qwen27b",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": "\n\n<think>\nThe user is asking for a short explanation of why the sky is blue. This is a classic physics/optics question. The key concept is Ray",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 11,
+          "completion_tokens": 32,
+          "total_tokens": 43,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 11,
+          "prompt_ms": 29.162864,
+          "prompt_per_token_ms": 2.6511694545454545,
+          "prompt_per_second": 377.19203436260585,
+          "predicted_n": 32,
+          "predicted_ms": 263.531473,
+          "predicted_per_token_ms": 8.501015258064516,
+          "predicted_per_second": 117.63300848699768,
+          "ttft_ms": 30.737368,
+          "total_ms": 294.268841,
+          "draft_n": 33,
+          "draft_n_accepted": 22
+        }
+      }
+    }
+  ],
+  "startup_s": 10.02087525697425,
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 0,
+    "error": null
+  },
+  "ok": true,
+  "raw_result_sha256": "8ccc0bdca18c4be925d89cdb84830c6fc25c4d667cd38705caf763995081bcda",
+  "server_log_sha256": "2b19d606b0db3c365c9c6aa2f0421de3f033da19cb673503fafaa36155262c5c"
+}
