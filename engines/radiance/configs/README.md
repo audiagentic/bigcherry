@@ -87,3 +87,26 @@ preemption wait, with explicit authorship flags. Omitted interleave, fixed zero,
 `auto` (share 0.25), and `auto:1` are distinguishable. This is parse-time evidence,
 not a claim of effective bring-up policy. The owner rejects malformed or
 inconsistent receipts; effective-value reconciliation remains under RSC19.
+
+
+### Tuning qualification and configuration evidence
+
+VTP59/VTP60 tune native YAML arms using the existing arm_yaml writer, not
+environment overrides. For a managed GPU measurement, capture
+`capture_tuning_receipt` from `bigcherry.bench.radiance_lab_records` before
+and after the workload. It binds native /diagnostics performance rows to the
+admitted session, manifest digest, build and model/layout identity. Direct
+manifest fields are reconciled automatically; the experiment must supply its
+additional expected native diagnostic values (for example mixed-step target).
+Missing, duplicate, contradictory or changed receipts are nonpass. The
+existing native-lab ingestion accepts paired
+`native-tuning-receipt.v1.json` and `native-tuning-receipt-end.v1.json` in
+the run directory and retains them as evidence, without upgrading numerical
+quality or attestation validity. Do not archive the entire diagnostics document.
+
+This is a lab qualification seam, not a replacement for the serving owner's
+admission or the planned matched-build runtime reconciliation. Dynamic defaults
+and capability checks remain engine-owned. The next step is to consume the
+matched inspector's authored/parsed scheduler receipt rather than hand-author
+additional expectations, and qualify per model, topology and workload with
+independent quality gates before production YAML changes.

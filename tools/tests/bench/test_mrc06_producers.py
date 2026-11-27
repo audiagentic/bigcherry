@@ -433,3 +433,73 @@ def test_bundle_cannot_trust_observed_claim_without_process_evidence(tmp_path):
                 "validity": {"state": "valid", "reason_codes": ["ATTESTATION_MISSING"]},
             }
         )
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "wrong", "failed", "unsupported"])
+def test_tuning_diagnostics_fail_closed(mutation):
+    from bigcherry.bench.radiance_lab_records import reconcile_tuning_diagnostics
+    row = {"option": "--mixed-step-target-ms", "value": "100", "source": "models.qwen27b.mixed-step-target-ms"}
+    doc = {"startup_failed": False, "unsupported_configuration": False, "configuration": [row]}
+    if mutation == "missing":
+        doc["configuration"] = []
+    elif mutation == "duplicate":
+        doc["configuration"].append(dict(row))
+    elif mutation == "wrong":
+        row["value"] = "50"
+    elif mutation == "failed":
+        doc["startup_failed"] = True
+    else:
+        doc["unsupported_configuration"] = True
+    with pytest.raises(run_records.RecordError):
+        reconcile_tuning_diagnostics(doc, {"--mixed-step-target-ms": "100"})
+
+
+def test_tuning_diagnostics_only_performance_rows():
+    from bigcherry.bench.radiance_lab_records import reconcile_tuning_diagnostics
+    row = {"option": "--prefill-interleave", "value": "auto:1", "source": "default", "why": "resolved"}
+    doc = {"startup_failed": False, "unsupported_configuration": False,
+           "configuration": [row, {"option": "--api-key", "value": "secret", "source": "env"}],
+           "environment": {"SECRET": "secret"}}
+    assert reconcile_tuning_diagnostics(doc, {"--prefill-interleave": "auto:1"}) == {
+        "--prefill-interleave": {"value": "auto:1", "source": "default"}}
+
+
+def test_tuning_receipt_pair_bound_to_manifest(tmp_path):
+    from bigcherry.bench import radiance_lab_records as lab
+    import hashlib
+    path, _, _ = _manifest(tmp_path)
+    context = lab._session_context(tmp_path)
+    receipt = {
+        "schema_version": 1, "run_id": context["run_id"],
+        "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "identity": context["identity"], "recorded_at": "2026-11-27T00:00:00Z",
+        "expected": {"--mixed-step-target-ms": "100"},
+        "observed": {"--mixed-step-target-ms": {"value": "100", "source": "models.qwen27b.mixed-step-target-ms"}},
+    }
+    assert lab._tuning_receipt_inputs(context) == {}
+    start, end = [tmp_path / name for name in lab.TUNING_RECEIPT_FILES]
+    start.write_text(json.dumps(receipt))
+    with pytest.raises(run_records.RecordError):
+        lab._tuning_receipt_inputs(context)
+    end.write_text(json.dumps(receipt))
+    assert lab._tuning_receipt_inputs(context) == {"native_tuning_start": start, "native_tuning_end": end}
+    end.write_text(json.dumps(dict(receipt, manifest_sha256="0" * 64)))
+    with pytest.raises(run_records.RecordError, match="identity mismatch"):
+        lab._tuning_receipt_inputs(context)
+
+
+def test_capture_tuning_receipt_refuses_manifest_conflict(tmp_path, monkeypatch):
+    from bigcherry.bench import radiance_lab_records as lab
+    path, _, _ = _manifest(tmp_path)
+    doc = json.loads(path.read_text())
+    doc["spec"]["processes"]["engine"]["scheduler"] = {"tp": 3}
+    path.write_text(json.dumps(doc))
+    session = tmp_path / "session.json"
+    s = json.loads(session.read_text())
+    s["port"] = 9000
+    session.write_text(json.dumps(s))
+    def unexpected(*args, **kwargs):
+        pytest.fail("conflicting intent must be refused before HTTP")
+    monkeypatch.setattr(lab.urllib.request, "urlopen", unexpected)
+    with pytest.raises(run_records.RecordError, match="contradicts manifest"):
+        lab.capture_tuning_receipt(tmp_path, "http://127.0.0.1:9000", {"--tp": "2"})

@@ -59,9 +59,12 @@ Second slice: native inspector v3 projects parse-time scheduler values and autho
 
 CTest is authorized. Initial native parser and all four session groups passed; serving mutation gate exposed strict JSON rejecting floating-point shares. Fixed with round-trip decimal text, bounded numeric validation, strict-parser regression and valid auto-share admission tests; bc-serve explain now surfaces parsed scheduler. Rebuilt both owners: native test 1/1 passed, serving/session tests 5/5 passed (58.90s). Native /diagnostics already exposes configuration option/value/source and bring-up decisions; next slice should reuse it for effective-value reconciliation without a new engine patch. GPU/capability gates remain pending.
 
+Coordinate with VTP59/VTP60: use existing MRC06 lab adapter capture_tuning_receipt against native /diagnostics, no second YAML parser. Reconcile direct manifest fields and additional explicit arm expectations, require matching pre/post receipts, retain through existing native lab ingestion. 26 targeted Python tests pass. Live exact 2.3 candidate (prior owner, new lab adapter) TP3 IQ8R FP8 KV 100/150ms targets: 4K/512 aggregate 179.990/186.543, max TTFT 15.782/14.604s, p95 gap 161.933/41.349ms; 512/128 aggregate 281.492/269.749, TTFT 2.139/2.166s, p95 gap 166.390/174.782ms. Four completed reports, zero preemptions, clean stops, identical prompt hashes/counts vs prior ABBA, both native receipts verified. Evidence docs/evidence/RSC19-VTP59-latency/summary.json. No production promotion; matched enhanced owner build, automatic expected settings from inspector, cross-field capability and numerical quality gates remain pending.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
 - 2026-11-27T12:58:57.211030+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:14:50.590396+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:22:28.116046+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T13:39:37.473752+00:00 (updated-by): Updated: section:notes

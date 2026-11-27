@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_133937_verify-runtime-configuration-b_3644",
+  "files": [
+    "tools/bigcherry/bench/radiance_lab_records.py",
+    "tools/tests/bench/test_mrc06_producers.py",
+    "engines/radiance/configs/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC19"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Bind native tuning diagnostics to admitted session, manifest and build; reconcile paired receipts in existing measurement ingestion.",
+  "timestamp-utc": "2026-11-27T13:39:37.519587Z",
+  "user-summary-candidate": "Verify runtime configuration before and after managed tuning benchmarks."
+}
