@@ -1,0 +1,17 @@
+{
+  "artifact_version": 1,
+  "audit": {},
+  "bigcherry_revision": "570b5b0a9a026539ba91c444febd3517163243ce",
+  "evidence_gate": {},
+  "first_seen": "2026-11-27T04:01:23.618835+00:00",
+  "manifest_hash": "",
+  "notes": "",
+  "patches": {},
+  "promotion": null,
+  "release_tag": "v2.3.0",
+  "revision": "3b13fd32663ef52252a7f0be255523480aa22ffe",
+  "runtime_assets": {},
+  "stage": "pulled",
+  "tree_state": "",
+  "updated_at": "2026-11-27T04:01:23.618835+00:00"
+}
