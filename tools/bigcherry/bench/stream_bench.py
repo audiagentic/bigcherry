@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import random
 import statistics
 import sys
@@ -51,6 +52,9 @@ class StreamResult:
     t_first: float = 0.0
     t_last: float = 0.0              # last text event
     t_end: float = 0.0               # response end (the stream closed)
+    start_wall_ns: int = 0          # system clock for native trace correlation only
+    first_wall_ns: int = 0
+    end_wall_ns: int = 0
     tokens: int = 0                  # completion tokens: server usage, or an event-count estimate if allowed
     usage_source: str = ""           # "server" | "event_count_estimate"
     finish_reason: str = ""
@@ -126,6 +130,7 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
     text, chunks, last, raw_head, done = [], 0, None, [], False
     usage_tokens = 0
     res.t_start = time.perf_counter()
+    res.start_wall_ns = time.time_ns()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             for raw in resp:
@@ -152,12 +157,14 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
                         now = time.perf_counter()
                         if not chunks:
                             res.t_first = now
+                            res.first_wall_ns = time.time_ns()
                         else:
                             res.gaps_ms.append((now - last) * 1000.0)
                         last = res.t_last = now
                         chunks += 1
                         text.append(piece)
         res.t_end = time.perf_counter()
+        res.end_wall_ns = time.time_ns()
         if not chunks:
             raise StreamBenchError("the stream produced no content; first events: " + " | ".join(raw_head))
         if not done and not res.finish_reason:
@@ -176,11 +183,13 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
         res.ok = True
     except (urllib.error.URLError, OSError, ValueError, StreamBenchError) as exc:
         res.t_end = time.perf_counter()
+        res.end_wall_ns = time.time_ns()
         res.error = f"{type(exc).__name__}: {exc}"
     return res
 
 
-_COUNTERS = ("radiance:engine_steps_decode_total", "radiance:engine_step_seconds_decode_total",
+_COUNTERS = ("radiance:engine_steps_total", "radiance:engine_steps_mixed_total",
+             "radiance:engine_step_seconds_total", "radiance:engine_steps_decode_total", "radiance:engine_step_seconds_decode_total",
              "radiance:decode_tokens_total", "radiance:draft_tokens_total", "radiance:draft_accepted_total",
              "radiance:engine_steps_prefill_total", "radiance:prefill_tokens_total", "vllm:num_preemptions_total")
 _GAUGES = ("vllm:num_requests_running", "vllm:num_requests_waiting")
@@ -214,16 +223,27 @@ def engine_delta(before, after, running):
     does not expose them. Steps are decode steps; acceptance is accepted/drafted tokens over the round."""
     if not before or not after:
         return None
-    d = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in _COUNTERS if k in after}
+    # Never assume a missing counter or a reset means zero work.
+    d = {k: after[k] - before[k] for k in _COUNTERS if k in before and k in after
+         and math.isfinite(before[k]) and math.isfinite(after[k]) and after[k] >= before[k]}
     steps = d.get("radiance:engine_steps_decode_total", 0.0)
     out = {k.split(":", 1)[1]: round(v, 6) for k, v in d.items()}
-    if steps > 0:
-        out["decode_ms_per_step"] = round(d.get("radiance:engine_step_seconds_decode_total", 0.0) / steps * 1000.0, 4)
-        out["decode_tokens_per_step"] = round(d.get("radiance:decode_tokens_total", 0.0) / steps, 4)
-        seconds = d.get("radiance:engine_step_seconds_decode_total", 0.0)
-        if seconds > 0:
-            # throughput of the decode phase alone: the client-side aggregate also carries every prefill and the ramp
-            out["decode_tps_engine"] = round(d.get("radiance:decode_tokens_total", 0.0) / seconds, 3)
+    seconds = d.get("radiance:engine_step_seconds_decode_total")
+    tokens = d.get("radiance:decode_tokens_total")
+    mixed = d.get("radiance:engine_steps_mixed_total")
+    out["phase_rate_definition"] = "v2: pure decode ratios require observed zero mixed steps"
+    if steps > 0 and seconds is not None and seconds > 0:
+        out["decode_ms_per_step"] = round(seconds / steps * 1000.0, 4)
+        if mixed == 0 and tokens is not None:
+            out["decode_tokens_per_step"] = round(tokens / steps, 4)
+            out["decode_tps_engine"] = round(tokens / seconds, 3)
+    out["decode_rate_status"] = ("zero_mixed_observed" if "decode_tps_engine" in out else
+                                 "mixed_steps_present" if mixed is not None and mixed > 0 else
+                                 "insufficient_counters")
+    all_seconds = d.get("radiance:engine_step_seconds_total")
+    prompt = d.get("radiance:prefill_tokens_total")
+    if all_seconds is not None and all_seconds > 0 and tokens is not None and prompt is not None:
+        out["input_output_tps_engine_all_steps"] = round((tokens + prompt) / all_seconds, 3)
     drafted = d.get("radiance:draft_tokens_total", 0.0)
     if drafted > 0:
         out["draft_acceptance"] = round(d.get("radiance:draft_accepted_total", 0.0) / drafted, 4)
@@ -291,7 +311,9 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
               "release_to_first_start_ms": round((min(r.t_start for r in results) - release) * 1000.0, 3),
               "per_stream": [{"stream": r.stream, "ok": r.ok, "error": r.error, "tokens": r.tokens,
                               "usage_source": r.usage_source, "finish_reason": r.finish_reason, "events": r.events,
-                              "prompt_tokens": r.prompt_tokens, "ttft_ms": round(r.ttft_ms(), 2),
+                              "prompt_tokens": r.prompt_tokens, "start_wall_ns": r.start_wall_ns,
+                              "first_wall_ns": r.first_wall_ns, "end_wall_ns": r.end_wall_ns,
+                              "ttft_ms": round(r.ttft_ms(), 2),
                               "decode_tps_est": round(r.decode_tps_est(), 3),
                               "response_tail_ms": round((r.t_end - r.t_last) * 1000.0, 2) if r.ok else None,
                               "text_sha256": r.text_sha256, "text_head": r.text_head} for r in results]}
@@ -302,6 +324,10 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
         per = [r.decode_tps_est() for r in results if r.tokens > 1]
         record["aggregate"] = {
             "tokens": total, "aggregate_tps": round(total / wall, 3),
+            "input_tokens": sum(r.prompt_tokens for r in results) if all(
+                r.usage_source == "server" and r.prompt_tokens > 0 for r in results) else None,
+            "input_output_tps_wall": round((total + sum(r.prompt_tokens for r in results)) / wall, 3)
+                if all(r.usage_source == "server" and r.prompt_tokens > 0 for r in results) else None,
             "mean_stream_decode_tps_est": round(statistics.fmean(per), 3) if per else None,
             "ttft_ms_p50": round(pct([r.ttft_ms() for r in results], 0.50), 2),
             "ttft_ms_p95": round(pct([r.ttft_ms() for r in results], 0.95), 2),
@@ -340,7 +366,7 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
             eng = [r["engine"] for r in rounds if r["streams"] == n and r["ok"] and r.get("engine")]
             for key in ("decode_ms_per_step", "decode_tokens_per_step", "decode_tps_engine", "draft_acceptance", "requests_running_mean"):
                 vals = [e[key] for e in eng if key in e]
-                if vals:
+                if vals and (key not in ("decode_tokens_per_step", "decode_tps_engine") or len(vals) == len(good)):
                     summary[str(n)][key + "_median"] = statistics.median(vals)
     return {"schema": SCHEMA,
             "config": {"url": url, "model": model, "streams": stream_counts, "prompt_tokens": prompt_tokens,
@@ -349,7 +375,8 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
                        "prompt_sha256": prompt_digests(max(stream_counts), prompt_tokens, seed, shared_prefix),
                        "max_tokens": max_tokens, "reps": reps, "temperature": temperature, "seed": seed,
                        "shared_prefix": shared_prefix, "allow_estimate": allow_estimate,
-                       "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)"},
+                       "throughput_definition": "finite-batch makespan: generated tokens / (first request start to last response end)",
+                       "phase_rate_revision": 2},
             "ok": all(r["ok"] for r in rounds), "rounds": rounds, "summary": summary}
 
 
@@ -372,7 +399,7 @@ def flat_metrics(record: dict) -> dict:
         eng = [r["engine"] for r in record["rounds"] if r["streams"] == n and r["ok"] and r.get("engine")]
         for key in ("decode_ms_per_step", "decode_tokens_per_step", "decode_tps_engine", "draft_acceptance", "requests_running_mean"):
             vals = [e[key] for e in eng if key in e]
-            if vals:
+            if vals and (key not in ("decode_tokens_per_step", "decode_tps_engine") or len(vals) == len(good)):
                 out[f"s{n}_{key}"] = statistics.median(vals)
     return out
 
@@ -415,7 +442,7 @@ def run_from_namespace(args) -> int:
         print(f"stream-bench: {n:>2} streams  {s['aggregate_tps_median']:9.2f} tok/s aggregate  "
               f"ttft max {s['ttft_ms_max_median']:8.1f} ms  event gap p95 {s['event_gap_ms_p95_median']:7.2f} ms"
               + (f"  step {s['decode_ms_per_step_median']:6.2f} ms  {s['decode_tokens_per_step_median']:5.2f} tok/step"
-                 if "decode_ms_per_step_median" in s else ""), file=sys.stderr)
+                 if "decode_tokens_per_step_median" in s and "decode_ms_per_step_median" in s else ""), file=sys.stderr)
     if not record["ok"]:
         print("stream-bench: FAIL: at least one stream failed (see per_stream errors)", file=sys.stderr)
         return 1

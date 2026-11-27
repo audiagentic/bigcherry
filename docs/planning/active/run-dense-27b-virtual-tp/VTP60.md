@@ -63,6 +63,8 @@ Native sim_burst extension implemented with mixed-step cost injection, strict sy
 
 KV follow-up: native rad0071_native_kv_tools patch commit 1bd1b5d45 on isolated bump-based node/native-kv-tools branch shares engine KV validation and resolver with rad-tune/rad-kbench, all 7 existing formats, capability refusal. Applied/idempotent against composed 2.3 source; both host tools and packed KV test compiled; native execution denied by allowlist; patch untested, not in production recipe. Remaining exact TP ownership/geometry and actual rank-aware tuning. 2.3 IQ8R TP3 8 streams, cache disabled, fixed 0/200ms/2048: FP8, bf16_i8, bf16_fp8, bf16 aggregate 512/128 279.415/285.169/278.786/281.212, 4096/512 180.170/178.669/180.664/176.294; no preemptions, clean stops, same prompt hashes/counts. Single repeat only. KV summary docs/evidence/VTP60-kv-format-screen/summary.json. I8/FP8_V4/K6_V4 queue blocked. Reuse ENG04/ENG06 evidence and RSC12: short and long 8k/32k/100k/248k where capacity allows, matched fixed physical capacity separately, quality KLD and retrieval against independent BF16 reference; assess kernel, prefill/decode, memory and power; no new formats unless existing ones leave a demonstrated gap. Do not promote format or tuning cache without independent quality and exact serving graph.
 
+TTFT phase instrumentation first increment: stream_bench.py records client start/first/end wall timestamps alongside monotonic TTFT, input+output wall rate and all-step counter rate. Pure-decode token/step and token/time ratios now withheld unless mixed counter observed zero; missing/reset counters not assumed zero; per-round revision 2. 35 targeted tests passed. TP2 2.3 cold tuned pipeline 4066 input/1 output: 1495ms client TTFT, 1493.423ms scheduler prefill step, 2722.604 computed prompt tok/s. Rank model-pass span 1470.7ms, subsequent two draft-pass spans about21.3ms, residual ~3ms unattributed. Both ranks valid, tape entirely unclassified; no additive kernel family/communication attribution. Evidence docs/evidence/VTP60-ttft-trace/summary.json; matched fresh-start untraced control, general analyzer, tape segment ownership, native request timestamps, per-phase token counters and MRC08 integration pending. No production default changed.
+
 ## Change Log
 
 - 2026-11-27T10:22:17.436914+00:00 (created-by): Created by agent
@@ -77,3 +79,4 @@ KV follow-up: native rad0071_native_kv_tools patch commit 1bd1b5d45 on isolated 
 - 2026-11-27T11:04:47.040381+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:17:37.522329+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:27:49.418209+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T12:01:46.381304+00:00 (updated-by): Updated: section:notes

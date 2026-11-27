@@ -1,0 +1,236 @@
+{
+  "kind": "single-request-traced-diagnostic",
+  "prompt_tokens": 4066,
+  "completion_tokens": 1,
+  "ttft_ms": 1495.0,
+  "engine": {
+    "engine_steps_total": 1.0,
+    "engine_steps_mixed_total": 0.0,
+    "engine_step_seconds_total": 1.493423,
+    "engine_steps_decode_total": 0.0,
+    "engine_step_seconds_decode_total": 0.0,
+    "decode_tokens_total": 0.0,
+    "draft_tokens_total": 0.0,
+    "draft_accepted_total": 0.0,
+    "engine_steps_prefill_total": 1.0,
+    "prefill_tokens_total": 4066.0,
+    "num_preemptions_total": 0.0,
+    "phase_rate_definition": "v2: pure decode ratios require observed zero mixed steps",
+    "decode_rate_status": "insufficient_counters",
+    "input_output_tps_engine_all_steps": 2722.604,
+    "requests_running_mean": 0.0,
+    "requests_running_max": 0.0,
+    "requests_waiting_max": 0.0
+  },
+  "aggregate": {
+    "tokens": 1,
+    "aggregate_tps": 0.669,
+    "input_tokens": 4066,
+    "input_output_tps_wall": 2719.741,
+    "mean_stream_decode_tps_est": null,
+    "ttft_ms_p50": 1495.0,
+    "ttft_ms_p95": 1495.0,
+    "ttft_ms_max": 1495.0,
+    "event_gap_ms_p50": null,
+    "event_gap_ms_p95": null,
+    "event_gap_ms_p99": null,
+    "event_gap_ms_max": null,
+    "estimated_tokens": false
+  },
+  "passes": [
+    {
+      "schema_version": 1,
+      "rank": 0,
+      "step": 12,
+      "draft_pass": 0,
+      "phase": 0,
+      "n_tok": 4066,
+      "ctx": 0,
+      "wall_start_ns": 1795780782982029242,
+      "wall_end_ns": 1795780784452705253,
+      "valid": true,
+      "compute_ms": 1469.990356,
+      "collective_ms": null,
+      "host_kv_serial_ms": null,
+      "host_kv_wait_ms": null,
+      "host_kv_dma_ms": null,
+      "idle_wait_ms": null,
+      "n_compute": 1,
+      "n_collective": 0,
+      "n_kv_serial": 0,
+      "n_kv_wait": 0,
+      "tape_segments": [
+        {
+          "from": -1,
+          "to": -1,
+          "op": "unclassified",
+          "ms": 1469.990356
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "rank": 0,
+      "step": 12,
+      "draft_pass": -1,
+      "phase": 1,
+      "n_tok": 4066,
+      "ctx": 0,
+      "wall_start_ns": 1795780784453405620,
+      "wall_end_ns": 1795780784471449029,
+      "valid": true,
+      "compute_ms": 17.870918,
+      "collective_ms": null,
+      "host_kv_serial_ms": null,
+      "host_kv_wait_ms": null,
+      "host_kv_dma_ms": null,
+      "idle_wait_ms": null,
+      "n_compute": 1,
+      "n_collective": 0,
+      "n_kv_serial": 0,
+      "n_kv_wait": 0,
+      "tape_segments": [
+        {
+          "from": -1,
+          "to": -1,
+          "op": "unclassified",
+          "ms": 17.870918
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "rank": 0,
+      "step": 12,
+      "draft_pass": 1,
+      "phase": 1,
+      "n_tok": 4,
+      "ctx": 4096,
+      "wall_start_ns": 1795780784471731973,
+      "wall_end_ns": 1795780784474842919,
+      "valid": true,
+      "compute_ms": 2.945963,
+      "collective_ms": null,
+      "host_kv_serial_ms": null,
+      "host_kv_wait_ms": null,
+      "host_kv_dma_ms": null,
+      "idle_wait_ms": null,
+      "n_compute": 1,
+      "n_collective": 0,
+      "n_kv_serial": 0,
+      "n_kv_wait": 0,
+      "tape_segments": [
+        {
+          "from": -1,
+          "to": -1,
+          "op": "unclassified",
+          "ms": 2.945963
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "rank": 1,
+      "step": 12,
+      "draft_pass": 0,
+      "phase": 0,
+      "n_tok": 4066,
+      "ctx": 0,
+      "wall_start_ns": 1795780782982029693,
+      "wall_end_ns": 1795780784452686083,
+      "valid": true,
+      "compute_ms": 1469.97644,
+      "collective_ms": null,
+      "host_kv_serial_ms": null,
+      "host_kv_wait_ms": null,
+      "host_kv_dma_ms": null,
+      "idle_wait_ms": null,
+      "n_compute": 1,
+      "n_collective": 0,
+      "n_kv_serial": 0,
+      "n_kv_wait": 0,
+      "tape_segments": [
+        {
+          "from": -1,
+          "to": -1,
+          "op": "unclassified",
+          "ms": 1469.97644
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "rank": 1,
+      "step": 12,
+      "draft_pass": -1,
+      "phase": 1,
+      "n_tok": 4066,
+      "ctx": 0,
+      "wall_start_ns": 1795780784453340049,
+      "wall_end_ns": 1795780784471290919,
+      "valid": true,
+      "compute_ms": 17.749594,
+      "collective_ms": null,
+      "host_kv_serial_ms": null,
+      "host_kv_wait_ms": null,
+      "host_kv_dma_ms": null,
+      "idle_wait_ms": null,
+      "n_compute": 1,
+      "n_collective": 0,
+      "n_kv_serial": 0,
+      "n_kv_wait": 0,
+      "tape_segments": [
+        {
+          "from": -1,
+          "to": -1,
+          "op": "unclassified",
+          "ms": 17.749594
+        }
+      ]
+    },
+    {
+      "schema_version": 1,
+      "rank": 1,
+      "step": 12,
+      "draft_pass": 1,
+      "phase": 1,
+      "n_tok": 4,
+      "ctx": 4096,
+      "wall_start_ns": 1795780784471657453,
+      "wall_end_ns": 1795780784474825924,
+      "valid": true,
+      "compute_ms": 2.886178,
+      "collective_ms": null,
+      "host_kv_serial_ms": null,
+      "host_kv_wait_ms": null,
+      "host_kv_dma_ms": null,
+      "idle_wait_ms": null,
+      "n_compute": 1,
+      "n_collective": 0,
+      "n_kv_serial": 0,
+      "n_kv_wait": 0,
+      "tape_segments": [
+        {
+          "from": -1,
+          "to": -1,
+          "op": "unclassified",
+          "ms": 2.886178
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Rank wall spans overlap; do not sum across ranks. All segments unclassified. GPU category timings cannot be decomposed further. Traced run compared with earlier untraced 1486.87 ms median; not matched fresh-start ABBA.",
+    "35 Python tests passed; general phase analyzer extension blocked; no native lifecycle instrumentation or independent quality gate yet."
+  ],
+  "raw_sha256": {
+    "owner.log": "068239e3a40f3dff2a9e8be939e74530d5d8017895969227de942519694e7793",
+    "stream-4096-1.json": "3dea466cb773a707ff0c3f21b309da8f52f890551e51d7d8eec73dc0dd5e7d57",
+    "result.json": "ba1ad9859ee08b0da17d9b7350aec4ba003cd7a1b9e3a341a83654c990284908",
+    "engine-rank-1.jsonl": "cca5f690b3138862693f168fed9ba9fed6b37b68bb18519b8d6019d4cce70070",
+    "ttft-trace.py": "4f3503b1d8b59c35b8c9dc277a115ef3b8182638b38de21b6fdf194293dcbfa0",
+    "engine-rank-0.jsonl": "ac0f46b0e06ed437bbb3dc50cd029748edfadec28a78ed22df55027da5220ac0",
+    "native.yaml": "0e69b29b1a9b037c97f6c8623d9f35e6284d986269b0289aece4015e2efdea13",
+    "engine-20261127T115927Z-1251196.log": "afdc72a1bf181e3b3ec4bb03ebd3edec23f362b29f403691702715b01cf92358"
+  }
+}
