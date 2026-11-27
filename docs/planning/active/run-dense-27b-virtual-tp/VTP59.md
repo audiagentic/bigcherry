@@ -72,6 +72,8 @@ VTP60 owns reusable fast qualification integration; see docs/design/radiance-fas
 
 Use VTP60 native-first tuning path: rad-tune for kernel variants only, rad-kbench for correctness/replay, rad-info for scope, native --diagnose for measured serving and phase costs, sched_test sim_burst for deterministic policy screening after minimal mixed-target and clock extensions. Compare fixed and adaptive settings by workload progress, throughput, latency and fairness with frozen cost/acceptance bands. Retain full production quality and matched old/candidate serving qualification; do not treat simulation as hardware measurement.
 
+2.3 exact candidate 69cccadc518f5282d312b0d84a08bc01: 6 managed IQ8R arms, 18 reports, all successful clean stops, no preemptions, matching prompt hashes/counts per cohort. TP2 0/250ms/4096 candidate 512/128,4096/128,4096/512 aggregate 261.646/52.583/157.212 vs auto 270.558/48.221/123.241; 4K512 p95 gap47.074ms vs auto34.82 and tuned 2048 budget203.904. TP3 0/200ms/2048 gives 278.018/61.314/189.469 vs auto296.786/62.496/148.594; 4K512 p95 gap41.186 vs34.287. TP3 0/100ms/4096 288.157/58.467/182.9, 4K128 decode715.476 but wall throughput lower. Recommend TP2 4096 budget and TP3 200ms 2048 as long-response finalists; retain default short-response controls. Single repetition only; require ABBA, mixed arrivals, latency bounds and independent quality; no production promotion. Evidence docs/evidence/VTP60-deterministic-screen/candidate-gpu-summary.json.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -87,3 +89,4 @@ Use VTP60 native-first tuning path: rad-tune for kernel variants only, rad-kbenc
 - 2026-11-27T10:17:55.733251+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:26:28.686503+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:53:41.556574+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T11:08:19.072053+00:00 (updated-by): Updated: section:notes
