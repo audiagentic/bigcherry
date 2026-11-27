@@ -394,16 +394,119 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap.add_argument("--shared-prefix", action="store_true", help="give every stream the same prompt (prefix-cache probe)")
     ap.add_argument("--allow-estimate", action="store_true",
                     help="count one token per text event when the server sends no usage block (marked as an estimate)")
+    ap.add_argument("--record", action="store_true", help="publish the benchmark to the shared run store")
+    ap.add_argument("--manifest", type=Path, help="live serving manifest for --record")
+    ap.add_argument("--work-root", type=Path, help="override work root for --record")
+    ap.add_argument("--export-dir", type=Path, help="write a portable summary here after --record")
     ap.add_argument("--output", help="write the JSON record here (default: stdout)")
     return ap
 
 
+def _record_target(args):
+    from ..core.context import resolve_work_root
+    from . import workloads
+
+    info = workloads.live_info(args.url, resolve_work_root(args.work_root), args.manifest)
+    if not info.get("manifest"):
+        raise StreamBenchError("recording requires the live serving manifest")
+    manifest = Path(info["manifest"])
+    session = json.loads((manifest.parent / "session.json").read_bytes())
+    snapshot = workloads.host_facts.read_owner_start(manifest.parent)
+    return info, manifest.read_bytes(), snapshot, session["owner_pid"], session["started_at"]
+
+
+def _export_summary(directory, run_id, config, report, build_id, recorded_at):
+    """Export only fields with controlled values or numeric measurements."""
+    from tempfile import NamedTemporaryFile
+    import re
+
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{run_id}.json"
+    settings = {key: config[key] for key in (
+        "streams", "prompt_tokens_target", "prompt_words", "max_tokens",
+        "reps", "temperature", "seed", "shared_prefix", "max_context_tokens",
+    )}
+    if config["kv_cache_dtype"] in (
+        "fp8", "fp16", "f16", "bf16", "bf16_fp8", "bf16_i8", "fp8_v4", "k6_v4",
+    ):
+        settings["kv_cache_dtype"] = config["kv_cache_dtype"]
+    rounds = [
+        {
+            "streams": row["streams"], "rep": row["rep"], "ok": row["ok"],
+            "requests": [
+                {key: stream[key] for key in ("prompt_tokens", "tokens", "ttft_ms", "ok")}
+                for stream in row["per_stream"]
+            ],
+        }
+        for row in report["rounds"]
+    ]
+    raw = (json.dumps({
+        "schema_version": 1, "run_id": run_id, "settings": settings,
+        "engine": "radiance", "recorded_at": recorded_at,
+        "build_id": build_id if re.fullmatch(r"[a-f0-9]{16,64}", build_id) else None,
+        "ok": report["ok"], "summary": report["summary"], "rounds": rounds,
+    }, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+    with NamedTemporaryFile(dir=directory) as tmp:
+        tmp.write(raw)
+        tmp.flush()
+        try:
+            path.hardlink_to(tmp.name)
+        except FileExistsError:
+            if path.is_symlink() or path.read_bytes() != raw:
+                raise StreamBenchError(f"benchmark export already exists: {path}")
+
+
+def _publish_benchmark(args, report, target):
+    from uuid import uuid4
+
+    from . import workloads
+
+    if _record_target(args) != target:
+        raise StreamBenchError("serving session changed during benchmark")
+    info, manifest, snapshot, _, _ = target
+    spec = json.loads(manifest)["spec"]
+    config = {
+        **report["config"],
+        "max_context_tokens": spec["intent"]["service"]["max_context_tokens"],
+        "kv_cache_dtype": spec["processes"]["engine"]["execution"]["kv_cache_dtype"],
+    }
+    metrics = {}
+    if len(config["streams"]) == 1 and report["summary"]:
+        summary = next(iter(report["summary"].values()))
+        metrics["decode_aggregate_tps"] = {"median": summary["aggregate_tps_median"]}
+    row = {
+        **info,
+        "row_id": f"stream-bench-{uuid4().hex}",
+        "timestamp": workloads.timestamp(),
+        "workload_id": "stream-bench",
+        "workload_version": 1,
+        "metrics": metrics,
+        "details": {"workload_config": config, "benchmark": report},
+    }
+    digest = workloads.publish_record(
+        row, manifest_bytes=manifest, work_root=args.work_root,
+        argv=list(sys.argv), host_snapshot=snapshot,
+    )
+    if args.export_dir:
+        print(f"local run-record v1: {digest}", file=sys.stderr)
+        _export_summary(
+            args.export_dir, row["row_id"], config, report, info["build_id"], row["timestamp"],
+        )
+    return digest
+
+
 def run_from_namespace(args) -> int:
     try:
+        if args.export_dir and not args.record:
+            raise StreamBenchError("--export-dir requires --record")
+        target = _record_target(args) if args.record else None
         counts = [int(x) for x in str(args.streams).split(",") if x.strip()]
         record = run(args.url, args.model or served_model(args.url), counts, args.prompt_tokens, args.max_tokens, args.reps, args.temperature,
                      args.timeout, args.seed, args.shared_prefix, args.allow_estimate, not args.no_calibrate)
-    except (StreamBenchError, ValueError) as exc:
+        if target is not None:
+            digest = _publish_benchmark(args, record, target)
+            print(f"run-record v1: {digest}", file=sys.stderr)
+    except (StreamBenchError, ValueError, OSError, KeyError) as exc:
         print(f"stream-bench: ERROR: {exc}", file=sys.stderr)
         return 2
     rendered = json.dumps(record, indent=1, sort_keys=True)

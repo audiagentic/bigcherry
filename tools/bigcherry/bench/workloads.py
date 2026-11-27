@@ -393,7 +393,7 @@ def publish_record(
                     if isinstance(rep, dict) and type(rep.get(name)) in (int, float)]
             if len(reps) >= 2:
                 metric_specs[phase][name]["repeat_groups"] = [reps]
-    if not any(phase_metrics.values()):
+    if not any(phase_metrics.values()) and row["workload_id"] != "stream-bench":
         raise WorkloadError("no numeric workload metrics")
     stamp = row["timestamp"]
     config = row.get("details", {}).get("workload_config")
