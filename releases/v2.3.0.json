@@ -1,17 +1,562 @@
 {
   "artifact_version": 1,
-  "audit": {},
-  "bigcherry_revision": "570b5b0a9a026539ba91c444febd3517163243ce",
+  "audit": {
+    "failed_checks": [],
+    "passed": true,
+    "strict": true,
+    "summary": {
+      "errors": 0,
+      "passed": 4,
+      "total": 4,
+      "warnings": 0
+    }
+  },
+  "bigcherry_revision": "85e0c14be9a2035b5c7a0806b5225eefcf09a061",
   "evidence_gate": {},
   "first_seen": "2026-11-27T04:01:23.618835+00:00",
   "manifest_hash": "",
   "notes": "",
-  "patches": {},
+  "patches": {
+    "applied_cleanly": true,
+    "failed_edits": [],
+    "files": {
+      "abi/bc_moe_remote.h": {
+        "create-bc-moe-remote-abi": "applied"
+      },
+      "abi/rad_abi.h": {
+        "abi44-version": "applied"
+      },
+      "abi/rad_abi_layout_rows.h": {
+        "abi44-layout-batch": "applied",
+        "abi44-layout-context": "applied",
+        "abi44-layout-group": "applied",
+        "abi44-layout-probe": "applied"
+      },
+      "abi/rad_builder.h": {
+        "abi44-arch-probe": "applied",
+        "abi44-build-context": "applied",
+        "abi44-kv-formats": "applied",
+        "abi44-kv-group": "applied",
+        "abi44-string-header": "applied"
+      },
+      "abi/rad_runtime.h": {
+        "msp-abi": "applied"
+      },
+      "arch/common/bc_moe_remote_block.h": {
+        "create-bc-moe-remote-block": "applied"
+      },
+      "arch/common/rad_arch.h": {
+        "bc-remote-geom-lookup": "applied",
+        "bc-remote-geom-member": "applied",
+        "include-bc-moe-remote-arch": "applied"
+      },
+      "arch/common/rad_block_attn_gated.h": {
+        "n2-attn-spans": "applied"
+      },
+      "arch/common/rad_block_attn_gated_q.h": {
+        "prefill-mode-op-key": "applied",
+        "prefill-mode-op-params": "applied"
+      },
+      "arch/common/rad_block_dflash2.h": {
+        "rcd-decl": "applied",
+        "rcd-issue": "applied",
+        "rcd-op": "applied",
+        "rcd-wire": "applied"
+      },
+      "arch/common/rad_block_gdn.h": {
+        "n2-gdn-spans": "applied"
+      },
+      "arch/common/rad_block_gdn_q.h": {
+        "mx1-gdn-one": "applied",
+        "mx1-gdn-phase": "applied",
+        "mx1-gdn-prefill-piece": "applied",
+        "mx1-gdn-prep": "applied"
+      },
+      "arch/common/rad_block_hc.h": {
+        "bc-remote-takes-ar": "applied",
+        "include-bc-moe-remote-block-hc": "applied"
+      },
+      "arch/common/rad_block_mlp.h": {
+        "n2-mlp-spans": "applied"
+      },
+      "arch/common/rad_block_mlp_q.h": {
+        "iq8r-mlp-fold-input-scale": "applied",
+        "iq8r-mlp-fold-output-scale": "applied"
+      },
+      "arch/common/rad_block_moe_q.h": {
+        "bc-remote-after-route-inverse": "applied",
+        "bc-remote-declare": "applied",
+        "bc-remote-declare-publish": "applied",
+        "bc-remote-issues-ar": "applied",
+        "bc-remote-member": "applied",
+        "bc-remote-merge": "applied",
+        "include-bc-moe-remote-block": "applied"
+      },
+      "arch/common/rad_linear.h": {
+        "plain-norm-fed-pair": "applied"
+      },
+      "arch/qwen35_bf16/qwen35_bf16.cpp": {
+        "n2-qwen-gdn-heads": "applied",
+        "n2-qwen-optin": "applied",
+        "n2-qwen-vocab": "applied"
+      },
+      "arch/qwen35_fp8/qwen35_fp8.cpp": {
+        "owned-vhead": "applied"
+      },
+      "arch/qwen4exp_fp8/qwen4exp_fp8.cpp": {
+        "admit-packed-descriptor": "applied",
+        "old-formats-probe": "applied",
+        "packed-arch-shape": "applied"
+      },
+      "core/CMakeLists.txt": {
+        "link-bc-serving": "applied"
+      },
+      "core/bc_plan_check.cpp": {
+        "create-bc-plan-check-cpp": "applied"
+      },
+      "core/bc_plan_check.h": {
+        "create-bc-plan-check-h": "applied"
+      },
+      "core/bc_plan_memory.cpp": {
+        "create-bc-plan-memory-cpp": "applied"
+      },
+      "core/bc_plan_memory.h": {
+        "create-bc-plan-memory-h": "applied"
+      },
+      "core/build/rad_build.h": {
+        "n1-builder-rank": "applied"
+      },
+      "core/build/rad_builder.cpp": {
+        "use-packed-kv": "applied",
+        "use-packed-kv-block-bytes": "applied",
+        "use-packed-kv-group-supported": "applied"
+      },
+      "core/config.cpp": {
+        "prefill-mode-names": "applied",
+        "prefill-mode-option": "applied",
+        "prefill-mode-parse": "applied",
+        "prefill-mode-show": "applied"
+      },
+      "core/device/aql.cpp": {
+        "n1-aql-include": "applied",
+        "n1-aql-own-handles": "applied",
+        "n1-aql-register-fat": "applied",
+        "n1-aql-register-fn": "applied",
+        "n1-aql-unregister": "applied"
+      },
+      "core/engine.cpp": {
+        "bc-remote-after-server-interrupt": "applied",
+        "bc-remote-ahead-bind": "applied",
+        "bc-remote-ahead-try-admit": "applied",
+        "bc-remote-close-generation": "applied",
+        "bc-remote-engine-idle": "applied",
+        "bc-remote-engine-step": "applied",
+        "bc-remote-fault-interrupt": "applied",
+        "bc-remote-finish-before-server-destruction": "applied",
+        "bc-remote-finish-issued-ahead": "applied",
+        "bc-remote-host-logical-completion": "applied",
+        "bc-remote-note-stepper-finished": "applied",
+        "bc-remote-rank-ticket": "applied",
+        "bc-remote-scheduler-admit": "applied",
+        "bc-remote-terminal-events": "applied"
+      },
+      "core/engine.h": {
+        "bc-remote-engine-ticket-include": "applied",
+        "bc-remote-engine-ticket-state": "applied"
+      },
+      "core/engine_bringup.cpp": {
+        "bc-plan-memory-done": "applied",
+        "bc-plan-memory-note": "applied",
+        "bc-plan-memory-ranks-post-split": "applied",
+        "include-bc-plan-memory": "applied",
+        "s5-embedding-terminal-host-room": "applied",
+        "s5-exact-host-pool-shortfall": "applied",
+        "s5-ngram-terminal-host-room": "applied"
+      },
+      "core/fleet/fleet.cpp": {
+        "include-bc-serving-managed": "applied",
+        "managed-chosen-cards": "applied",
+        "managed-engine-exit-ends-process": "applied",
+        "managed-exit-status": "applied",
+        "managed-no-model-admin": "applied",
+        "managed-no-reload": "applied",
+        "managed-no-reload-route": "applied",
+        "managed-usable-cards": "applied"
+      },
+      "core/kvstream/bringup.cpp": {
+        "b16-stream-refusal": "applied"
+      },
+      "core/kvstream/stage.cpp": {
+        "phase-first-wait": "applied",
+        "phase-pipe-wait": "applied",
+        "phase-serial-copy": "applied",
+        "phase-serial-error": "applied"
+      },
+      "core/main.cpp": {
+        "bc-serving-owned-entry": "applied",
+        "bc-serving-stock-entry-end": "applied",
+        "bind-bc-serving-managed": "applied",
+        "include-bc-serving-engine": "applied"
+      },
+      "core/mem/kv.cpp": {
+        "use-packed-kv": "applied",
+        "use-packed-kv-block-bytes": "applied",
+        "use-packed-kv-group-supported": "applied"
+      },
+      "core/mem/packed_kv.h": {
+        "generic-block-bytes": "applied",
+        "generic-group-supported": "applied",
+        "generic-model-supported": "applied",
+        "packed-capability": "applied",
+        "packed-context": "applied",
+        "packed-descriptor-selection": "applied",
+        "packed-geometry": "applied"
+      },
+      "core/mem/vram_budget.cpp": {
+        "own-spare-def": "applied",
+        "own-spare-filter": "applied"
+      },
+      "core/mem/vram_budget.h": {
+        "own-spare-decl": "applied"
+      },
+      "core/place/bc_moe_remote.cpp": {
+        "create-bc-moe-remote-core": "applied"
+      },
+      "core/place/bc_moe_remote_engine.h": {
+        "create-bc-moe-remote-engine": "applied"
+      },
+      "core/place/bc_moe_remote_place.h": {
+        "create-bc-moe-remote-place": "applied"
+      },
+      "core/place/planner.cpp": {
+        "bc-remote-mark-footprint": "applied",
+        "bc-remote-pin-unit": "applied",
+        "include-bc-moe-remote-place-planner": "applied",
+        "rank-units-skip-preplaced": "applied"
+      },
+      "core/plugin/bands.cpp": {
+        "n1-bands-forward": "applied",
+        "n1-bands-impl": "applied"
+      },
+      "core/plugin/bc_rank_devices.cpp": {
+        "create-bc-rank-devices-cpp": "applied"
+      },
+      "core/plugin/bc_rank_devices.h": {
+        "create-bc-rank-devices-h": "applied"
+      },
+      "core/plugin/bc_rank_engine.cpp": {
+        "create-bc-rank-engine-cpp": "applied"
+      },
+      "core/plugin/bc_rank_engine.h": {
+        "create-bc-rank-engine-h": "applied"
+      },
+      "core/plugin/bc_shared_slot.cpp": {
+        "create-bc-shared-slot-cpp": "applied"
+      },
+      "core/plugin/bc_shared_slot.h": {
+        "create-bc-shared-slot-h": "applied"
+      },
+      "core/plugin/loader.cpp": {
+        "n1-loader-ranks": "applied",
+        "n1-mask-scope": "applied",
+        "n1-row-mask": "applied"
+      },
+      "core/plugin/registry.h": {
+        "n1-bands-rank": "applied",
+        "n1-resolve-rank": "applied",
+        "n1-select-rank": "applied",
+        "n1-set-devices": "applied",
+        "n1-storage": "applied"
+      },
+      "core/plugin/select.cpp": {
+        "n1-resolve-forward": "applied",
+        "n1-resolve-impl": "applied",
+        "n1-scan-decl": "applied",
+        "n1-scan-def": "applied",
+        "n1-scan-guard": "applied",
+        "n1-select-impl": "applied",
+        "n1-select-in-scan": "applied",
+        "n1-select-scan": "applied"
+      },
+      "core/plugin/testplugin/CMakeLists.txt": {
+        "abi44-nolayout-plugin": "applied"
+      },
+      "core/plugin/testplugin/testplugin.cc": {
+        "abi44-missing-layout-export": "applied"
+      },
+      "core/rad_core.h": {
+        "prefill-mode-config-field": "applied"
+      },
+      "core/runtime/ctx.cpp": {
+        "phase-begin": "applied",
+        "phase-bind": "applied",
+        "phase-close": "applied",
+        "phase-collect": "applied",
+        "phase-init": "applied",
+        "phase-prototype": "applied",
+        "phase-record-lambda": "applied",
+        "phase-run-audit": "applied",
+        "phase-run-collect": "applied",
+        "phase-run-first": "applied",
+        "phase-run-key-zero": "applied",
+        "phase-run-new": "applied",
+        "phase-run-pass-lambda": "applied",
+        "phase-run-refused": "applied",
+        "phase-run-unkeyed": "applied",
+        "phase-store-ops": "applied",
+        "phase-tape-op-map": "applied",
+        "phase-tape-segment": "applied"
+      },
+      "core/runtime/ctx.h": {
+        "phase-api": "applied",
+        "phase-haz-lane": "applied",
+        "phase-header": "applied",
+        "phase-slot-range": "applied",
+        "phase-state": "applied",
+        "phase-tape-spans": "applied"
+      },
+      "core/runtime/issue.cpp": {
+        "phase-haz-issue-lane": "applied"
+      },
+      "core/runtime/kvbind.cpp": {
+        "b16-bind-row": "applied"
+      },
+      "core/sched/batch.cpp": {
+        "msp-core": "applied"
+      },
+      "core/sched/metrics.h": {
+        "metrics_h-0": "applied",
+        "metrics_h-1": "applied"
+      },
+      "core/sched/prefill_governor.h": {
+        "create-prefill-governor": "applied"
+      },
+      "core/sched/scheduler.cpp": {
+        "scheduler_cpp-0": "applied",
+        "scheduler_cpp-1": "applied",
+        "scheduler_cpp-2": "applied",
+        "scheduler_cpp-3": "applied",
+        "scheduler_cpp-4": "applied",
+        "scheduler_cpp-5": "applied",
+        "scheduler_cpp-6": "applied"
+      },
+      "core/sched/scheduler.h": {
+        "scheduler_h-0": "applied",
+        "scheduler_h-1": "applied"
+      },
+      "core/server/adapters.h": {
+        "adapters_h-0": "applied",
+        "adapters_h-1": "applied"
+      },
+      "core/server/iface.h": {
+        "iface_h-0": "applied",
+        "iface_h-1": "applied"
+      },
+      "core/server/metrics.cpp": {
+        "metrics_cpp-0": "applied",
+        "metrics_cpp-1": "applied",
+        "metrics_cpp-2": "applied",
+        "metrics_cpp-3": "applied"
+      },
+      "core/server/metrics.h": {
+        "metrics_h-0": "applied",
+        "metrics_h-1": "applied"
+      },
+      "libr4d/bc_ar_lifecycle_impl.h": {
+        "ts3p-inst": "applied",
+        "ts3p-settle": "applied"
+      },
+      "libr4d/bc_ar_rendezvous_impl.h": {
+        "create-bc-ar-rendezvous-impl-h": "applied"
+      },
+      "libr4d/bc_b16_decode_impl.h": {
+        "descriptor-row-bytes": "applied",
+        "descriptor-v4-offsets": "applied",
+        "typed-v4-cache": "applied"
+      },
+      "libr4d/bc_b16_prefill_impl.h": {
+        "descriptor-row-bytes": "applied",
+        "descriptor-v4-offsets": "applied",
+        "typed-v4-cache": "applied"
+      },
+      "libr4d/bc_helper_config.h": {
+        "create-helper-config": "applied"
+      },
+      "libr4d/bc_kv_rows.h": {
+        "bc-kv-shared-chain-rad0053": "applied",
+        "v4-gqa12-constraints": "applied",
+        "v4-gqa12-rows": "applied",
+        "v4-gqa6-constraints": "applied",
+        "v4-gqa6-rows": "applied"
+      },
+      "libr4d/r4d.h": {
+        "b16-drafter-native-declaration": "applied"
+      },
+      "libr4d/r4d_ar_entry.hip": {
+        "ts3o-entry": "applied"
+      },
+      "libr4d/r4d_ar_oneshot_2rank_exact.hip": {
+        "n3-ipc-init-cleanup": "applied"
+      },
+      "libr4d/r4d_ar_oneshot_Nrank_exact.hip": {
+        "artl-head": "applied",
+        "artl-host": "applied",
+        "artl-kend": "applied",
+        "artl-khand": "applied",
+        "artl-kparam": "applied",
+        "artl-kstart": "applied",
+        "artl-launch": "applied"
+      },
+      "libr4d/r4d_ar_twoshot_Nrank_exact.hip": {
+        "ts3o-kload": "applied",
+        "ts3o-kload-fused": "applied",
+        "ts3o-kmacro": "applied",
+        "ts3o-kparam": "applied",
+        "ts3o-kself": "applied",
+        "ts3o-kstep": "applied",
+        "ts3o-kstore": "applied",
+        "ts3o-launch-arg": "applied",
+        "ts3o-launch-sig": "applied",
+        "ts3o-wrapper-call": "applied",
+        "ts3o-wrapper-sig": "applied"
+      },
+      "libr4d/r4d_args.h": {
+        "ts3o-cfg-decl": "applied"
+      },
+      "libr4d/r4d_attn_decode_h256_gqa6.hip": {
+        "b16-decode-typed-hook": "applied"
+      },
+      "libr4d/r4d_attn_paged_gqa8.hip": {
+        "v4-qwen4exp-page4": "applied"
+      },
+      "libr4d/r4d_attn_paged_h128_gqa4.hip": {
+        "b16-drafter-native-window": "applied"
+      },
+      "libr4d/r4d_attn_paged_h256_gqa6.hip": {
+        "prefill-fp8-launch-bindings": "applied",
+        "prefill-fp8-products-stay-unsplit": "applied"
+      },
+      "libr4d/r4d_attn_prefill_h256_gqa6.hip": {
+        "b16-prefill-typed-hook": "applied"
+      },
+      "libr4d/r4d_b16_kv.h": {
+        "descriptor-key-scale": "applied",
+        "descriptor-scale-positions": "applied",
+        "legacy-v4-predicate": "applied"
+      },
+      "libr4d/r4d_fp8_layout.cpp": {
+        "rowmajor-layout": "applied"
+      },
+      "libr4d/r4d_hc_bf16.hip": {
+        "hc-pf2-upmix-rt-sweep": "applied"
+      },
+      "libr4d/r4d_layout.cpp": {
+        "grouped-layout": "applied"
+      },
+      "libr4d/r4d_model_bf16.hip": {
+        "v4-standalone-codec": "applied",
+        "v4-standalone-launch": "applied"
+      },
+      "libr4d/r4d_moe.hip": {
+        "fp8-wide-tile-all-classes": "applied",
+        "grouped-launch": "applied",
+        "include-fp8-geometry-helper": "applied"
+      },
+      "libr4d/r4d_moe_block_fp8_geometry.h": {
+        "create-fp8-wide-tile-helper": "applied"
+      },
+      "libr4d/r4d_plugin.h": {
+        "prefill-fp8-launch-symbols": "applied"
+      },
+      "libr4d/r4d_qk_norm_rope_gate.hip": {
+        "fused-packed-dtype": "applied",
+        "fused-packed-geometry": "applied",
+        "fused-packed-type": "applied",
+        "v4-fused-codec": "applied",
+        "v4-fused-launch": "applied"
+      },
+      "libr4d/r4d_quant_act_fp8.hip": {
+        "rotated-launch": "applied"
+      },
+      "libr4d/r4d_rows.cpp": {
+        "prefill-fp8-row-constraints": "applied",
+        "prefill-fp8-rows": "applied",
+        "prefill-native-fp8-chain": "applied"
+      },
+      "libr4d/r4d_selftest.cpp": {
+        "q4-e4m3-page16-selftest-geometry": "applied",
+        "q4-e4m3-page16-selftest-invocation": "applied",
+        "q4-e4m3-page16-selftest-row": "applied",
+        "q4-e4m3-page16-selftest-signature": "applied"
+      },
+      "libr4d/r4d_shapes.cpp": {
+        "b16-shapes-attention": "applied",
+        "b16-shapes-header": "applied",
+        "b16-shapes-stores": "applied",
+        "b16-shapes-token-row": "applied"
+      },
+      "libref/ref_attn.cpp": {
+        "b16-ref-attention-refusal": "applied",
+        "b16-ref-header": "applied",
+        "b16-ref-relative-attention-refusal": "applied",
+        "b16-ref-store-refusal": "applied"
+      },
+      "tests/CMakeLists.txt": {
+        "register-bc-native-managed-test": "applied"
+      },
+      "tests/abi_layout_table.h": {
+        "abi44-table-batch": "applied",
+        "abi44-table-batch-size": "applied",
+        "abi44-table-context": "applied",
+        "abi44-table-context-size": "applied",
+        "abi44-table-doc": "applied",
+        "abi44-table-group": "applied",
+        "abi44-table-group-size": "applied",
+        "abi44-table-probe": "applied",
+        "abi44-table-probe-size": "applied"
+      },
+      "tests/abi_layout_test.cpp": {
+        "abi44-test-batch-size": "applied",
+        "abi44-test-context-size": "applied",
+        "abi44-test-doc": "applied",
+        "abi44-test-probe-size": "applied",
+        "abi44-test-version": "applied"
+      },
+      "tests/arch_fakes.h": {
+        "bc-remote-arch-fakes": "applied"
+      },
+      "tests/arch_test.cpp": {
+        "prefill-mode-arch-checks": "applied"
+      },
+      "tests/bc_b16_kv_runtime_test.cpp": {
+        "prefill-mode-native-yaml": "applied"
+      },
+      "tests/bc_kv_layout_contract_test.c": {
+        "abi44-contract-fixture": "applied"
+      },
+      "tests/bc_rank_devices_test.cpp": {
+        "create-bc-rank-devices-test-cpp": "applied"
+      },
+      "tests/bc_shared_slot_test.cpp": {
+        "create-bc-shared-slot-test-cpp": "applied"
+      },
+      "tests/config_test.cpp": {
+        "prefill-mode-config-checks": "applied",
+        "prefill-mode-config-inventory": "applied"
+      },
+      "tests/plugin_test.cpp": {
+        "abi44-loader-migration-cases": "applied"
+      },
+      "tests/sched_test.cpp": {
+        "sched_test_cpp-0": "applied"
+      }
+    }
+  },
   "promotion": null,
   "release_tag": "v2.3.0",
   "revision": "3b13fd32663ef52252a7f0be255523480aa22ffe",
   "runtime_assets": {},
-  "stage": "pulled",
+  "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-11-27T04:01:23.618835+00:00"
+  "updated_at": "2026-11-27T23:33:40.794060+00:00"
 }
