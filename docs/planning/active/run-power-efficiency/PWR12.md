@@ -122,6 +122,8 @@ Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified
 
 2026-11-27: absorb PWR13/PWR14. Reuse kernel group and architecture/recipe coverage, existing managed slim probes and receipts, exact oracles, production provider/type, relevant precision, sustained/burst, memory/residency/transfer and health. Missing/unsupported/thermal/recovery/mismatch is nonpass; keep signed discrepancies. No theoretical exhaustive variants or persistent probe unless measured gap. PWR15 gates writes, PWR16 owns model acceptance.
 
+2026-11-27: new GPU screen, grouped qualification and peer captures now reference sole active owner PWR12; historical PWR13 run manifests unchanged. Existing recipe and output format retained. 328 hardware/CLI/core guard tests pass, one skipped. Final candidate screening gated on deployed PWR15 and available GPU lease.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -161,3 +163,5 @@ Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified
 
 - RV4681
 - 2026-11-26T23:12:33.346634+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
+- RV4695
+- 2026-11-27T00:41:27.465614+00:00 (updated-by): Updated: section:notes

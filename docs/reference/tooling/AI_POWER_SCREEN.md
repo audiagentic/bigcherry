@@ -150,7 +150,7 @@ fence before any restore or new mutation.
 ## Managed evidence and retention
 
 Every screen creates an existing WSL01 capture run at
-`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR13 when an instruction case, explicit matrix shape or mixed residency is requested, otherwise PWR12,
+`$BC_WORK_ROOT/runs/capture/<run-id>/` (subkind gpu-ai-screen, plan PWR12 for all new captures; historical PWR13 receipts retain their original owner,
 engine none). The usual `run.manifest.json` records lifecycle, source and
 input digests, exit code, and a typed reference to the stock run for candidates.
 The single `<run-id>.power.json` uses the existing platform Receipt v1

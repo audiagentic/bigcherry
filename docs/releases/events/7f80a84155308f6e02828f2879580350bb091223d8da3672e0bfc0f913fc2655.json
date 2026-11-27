@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_004159_concurrent-power-transactions_6198",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/power_io.h",
+    "engines/radiance/components/serving/power_transaction_acceptance_test.cpp",
+    "tools/bigcherry/hardware/power_transaction.py",
+    "tools/tests/hardware/test_power_transaction.py",
+    "tools/bigcherry/cli/ai_probe_cmds.py",
+    "tools/bigcherry/cli/ai_qualification_cmds.py",
+    "tools/bigcherry/cli/ai_peer_cmds.py",
+    "tools/tests/hardware/test_ai_probe.py"
+  ],
+  "plan-item-ids": [
+    "PWR15",
+    "PWR12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Serialize native and platform power mutations within a shared lease; bind new qualification evidence to active plan owner.",
+  "timestamp-utc": "2026-11-27T00:41:59.695754Z",
+  "user-summary-candidate": "Concurrent power transactions are fenced by a common lock; new qualification captures follow the consolidated roadmap."
+}

@@ -52,7 +52,7 @@ def _source(path, role):
 
 
 def _capture(root, topic, payload, inputs, refs=(), passed=True):
-    run=workspace.create_run(root,"capture",topic,plan_item="PWR13",engine="none",
+    run=workspace.create_run(root,"capture",topic,plan_item="PWR12",engine="none",
                             argv=sys.argv[:],purpose="Independent GPU qualification "+topic,
                             inputs=inputs,references=list(refs),subkind=topic,repo=paths.REPO_ROOT)
     m=rm.update_manifest(run.path,expected_generation=run.manifest()["generation"],state="running")

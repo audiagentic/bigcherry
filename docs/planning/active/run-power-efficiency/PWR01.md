@@ -71,6 +71,8 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 
 2026-11-27: bound to matched stock/candidate idle/decode/prefill system measurement within PWR16, synchronized GPU and CPU package energy, wall meter if available, label component estimates and unavailable sensors. Record throughput/latency, clocks, temperature, energy/token. No host-wide writes or duplicate sweep.
 
+2026-11-27 read-only CPU capability preflight: Intel package energy domains absent in the execution environment; existing probe reports unsupported/no_energy_counters. RAPL energy and range files not exposed. Require host-side readable package counters or equivalent synchronized instrumentation before claiming system energy acceptance. No host configuration change. GPU held by unrelated serving workload.
+
 ## Change Log
 
 - 2026-10-27T02:15:39.545328+00:00 (created-by): Created by agent
@@ -85,3 +87,4 @@ CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained u
 - 2026-11-25T19:01:36.788268+00:00 (updated-by): Updated: section:notes
 - RV4683
 - 2026-11-26T23:13:06.718785+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
+- 2026-11-27T00:36:03.069944+00:00 (updated-by): Updated: section:notes

@@ -67,6 +67,10 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 
 2026-11-27 PR #1701 initial full CI found three host environment contract failures and two simulated hardware fixtures missing identity. Declare BC_WORK_ROOT as owner infrastructure (not a manifest setting); add stable fake identities without relaxing real admission. Targeted CI reproduction: 165 Python tests and 61 subtests passed; native transaction, manifest power and session group 1 passed. GPU held by another model run; no candidate hardware writes.
 
+2026-11-27 follow-up: read-only historical journal inventory across both known shared work roots and retained live PWR scratch directories: 167 JSON journals across ten directories, all state restored; no unresolved state or parse errors. Default legacy XDG journal directory absent. This is a scoped inventory, not a proof of no arbitrary private roots.
+
+2026-11-27 same-lease race addressed with existing host-local lock pattern at shared power/owner.lock: native owner holds across session, platform prepare/apply/restore/recover fence durable mutations; stale in-memory record and conflicting peer recovery refuse. Native recovery checks shared plus original root. Native component rebuild and three CTest targets pass, including contention; hardware/CLI and core guard suite 328 passed, one skipped, 61 subtests. PR #1701 merged; follow-up lock not deployed. Physical acceptance cannot run while unrelated model owns GPU lease.
+
 ## Change Log
 
 - 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
@@ -83,3 +87,6 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 - 2026-11-27T00:05:12.419653+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T00:15:12.379866+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T00:33:31.410965+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T00:35:58.278415+00:00 (updated-by): Updated: section:notes
+- RV4694
+- 2026-11-27T00:41:22.690717+00:00 (updated-by): Updated: section:notes

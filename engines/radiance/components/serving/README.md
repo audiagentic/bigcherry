@@ -84,6 +84,13 @@ New physical applies require the shared host work root: set the existing
 `BC_WORK_ROOT` and pass the same directory as `--work-root`. Native
 `power/journals` and platform `flashnext/power/journals` each inspect the
 other owner's durable journal envelope before admitting a new apply.
+Both owners also use a nonblocking host-local exclusive lock at
+`<work-root>/power/owner.lock`. The native session holds it until owner
+exit; platform prepare, apply, restore and recovery hold it for their
+durable mutation. A busy or unavailable lock refuses the operation.
+Do not remove or replace the lock file. The GPU lease and durable
+journal checks remain mandatory; the file lock only fences concurrent
+owners inside the same lease.
 Do not create per-arm work roots for physical writes. Legacy private or
 XDG journal directories require an operator inventory and recovery before
 adopting the shared root; a scan of the shared root does not prove they

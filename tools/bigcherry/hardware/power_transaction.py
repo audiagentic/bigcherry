@@ -16,10 +16,12 @@ from __future__ import annotations
 
 import os
 import re
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from ..core.host_lock import HostFileLock, HostLockError
 from . import gpu_power, power_probe
 from .power_receipt import read_json, write_json_atomic
 
@@ -96,6 +98,31 @@ def _hwmon_path(g: power_probe.GpuCapability) -> str | None:
     return f"{gpu_power.SYSFS_PCI}/{g.bdf}/hwmon/{g.hwmon.value}" if g.hwmon.status == "supported" else None
 
 
+@contextmanager
+def _owner_guard(journal_dir: Path, sysfs_root: Path):
+    # One file shared with the native owner, not a second journal or lease.
+    if Path(sysfs_root).resolve() == Path("/"):
+        value = os.environ.get("BC_WORK_ROOT")
+        if not value or not Path(value).is_absolute() or not Path(value).is_dir():
+            raise PowerRefused(["physical power mutation requires an existing absolute BC_WORK_ROOT"])
+        path = Path(value).resolve() / "power/owner.lock"
+    elif journal_dir.absolute().parts[-3:] == ("flashnext", "power", "journals"):
+        path = journal_dir.absolute().parents[2] / "power/owner.lock"
+    else:
+        path = journal_dir.parent / "power-owner.lock"
+    try:
+        if path.parent.is_symlink() or path.is_symlink() or (path.exists() and not path.is_file()):
+            raise OSError("owner lock is not a regular file in the shared root")
+        lock = HostFileLock(path)
+        lock.acquire(timeout_seconds=0)
+    except (OSError, HostLockError) as exc:
+        raise PowerRefused(["power owner lock unavailable or busy: " + str(exc)]) from exc
+    try:
+        yield
+    finally:
+        lock.release()
+
+
 class PowerTransaction:
     def __init__(self, run_id: str, journal_dir: Path, *, sysfs_root: Path = Path("/"), fileops: FileOps | None = None,
                  lease_ok: Callable[[], bool], platform_name: str | None = None):
@@ -117,20 +144,23 @@ class PowerTransaction:
     def journal_path(self) -> Path:
         return self.journal_dir / f"{self.run_id}.json"
 
-    def _journal(self, state: str) -> None:
-        write_json_atomic(self.journal_path, {
+    def _journal_document(self, state: str) -> dict:
+        return {
             "schema_version": 1, "run_id": self.run_id, "state": state, "events": self.events,
             "devices": [{"bdf": d.bdf, "hwmon": d.hwmon, "setting": vars(d.setting), "before": d.before.to_json(),
                          "identity": d.identity}
                         for d in self.devs],
             "touched": [d.bdf for d in self.touched],
-        })
+        }
+
+    def _journal(self, state: str) -> None:
+        write_json_atomic(self.journal_path, self._journal_document(state))
         self.state = state
 
     def _event(self, kind: str, **detail) -> None:
         self.events.append({"kind": kind, **detail})
 
-    def _peer_journal_dir(self) -> Path | None:
+    def _peer_journal_dir(self, *, require_shared: bool = True) -> Path | None:
         # New physical applies use the shared host work root, never a private
         # run directory. Fake-sysfs callers retain their isolated test roots.
         if self.root.resolve() == Path("/"):
@@ -138,7 +168,7 @@ class PowerTransaction:
             if not root or not Path(root).is_absolute() or not Path(root).is_dir():
                 raise PowerRefused(["physical apply requires an existing absolute BC_WORK_ROOT"])
             expected = Path(root).resolve() / "flashnext/power/journals"
-            if self.journal_dir.absolute() != expected or self.journal_dir.resolve() != expected:
+            if require_shared and (self.journal_dir.absolute() != expected or self.journal_dir.resolve() != expected):
                 raise PowerRefused(["physical apply requires the shared platform journal directory"])
             return Path(root).resolve() / "power/journals"
         # The peer's native records are not written or recovered here.
@@ -147,9 +177,9 @@ class PowerTransaction:
             return self.journal_dir.absolute().parents[2] / "power/journals"
         return None
 
-    def stale_journals(self) -> list[Path]:
+    def stale_journals(self, *, require_shared: bool = True) -> list[Path]:
         paths = [self.journal_dir]
-        peer = self._peer_journal_dir()
+        peer = self._peer_journal_dir(require_shared=require_shared)
         if peer is not None:
             paths.append(peer)
         return [p for directory in paths for p in self._stale_in(directory, native=(directory == peer))]
@@ -186,8 +216,22 @@ class PowerTransaction:
                 out.append(p)  # unreadable journal: treat as unresolved
         return out
 
+    def _require_current_record(self) -> None:
+        try:
+            if self.journal_path.is_symlink():
+                raise ValueError("journal symlink")
+            doc = read_json(self.journal_path)
+            if doc != self._journal_document(self.state):
+                raise ValueError("journal changed since transaction load")
+        except (OSError, ValueError, AttributeError, TypeError) as exc:
+            raise PowerRefused(["power journal no longer current: " + str(exc)]) from exc
+
     # ---- preflight -------------------------------------------------------------------------------------------------
     def prepare(self, requested: dict[str, gpu_power.Setting], selected_bdfs: list[str]) -> None:
+        with _owner_guard(self.journal_dir, self.root):
+            self._prepare_locked(requested, selected_bdfs)
+
+    def _prepare_locked(self, requested: dict[str, gpu_power.Setting], selected_bdfs: list[str]) -> None:
         reasons: list[str] = []
         if not requested:
             raise PowerRefused(["empty explicit request: no settings for any selected device"])
@@ -304,6 +348,10 @@ class PowerTransaction:
             power_cap_uw=s.power_cap_w * 1_000_000 if s.power_cap_w is not None else d.before.power_cap_uw)
 
     def apply(self) -> None:
+        with _owner_guard(self.journal_dir, self.root):
+            self._apply_locked()
+
+    def _apply_locked(self) -> None:
         if self.state != "prepared":
             raise PowerFailed(f"apply from state {self.state!r}", rolled_back=True)
         if not self.lease_ok():
@@ -314,6 +362,7 @@ class PowerTransaction:
             bad = self._verify(d, d.before)
             if bad:
                 raise PowerRefused([f"{d.bdf}: original state changed before apply: " + "; ".join(bad)])
+        self._require_current_record()
         self._journal("applying")  # durable BEFORE the first write
         try:
             for d in self.devs:
@@ -429,23 +478,37 @@ class PowerTransaction:
         return ok
 
     def restore(self, *, processes_exited: bool) -> bool:
+        with _owner_guard(self.journal_dir, self.root):
+            return self._restore_locked(processes_exited=processes_exited)
+
+    def _restore_locked(self, *, processes_exited: bool) -> bool:
         """Put the original values back and verify them. Refuses while the caller cannot say the GPU users are gone."""
         if self.state in _TERMINAL:
             return self.lease_ok() and processes_exited and all(not self._verify(d, d.before) for d in self.touched)
         if self.state not in _ACTIVE:
             raise PowerRefused(["no active power transaction to restore"])
+        self._require_current_record()
         if not processes_exited or not self.lease_ok():
             self._event("restore_refused", reason="serving processes still running" if not processes_exited
                         else "GPU lease not verified")
             self._journal(self.state)
             return False
+        others = [p for p in self.stale_journals(require_shared=False)
+                  if p.absolute() != self.journal_path.absolute()]
+        if others:
+            raise PowerRefused(["another unresolved power journal blocks restore"])
         ok = self._restore_touched()
         self._journal("restored" if ok else "restore_failed")
         return ok
 
     def invalidate_restoration(self, reason: str) -> None:
+        with _owner_guard(self.journal_dir, self.root):
+            self._invalidate_locked(reason)
+
+    def _invalidate_locked(self, reason: str) -> None:
         """A later caller observation contradicted a resolved journal."""
         if self.touched and self.state in _TERMINAL:
+            self._require_current_record()
             self._event("restore_failed", reason=reason)
             self._journal("restore_failed")
 
@@ -454,6 +517,14 @@ class PowerTransaction:
                 lease_ok: Callable[[], bool], processes_exited: bool, platform_name: str | None = None) -> bool:
         """Restore from a retained journal (after a crash or a failed restore). Needs the lease and exited processes."""
         journal_path = Path(journal_path)
+        with _owner_guard(journal_path.parent, sysfs_root):
+            return cls._recover_locked(journal_path, sysfs_root=sysfs_root, fileops=fileops,
+                                       lease_ok=lease_ok, processes_exited=processes_exited,
+                                       platform_name=platform_name)
+
+    @classmethod
+    def _recover_locked(cls, journal_path: Path, *, sysfs_root: Path, fileops: FileOps | None,
+                        lease_ok: Callable[[], bool], processes_exited: bool, platform_name: str | None) -> bool:
         if not lease_ok() or not processes_exited:
             raise PowerRefused(["recovery requires verified lease and exited GPU processes"])
         try:
@@ -494,4 +565,4 @@ class PowerTransaction:
                 raise ValueError("journal touched inventory mismatch")
         except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
             raise PowerRefused([f"invalid recovery journal: {exc}"]) from exc
-        return tx.restore(processes_exited=True)
+        return tx._restore_locked(processes_exited=True)
