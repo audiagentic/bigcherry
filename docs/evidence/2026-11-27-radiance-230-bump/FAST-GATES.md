@@ -13,6 +13,8 @@ Review baseline BigCherry main f818ec5da (includes 2020.23.2, PRs #1714, #1717 a
 * **MEN29 (merged while reviewing):** main 01654a87f extends existing run-record schema with quality groups. Use its typed quality metrics for new evidence when deployed; preserve independent reference provenance and unverified status for incomplete old records. Do not migrate historical KLD records or build a second results store as part of bump. Current capture and baseline gate remain MEN17.
 * **Encoding retirement:** actual four configured files show no retired block-FP8, MXFP4, M2XFP4 or ParoQuant plane set. Do not port or GPU-benchmark those kernels solely to preserve history; archive existing packages and evidence when dependency/actual row selection permits, not before. Flash-Next E4M3 row codes, E4M3 scale planes, FP8 KV, IQ8R/IQR and both drafter types are distinct live requirements. Native int8 expert path is promising, not proven. Keep local gfx11/gfx1030 providers where native coverage is absent. Do not mandate native libr3d migration to complete bump.
 
+**Active enhancement protection:** [Detailed patch-group and native rewrite parity guide](../../design/radiance-enhancement-parity.md) controls retirement. Current model non-use alone does not authorize dropping an active capability. Preserve optional/diagnostic behavior and original source/evidence, require proven equivalent successor or explicit owner approval. Source counterexample rejects an incomplete replacement without a redundant build.
+
 ## Cheapest sufficient gate (per coherent change, not per commit)
 
 | Change | First / normally sufficient development test | Escalation trigger |
