@@ -27,6 +27,14 @@ class MergeRuleTests(unittest.TestCase):
         out = mr.merge_manifest_text(_manifest("1.63.0", "11.0.0", "10.0.0"), _manifest("1.62.1", "11.0.0", "10.1.0"), ".")
         self.assertEqual(out, _manifest("1.63.0", "11.0.0", "10.1.0"))
 
+    def test_engine_after_platform_release(self):
+        for package, head, expected in (
+            ("engines/radiance", _manifest("1.81.1", "11.0.0", "2020.24.0"), _manifest("1.82.0", "11.0.0", "2020.24.0")),
+            ("engines/llamacpp", _manifest("1.81.1", "11.1.0", "2020.23.2"), _manifest("1.82.0", "11.1.0", "2020.23.2")),
+        ):
+            with self.subTest(package=package):
+                self.assertEqual(mr.merge_manifest_text(head, _manifest("1.82.0", "11.0.0", "2020.23.2"), package), expected)
+
     def test_equal_versions_are_allowed(self):
         text = _manifest("1.62.1", "11.0.0", "10.0.0")
         self.assertEqual(mr.merge_manifest_text(text, text, "."), text)
@@ -267,7 +275,7 @@ _BRANCH = "release-please--branches--main--components--bc-platform"
 
 def _pr(**over):
     pr = {"number": 7, "state": "OPEN", "baseRefName": "main", "labels": [{"name": mr.LABEL}], "headRefName": _BRANCH,
-          "headRefOid": "aaa", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}
+          "isCrossRepository": False, "isDraft": False, "headRefOid": "aaa", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}
     pr.update(over)
     return pr
 
@@ -329,7 +337,7 @@ class SelectionTests(unittest.TestCase):
     def test_other_prs_are_left_alone(self):
         cases = [
             _pr(headRefName="x-" + _BRANCH), _pr(headRefName=_BRANCH + "-2"),   # another branch
-            _pr(baseRefName="release"), _pr(state="CLOSED"), _pr(labels=[]),
+            _pr(isCrossRepository=True), _pr(isDraft=True), _pr(baseRefName="release"), _pr(state="CLOSED"), _pr(labels=[]),
         ]
         for case in cases:
             with self.subTest(case=case):
@@ -340,6 +348,27 @@ class SelectionTests(unittest.TestCase):
         report, writes, _ = self.run_it([_pr()], [_pr(state="CLOSED")])
         self.assertEqual(writes, [])
         self.assertTrue(report[0].startswith("PR #7: refused"))
+
+
+class AllComponentsTests(unittest.TestCase):
+    def test_config_drives_all_branches(self):
+        from unittest.mock import patch
+        config = {"packages": {".": {"component": "bc-platform"},
+                               "engines/radiance": {"component": "bc-radiance"},
+                               "engines/llamacpp": {"component": "bc-llamacpp"}}}
+        with patch.object(mr, "reconcile_component", return_value=["done"]) as run:
+            self.assertEqual(mr.reconcile_all(Path("."), "origin", config), ["done"] * 3)
+            self.assertEqual([c.args[2:] for c in run.call_args_list],
+                             [(".", "bc-platform"), ("engines/radiance", "bc-radiance"),
+                              ("engines/llamacpp", "bc-llamacpp")])
+
+    def test_duplicate_components_refused_before_write(self):
+        from unittest.mock import patch
+        config = {"packages": {".": {"component": "same"}, "other": {"component": "same"}}}
+        with patch.object(mr, "reconcile_component") as run:
+            with self.assertRaises(mr.ManifestReconcileError):
+                mr.reconcile_all(Path("."), "origin", config)
+            run.assert_not_called()
 
 
 class WorkflowTests(unittest.TestCase):
