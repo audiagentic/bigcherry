@@ -17,6 +17,8 @@ Executed observational patch-rebase-check for each source and --all against exac
 
 Zero upstream-absorbed verdicts. Lexical failures are not evidence of supersession; clean patches are not runtime-qualified. Re-run after fixing dependencies to reveal masked failures. This is source-level assessment, not compile/GPU/model qualification.
 
+Executable prework: [ABI and dependency preflight](PREFLIGHT.md) establishes measured combined ABI45 headers and the rad0016/17 anchor repair in isolated scratch. Production implementation remains pending.
+
 ## 1. ABI — first critical gate
 
 Upstream abi/rad_abi.h changes 43 to 44. abi/rad_abi_layout_rows.h adds RadBatch.vl_mask, RadBuildCtx.draft_head_off/expert_split/dspark_walk, RadChatFormat.object_args_key/message_open, RadEncoderDecl.span_rows, RadGenBatch.ref_log_bias/mode_sigma. Optional RadKernelFetchesRowsFn also added. BigCherry's old patched ABI44 is a different layout (historical fingerprint 5cc71b9c5bb7ab40, rad0048 README). rad0018/20 introduce TP ownership/pipeline fields, rad0025 adds runtime fields, rad0048 owns version transition and local KV/attention fields. The old version guard can match upstream's number despite divergent layouts. Actual failures: abi44-build-context, abi44-test-context-size.

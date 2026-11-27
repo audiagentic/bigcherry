@@ -1,0 +1,55 @@
+rad0018 ABI-header apply/idempotence PASS
+rad0020 ABI-header apply/idempotence PASS
+rad0025 ABI-header apply/idempotence PASS
+rad0048 ABI-header apply/idempotence PASS
+rad0018 ABI-header apply/idempotence PASS
+rad0020 ABI-header apply/idempotence PASS
+rad0025 ABI-header apply/idempotence PASS
+rad0048 ABI-header apply/idempotence PASS
+old-native ABI 43 fingerprint 1260f5fc8445d3a0 C/C++ identical 951 rows
+old-local ABI 44 fingerprint 5cc71b9c5bb7ab40 C/C++ identical 959 rows
+new-native ABI 44 fingerprint 9e15786273f47304 C/C++ identical 960 rows
+new-combined ABI 45 fingerprint 6c431f97e8b670d4 C/C++ identical 968 rows
+KV descriptor fixture PASS 5cc71b9c5bb7ab40
+KV descriptor fixture PASS 6c431f97e8b670d4
+RadBuildCtx. (0, 208) (0, 240) (0, 224) (0, 256)
+RadBuildCtx.span_pass_step (200, 4) (200, 4) (200, 4) (200, 4)
+RadBuildCtx.draft_head_off - - (204, 4) (204, 4)
+RadBuildCtx.expert_split - - (208, 8) (208, 8)
+RadBuildCtx.dspark_walk - - (216, 4) (216, 4)
+RadBuildCtx.tp_ownership - (208, 8) - (224, 8)
+RadBuildCtx.pipelined_prefill - (216, 4) - (232, 4)
+RadBuildCtx.pipelined_prefill_min_rows - (224, 8) - (240, 8)
+RadBuildCtx.kv_layout - (232, 4) - (248, 4)
+RadBuildCtx.attn_prefill_fp8 - (236, 4) - (252, 4)
+RadBatch. (0, 496) (0, 504) (0, 504) (0, 512)
+RadBatch.ckpt_cu (488, 8) (488, 8) (488, 8) (488, 8)
+RadBatch.vl_mask - - (496, 8) (496, 8)
+RadBatch.cu_seqlens_h - (496, 8) - (504, 8)
+RadKVGroupDecl. (0, 56) (0, 64) (0, 56) (0, 64)
+RadKVGroupDecl.kv_layout - (56, 4) - (56, 4)
+RadArchProbe. (0, 128) (0, 136) (0, 128) (0, 136)
+RadArchProbe.kv_layout_ok - (128, 4) - (128, 4)
+native field offsets and on-disk records unchanged PASS
+native ABI suite rc 0
+   ok   c_and_cpp_lay_out_every_abi_struct_alike
+  ok   the_row_list_accounts_for_every_byte_of_every_struct
+  ok   the_abi_layout_matches_the_table_for_its_version
+  ok   rad_yarn_is_the_same_function_in_c_and_cpp
+  ok   the_span_pass_field_is_appended_past_the_build_contexts_end
+  ok   the_draft_head_and_expert_split_fields_are_appended_past_the_old_end
+  ok   the_checkpoint_cut_fields_are_appended_past_the_old_ends
+  ok   the_reference_fields_are_appended_past_the_generator_batchs_end
+30 check(s) over 8 case(s) in 0.00 s, 0.00 s of CPU
+
+Combined ABI suite (scratch adapted table/size expectations)
+native ABI suite rc 0
+   ok   c_and_cpp_lay_out_every_abi_struct_alike
+  ok   the_row_list_accounts_for_every_byte_of_every_struct
+  ok   the_abi_layout_matches_the_table_for_its_version
+  ok   rad_yarn_is_the_same_function_in_c_and_cpp
+  ok   the_span_pass_field_is_appended_past_the_build_contexts_end
+  ok   the_draft_head_and_expert_split_fields_are_appended_past_the_old_end
+  ok   the_checkpoint_cut_fields_are_appended_past_the_old_ends
+  ok   the_reference_fields_are_appended_past_the_generator_batchs_end
+30 check(s) over 8 case(s) in 0.00 s, 0.00 s of CPU
