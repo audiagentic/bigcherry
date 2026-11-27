@@ -140,9 +140,19 @@ device activation proof must not be inferred from CPU-only testing.
 `tools/bigcherry/core/schemas/run-record-v1.schema.json`.
 `put_blob`, `put_blob_file`, `put_record`, `get_blob`, `get_record` and
 `query` are the supported platform APIs; all reads verify content hashes and
-required blobs. Query supports engine, layout, workload, phase-qualified metric
-(e.g. `decode.tokens_per_second`) and UTC time. Metrics for decode, prefill
-and TTFT are separate fields; an empty phase means it was not measured.
+required blobs. Query supports engine, layout, workload, group-qualified metric
+(e.g. `decode.tokens_per_second` or `quality.kld_mean`) and UTC time. The core
+groups `decode`, `prefill` and `ttft` retain their existing meaning; additional
+groups such as `quality` hold named numeric measurements with matching
+`metric_specs` entries for direction and gate. Optional metric spec fields
+`unit`, `aggregation` and `definition` document how to interpret a value.
+An empty group means it was not measured.
+
+For non-metric data that needs a structured owner-specific contract, records
+may include `extensions.<namespace> = {schema_version, data}`. Namespaces and
+versions are owned by their producer; extension payloads remain opaque to
+generic results queries. Put searchable scalar measurements in a metric group,
+and attach large source outputs through provenance blobs.
 
 An input path is only an optional hint: effective configuration, exact argv,
 environment, power settings and result-affecting inputs are stored as blob
@@ -215,7 +225,7 @@ placement. No Python is invoked by the native serving runtime.
 
 `bigcherry.core.results` owns offline baseline gates, comparisons and history
 over verified MRC01 run records. Records may include `session_id` for
-same-session A/B and `metric_specs` for each phase-qualified metric:
+same-session A/B and `metric_specs` for each group-qualified metric:
 `direction: higher|lower`, `gated: true|false`, optional `repeat_groups`
 (samples of the **same prompt**, not distinct prompts) and optional `covariate` (another metric of the same record that the
 gated metric moves with; with four or more baseline launches the baseline fits the metric on it by least squares and a
@@ -238,8 +248,14 @@ feature-state differences appear before verdicts, alongside config, heat,
 policy, kernel, power, argv, environment and build differences. Different or
 unknown sessions warn to prefer same-session A/B. A provenance difference
 does not itself fail a one-sided metric gate. `results history` requires an
-engine, layout, workload and phase-qualified metric; baseline and trailing
+engine, layout, workload and group-qualified metric; baseline and trailing
 drift flags use two launches, not a single-launch verdict.
+
+Quality records use the same interface, for example
+`--metric quality.kld_p99`. Put aggregation in the metric name and also
+declare it in `metric_specs.quality.<name>.aggregation`; declare the unit
+(e.g. `nats`, `fraction`, `ratio`) and lower/higher direction explicitly.
+Large per-token distributions and reference outputs remain provenance blobs.
 
 ```bash
 bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload flashnext-parity --name reference --to reference.json
