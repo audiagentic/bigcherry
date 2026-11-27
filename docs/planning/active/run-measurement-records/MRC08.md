@@ -52,6 +52,8 @@ Normal serving creates only local startup evidence. Explicit benchmarks retain f
 
 Draft adds opt-in --record and --export-dir, with a local record written before export and a no-replace file publish. The existing serving manifest supplies KV dtype and context. Depth matrix, warm-cache trials, expanded startup settings, export retry from a stored record and end-to-end validation remain open.
 
+2026-11-27: actual BC 2020.23.2 release baseline: 18 TP2 rounds passed at 512/4096 tokens, 1/2/4 streams, plus real TP3 run-store publication and portable export. Fix verifies tag-bound shipped binary rather than pre-strip metadata; 32 targeted tests passed. See docs/evidence/MRC08-baseline-20261127/summary.json. TP2 raw evidence is not a sealed run record. TP3 validity remains unverified; full content model/drafter identity, matched cohort key, repeat samples, export retry and candidate acceptance integration remain required before closure.
+
 ## Change Log
 
 - 2026-11-27T08:36:23.897113+00:00 (created-by): Created by agent
@@ -60,3 +62,4 @@ Draft adds opt-in --record and --export-dir, with a local record written before 
 
 - RV4752
 - 2026-11-27T08:40:12.305943+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T09:39:36.725327+00:00 (updated-by): Updated: section:notes
