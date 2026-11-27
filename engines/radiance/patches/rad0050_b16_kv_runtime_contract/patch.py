@@ -361,8 +361,9 @@ PATCHES = (
             c->kv_cache_dtype = v;''', "re:(?:configured_b16_kv_layout|rad_kvq_from_name)\\(v\\) == RAD_KVQ_NONE"),
     )),
     FilePatch(path="core/engine_bringup.cpp", language="none", edits=(
+        # guarded on its own line: rad0011 inserts its includes after vram_budget.h too
         _replace("b16-engine-helper", '#include "mem/vram_budget.h"\n',
-                 '#include "mem/vram_budget.h"\n#include "mem/packed_kv.h"\n'),
+                 '#include "mem/vram_budget.h"\n#include "mem/packed_kv.h"\n', '#include "mem/packed_kv.h"\n'),
         _replace("b16-build-ctx", _BUILD_DTYPE,
                  '    set_build_kv_format(cfg_.kv_cache_dtype.c_str(), &bc);'),
         _replace("b16-model-admission", _STREAM_PROBE, _PACKED_ADMISSION, "re:(?:b16_kv_model_supported|packed_kv_model_supported)\\(layout, arch_probe_\\)"),
