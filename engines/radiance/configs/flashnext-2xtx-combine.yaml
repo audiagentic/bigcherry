@@ -18,6 +18,7 @@ models:
     rope-scaling: none
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "flashnext-2xtx with the helper-row combine"
   variant-of: "flashnext-2xtx"
   differs: ["x-bigcherry.helper.combine"]

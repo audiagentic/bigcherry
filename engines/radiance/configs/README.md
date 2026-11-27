@@ -21,6 +21,7 @@ models:
     tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
 x-bigcherry:                        # what BigCherry owns and Radiance has no option for
   schema: 1
+  power: {profile: efficient}  # named intent, not implicit application
   description: "..."
   variant-of: qwen27b-tp3      # optional: provenance of a variant, with differs
   differs: [models.qwen27b.max-model-len]
@@ -45,3 +46,14 @@ x-bigcherry:                        # what BigCherry owns and Radiance has no op
 - `bc-serve explain NAME --native-config NAME.yaml [--json]` runs the same admission as a start (inspect and reconcile with the
   matched engine) offline: no engine or helper child, no GPU. The released bundle ships every `NAME.yaml`
   (`tools/bigcherry/release/runtime_assets.py NATIVE_RELEASE_PROFILES`).
+
+### Power profile
+
+All shipped model configurations select `efficient` from the canonical
+`engines/radiance/power-profiles.yaml`. A normal start is observe-only:
+physical application still requires explicit `--allow-power-apply`,
+verified lease, exact-device qualification and the shared transaction owner.
+Do not use qualification mode as a production bypass. Stock remains available
+by selecting `x-bigcherry.power.profile: stock` in a separate config or lab arm;
+stock baseline and parity arms explicitly select it. No model weights, context
+limits, kernel choices or memory controls change.

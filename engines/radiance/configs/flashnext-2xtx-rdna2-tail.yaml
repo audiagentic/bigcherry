@@ -18,6 +18,7 @@ models:
     rope-scaling: none
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "flashnext-2xtx plus the RX 6900 XT holding a tail of the coldest experts"
   variant-of: "flashnext-2xtx"
   differs: ["x-bigcherry.helpers"]

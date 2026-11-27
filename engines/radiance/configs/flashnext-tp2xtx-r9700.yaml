@@ -21,6 +21,7 @@ models:
     p2p: "off"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Flash-Next tensor-parallel on the two 7900 XTX, the R9700 the one remote-MoE helper; 6 sessions of up to 65,536 tokens"
   ranks:
     - {arch: "gfx1100", count: 2}

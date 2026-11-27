@@ -227,7 +227,7 @@ for i in $(seq 1 "$LAUNCHES"); do
   fi
   OWNER_ARGS=("${NATIVE_ARGS[@]}")
   # Route-heat recording at the period the live policy needs (RSC12), into the run's own folder.
-  ARM_SETS=(--set "server.port=$PORT" --set "x-bigcherry.handoff.heat=$HEAT"
+  ARM_SETS=(--set "x-bigcherry.power.profile=stock" --set "server.port=$PORT" --set "x-bigcherry.handoff.heat=$HEAT"
             --set "x-bigcherry.handoff.histogram=$OUT/heat.live" --set "x-bigcherry.handoff.histogram-period-s=1")
   for s in ${FLASHNEXT_PARITY_SETS:-}; do ARM_SETS+=(--set "$s"); done
   python3 tools/lab/radiance/arm_yaml.py --base "$BASE_YAML" --out "$L/native-input.yaml" "${ARM_SETS[@]}" ||

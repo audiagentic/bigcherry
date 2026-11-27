@@ -20,6 +20,7 @@ models:
     mixed-step-target-ms: 0
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "flashnext-4gpu with a bf16_i8 cache at 4 sessions (not the default: fp8 at 8 sessions is)"
   variant-of: "flashnext-4gpu"
   differs: ["models.flashnext.kv-cache-dtype", "models.flashnext.max-num-seqs"]

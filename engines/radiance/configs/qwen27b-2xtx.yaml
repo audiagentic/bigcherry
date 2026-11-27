@@ -21,6 +21,7 @@ models:
     p2p: "off"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Qwen3.8-27B IQ8R, two RDNA3 engine ranks with host-memory wht6 all-reduce"
   ranks:
     - {arch: "gfx1100", count: 2}
