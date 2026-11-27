@@ -71,6 +71,8 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 
 2026-11-27 same-lease race addressed with existing host-local lock pattern at shared power/owner.lock: native owner holds across session, platform prepare/apply/restore/recover fence durable mutations; stale in-memory record and conflicting peer recovery refuse. Native recovery checks shared plus original root. Native component rebuild and three CTest targets pass, including contention; hardware/CLI and core guard suite 328 passed, one skipped, 61 subtests. PR #1701 merged; follow-up lock not deployed. Physical acceptance cannot run while unrelated model owns GPU lease.
 
+2026-11-27 PRs 1701 and 1704 merged with full CI success. Physical platform 210W efficient memory and burst brackets passed through merged reciprocal admission/lock, exact all-device originals. Published bc-radiance-2020.23.1 tag source 83196d12 predates both owner fixes; do not equate it with updated native owner. Release deployment and physical native admission/restore remain open.
+
 ## Change Log
 
 - 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
@@ -90,3 +92,4 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 - 2026-11-27T00:35:58.278415+00:00 (updated-by): Updated: section:notes
 - RV4694
 - 2026-11-27T00:41:22.690717+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T02:53:57.206402+00:00 (updated-by): Updated: section:notes
