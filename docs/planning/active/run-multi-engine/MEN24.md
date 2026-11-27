@@ -110,6 +110,8 @@ Owner approved focused historical recovery pass (RV4755): target TP3 exact seed1
 
 Owner decision 2026-11-28 (supersedes the RV4755 provisional bump target): the 2.3.0 performance gate is no regression against the installed 2.2 release bc-radiance-2020.24.1, not recovery of the historical 2020.8.5 figure. Same-session evidence already in this bump: TP3 IQ8R 8x512/192 candidate 342.4-344.5 t/s vs installed 2.2 351.3, decode ms/step 36.75 vs 37.36 (candidate faster per step), draft acceptance 0.70 vs 0.70; 4K/256 107.1 vs 106.6. Most of the deficit against 2020.8.5 (360.8) predates the bump (2.2 is already -2.6%). Remaining bump gate: one ABBA candidate vs 2020.24.1 under one lease, several seeds, decode ms/step and TTFT/prefill reported separately (not aggregate t/s alone); a confirmed prefill/admission regression is fixed narrowly in the bump, otherwise pass. No further historical-recovery or tuning screens in the bump. Post-bump follow-ons: VTP61 (TP3 short-prompt history bisect 2020.8.5 -> 2020.24.1), VTP59 historical recovery, RCS23 IQ8R prefill row comparison (upstream r3d_gemm_i8a8 vs rad0061) on the merged 2.3 build, then RCS21/RCS23 ownership decisions.
 
+Final corrected canonical f3b75ae7e258f3a0c75870e20060a40f versus installed 2020.24.1: ABBA 24 trials, 3 matched seeds, 8 streams, exact effective settings and token counts, zero preemptions, clean stop. Evidence installed-regression-abba.json. Pooled short 343.4005 to 350.47 t/s, long 107.3455 to 106.904 t/s; paired seed relative medians +0.786%/-1.424%; pure decode ms/step 36.444 to 36.0885 and 36.74305 to 36.6032. Long p95 gap pooled flat but paired seed +9.956%, old-launch variability; no conclusive latency recovery. No material new throughput/decode regression demonstrated in this cohort. No change to tuning defaults. Diagnostic, not formal release admission. Historical recovery remains VTP61 post-bump per owner scope. Exact canonical 71 ABI45 plugins and 93 component tests pass.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -137,3 +139,4 @@ Owner decision 2026-11-28 (supersedes the RV4755 provisional bump target): the 2
 - 2026-11-27T15:10:03.429238+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T22:07:24.087969+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T23:01:45.598946+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T23:13:03.679997+00:00 (updated-by): Updated: section:notes
