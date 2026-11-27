@@ -41,6 +41,8 @@ Guide I4: deterministic page conservation (total=held+usable free+lent), failed 
 
 Test 65+1 tokens with B16 = 6 pages; distinguish active/queued/idle-retained, cold L alone versus busy pool; verify pressure and impossible fit separately; actual group page receipts under mixed requests.
 
+Guide L4: existing fixture plus shared-only gate resolution, generation/embed context boundaries, mixed-page and COW/progress tests, allocator error during RUNNING with other request/cache vs ordinary FULL and retry; no unnecessary eviction, no lost readable keys, retained refs/fences correct.
+
 ## Effort & Risk
 
 No new scheduler, allocator or telemetry stream. Ragged tables/dynamic state only if measured dominant, with separate ABI/lifetime review.
@@ -65,6 +67,8 @@ Fourth review guide J2/J4: explicit minimum is packed capacity, not arbitrary mi
 
 Guide K2/K5/K6 replaces old assumption can_grow lacks window cap: 2.3 adds native cap and runtime window geometry; verify real keep_from versus ensure. Pass 0 recycles and pass 1 recalls, so do not require global transaction rollback if safety/retry proven. Native Fleet wait and transfer fences must survive. No second scheduler, demand gate, metric stream or blanket ABI redesign.
 
+Readiness review guide L4: native prefill_room_gate defaults false; resolve on only in shared mode, reject explicit off. Reuse scheduler; runtime reference-plus-ring is not a bounded lookback window and is deferred in shared mode. Validate generation L-1 plus 1, L prompt refusal, exact-L embeddings, speculation guard; running ensure_from currently drops actual status (distinguish FULL from other errors, preserve native fatal/fence policy). No unconditional rollback or alternate scheduler.
+
 ## Change Log
 
 - 2026-11-27T03:42:08.275428+00:00 (created-by): Created by agent
@@ -74,3 +78,5 @@ Guide K2/K5/K6 replaces old assumption can_grow lacks window cap: 2.3 adds nativ
 - 2026-11-27T04:01:25.833107+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - 2026-11-27T04:18:47.331154+00:00 (updated-by): Updated: section:notes, section:validation
 - 2026-11-27T07:13:21.540426+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-27T07:29:29.417425+00:00 (updated-by): Updated: section:notes, section:validation
+- 2026-11-27T07:30:36.115403+00:00 (updated-by): Updated: section:notes

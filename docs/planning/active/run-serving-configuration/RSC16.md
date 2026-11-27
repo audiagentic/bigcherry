@@ -69,6 +69,8 @@ RV4700 fourth deep review, guide J: exact page vector guarantee and cap semantic
 
 Guide K is normative 2.3 implementation map, A-J requirements retained. Source compare confirmed native improvements, all 34 recorded base-chain hashes matched reviewed bump controller; final recipe/source identity still required. No new GPU kernels or scheduler for shared capacity. Bump syntax qualification is not RSC16 acceptance. Reuse one canonical candidate build and existing ENG03/04/MEN17 evidence; no repeated engine builds per host change.
 
+Readiness review guide L closes initial support and launch contract decisions; no extra plan or new subsystems. RSC17/RSC18 implement in order on final rechecked merged 2.3 baseline. Explicit unsupported combinations remain legacy; validate target Qwen hybrid path, distinguish cold packed L from mixed request guarantee. Integration owns versioned receipt/ready evidence and one canonical candidate, not repeated full builds. No qualification claimed.
+
 ## Change Log
 
 - 2026-11-27T03:33:31.874138+00:00 (created-by): Created by agent
@@ -86,3 +88,5 @@ Guide K is normative 2.3 implementation map, A-J requirements retained. Source c
 - 2026-11-27T04:18:54.576854+00:00 (updated-by): Updated: section:notes, section:validation
 - 2026-11-27T07:13:29.577610+00:00 (updated-by): Updated: section:steps, section:notes
 - RV4750
+- RV4751
+- 2026-11-27T07:29:37.209550+00:00 (updated-by): Updated: section:notes
