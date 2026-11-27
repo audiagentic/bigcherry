@@ -13,7 +13,7 @@ Read file sizes, RAD1 v2 header, string/encoding/directory tables from each actu
 | qwen3.8-next-flash-fp8-iq4r-moe.rad | 121969901568 | 8 | qwen4exp | 51489 | 8 |
 | qwen3.8-next-flash-hcbf16.rad | 122598637568 | 2 | qwen4exp | 51489 | 7 |
 
-All 18 configured YAMLs request num-speculative-tokens: 3. Preserve speculative functionality; num-speculative-tokens: 0 is a diagnostic, not equivalent. Retain existing fp8, bf16 and bf16_i8 KV variants, mixed TP2/TP3/TP4 and RDNA2 head/tail and remote MoE modes. Actual deployed processes were not queried, so this is the tracked config roster, not proof of every ad hoc model used.
+All 18 configured YAMLs request num-speculative-tokens: 3. Preserve speculative functionality; num-speculative-tokens: 0 is a diagnostic, not equivalent. Retain existing fp8, bf16 and bf16_i8 KV variants, TP2/TP3 and TP1 with up to three remote helpers, including RDNA2 head/tail and combine modes. Actual deployed processes were not queried, so this is the tracked config roster, not proof of every ad hoc model used.
 
 ### IQ8R
 
@@ -38,6 +38,15 @@ Local alternate qwen3.8-next-flash-i4x-i8-hc8m.rad exists, 51489 entries, same 8
 * Candidate to drop: block-FP8 weight linear compute, MXFP4/M2XFP4 trunks, ParoQuant, E4M3-activation expert paths if no retained model/graph needs them and actual replacement path passes. Preserve historical patch packages/code/results unchanged in archive with successor and evidence. Do not remove general FP8 codecs/row scales, FP8 KV, quantizer conversion readers or model file format solely because serving compute is retired.
 * Must keep for current roster: IQ8R group256; U6/U7 IQR including run512, factored and BF16 scale forms; weighted mixed-bit vocabulary; U6 embedding; U2 asymmetric draft head; DFlash U4 I8-table path; Flash-Next U4 F32-codebook E4M3 scales and INT8 activation rows, protected BF16 experts, row-E4M3 HC/MTP, ngram tensor E4M3; all current TP, collective, remote MoE and cache capabilities.
 * No new conversion unless native/retained path fails. Prefer same file and same model identity, then exact or quality-bounded representation change. If replacement required, record source checkpoint, conversion recipe, output hash, accepted quality/capacity/perf and all configs mapped to it. Preserve old runtime and files for rollback, not indefinite support for unused formats.
+
+## Reviewed qualification coverage
+
+- IQ8R: two XTX engine ranks, and XTX/XTX/R9700 unequal TP3. Include capacity and governor variants, BF16 and BF16-I8 caches.
+- IQ6R: same mixed TP3, short and long settings, actual mixed head and speculative verification.
+- Flash-Next FP8-IQ4R-MoE: single R9700 with host tier, XTX helpers (combine on/off), RDNA2 head and tail, four-card helper combine and 16/8 cache. Four cards here mean TP1 + three helpers, NOT TP4.
+- Flash-Next HCBF16: two XTX engine ranks with R9700 head helper, and R9700 head plus RDNA2 tail with combine.
+
+Use existing native profile allowlist, graph importer and acceptance runner. Map each of 18 YAMLs to matched candidate evidence; flashnext-2xtx-rdna2-tail-combine declares an empty differs list against flashnext-4gpu, so share execution only after native resolved equality (port/provenance exceptions). Do not infer equivalence from filenames. All other variant differences require explicit affected-path coverage. The planned matrix is capability coverage, not all possible cross-products.
 
 ## Acceptance before release
 

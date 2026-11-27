@@ -61,6 +61,10 @@ Retain all earlier speed and correctness gates; prove exact staged order, no req
 
 Record real prior and candidate commits/tag vs main, changed paths, affected/dependent rows and adoption classification, candidate-specific disposition. Preserve simple Git/version fields and existing native ABI/layout tests. Two real bump evidence runs retain timing and distinct discrete/full release qualification; no claim source overlap means failure. Reuse unchanged compatible proofs only. No skipped required gate counts as pass.
 
+### 2.3.0 migration gate (owner direction 2026-11-27)
+
+Use the exact candidate ledger in docs/evidence/2026-11-27-radiance-230-bump/MODEL-COMPATIBILITY.md. Before composition pruning, freeze the approved YAML/model roster from RSC12 and actual container planes, draft forms and old selected graph/provider; unknown scope blocks retirement. Stage B must resolve native ABI44 vs composed local ABI (proposed 45), not just edit coupling numbers. Stages C/D preserve all required rows, including helper and draft paths. At E run matched native explain and declaration/selection for every approved YAML; parser success alone is not graph coverage. At G this bump is a broad affected-path migration, not just two routine canaries: MEN17 proves each distinct required capability and all four model containers on candidate hardware. Reuse one measured run for equivalent variants only with documented semantic equivalence; no exhaustive Cartesian GPU sweep. At H reject a missing model, unqualified provider, silent fallback, or unapproved replacement. Do not delete a YAML to make coverage pass. Keep prior release and containers for rollback. No duplicate orchestrator or new roster.
+
 ## Notes
 
 Measured 2026-10-20 from the .ninja_log files of lane build 4babe498 and a local run of tools/tests/patch. Related: MEN10-MEN19 (managed engine workflow), RAD15 (engine rows instead of rewrites).

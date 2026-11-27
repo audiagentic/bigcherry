@@ -8,6 +8,10 @@
 
 Status: target design and implementation order, 2026-11-25. Owner: MEN24 (one sequencing and bump-efficiency checklist); implementation remains with existing RCS19–25, RSC01–11, PWR07/08/10, MEN15/16/17 and RSP01. Companion to [native YAML launch](radiance-native-yaml-launch.md) and [kernel composition](radiance-kernel-composition.md). No new bump driver, plan group, launch manifest, compatibility path or upstream edits. Native YAML, owned overlays and run-capture evidence have distinct responsibilities. Kernel-origin metadata is build provenance, not a serving launch manifest. All upstream changes are reconciled through managed packages and owned components.
 
+> **2.3.0 owner decision (2026-11-27):** [Actual container inventory and retirement gate](../evidence/2026-11-27-radiance-230-bump/MODEL-COMPATIBILITY.md) controls candidate-specific decisions. Preserve working models and serving capabilities, not every historical encoding. All configured YAMLs require matched candidate declaration/selection preflight; all distinct affected model/provider/cache/helper/draft paths need real candidate-bound hardware proof under MEN17. Equivalent variants may share evidence; broad migration is not the routine two-canary case. Prefer same container; approved replacement only after qualification. Never silently remove a config or disable speculation to pass. RCS27 owns row evidence, RSC12 roster, MEN24 sequence; no new programme.
+
+
+
 ## 1. Actual baseline and gaps
 
 Audited BigCherry c7d791540 (including #1550 native launch design and #1553 overlay design clarification); reconciled with #1557 at 35e0d7697, including the owner simplicity rule and RCS25 discrete harness, not a claim of implemented runtime changes. Prior review confirmed Radiance pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa. Re-read recipe and current branch before implementation.

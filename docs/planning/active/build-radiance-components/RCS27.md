@@ -49,6 +49,10 @@ Synthetic groups, malformed/partial inventory, missing coverage, zero hashes, st
 
 Existing harness and outputs only; every required unit covered or explicitly nonpass; compile-only is diagnostic, no automatic promotion.
 
+### 2.3.0 compatibility closure (2026-11-27)
+
+Use unit_harness.py --model-graph with actual baseline and candidate saved /graph, unit_families.toml, compose_check and origins; join selected row, layout, operand geometry, rank/architecture and execution evidence, including helper-worker and speculative-draft paths not represented by base graph alone. Missing M64/gated IQR, group256 IQ8R, U6/U7 run256/512, mixed-bit head, U2 draft head, U4 I8-table drafter, Flash-Next w4nl64a8i8h and protected BF16 experts, E4M3 HC/MTP/ngram and packed cache rows must be explicitly covered where used. Provider substitution must pass real model layout and both graph selection and measured issue; native libr3d lacks chained/collective paths and does not cover all required forms. Test refusal as well as success, use existing byte/resource/replay gates; a row name or metadata match is not proof. No retirements on missing/unresolved graph coverage. MEN17 owns integrated generation and quality; no duplicate harness.
+
 ## Notes
 
 Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.
