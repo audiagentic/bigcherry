@@ -25,3 +25,7 @@ Used short gpu leases, ROCr device 2/HIP ordinal 0, gfx1201 verified by host inv
 A separate leased GPU tiny inference startup correctly identified gfx1201 but refused head_dim=64/gqa=1: no device attn_paged row supports that geometry; 16 device bands unresolved. The tiny fixture is CPU-only and is not a GPU-serving model. No GPU completions claimed. Do not widen unsupported device row constraints to make a test pass. Next GPU model tests should use the real existing supported geometry and final linked runtime. No production serving process, power settings or existing model altered.
 
 Remaining: finish the actual RDNA3 codegen/link, full candidate ABI/offline tests, all native config/model graph and lifecycle checks, overlay/native byte differential and KLD/performance against independent references. No release or whole plan closure claimed.
+
+## RDNA3 targeted codegen result
+
+The actual configured gfx1100 CMake/Ninja target CMakeFiles/libr3.dir/units/r4d_ds41_ggml.hip.o compiled successfully using ROCm 7.2.4 after the native cache-hint-only rewrite (exit 0; 287.303 seconds wall). This is device codegen, not syntax-only. Complete libr3 link, DS41 numerical/performance qualification and final canonical bundle remain pending.
