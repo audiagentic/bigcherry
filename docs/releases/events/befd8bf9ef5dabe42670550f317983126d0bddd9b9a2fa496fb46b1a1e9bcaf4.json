@@ -1,0 +1,12 @@
+{
+  "change-class": "workflow",
+  "event-id": "chg_20261127_040405_automatically-merge-release-pr_5409",
+  "files": [
+    ".github/workflows/release-please.yml",
+    "tools/tests/release/test_release_automerge.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Queue oldest eligible release PR one at a time after manifest reconciliation using the release token actor and matching head SHA.",
+  "timestamp-utc": "2026-11-27T04:04:05.296710Z",
+  "user-summary-candidate": "Automatically merge release PRs after their required checks pass."
+}
