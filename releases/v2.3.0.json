@@ -11,7 +11,7 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "9e7e9fdb72e9205ea4fff4d5a8c52b682c0e3814",
+  "bigcherry_revision": "4a902b83c36d2c82a278401be74f71218cf02ffa",
   "evidence_gate": {
     "failures": [],
     "first_five_patch_ids": [],
@@ -837,7 +837,7 @@
   "release_tag": "v2.3.0",
   "revision": "3b13fd32663ef52252a7f0be255523480aa22ffe",
   "runtime_assets": {},
-  "stage": "patched",
+  "stage": "broken",
   "tree_state": "",
-  "updated_at": "2026-11-27T23:40:27.895164+00:00"
+  "updated_at": "2026-11-27T23:41:20.922864+00:00"
 }
