@@ -21,6 +21,8 @@ Verify driver command/coupling; extend existing platform and native typed state,
 
 Current scope (takes precedence over earlier breadth): 2026-11-27: absorb PWR02/PWR10. After PWR15/PWR12, qualify stock and existing efficient XTX/R9700 finalists (210 vs 300 W); distinct performance setting only if justified. Repeat matched stock/candidate/closing stock, extended/concurrent inference, pinned engine/model/kernel, dense and relevant MoE roles, quality, throughput/TTFT/phase energy, thermals, health and exact restore. PWR01 system measurement. No exhaustive search or promotion without approval; 210 W recovery failure remains nonpass.
 
+Final owner-selected scope supersedes the earlier finalist comparison: stock vs efficient (210 W R9700) only; verify deployed recovery/fence and available lease, match stock/efficient/stock, complete PWR12 coverage and PWR01 phase energy in same campaign.
+
 ## Detailed Solution & Technical Design
 
 Derive control kind from actual supported capability; enforce mutual exclusion, signed ranges, exact coupled originals, per-write lease/identity, terminal readback. Extend gpu_power/PowerTransaction and native Tuning/ControlId/Linux parser/render/records/qualification. Old active records without required originals refuse; maintain existing apply refusal until complete. Cap-only sweep independent.
@@ -51,6 +53,8 @@ Both owners pass fault and offline suites, actual gfx1201 apply/restore and pres
 
 Current acceptance scope: 2026-11-27: absorb PWR02/PWR10. After PWR15/PWR12, qualify stock and existing efficient XTX/R9700 finalists (210 vs 300 W); distinct performance setting only if justified. Repeat matched stock/candidate/closing stock, extended/concurrent inference, pinned engine/model/kernel, dense and relevant MoE roles, quality, throughput/TTFT/phase energy, thermals, health and exact restore. PWR01 system measurement. No exhaustive search or promotion without approval; 210 W recovery failure remains nonpass.
 
+Final owner-selected scope: use only stock and efficient at the specified 210 W settings. Working numeric thresholds in latest note, strict correctness and restoration. Preserve historical 300 W comparison without further runs.
+
 ## Notes
 
 2026-11-26: R9700 read-only probe shows OD_SCLK_OFFSET (signed -500..1000 MHz, current 0), voltage -200..0 mV current 0, MCLK1259, cap300 W range210..330. Independent BF16/FP32 768 square hipBLASLt baseline passes in captures 20261126T080808Z-gpu-ai-screen-21022b43708e and 20261126T080906Z-gpu-ai-screen-e326d84ca65f. Mixed settings request refused before writes in 20261126T080920Z-gpu-ai-screen-1e457e9a4260: no platform shader-offset transaction backend. Native resolver also refuses offsets; both restore models assume absolute shader ceiling for voltage. All four original snapshots matched. PWR16 owns backend work. Cap-only 270/240/210 W sweep queued behind release acceptance; no new cap result yet.
@@ -67,6 +71,8 @@ Current acceptance scope: 2026-11-27: absorb PWR02/PWR10. After PWR15/PWR12, qua
 
 2026-11-27: absorb PWR02/PWR10. After PWR15/PWR12, qualify stock and existing efficient XTX/R9700 finalists (210 vs 300 W); distinct performance setting only if justified. Repeat matched stock/candidate/closing stock, extended/concurrent inference, pinned engine/model/kernel, dense and relevant MoE roles, quality, throughput/TTFT/phase energy, thermals, health and exact restore. PWR01 system measurement. No exhaustive search or promotion without approval; 210 W recovery failure remains nonpass.
 
+Owner direction 2026-11-27: stock and efficient only. Efficient: both XTX 2700 MHz/-125 mV, R9700 -300 MHz/-125 mV/210 W, memory unchanged. Preserve 300 W evidence but do not repeat it. Working acceptance: <=2% throughput loss each phase, <=10% TTFT increase, >=15% GPU J/token reduction, zero new numerical errors/resets/throttling, exact restore. Stock/efficient/stock matched dense, MoE, concurrent, sustained and burst. No further cap sweeps. PWR15 deploy and lease gates remain; no implicit promotion.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
@@ -82,3 +88,5 @@ Current acceptance scope: 2026-11-27: absorb PWR02/PWR10. After PWR15/PWR12, qua
 
 - RV4682
 - 2026-11-26T23:12:50.159623+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
+- 2026-11-27T02:41:59.212978+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T02:42:10.223512+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
