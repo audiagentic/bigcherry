@@ -37,6 +37,8 @@ Reuse campaign.acceptance.prepare/run_entry/accept and existing engine adapter. 
 
 radiance accept on the 1.7.0 pin passes against the 1.3.0 baselines (2,050 pp4096 / 124 tg512 / KLD 0.064); a degraded arm fails.
 
+MRC08: offline schema/privacy sentinel tests, missing/wrong model, provider, policy, KV, workload or provenance rejects comparison; identical cohort across different pins compares; degraded metric fails; independent reference mismatch fails; failed/aborted or interrupted session never passes; concurrent and retry export does not rerun GPU or overwrite other work. Real matched previous-release and candidate records for representative dense IQ8R/IQ6R and FlashNext IQ4R/HCBF16 routes, durable portable summaries and linked local run IDs. Report missing references explicitly.
+
 ## Effort & Risk
 
 
@@ -62,6 +64,9 @@ Offline fake exact lane and missing/wrong/ambiguous/stale pin, runtime home, bin
 ### Required 2.3.0 affected-model acceptance (2026-11-27)
 
 Current engine.toml has only helper-ab and helper-kld, the latter a same-run reference; run_phase_accept does not explicitly bind candidate binary/home. Fix under existing MEN17 before qualified promotion. Preserve independent references and baseline noise; baseline actual old model/config and compare matched candidate, no self-reference. Cover IQ8R TP2/TP3 (group256), IQ6R TP3 (U6/U7, mixed head and drafter), both Flash-Next containers (single R9700, TP2 XTX), remote MoE including RDNA2 head/tail and combine, and BF16/FP8/16-8 cache, pipelined/mixed steps and long-context admission. See candidate MODEL-COMPATIBILITY.md. Every approved YAML must map to a real passing affected cohort or documented identical resolved behavior; not a Cartesian product. Exercise actual generation, accepted speculative tokens (all 18 request 3), prefill/decode, quality, capacity, lifecycle and helper execution; a successful start without drafts/helper use is insufficient. Bind exact candidate lane, config, model/drafter identity, actual row/provider/device and independent baseline to existing accept evidence. Missing evidence blocks qualified release; no model or performance concession without explicit owner acceptance.
+
+### MRC08 bump comparison integration (owner request 2026-11-27)
+Include reviewed MRC08 (run-measurement-records) in this bump; draft 99e2ee554 is not qualified. Reuse explicit stream-bench record, existing immutable local run store, allowlisted portable export and MEN17 comparator, not a new store. Match old/candidate cohorts on model/drafter content and layout, resolved profile, KV dtype/cache state, TP/helper topology and architecture classes, power policy, workload revision, token targets, concurrency, depth, seed, repeats and warm/cold order. Record source pin, build plan, binary/plugin identity and actual effective routing. Compare matching cohort keys excluding deliberately changed pin/build; missing provenance or mismatch is INCOMPARABLE, not PASS. Store independent run IDs, both build identities, per-trial samples, median/dispersion, delta, noise threshold and verdict for prefill, decode, TTFT, throughput, cache and errors. Keep independent KLD reference and typed quality evidence. Export controlled identifiers, hashes and typed metrics only, never local paths, device locators, URLs or raw text. Retain failed/aborted runs and retry export without GPU rerun. Existing short smokes are not baselines. Capture paired old and 2.3 measurements before qualified promotion; use shortest useful matched cohort set.
 
 ## Notes
 
@@ -104,3 +109,6 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-25T04:30:40.599872+00:00 (updated-by): Updated: section:notes
 - RV4679
 - 2026-11-25T18:51:09.347812+00:00 (updated-by): Updated: section:notes
+- RV4702
+- 2026-11-27T09:21:10.868081+00:00 (updated-by): Updated: section:validation
+- 2026-11-27T09:22:03.040708+00:00 (updated-by): Updated: section:acceptance_criteria

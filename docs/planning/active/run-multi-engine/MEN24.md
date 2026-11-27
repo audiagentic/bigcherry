@@ -101,6 +101,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-27 first executable gates: base candidate e6598253c linked base/BC overlays/libr2. Native CPU YAML smoke and converted pinned IQ8R fixture pass real deterministic completions; gfx1201 base IQR/int8/IQ8R/logits 205 distinct checks, zero failures; GPU tiny fixture refused h64 attention (CPU-only, not production geometry). libr3 DS41 gfx12 prefetch-only codegen port; full link and exact candidate ABI, overlay/native GPU parity and production model graph/lifecycle remain. Evidence FIRST-RUNTIME-TESTS.md.
 
+Owner request 2026-11-27: include MRC08 portable benchmark records in current Radiance 2.3 bump. MEN17 owns matched independent baseline/candidate comparison and promotion gate; MRC08 owns capture/export. Integrate reviewed MRC08 through normal PR flow before comparison. Retain exact old/candidate build identities, collect necessary matched cohorts, bind both run records and comparison verdict to formal bump receipts. Do not rerun passed compile/smoke gates merely to populate exports. See MEN17 RV4702.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -123,3 +125,4 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-27T06:14:45.981191+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T06:15:56.224380+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T08:01:27.930195+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T09:21:15.704257+00:00 (updated-by): Updated: section:notes
