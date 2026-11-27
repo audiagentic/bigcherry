@@ -9,14 +9,14 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 
 | Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v2.2.0** | **44 patches**, 7 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v2.3.0** | **44 patches**, 7 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
 **Radiance.** The `libr2`, `libr3`, `bc-gfx12` and `bc-iqr` components add kernels
 for different AMD generations. Remote-MoE workers exchange routed expert
 results with the engine over pinned host memory. The main validated engine
 patches provide the remote hand-off and a HyperConn up-mix kernel selector.
-The released bc-radiance 2020.8.0 line uses upstream Radiance v2.2.0 and
+The released bc-radiance 2020.x line uses upstream Radiance v2.3.0 and
 native Radiance YAML. The admitted configuration and device/helper plan are
 recorded for replay; matched multi-card quality and performance qualification
 remains outstanding.
