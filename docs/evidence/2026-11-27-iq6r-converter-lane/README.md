@@ -1,6 +1,17 @@
 # IQ6R converter lane — protection and resumption, 2026-11-27
 
-The `agent/iq6r-converter-fix` lane is dormant (IQ6R is not yet performant enough to qualify) but is expected to be resumed and used heavily once it is. On 2026-11-27 the lane's work moved from a local-only worktree to origin so it can be resumed from any machine, and both IQ6R worktrees were retired after capture verification. Nothing was merged, no engine state changed, and no tip was modified.
+The `agent/iq6r-converter-fix` lane is dormant (IQ6R is not yet performant enough to qualify) but is expected to be resumed and used heavily once it is. On 2026-11-27 the lane's work moved from a local-only worktree to origin so it can be resumed from any machine, both IQ6R worktrees were retired after capture verification, and the lane's content was incorporated into main for later use and development.
+
+## Landing into main (2026-11-27)
+
+The 59 lane files landed on main (tools, tests, the rad0062 patch package, evidence pages, XDP11) with two corrections found while validating against the canonical pinned source (b6b8751, fetched from upstream):
+
+- **Stale recipe pin fixed.** `PINNED_FALLBACK_SHA256` in `iq6r_v4_stage_recipes.py` still held the 1.x-era W8A8 recipe hash; the pinned 2.2.0 source ships `c3ae114529c3...`. The lane's last recorded full-suite run (2026-11-24) covered the patch-campaign suite only, so the lab suite had never re-run after the lane rebased onto the 2.2.0 pin. With the corrected pin, 71 of 72 lab tests pass against the canonical source here; the single miss is a container work-root layout difference (original `stage-01.recipe` sits in `stage-recipes/`, sha-verified identical to the staged status record; the tool expects `staged-conversion/`), which passes on a fully restored work root.
+- **Import-safety.** `iq6r_v4_controller.py` and `iq6r_v4_convert_experimental.py` read host environment at import time (the only lab tools that did); the reads now default to a placeholder and each entry point calls `require_env()` first, so the suite imports on any host and fails loudly with a clear message when the environment is absent.
+
+Also landed as recorded in the lane: rad0062 `SUMMARY.md`/`README.md` restructured to the live-catalog `Summary`/`Outcome`/`Detail` shape, the enhancement catalog regenerated, and the root README patch count bumped.
+
+Note: XDP11 lands as a planning item but has never been managed through the planning lifecycle on main (it is branch-born); the Planning connection was unavailable in the landing session, so its `in_progress` state is inherited from the lane as-is.
 
 ## Where the content lives
 
@@ -23,7 +34,10 @@ The converter line is a strict content superset of the v4 line: 41 of the 43 fil
 
 ## Resumption
 
-1. `git fetch origin`, then work from `origin/agent/iq6r-converter-fix` (new worktree; rebase onto the then-current main or continue the branch).
-2. Decide the landing shape: a live tools-and-patch PR (after the env-var fix, the SUMMARY restructure, catalog regeneration, and re-verifying the anchor against the then-current pin) or continued lab-lane use.
-3. XDP11 is branch-born and has never been on main; it needs a planning-lifecycle check before landing as a live item.
-4. rad0062 stays `untested` until the device validation above completes; no source selects it meanwhile.
+The content lives on main; resume from a fresh worktree on main.
+
+1. Work from main (new task worktree). The toolchain is `tools/lab/radiance/iq6r_v4_*`; the plan item is XDP11.
+2. Before the first conversion run on a host: set `BC_WORK_ROOT`, `BC_MODEL_ROOT`, `BC_RADIANCE_SOURCE`, `BC_RELEASE_MANIFEST`, and restore the staged layout if the work root was copied (this container keeps the original `stage-01` artifacts in `stage-recipes/` where the tool expects `staged-conversion/`).
+3. If the engine pin moved, re-verify the rad0062 anchor against the new pin and re-check the recipe pins in `iq6r_v4_stage_recipes.py` against the pinned source before running.
+4. rad0062 stays `untested` until the device validation completes; no source selects it meanwhile.
+5. The pre-landing branch tip remains tagged (`archive/wt-iq6r-converter-fix-20261127`) for comparison.
