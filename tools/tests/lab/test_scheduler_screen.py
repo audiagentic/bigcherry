@@ -45,6 +45,8 @@ BC_RESULT 0.12 0.10 0.02 0.02 2 1 1 0
     (TRACE, 0, True), (TRACE, 1, False),
     (TRACE.replace("BC_EMIT 1 2", "BC_EMIT 1 1"), 0, False),
     (TRACE.replace("BC_STEP 1", "BC_STEP 5"), 0, False),
+    (TRACE.replace("BC_STEP 0 512", "BC_STEP 0 511"), 0, False),
+    (TRACE.replace("1:1:512:512:0", "1:2:512:512:0"), 0, False),
     (TRACE + "BC_RESULT 0.12 0.10 0.02 0.02 2 1 1 0\n", 0, False),
     (TRACE.replace("BC_RESULT", "NO_RESULT"), 0, False),
     (TRACE.replace("0.10", "nan"), 0, False),
@@ -59,3 +61,20 @@ def test_native_result_and_trace_contract(monkeypatch, output, rc, valid):
     else:
         with pytest.raises(ValueError):
             screen.native_run(Path("sched_test"), {"SIM_N": 1, "SIM_OUT": 2})
+
+def test_native_mixed_geometry_reports_modelled_misses(monkeypatch):
+    trace = """BC_STEP 0 64 4 100000000 1:1:64:64:0 2:0:4:64:0
+BC_EMIT 1 1 100000000
+BC_EMIT 2 1 100000000
+BC_STEP 1 128 4 150000000 1:0:4:65:1 2:1:128:192:1
+BC_EMIT 1 2 250000000
+BC_EMIT 2 2 250000000
+BC_RESULT 0.25 0.10 0.15 0.15 2 2 2 2
+"""
+    monkeypatch.setattr(screen.subprocess, "run", lambda *a, **kw:
+                        SimpleNamespace(returncode=0, stdout=trace, stderr=""))
+    a = screen.native_run(Path("sched_test"), {"SIM_N": 2, "SIM_OUT": 2, "SIM_MIXED_MS": 120})
+    assert a["mixed_geometry"] == {
+        "max_prefill_rows": 128, "max_prefill_participants": 1,
+        "target_misses_simulated": 1, "target_ms": 120,
+    }

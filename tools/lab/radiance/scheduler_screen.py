@@ -33,6 +33,22 @@ def native_run(binary, env_args):
         raise ValueError("invalid native result")
     wall, ttft, p95, maxgap, steps, decsteps, decrows, mixed = vals
     step_lines = [x.split() for x in trace if x.startswith("BC_STEP ")]
+    # These are native plan rows and the hypothesis clock, not GPU measurements.
+    mixed_rows = []
+    target_ns = int(env_args.get("SIM_MIXED_MS", 0)) * 1000000
+    for step in step_lines:
+        try:
+            pf, dec, ns = map(int, step[2:5])
+            entries = [tuple(map(int, x.split(":"))) for x in step[5:]]
+            if (pf < 0 or dec < 0 or ns <= 0 or not entries
+                    or any(len(e) != 5 or e[1] not in (0, 1) or e[2] <= 0 for e in entries)
+                    or sum(e[2] for e in entries if e[1]) != pf
+                    or sum(e[2] for e in entries if not e[1]) != dec):
+                raise ValueError("row counts differ from entries")
+        except (ValueError, IndexError) as exc:
+            raise ValueError("malformed native step geometry") from exc
+        if pf and dec:
+            mixed_rows.append((pf, sum(e[1] for e in entries), ns))
     emitted = {}
     for x in trace:
         if x.startswith("BC_EMIT "):
@@ -46,13 +62,20 @@ def native_run(binary, env_args):
             or len(emitted) != env_args["SIM_N"]
             or any(v[0] != env_args["SIM_OUT"] for v in emitted.values())
             or not 0 < ttft <= wall or not 0 <= p95 <= maxgap <= wall
+            or len(mixed_rows) != mixed
             or not 0 <= mixed <= decsteps <= steps):
         raise ValueError("incomplete native trace")
     return {"schedule_sha256": hashlib.sha256("\n".join(trace).encode()).hexdigest(),
             "wall_s": wall, "ttft_max_s": ttft, "gap_p95_s": p95, "gap_max_s": maxgap,
             "steps": int(steps), "decode_steps": int(decsteps),
             "decode_rows": int(decrows), "mixed_steps": int(mixed),
-            "output_tps_simulated": env_args["SIM_N"] * env_args["SIM_OUT"] / wall}
+            "output_tps_simulated": env_args["SIM_N"] * env_args["SIM_OUT"] / wall,
+            "mixed_geometry": {
+                "max_prefill_rows": max((r[0] for r in mixed_rows), default=0),
+                "max_prefill_participants": max((r[1] for r in mixed_rows), default=0),
+                "target_misses_simulated": sum(r[2] > target_ns for r in mixed_rows) if target_ns else None,
+                "target_ms": target_ns / 1000000 if target_ns else None,
+            }}
 
 
 def policies():

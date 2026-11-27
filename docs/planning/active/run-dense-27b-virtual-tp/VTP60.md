@@ -69,6 +69,8 @@ Extended existing RUM09 analyzer with single-request prefill/first-token mode --
 
 RV4754: use already integrated native host tests, stream phase correction and receipts for baseline. Full rad-tune/rad-kbench format extension, simulator evolution, phase-trace production seam and held-out tuning campaign follow baseline unless required to prove affected regression; no experimental recipe promotion. Committed portion integrated, separate staged amendment remains in source worktree.
 
+Host mixed-step floor investigation: scratch scheduler SHA matches candidate, existing upstream explicitly permits one 64-row quantum per participant even above learned cap. Prior rank0 trace 59 mixed model passes: 104 rows109ms, 129-256 rows median159.93ms, 257-512 median221.95ms; decode-only median46.09ms; instrumentation overhead and no full-step claim. Native strict aggregate learned-cap experiment (arrival order, not rotating) evaluated deterministic pairs across four workloads and two explicitly hypothetical costs; trace-informed 8x4K/512 throughput188.65->107.72 simulated t/s, TTFT14.045->33.241s, p95 gap46->117ms; 4K/128 64.71->32.63, lower p95 but poor throughput. Fails upstream one-quantum and auto-interleave fairness contracts. Reject, no GPU candidate warranted, scratch restored/hash identical and full sched_test + 7 host CTests pass. Existing scheduler_screen now validates trace row sums and records mixed rows/participants/modeled misses, 33 Python tests pass. Evidence mixed-step-floor.json. Future latency improvements require reduced native small-mixed fixed cost or a separately qualified fair policy, not blind lowering of cap or new scheduler. Preserve known defaults; baseline qualification still separate.
+
 ## Change Log
 
 - 2026-11-27T10:22:17.436914+00:00 (created-by): Created by agent
@@ -86,3 +88,4 @@ RV4754: use already integrated native host tests, stream phase correction and re
 - 2026-11-27T12:01:46.381304+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T12:11:05.716331+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:13:29.031686+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T21:55:58.438831+00:00 (updated-by): Updated: section:notes

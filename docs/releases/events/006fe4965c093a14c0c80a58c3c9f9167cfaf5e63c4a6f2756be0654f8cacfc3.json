@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_215611_make-scheduler-screening-revea_9258",
+  "files": [
+    "tools/lab/radiance/scheduler_screen.py",
+    "tools/tests/lab/test_scheduler_screen.py"
+  ],
+  "plan-item-ids": [
+    "VTP59",
+    "VTP60"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Validate native simulator step row geometry and expose mixed-prefill participants and modeled target misses; preserve scheduler behavior.",
+  "timestamp-utc": "2026-11-27T21:56:11.269261Z",
+  "user-summary-candidate": "Make scheduler screening reveal mixed-step latency constraints without instrumenting production."
+}
