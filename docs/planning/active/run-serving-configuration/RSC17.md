@@ -19,11 +19,7 @@ RSC16 stage A/B owner. Diagnose and deliver exact per-rank shared KV allocation,
 
 ## Steps
 
-1. Reproduce archived failure and matched long-profile 256K/512K variants; record actual calibration, per-rank ledger, rad0029 counterfactual. 2. Refactor existing own-split into pure candidate before admission; only extend beyond current algorithm where needed. 3. Typed native capacity, sealed rank/group facts and policy/version, legacy unchanged. 4. Validate final rank budgets before allocation and post-carve geometry; typed drift/refusal. 5. Patch chain and existing VTP33 regression plus synthetic boundary/shortfall; hand off to RSC18/RSC16.
-
-- I1: Reuse native per-rank geometry and proposal; retain independent live verifier and exact pool rounding.
-- I2: Trace retained host sizing to TierExec::slot_layout and HostArena; migrate scalar contracts/replay only after caller inventory, preserve caps and reserve/pin gates.
-- I3: Version shared-mode calibration and reconcile native/BigCherry facts without duplicate allocator or second resolver.
+1. Bind to merged 2.3 pin/recipe and reproduce matched long-profile failure; capture actual per-rank facts, calibrated refit and own-split counterfactual. 2. Extract one pure native proposal using new rank reserve/spare helper; exact checked group vector and reservation layout, preserve legacy and floors. 3. Version L/S/C intent and final rank_cfg_; preallocate live admission before pools.configure, post-carve actual verification and typed receipt. 4. Reuse native entry layout/checkpoint policy for host capacity and migrate reachable measurement/replay callers. 5. Focused mem/VTP33/serving tests then hand off.
 
 ## Detailed Solution & Technical Design
 
@@ -69,6 +65,8 @@ Consolidated cleanup ownership: I1 native allocation/geometry, I2 retained host 
 
 Fourth review (RSC16 guide J): exact target production source identity mandatory; reviewed materialization experimental. Use checked group block vector and carve reservation sequence, not paged_split scalar; preserve native host cap with floor(slot count), separate checkpoint want/floor/actual. Single-engine fixed-backed initial scope includes Qwen hybrid declared state/window groups. Lease for planning that allocates; no power writes.
 
+2.3 review guide K1-K4/K6: exact upstream and 34 materialized patch hashes checked. Native named-card reserve/spare, window/ring and checkpoint-draft-window policy reused. rad0011 still precedes rad0029; scalar inverse/floor bug remains. plan_done occurs AFTER pools.configure. No duplicate solver, kernels or allocator. Do not start until final merged identity is rechecked; retain fixed-backed discrete hybrid state/window scope and fail closed unsupported combinations.
+
 ## Change Log
 
 - 2026-11-27T03:42:00.914197+00:00 (created-by): Created by agent
@@ -77,3 +75,4 @@ Fourth review (RSC16 guide J): exact target production source identity mandatory
 - 2026-11-27T04:00:44.567682+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:effort_risk, section:notes
 - 2026-11-27T04:01:17.824450+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - 2026-11-27T04:18:31.945889+00:00 (updated-by): Updated: section:notes, section:validation, section:acceptance_criteria
+- 2026-11-27T07:13:13.774456+00:00 (updated-by): Updated: section:steps, section:notes
