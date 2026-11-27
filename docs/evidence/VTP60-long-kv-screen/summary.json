@@ -1,0 +1,148 @@
+{
+  "kind": "single-repetition-screen-not-qualified",
+  "source_slice": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "notes": [
+    "Same IQ8R TP3 profile, one stream, max context 131072, interleave 0, mixed target 200 ms, batch 2048, cache off. Prompt hashes/counts matched where available. Reported KV GiB not normalized to exact physical capacity.",
+    "Initial long arms lost job service before launch. Retries separate; no kernel or independent quality qualification."
+  ],
+  "arms": [
+    {
+      "format": "bf16_i8",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reported_kv_gib": 3.15,
+      "reports": [
+        {
+          "prompt_target": 100000,
+          "max_tokens": 128,
+          "prompt_sha256": [
+            "3c67a6be7d7a588fbc0b6cad7e3be701585b5b4f1025789f4ce72282055cdfd6"
+          ],
+          "actual_prompt_tokens": [
+            99030
+          ],
+          "output_tokens": [
+            128
+          ],
+          "summary": {
+            "1": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 2.625,
+              "ttft_ms_max_median": 47538.94,
+              "event_gap_ms_p95_median": 26.726,
+              "decode_ms_per_step_median": 26.3909,
+              "decode_tokens_per_step_median": 2.7556,
+              "decode_tps_engine_median": 104.413,
+              "draft_acceptance_median": 0.5852,
+              "requests_running_mean_median": 0.995
+            }
+          },
+          "ok": true,
+          "preemptions": 0.0,
+          "raw_sha256": "be68efa1de3df0b189cf2295cb4fa1b8daddcf852235c00250a802cad23f6fde"
+        },
+        {
+          "prompt_target": 32768,
+          "max_tokens": 128,
+          "prompt_sha256": [
+            "33a666a2cbec2ab4b94ec5001c23a215593aaca9d72edfb06295cbc19160d513"
+          ],
+          "actual_prompt_tokens": [
+            32520
+          ],
+          "output_tokens": [
+            128
+          ],
+          "summary": {
+            "1": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 8.684,
+              "ttft_ms_max_median": 13710.02,
+              "event_gap_ms_p95_median": 22.891,
+              "decode_ms_per_step_median": 22.3892,
+              "decode_tokens_per_step_median": 2.8,
+              "decode_tps_engine_median": 125.06,
+              "draft_acceptance_median": 0.6,
+              "requests_running_mean_median": 0.983
+            }
+          },
+          "ok": true,
+          "preemptions": 0.0,
+          "raw_sha256": "b0d31dae9bea5808d1c389c53a7012d6ca838a7d6c706408ab401a235d15d22d"
+        }
+      ]
+    },
+    {
+      "format": "fp8",
+      "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+      "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reported_kv_gib": 2.09,
+      "reports": [
+        {
+          "prompt_target": 100000,
+          "max_tokens": 128,
+          "prompt_sha256": [
+            "3c67a6be7d7a588fbc0b6cad7e3be701585b5b4f1025789f4ce72282055cdfd6"
+          ],
+          "actual_prompt_tokens": [
+            99030
+          ],
+          "output_tokens": [
+            128
+          ],
+          "summary": {
+            "1": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 2.491,
+              "ttft_ms_max_median": 50257.43,
+              "event_gap_ms_p95_median": 26.159,
+              "decode_ms_per_step_median": 25.6707,
+              "decode_tokens_per_step_median": 2.9302,
+              "decode_tps_engine_median": 114.147,
+              "draft_acceptance_median": 0.6434,
+              "requests_running_mean_median": 0.99
+            }
+          },
+          "ok": true,
+          "preemptions": 0.0,
+          "raw_sha256": "1402323e63bf2b190a3b40d981bcf142ea8394225c7e1f260b605daac6e539e9"
+        },
+        {
+          "prompt_target": 32768,
+          "max_tokens": 128,
+          "prompt_sha256": [
+            "33a666a2cbec2ab4b94ec5001c23a215593aaca9d72edfb06295cbc19160d513"
+          ],
+          "actual_prompt_tokens": [
+            32520
+          ],
+          "output_tokens": [
+            128
+          ],
+          "summary": {
+            "1": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 8.541,
+              "ttft_ms_max_median": 13964.89,
+              "event_gap_ms_p95_median": 22.471,
+              "decode_ms_per_step_median": 22.1692,
+              "decode_tokens_per_step_median": 2.8,
+              "decode_tps_engine_median": 126.301,
+              "draft_acceptance_median": 0.6,
+              "requests_running_mean_median": 0.984
+            }
+          },
+          "ok": true,
+          "preemptions": 0.0,
+          "raw_sha256": "0148675cdfe1abf650885f63ca708c8097057bd345dc96b604c77eec699ec130"
+        }
+      ]
+    }
+  ]
+}
