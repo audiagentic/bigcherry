@@ -97,6 +97,10 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-25 current-pin implementation decision: docs/design/radiance-native-yaml-launch.md §4.3 controls. Finish S18 on approved Radiance b6b8751 (2.2.0); do not wait for a bump, cherry-pick newer Fleet or extend scope. Native single-model Fleet is already present; reuse actual source behavior. S18 can land on 2.2.0 independently of next upstream release. At actual next approved bump compare 5e0cd1e2 per-card budget, 4865bd6b/4fbce0c9 multi-model queue behavior, 0158f244 ownership and 5aa5fa0f/80e094b3 against remaining narrow local hooks; adopt native behavior and retire only redundant qualified enhancement. Do not reimplement or backport these now, do not make bump a migration gate. Single-model skip-broker/skip-queue behavior verified at pin. Retain exact candidate validation and affected path testing, not historical matrix.
 
+2026-11-27 sync review RV4701: merged main 437799b4e without conflict (release manifest fix #1724). Production patch rebase 33/34 clean, one remaining rad0002 MoE handoff. ABI45 and TP/collective/pipeline/KV host checkpoints recorded in ../../../evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md. Next: rad0002, affected native rewrites and owned providers; retire only unsupported encoding-exclusive code with source/evidence archived (RETIREMENT.md); retain plain MXFP4 drafter and mixed INT8/IQR paths. Then exact canonical build reuse and final candidate-bound roster/quality/performance gates. No entire plan is complete; do not count source composition as runtime qualification.
+
+2026-11-27 sync review RV4701: merged main 437799b4e without conflict (release manifest fix #1724). Production patch rebase 33/34 clean, one remaining rad0002 MoE handoff. ABI45 and TP/collective/pipeline/KV host checkpoints recorded in ../../../evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md. Next: rad0002, affected native rewrites and owned providers; retire only unsupported encoding-exclusive code with source/evidence archived (RETIREMENT.md); retain plain MXFP4 drafter and mixed INT8/IQR paths. Then exact canonical build reuse and final candidate-bound roster/quality/performance gates. No entire plan is complete; do not count source composition as runtime qualification.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -114,3 +118,6 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - 2026-11-25T04:30:33.417688+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:21:26.606234+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:54:06.101509+00:00 (updated-by): Updated: section:notes
+- RV4701
+- 2026-11-27T06:12:42.519052+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T06:14:45.981191+00:00 (updated-by): Updated: section:notes
