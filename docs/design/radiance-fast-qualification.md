@@ -71,3 +71,24 @@ MEN17 currently calls acceptance.accept(repo_root, layout, None, out_dir) withou
 ## 9. Review disposition
 
 The review found stale-core provenance, default resolution after parsing, unrealistic cost aggregation, declared-versus-executed row confusion, insufficient workload diversity, and missing candidate binding. Sections 3–8 explicitly address these. Still open: implement native integration, validate exact build/clock and cost ingestion, independent evidence and run-record contract, actual model quality and final serving. This is a reviewed design, not implementation approval. Runtime cost fitting and final latency budgets must be measured; do not promise quantitative performance or fixed time savings beyond PoC evidence.
+
+## 10. Native-first consolidation and deterministic tuning (owner direction)
+
+Supersedes the choice of exploratory harness in sections 2, 3 and 6, not their qualification requirements. Source reviewed: Radiance 2.3 pin 3b13fd32663ef52252a7f0be255523480aa22ffe, composed slice 90bca121c9dcee4cac6cf2b41a8d7b3e.
+
+| Capability | Native authority | BigCherry responsibility |
+|---|---|---|
+| Kernel variant tuning | tools/rad_tune.cpp; Program::tune_requests; format/tunecache.h | Resolve model/layout and affected groups, capture medians and dispersion, qualify and retain native cache |
+| Correctness and replay | rad-kbench, kfixture, kbench_core | Independent reference, family selection, real coverage and resource gates |
+| Graph and config inspection | rad-info, rad-yaml, config_test, native bring-up | Exact effective settings, model/layout and provenance comparison |
+| Real step and serving costs | radiance --diagnose, existing step/phase trace | Capture matched phase/rank/topology, workload and power; correlate with serving |
+| Scheduler simulation | tests/sched_test.cpp: sim_burst_of_long_prompts | Minimal extension, deterministic policy search, regression invariants |
+| Evidence and promotion | Existing RCS26–28, MRC08 and MEN17 | Selection, records, independent reference and release decisions |
+
+rad-tune is not a serving-policy tuner: it searches declared legal kernel variants, not interleave, admission or mixed latency. Keep isolated replay/independent correctness even when a native tune cache selects a faster variant. Do not assume declared shapes were issued. Verify native tool capability for each quantization, KV, helper and architecture combination; uncovered forms require explicit scoped evidence, not a new generic tuner.
+
+Native sim_burst already supplies seeded acceptance, burst/pre-existing decoder inputs and configurable linear costs. It calls note_step_cost but does not currently feed note_mixed_step_cost or an injected age clock. Extend that existing test path, not the scheduler logic in a second simulator. Add structured result/trace output, a bounded complete-run invariant, input validation, per-request deterministic acceptance keyed by request and generation position, and explicit phase costs. Use an injectable monotonic clock only where scheduling decisions depend on time; do not replace real production telemetry. Inject each observation exactly once at the native completed-step boundary. Preserve existing SIM_* compatibility and upstream tests. Prefer a small upstreamable change; if native upstream adds equivalent support, retire the local extension after parity.
+
+Freeze scenario, seed, cost table digest, policy, geometry, capacity and arrival order. Deterministically enumerate a bounded set of legal policies with stable ordering and tie-breaks. Hard reject invalid requests, missing cost coverage, deadlock, starvation, conservation/quality failures or latency-budget violations. Compare nondominated choices on aggregate throughput, TTFT, gap tails and fairness; uncertainty bands and held-out measured cohorts determine whether a policy merits hardware confirmation. Record schedule digest over ordered steps, per-sequence IDs/progress/acceptance/completion and controller decisions; exclude wall-clock/log paths. Require repeated identical digests and metrics for the same inputs, including with different host load. Changing the cost/acceptance profile is a separate cohort. Native simulator estimates are not measured tok/s and cannot promote production settings.
+
+Implementation status: 724ebe40c replaced the old manual link launcher with attested snapshots and native CTest. Seven cases/18,221 checks in 0.21 s on restored 2.3 host build, 31 Python tests and default mutation rejected. Existing scheduler assertions remain until upstream equivalents prove same coverage. Fresh combined launcher validation, complete profile audit, deterministic simulator extension, cost ingestion and MRC08/MEN17 integration are open. No production configuration changed. See docs/evidence/VTP60-native-host/summary.json.

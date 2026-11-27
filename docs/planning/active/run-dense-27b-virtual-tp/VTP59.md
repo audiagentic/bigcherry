@@ -70,6 +70,8 @@ Fast host scheduler screen implemented in tools/lab/radiance/scheduler_burst.{cp
 
 VTP60 owns reusable fast qualification integration; see docs/design/radiance-fast-qualification.md. VTP59 retains pre-bump production scheduler qualification.
 
+Use VTP60 native-first tuning path: rad-tune for kernel variants only, rad-kbench for correctness/replay, rad-info for scope, native --diagnose for measured serving and phase costs, sched_test sim_burst for deterministic policy screening after minimal mixed-target and clock extensions. Compare fixed and adaptive settings by workload progress, throughput, latency and fairness with frozen cost/acceptance bands. Retain full production quality and matched old/candidate serving qualification; do not treat simulation as hardware measurement.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -84,3 +86,4 @@ VTP60 owns reusable fast qualification integration; see docs/design/radiance-fas
 - 2026-11-27T10:11:26.253821+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:17:55.733251+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:26:28.686503+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T10:53:41.556574+00:00 (updated-by): Updated: section:notes

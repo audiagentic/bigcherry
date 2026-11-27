@@ -19,7 +19,7 @@ Turn VTP59 host-burst proof into repeatable, provenance-bound fast tests. Reuse 
 
 ## Steps
 
-S1 native host fixture and resolved defaults; S2 workload descriptors and structural regression oracles; S3 replay cost evidence and affected-family link; S4 portable screening receipts and bump integration; S5 mutation, candidate and hardware correlation validation.
+S1 consolidate native host build/CTest: retain regression assertions and retire ad hoc link launcher; validate fresh combined run. S2 native effective configuration and workload descriptors, no duplicated defaults. S3 reuse rad-tune for declared kernel variants, rad-kbench for independent correctness and isolated replay, rad-info for model/graph scope and native --diagnose for actual phase/serving costs. Extend upstream sched_test sim_burst minimally for mixed-step timing, injected clock, versioned costs, structured schedule records; reuse actual scheduler and existing VTP42 governor. Deterministic policy search is orchestration only; RCS26–28 select affected families. S4 route receipts through MRC08 and MEN17 exact candidate gates. S5 mutation, repeated schedule hashes, held-out hardware correlation, final quality; retire redundant adapters only after equivalent coverage and evidence are verified.
 
 ## Detailed Solution & Technical Design
 
@@ -47,15 +47,15 @@ Native exact build, fake linkage, no model/GPU; fail missing/skipped tests, stal
 
 ## Acceptance Criteria
 
-- [ ] Candidate-native CPU tests and effective defaults gate run without full engine launch; negative controls demonstrably fail.
-- [ ] Versioned sparse workload and affected-boundary selection, exact per-sequence invariants; no duplicate taxonomy.
-- [ ] Cost inputs and uncertainty validated; unmatched rows/costs explicitly nonpass; independent held-out calibration.
-- [ ] Existing RCS and MRC08/MEN17 integration; exact build identity, explicit coverage, failed/skipped/synthetic-only cannot pass release.
-- [ ] Targeted real GPU/serving witnesses and independent quality remain required; document actual time savings, merge verified slices.
+- [ ] Exact composed native CTest build, effective default gate, missing/skipped fail, mutation controls and fresh combined run.
+- [ ] Use native rad-tune for declared kernel variants and rad-kbench for independent correctness/replay; retain RCS family selection and demonstrate equivalent coverage before removing wrappers.
+- [ ] Extend native simulator rather than fork it; identical frozen scenario, cost table, clock, seed and policy produce identical schedule hash and metrics across repeated runs; missing/uncertain costs nonpass for qualification.
+- [ ] Native diagnose calibration and held-out hardware correlation by model/layout, with predeclared throughput/latency/fairness budgets and independent numerical quality.
+- [ ] Existing MRC08 and MEN17 exact candidate/reference, privacy, coverage and fail-closed gates; no duplicate tuner, controller, workload catalog or evidence store.
 
 ## Notes
 
-
+Owner direction: reuse Radiance tooling first. Native 2.3 source slice 90bca121c9dcee4cac6cf2b41a8d7b3e verified; commit 724ebe40c replaced manual linking with attested native CMake/CTest. Seven native cases, 18,221 assertions, 0.21 s rerun; 31 Python checks; injected default drift rejected and restored. Initial host build 151 s. Fresh combined launcher and full profile audit remain. Upstream sim_burst supports seeded acceptance and configurable linear costs; mixed target and clock not yet wired. Prefer upstream-compatible changes over new BigCherry implementations. Evidence docs/evidence/VTP60-native-host/summary.json.
 
 ## Change Log
 
@@ -65,3 +65,6 @@ Native exact build, fake linkage, no model/GPU; fail missing/skipped tests, stal
 
 - 2026-11-27T10:25:47.614063+00:00 (updated-by): Updated: section:detailed_solution, section:validation, section:acceptance_criteria
 - RV4753
+- 2026-11-27T10:53:09.767000+00:00 (updated-by): Updated: section:steps
+- 2026-11-27T10:53:26.112245+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T10:53:34.034298+00:00 (updated-by): Updated: section:acceptance_criteria
