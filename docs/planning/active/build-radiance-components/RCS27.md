@@ -49,6 +49,18 @@ Synthetic groups, malformed/partial inventory, missing coverage, zero hashes, st
 
 Existing harness and outputs only; every required unit covered or explicitly nonpass; compile-only is diagnostic, no automatic promotion.
 
+### Replacement proof (2026-11-27)
+
+[Enhancement parity guide](../../../design/radiance-enhancement-parity.md) specifies exact patch groups, code seams and current named harnesses. Native incomplete by source -> port, no redundant GPU comparison. A prior qualified contract, B same-target native focal delta absent, C retained/reconciled delta (only when needed); no incompatible ABI dlopen, independent oracle not B==C alone. Small executable tests only where text/compile cannot prove behavior. Preserve existing required form coverage, use targeted replay and no full engine test for isolated code. Explicit capability parity is independent of current model use.
+
+### Small tests first (2026-11-27)
+
+Use [fast-gate review](../../../evidence/2026-11-27-radiance-230-bump/FAST-GATES.md). Existing unit harness is IQR-centric and gfx1100/gfx1201 only; update stale support-unit name r4d_gemm_fp8a8 -> r4d_gemm_i8a8 for target when needed, add only actual missing small oracles. Use existing libr2/worker/collective tests for other roles; do not universalize. --unit is resource-only; --model-graph declared, not execution proof. Exact same-target compatible plugin references; never load old ABI in new harness. Narrow build and test to affected shapes/forms with boundary/control, expand only for changed arithmetic/layout, unknown coverage, failure or noisy replay; preserve required hash/oracle and fail-closed rules. No engine build to validate an isolated kernel.
+
+### 2.3.0 compatibility closure (2026-11-27)
+
+Use unit_harness.py --model-graph with actual baseline and candidate saved /graph, unit_families.toml, compose_check and origins; join selected row, layout, operand geometry, rank/architecture and execution evidence, including helper-worker and speculative-draft paths not represented by base graph alone. Missing M64/gated IQR, group256 IQ8R, U6/U7 run256/512, mixed-bit head, U2 draft head, U4 I8-table drafter, Flash-Next w4nl64a8i8h and protected BF16 experts, E4M3 HC/MTP/ngram and packed cache rows must be explicitly covered where used. Provider substitution must pass real model layout and both graph selection and measured issue; native libr3d lacks chained/collective paths and does not cover all required forms. Test refusal as well as success, use existing byte/resource/replay gates; a row name or metadata match is not proof. No retirements on missing/unresolved graph coverage. MEN17 owns integrated generation and quality; no duplicate harness.
+
 ## Notes
 
 Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.

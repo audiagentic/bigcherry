@@ -166,10 +166,12 @@ def canonical_branch(component: str) -> str:
 
 
 def refusal(pr: dict, branch: str) -> str | None:
-    """Why a PR is not the open, labelled platform release PR (None: it is)."""
+    """Why a PR is not the open, labelled release PR (None: it is)."""
     labels = {str(item.get("name")) for item in pr.get("labels") or [] if isinstance(item, dict)}
     checks = (
         (str(pr.get("state")).upper() == "OPEN", "not open"),
+        (pr.get("isCrossRepository") is False, "not same repository"),
+        (pr.get("isDraft") is False, "draft"),
         (pr.get("baseRefName") == BASE, f"base is not {BASE}"),
         (LABEL in labels, f"missing label {LABEL!r}"),
         (pr.get("headRefName") == branch, "head branch is not the canonical release branch"),
@@ -177,7 +179,7 @@ def refusal(pr: dict, branch: str) -> str | None:
     return next((why for ok, why in checks if not ok), None)
 
 
-_FIELDS = "number,state,baseRefName,labels,headRefName,headRefOid,mergeable,mergeStateStatus"
+_FIELDS = "number,state,baseRefName,labels,headRefName,headRefOid,mergeable,mergeStateStatus,isCrossRepository,isDraft"
 GhJson = Callable[..., object]
 
 
@@ -188,16 +190,15 @@ def _gh_json(*args: str) -> object:
     return json.loads(done.stdout or "null")
 
 
-def reconcile_platform(repo: Path, remote: str, config: dict, gh_json: GhJson = _gh_json,
+def reconcile_component(repo: Path, remote: str, package: str, component: str, gh_json: GhJson = _gh_json,
                        git: Git = system_git, sleep: Callable[[float], None] = time.sleep,
                        attempts: int = POLL_ATTEMPTS, seconds: float = POLL_SECONDS) -> list[str]:
-    """One report line per candidate: the platform release PR is reconciled, left alone, refused or deferred.
+    """One report line per candidate: the component release PR is reconciled, left alone, refused or deferred.
 
     Candidates are listed by the canonical branch; each is re-read by number before a write, so the head SHA written
     against is the one just read. Deferred states (``deferred-mergeability-unknown``, ``deferred-head-moved``) leave the PR untouched; running
     the workflow again retries.
     """
-    package, component = platform_target(config)
     branch = canonical_branch(component)
     listed = gh_json("pr", "list", "--state", "open", "--label", LABEL, "--base", BASE, "--head", branch, "--json", _FIELDS)
     report: list[str] = []
@@ -231,6 +232,26 @@ def reconcile_platform(repo: Path, remote: str, config: dict, gh_json: GhJson = 
     return report
 
 
+def reconcile_platform(repo, remote, config, *args, **kwargs):
+    return reconcile_component(repo, remote, *platform_target(config), *args, **kwargs)
+
+
+def reconcile_all(repo, remote, config, *args, **kwargs):
+    packages = config.get("packages")
+    if not isinstance(packages, dict) or not packages:
+        raise ManifestReconcileError("no configured release packages")
+    targets = []
+    for package, entry in packages.items():
+        component = entry.get("component") if isinstance(entry, dict) else None
+        if not isinstance(component, str) or not component:
+            raise ManifestReconcileError(f"missing component for {package!r}")
+        targets.append((package, component))
+    if len({component for _, component in targets}) != len(targets):
+        raise ManifestReconcileError("duplicate release component")
+    return [line for package, component in targets
+            for line in reconcile_component(repo, remote, package, component, *args, **kwargs)]
+
+
 def main(argv: list[str] | None = None) -> int:
     args = sys.argv[1:] if argv is None else argv
     if len(args) != 2:
@@ -238,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     repo = Path(args[0]).resolve()
     config = json.loads((repo / CONFIG).read_text(encoding="utf-8"))
-    for line in reconcile_platform(repo, args[1], config):
+    for line in reconcile_all(repo, args[1], config):
         # a refusal or deferral is a warning, never a failed release workflow; the PR stays as it was
         print(f"::warning::{line}" if ("refused" in line or "deferred" in line or "not reconciled" in line) else line)
     return 0

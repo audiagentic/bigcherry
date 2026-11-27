@@ -58,6 +58,12 @@ Architecture standards: config over code (no model or layout named in code), one
 
 Named approved YAMLs and variant semantics preserved, native/BC settings unique, existing installation membership verified, no legacy catalogue or launch replay. Reuse RSC11 representative installed evidence. No mandatory new roster generator or exhaustive variant test suite.
 
+Apply [fast-gate review](../../../evidence/2026-11-27-radiance-230-bump/FAST-GATES.md): all approved YAML preflight; equivalent variants share evidence, no duplicated engine load or exhaustive context/permutation matrix. Legacy capacity must survive; new shared L/S/C mode is RSC16–18, not a bump prerequisite.
+
+### 2.3.0 roster preservation (2026-11-27)
+
+Use existing NATIVE_RELEASE_PROFILES, release_archive.cpp kNativeProfiles, test_native_profiles.py and shipped YAMLs to freeze the prior approved roster; current count 18, four distinct RAD containers. Compare exact candidate roster against baseline, including model path/identity, drafter, rank/helper roles, KV format, context, concurrency, placement, offload, pipeline and TP ownership. No deletion or silent change to pass compatibility. Native explain/parser and resolved declaration/row coverage are separate proofs. Candidate must preserve all variants (including aliases with identical semantic settings); map identical variants to shared MEN17 hardware evidence, not separate matrix. If original container fails, test native same-container path first; only then qualify replacement with source identity/recipe/quality/perf/capacity and owner-approved config update. Keep 2.2 runtime and files for rollback. See candidate MODEL-COMPATIBILITY.md. RSC16-18 continue to own runtime capacity; max-model-len is a per-client ceiling, not aggregate physical session*length reservation.
+
 ## Notes
 
 Consumed by RSC02 (`bc-serve serve|start CONFIG`); RSC02's engine-only lifecycle can start on today's layouts, so

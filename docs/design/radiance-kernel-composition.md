@@ -144,6 +144,8 @@ The family branch is refreshed on current main and in review as PR 1545 (RCS20):
 ## 8. Relation to the native RDNA3 migration (RCS15 to RCS18)
 
 - The Stage 0 item of the migration brief (the additive gfx12 body with distinct identifiers, no removed or duplicated anchors, both architectures built and gated) is the first user of layer 1 and is already in progress as the gfx1201 fused-tile package.
+For v2.3.0 the 2026-11-25 inventory is historical: native libr3d has limited packed U3/U4/U5 and model-specific routed IQR rows, but not the full required U6/U7, IQ8R group256, w4nl64a8i8h or chained/collective coverage. Use the [candidate model inventory](../evidence/2026-11-27-radiance-230-bump/MODEL-COMPATIBILITY.md) and RCS27's actual graph-driven proof. Retire unused formats only after all current-model paths pass; do not benchmark or port obsolete MXFP4/block-FP8 for their own sake. Existing per-family provider and rollback rules remain.
+
 - RCS15 (freeze and measure): part one is done (docs/evidence/2026-11-25-rcs15-libr3d-inventory): upstream's native RDNA3 library has no row for the IQR or the local int8 form, so the overlay model is needed whichever way the provider decision goes. Part two, the matched arms on one card for the remaining rows (MXFP4, E4M3, GDN, MoE, DFlash, attention, helpers), decides the provider.
 - Layer 2's traits seam is also the port surface for a native provider.
 

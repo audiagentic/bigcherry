@@ -174,12 +174,12 @@ jobs:
           url=$(gh pr create --base main --head "${branch}" --title "chore: clear release-as for released lines" --body "Opened by the release-please workflow: the manifest has reached the pinned release-as, so the release exists. Merges itself when checks pass.")
           gh pr merge "${url}" --auto --squash
 
-      # All release lines share .release-please-manifest.json, so after one line releases the open platform release PR
+      # All release lines share .release-please-manifest.json, so after one line releases the open release PR
       # (based on the older main) conflicts in that file alone. This merges main into the PR branch with the manifest
-      # resolved by tools/bigcherry/release/manifest_reconcile.py (platform version from the PR, every other package from
+      # resolved by tools/bigcherry/release/manifest_reconcile.py (releasing package version from the PR, every other package from
       # main); it refuses any other conflict or a version going down, updates the PR branch only while its head is unchanged,
       # and never merges the PR. A PR that already contains main is left alone, so a re-run changes nothing.
-      - name: reconcile the platform release PR manifest with main
+      - name: reconcile release PR manifests with main
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
