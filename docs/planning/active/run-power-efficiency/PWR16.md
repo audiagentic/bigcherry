@@ -73,6 +73,8 @@ Final owner-selected scope: use only stock and efficient at the specified 210 W 
 
 Owner direction 2026-11-27: stock and efficient only. Efficient: both XTX 2700 MHz/-125 mV, R9700 -300 MHz/-125 mV/210 W, memory unchanged. Preserve 300 W evidence but do not repeat it. Working acceptance: <=2% throughput loss each phase, <=10% TTFT increase, >=15% GPU J/token reduction, zero new numerical errors/resets/throttling, exact restore. Stock/efficient/stock matched dense, MoE, concurrent, sustained and burst. No further cap sweeps. PWR15 deploy and lease gates remain; no implicit promotion.
 
+2026-11-27 exact 210W/-300MHz/-125mV R9700 final independent pressure/matrix brackets: 48/48 cases across 12 managed runs, 2931360 verified GEMMs plus six full memory patterns, four exact candidate restores and full fleet original snapshot equality. Refer PWR12 for IDs. Existing XTX same-settings evidence reused. Tagged 2020.23.1 remains older than merged owner fixes; no repeat native model test or release promotion. CPU counters and kernel health log unavailable.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
@@ -90,3 +92,4 @@ Owner direction 2026-11-27: stock and efficient only. Efficient: both XTX 2700 M
 - 2026-11-26T23:12:50.159623+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
 - 2026-11-27T02:41:59.212978+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T02:42:10.223512+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
+- 2026-11-27T03:00:31.112506+00:00 (updated-by): Updated: section:notes

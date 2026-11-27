@@ -126,6 +126,14 @@ Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified
 
 2026-11-27 owner selection: only stock and efficient proceed to final qualification. Both XTX 2700 MHz/-125 mV, R9700 -300 MHz/-125 mV/210 W, memory unchanged. 300 W historical comparison only. Reuse matching managed evidence. PRs 1701/1704 merged; deployed updated owner and available lease required. No new hardware run.
 
+2026-11-27 R9700 exact efficient 210W/-300MHz/-125mV memory bracket PASS: stock 20261127T024524Z-gpu-ai-screen-fff4e97359c4, efficient 20261127T024612Z-gpu-ai-screen-198690cdc998, closing stock 20261127T024700Z-gpu-ai-screen-456f691acaf1. Derived 28546 MiB, two complete buffer patterns per arm, 3/3 pass, candidate journal restored and independent full fleet exact original snapshots, all three capture bundles hash verified. Existing platform owner at merged safety revision; explicit observed-reference diagnostic, not production qualification.
+
+2026-11-27 exact R9700 efficient burst bracket 12/12 cases pass: stock 20261127T024758Z-gpu-ai-screen-386b44715382; efficient 20261127T024911Z-gpu-ai-screen-ffc2a521b2eb; stock 20261127T025025Z-gpu-ai-screen-5ab0a18997bf. BF16 hipBLASLt 768 square batch32, 15 s each at gaps 1/2/10/100 ms; 150080/150848/149696 verified iterations respectively. Candidate restored, all-card originals exact; three capture bundles verified. Diagnostic observed-reference only.
+
+2026-11-27 exact R9700 efficient mixed-residency bracket 3/3 pass: stock 20261127T025143Z-gpu-ai-screen-1c5cc97ac9dd; efficient 20261127T025332Z-gpu-ai-screen-df6be4aa0d84; stock 20261127T025520Z-gpu-ai-screen-46f4b1b8ec9a. 28546 MiB resident, 60 s BF16 batch32 hipBLASLt, 235456/236704/235872 verified GEMMs, 4579.718/4258.548/4632.007 J estimated board energy, 50/50/53 C hotspot peaks. Candidate exact restore and all four original snapshots, bundles verified. About 8% lower J/GEMM, no throughput loss. Driver health incomplete. Diagnostic only.
+
+2026-11-27 R9700 exact efficient five-format matrix bracket 30/30 pass, hipBLASLt FP16/BF16/FP32/INT8/FP8, N256 batch32, 4s sustained and 2ms burst gaps. Stock 20261127T025721Z-gpu-ai-screen-87c4b2099359, efficient 20261127T025817Z-gpu-ai-screen-5db933feec0b, closing stock 20261127T025913Z-gpu-ai-screen-c80a786ebe5d. 592256/592384/588064 verified GEMMs. Four final brackets 48/48 cases, 2931360 verified GEMMs plus six full VRAM patterns, four exact candidate restores, all 12 bundles verified. Runner and profile inputs preserved with hashes in archive PWR12-efficient-20261127. Lease released. Independent observed-reference diagnostics only; native role coverage, health and longer inference remain pending.
+
 ## Change Log
 
 - 2026-11-25T22:42:31.992985+00:00 (created-by): Created by agent
@@ -169,3 +177,7 @@ Floor-free mixed resident cohort completed both XTXs: 8/8 pass, 1614848 verified
 - 2026-11-27T00:41:27.465614+00:00 (updated-by): Updated: section:notes
 - RV4696
 - 2026-11-27T02:41:48.392322+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T02:48:59.662721+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T02:51:53.112636+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T02:57:22.307443+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T03:00:20.135494+00:00 (updated-by): Updated: section:notes
