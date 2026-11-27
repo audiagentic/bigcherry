@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_094008_record-benchmarks-against-the_3856",
+  "files": [
+    "tools/bigcherry/bench/stream_bench.py",
+    "tools/bigcherry/bench/workloads.py",
+    "tools/tests/bench/test_mrc06_producers.py"
+  ],
+  "plan-item-ids": [
+    "MRC08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Bind MRC08 benchmark records to verified shipped release artifact and source metadata; preserve raw output on export failure.",
+  "timestamp-utc": "2026-11-27T09:40:08.591852Z",
+  "user-summary-candidate": "Record benchmarks against the actual published Radiance runtime."
+}

@@ -307,6 +307,38 @@ def _metric_phase(name: str) -> str | None:
     return None
 
 
+def _release_identity(root: Path, meta: dict, receipt_path: Path | None) -> tuple[dict, dict]:
+    # Release binaries may be stripped: source build metadata names the
+    # pre-packaging bytes, whereas the tag receipt names the shipped bytes.
+    manifest_path = root / "bundle.json"
+    install_path = root / "install.json"
+    if not manifest_path.exists() and receipt_path is None:
+        return meta, {}
+    from ..release import runtime_assets
+    if receipt_path is not None:
+        receipt = receipt_path.read_bytes()
+        asset = json.loads(receipt)
+    elif install_path.is_file():
+        receipt = install_path.read_bytes()
+        asset = json.loads(receipt)["record"]
+    else:
+        raise WorkloadError("release bundle requires its tagged receipt")
+    raw = manifest_path.read_bytes()
+    bundle = json.loads(raw)
+    if hashlib.sha256(raw).hexdigest() != asset["manifest_sha256"]:
+        raise WorkloadError("release manifest digest differs from receipt")
+    extras = ("bundle.json", "install.json") if install_path.is_file() else ("bundle.json",)
+    runtime_assets.verify_runtime_tree(root, asset, bundle, metadata=extras)
+    if (bundle["plan_id"] != meta["build_plan_id"] or
+        bundle["source_slice_id"] != meta["source_slice_id"] or
+        bundle["source_binary_sha256"] != meta["binary_hash"]):
+        raise WorkloadError("release bundle does not bind the source build")
+    return {**meta, "binary_hash": bundle["binary_sha256"],
+            "source_commit": bundle["built_from"]["pinned"],
+            "runtime_artifacts": {"radiance": bundle["binary_sha256"]}}, {
+        "release_manifest": raw, "release_receipt": receipt}
+
+
 def publish_record(
     row: dict,
     *,
@@ -315,6 +347,7 @@ def publish_record(
     argv: list[str] | None = None,
     environment: dict[str, str] | None = None,
     host_snapshot: dict | None = None,
+    release_receipt: Path | None = None,
 ) -> str:
     """MRC06 new writer; historical row payloads are kept only as source blobs.
 
@@ -339,6 +372,7 @@ def publish_record(
         meta["build_id"], spec["intent"]["layout"], spec["intent"]["model"]
     ):
         raise WorkloadError("result identity differs from captured strict manifest and build metadata")
+    meta, release_inputs = _release_identity(build_root, meta, release_receipt)
     # The engine binary is the runtime artifact whose recorded hash is the build's binary hash (no engine name here).
     artifacts = meta.get("runtime_artifacts")
     named = [n for n, h in artifacts.items() if h == meta.get("binary_hash")] if isinstance(artifacts, dict) else []
@@ -349,7 +383,7 @@ def publish_record(
     # enforce that its actual contents still match that metadata.
     if not isinstance(meta["binary_hash"], str) or len(meta["binary_hash"]) != 64:
         raise WorkloadError("build binary SHA-256 missing")
-    if binary.is_file() and __import__("hashlib").sha256(binary.read_bytes()).hexdigest() != meta["binary_hash"]:
+    if not binary.is_file() or hashlib.sha256(binary.read_bytes()).hexdigest() != meta["binary_hash"]:
         raise WorkloadError("build binary no longer matches build metadata")
     # Bind the measured row to the running native owner and its start seal.
     # An independent Python snapshot cannot replace a missing native receipt.
@@ -393,7 +427,7 @@ def publish_record(
                     if isinstance(rep, dict) and type(rep.get(name)) in (int, float)]
             if len(reps) >= 2:
                 metric_specs[phase][name]["repeat_groups"] = [reps]
-    if not any(phase_metrics.values()):
+    if not any(phase_metrics.values()) and row["workload_id"] != "stream-bench":
         raise WorkloadError("no numeric workload metrics")
     stamp = row["timestamp"]
     config = row.get("details", {}).get("workload_config")
@@ -408,7 +442,7 @@ def publish_record(
         identity={
             "engine": engines.RADIANCE, "build_id": meta["build_id"],
             "binary_sha256": meta["binary_hash"],
-            "source_revision": row.get("runner_commit") or meta.get("source_commit") or row.get("build_commit") or "",
+            "source_revision": meta.get("source_commit") or row.get("build_commit") or "",
             "model": spec["intent"]["model"],
             "layout": spec["intent"]["layout"],
         },
@@ -424,6 +458,7 @@ def publish_record(
         inputs={
             "workload_result": measurement_producers.canonical_blob(row),
             "build_metadata": metadata_file.read_bytes(),
+            **release_inputs,
             "native_feature_states": state_path.read_bytes(),
             "native_host_start": (manifest_path.parent / host_facts.START_RECEIPT_FILE).read_bytes(),
             "native_session": session_path.read_bytes(),

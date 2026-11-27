@@ -435,6 +435,8 @@ def test_bundle_cannot_trust_observed_claim_without_process_evidence(tmp_path):
         )
 
 
+
+
 @pytest.mark.parametrize("mutation", ["missing", "duplicate", "wrong", "failed", "unsupported"])
 def test_tuning_diagnostics_fail_closed(mutation):
     from bigcherry.bench.radiance_lab_records import reconcile_tuning_diagnostics
@@ -525,3 +527,33 @@ def test_scheduler_expectations_from_sealed_owner(authored, steps, share, expect
     ctx["session"]["selection"]["native_scheduler"]["snapshot_sha256"] = "b"*64
     with pytest.raises(run_records.RecordError, match="bind native YAML"):
         _context_tuning_expectations(ctx)
+
+
+def test_release_record_identity_binds_shipped_binary_and_source(tmp_path, monkeypatch):
+    import hashlib
+    from bigcherry.release import runtime_assets
+
+    path, meta, binary = _manifest(tmp_path)
+    root = binary.parent.parent
+    shipped = hashlib.sha256(b"stripped bytes").hexdigest()
+    binary.write_bytes(b"stripped bytes")
+    bundle = {"plan_id": meta["build_plan_id"], "source_slice_id": meta["source_slice_id"],
+              "source_binary_sha256": meta["binary_hash"], "binary_sha256": shipped,
+              "built_from": {"pinned": "f" * 40}}
+    raw = json.dumps(bundle).encode()
+    (root / "bundle.json").write_bytes(raw)
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(json.dumps({"manifest_sha256": hashlib.sha256(raw).hexdigest()}))
+    checked = []
+    monkeypatch.setattr(runtime_assets, "verify_runtime_tree",
+                        lambda *a, **k: checked.append((a, k)))
+    actual, inputs = workloads._release_identity(root, meta, receipt)
+    assert checked and actual["binary_hash"] == shipped
+    assert actual["source_commit"] == "f" * 40
+    assert inputs["release_manifest"] == raw
+    assert meta["binary_hash"] != shipped
+    with pytest.raises(ValueError, match="requires its tagged receipt"):
+        workloads._release_identity(root, meta, None)
+    (root / "bundle.json").write_bytes(raw + b" ")
+    with pytest.raises(ValueError, match="manifest digest"):
+        workloads._release_identity(root, meta, receipt)

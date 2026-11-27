@@ -1,0 +1,120 @@
+{
+  "release": "bc-radiance-2020.23.2",
+  "pin": "b6b8751cccb0e834a13ae9e5afca824ee9a487aa",
+  "binary_sha256": "6f7d7dd8a515105778cd3c1c1a5f55d9eb2d3e89feeab678c1651acec3015d1d",
+  "build_plan_id": "09b02984b3e664d06902e23b5600e0d9",
+  "tp2": [
+    {
+      "prompt_target": 4096,
+      "prompt_words": 2419,
+      "ok": true,
+      "summary": {
+        "1": {
+          "reps_ok": 3,
+          "aggregate_tps_median": 42.138,
+          "ttft_ms_max_median": 2003.85,
+          "event_gap_ms_p95_median": 25.351,
+          "decode_ms_per_step_median": 24.9517,
+          "decode_tokens_per_step_median": 3.075,
+          "decode_tps_engine_median": 123.261,
+          "draft_acceptance_median": 0.6917,
+          "requests_running_mean_median": 0.923
+        },
+        "2": {
+          "reps_ok": 3,
+          "aggregate_tps_median": 49.786,
+          "ttft_ms_max_median": 3998.32,
+          "event_gap_ms_p95_median": 27.67,
+          "decode_ms_per_step_median": 27.0148,
+          "decode_tokens_per_step_median": 6.0476,
+          "decode_tps_engine_median": 224.095,
+          "draft_acceptance_median": 0.6867,
+          "requests_running_mean_median": 1.909
+        },
+        "4": {
+          "reps_ok": 3,
+          "aggregate_tps_median": 42.25,
+          "ttft_ms_max_median": 11084.76,
+          "event_gap_ms_p95_median": 27.676,
+          "decode_ms_per_step_median": 25.0814,
+          "decode_tokens_per_step_median": 3.103,
+          "decode_tps_engine_median": 124.018,
+          "draft_acceptance_median": 0.6686,
+          "requests_running_mean_median": 2.98
+        }
+      },
+      "raw_sha256": "4786bce4d0ed23cef535dcd63bed65316e768f2d9105f7029a49f19f2faedabe"
+    },
+    {
+      "prompt_target": 512,
+      "prompt_words": 271,
+      "ok": true,
+      "summary": {
+        "1": {
+          "reps_ok": 3,
+          "aggregate_tps_median": 98.219,
+          "ttft_ms_max_median": 274.06,
+          "event_gap_ms_p95_median": 24.783,
+          "decode_ms_per_step_median": 24.4025,
+          "decode_tokens_per_step_median": 3.0732,
+          "decode_tps_engine_median": 125.937,
+          "draft_acceptance_median": 0.6911,
+          "requests_running_mean_median": 0.571
+        },
+        "2": {
+          "reps_ok": 3,
+          "aggregate_tps_median": 148.488,
+          "ttft_ms_max_median": 549.91,
+          "event_gap_ms_p95_median": 26.617,
+          "decode_ms_per_step_median": 26.0145,
+          "decode_tokens_per_step_median": 5.7955,
+          "decode_tps_engine_median": 222.778,
+          "draft_acceptance_median": 0.6667,
+          "requests_running_mean_median": 1.125
+        },
+        "4": {
+          "reps_ok": 3,
+          "aggregate_tps_median": 233.136,
+          "ttft_ms_max_median": 993.12,
+          "event_gap_ms_p95_median": 29.002,
+          "decode_ms_per_step_median": 27.8414,
+          "decode_tokens_per_step_median": 12.0952,
+          "decode_tps_engine_median": 434.572,
+          "draft_acceptance_median": 0.6746,
+          "requests_running_mean_median": 2.2
+        }
+      },
+      "raw_sha256": "11ebab8ea4e901214549b5e8660ec8ee3bb1098976eac2111704187ee5b13859"
+    }
+  ],
+  "tp3": {
+    "prompt_target": 512,
+    "prompt_words": 271,
+    "ok": true,
+    "summary": {
+      "1": {
+        "aggregate_tps_median": 111.626,
+        "decode_ms_per_step_median": 20.3126,
+        "decode_tokens_per_step_median": 2.8636,
+        "decode_tps_engine_median": 140.978,
+        "draft_acceptance_median": 0.6212,
+        "event_gap_ms_p95_median": 20.612,
+        "reps_ok": 3,
+        "requests_running_mean_median": 0.667,
+        "ttft_ms_max_median": 227.74
+      }
+    },
+    "raw_sha256": "b730d6e30fb331740361aae30e8decb486d0476c7db4e7997968f2b07e68bad6"
+  },
+  "tp2_status": "raw measurement only; not a sealed MRC08 record",
+  "tp3_run_id": "stream-bench-5cc58584687b4217b61c128b1ad9bc2e",
+  "tp3_validity": "unverified: ATTESTATION_MISSING",
+  "settings": {
+    "profile": "observe",
+    "kv": "fp8",
+    "spec_depth": 3,
+    "reps": 3,
+    "max_tokens": 128,
+    "seed": 1
+  }
+}
