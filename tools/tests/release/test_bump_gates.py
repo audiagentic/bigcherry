@@ -473,6 +473,26 @@ class RadianceAuditTests(unittest.TestCase):
         radiance_bump.check_patch_state(ctx)
         self.assertEqual((ctx.results[0].id, ctx.results[0].ok), ("patches.application_state", False))
 
+    def test_edits_to_a_file_another_patch_creates_are_unapplied_on_an_unpatched_tree(self):
+        from types import SimpleNamespace
+
+        from bigcherry.patch import registry as patch_registry
+
+        maker, editor = SimpleNamespace(patch_id="p_make"), SimpleNamespace(patch_id="p_edit")
+        files = {"p_make": [SimpleNamespace(path="libx/bc_made.h", create=True, edits=[])],
+                 "p_edit": [SimpleNamespace(path="libx/bc_made.h", create=False, edits=[])]}
+        with patch.object(patch_registry, "load_registry", return_value=SimpleNamespace(descriptors=[maker, editor])), \
+                patch.object(patch_registry, "load_implementation", side_effect=lambda e, d, root: files[d.patch_id]):
+            ctx = self.ctx()
+            radiance_bump.check_patch_state(ctx)
+        self.assertTrue(ctx.results[0].ok, ctx.results[0])
+        files["p_edit"][0].path = "libx/upstream_gone.h"
+        with patch.object(patch_registry, "load_registry", return_value=SimpleNamespace(descriptors=[maker, editor])), \
+                patch.object(patch_registry, "load_implementation", side_effect=lambda e, d, root: files[d.patch_id]):
+            ctx = self.ctx()
+            radiance_bump.check_patch_state(ctx)
+        self.assertFalse(ctx.results[0].ok)
+
     def test_audit_dispatches_through_the_adapter(self):
         report = source_audit.audit(self.root, engine="radiance")
         ids = {c["id"] for c in report["checks"]}

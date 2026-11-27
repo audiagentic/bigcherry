@@ -437,11 +437,15 @@ def check_patch_state(ctx: AuditContext) -> None:
     root = paths.patches_root(ctx.engine)
     registry = patch_registry.load_registry(ctx.engine, root)
     applied, unapplied, partial, missing = [], [], [], []
-    for descriptor in registry.descriptors:
-        for file_patch in patch_registry.load_implementation(ctx.engine, descriptor, root=root):
+    implementations = [(descriptor, patch_registry.load_implementation(ctx.engine, descriptor, root=root))
+                       for descriptor in registry.descriptors]
+    # a file one patch creates and others then edit is absent from an unpatched tree: those edits are not applied, not missing
+    created = {file_patch.path for _, file_patches in implementations for file_patch in file_patches if file_patch.create}
+    for descriptor, file_patches in implementations:
+        for file_patch in file_patches:
             target = ctx.root / file_patch.path
             if not target.is_file():
-                (unapplied if file_patch.create else missing).append(f"{descriptor.patch_id}:{file_patch.path}")
+                (unapplied if file_patch.path in created else missing).append(f"{descriptor.patch_id}:{file_patch.path}")
                 continue
             text = target.read_text(encoding="utf-8", errors="replace")
             hits = [bool(re.search(edit.guard_pattern(), text, re.MULTILINE)) for edit in file_patch.edits]
