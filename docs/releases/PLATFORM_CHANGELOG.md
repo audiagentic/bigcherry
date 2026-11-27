@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.82.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.81.1...bc-platform-1.82.0) (2026-11-27)
+
+
+### New and changed
+
+* **labs:** land IQ6R-V4 converter toolchain, rad0062 patch and lane evidence ([#1718](https://github.com/audiagentic/bigcherry/issues/1718)) ([f818ec5](https://github.com/audiagentic/bigcherry/commit/f818ec5dac6db40eb5d3d7f23be1025d43409d93))
+
+
+### Fixes
+
+* **power:** fence same-lease power owners and align qualification captures ([#1704](https://github.com/audiagentic/bigcherry/issues/1704)) ([c7c1edb](https://github.com/audiagentic/bigcherry/commit/c7c1edbd5d84b6da0a18a979ce94397b367fd210))
+* **power:** freeze stock and efficient profile intent ([#1707](https://github.com/audiagentic/bigcherry/issues/1707)) ([404a586](https://github.com/audiagentic/bigcherry/commit/404a586749f12c722906a05c236fa4a515da0b4f))
+* **power:** harden native recovery and reciprocal journal admission ([#1701](https://github.com/audiagentic/bigcherry/issues/1701)) ([2b283d8](https://github.com/audiagentic/bigcherry/commit/2b283d8655a477a52165689737f3cc57ca297364))
+* **radiance:** select efficient power intent for shipped models ([#1708](https://github.com/audiagentic/bigcherry/issues/1708)) ([677dc54](https://github.com/audiagentic/bigcherry/commit/677dc54a67d2b92bac3e245541dbb3d7cbd67762))
+* **release:** automatically queue eligible release PRs ([#1715](https://github.com/audiagentic/bigcherry/issues/1715)) ([e997db4](https://github.com/audiagentic/bigcherry/commit/e997db4178f118d69964e8cd40e6513710e4248c))
+
 ## [1.81.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.81.0...bc-platform-1.81.1) (2026-11-26)
 
 
