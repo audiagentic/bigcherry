@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.24.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.23.2...bc-radiance-2020.24.0) (2026-11-27)
+
+
+### New and changed
+
+* **labs:** land IQ6R-V4 converter toolchain, rad0062 patch and lane evidence ([#1718](https://github.com/audiagentic/bigcherry/issues/1718)) ([f818ec5](https://github.com/audiagentic/bigcherry/commit/f818ec5dac6db40eb5d3d7f23be1025d43409d93))
+
 ## [2020.23.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.23.1...bc-radiance-2020.23.2) (2026-11-27)
 
 

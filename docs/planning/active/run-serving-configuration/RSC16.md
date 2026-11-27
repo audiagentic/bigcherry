@@ -19,10 +19,7 @@ Deliver model-neutral shared paged cache planning and admission for independent 
 
 ## Steps
 
-1. RSC17 owns A/B: instrument failure, typed native intent, exact allocation and sealed policy. 2. RSC18 owns C: live accounting, scheduler pressure and metrics; depends on RSC17. 3. RSC16 integrates D/E: overlapping mixed-length GPU and cross-family/tier/fleet tests, release decision. Reuse ENG04/ENG03/MEN17 and RSC12; no duplicate implementation.
-
-- I5: Inventory callers and retire redundant paths only after legacy parity, affected patch-chain and installed mixed-length qualification; preserve source/evidence and historical readers where still required.
-- Record measured no-change or follow-up decision for conditional block-table, recurrent state, streaming, fleet growth and ownership work.
+1. RSC17 owns exact native startup proposal, live admission, retention and versioned facts; RSC18 owns verification-first runtime and targeted corrections. 2. Integrate on final merged bump baseline; keep bump separate. Reuse affected patch-chain and existing harness gates; one integrated canonical candidate build after host gates. 3. Managed installed proof of actual capacity and active mixed long/short progress, legacy/supported-family and existing quality/performance acceptance. 4. Inventory reachable callers and retire redundant paths only after parity and preserved evidence; record follow-up triggers, no new plan owners.
 
 ## Detailed Solution & Technical Design
 
@@ -70,6 +67,10 @@ RV4699 third review: consolidated all cleanup into existing three plans. Preserv
 
 RV4700 fourth deep review, guide J: exact page vector guarantee and cap semantics; source inspection used experimental slice, archived .1 production slice differs. Do not promote plan-only measurement to actual capacity. Initial qualification fixed-backed single text engine including hybrid state/window geometry; fleet flex legacy until separately proven.
 
+Guide K is normative 2.3 implementation map, A-J requirements retained. Source compare confirmed native improvements, all 34 recorded base-chain hashes matched reviewed bump controller; final recipe/source identity still required. No new GPU kernels or scheduler for shared capacity. Bump syntax qualification is not RSC16 acceptance. Reuse one canonical candidate build and existing ENG03/04/MEN17 evidence; no repeated engine builds per host change.
+
+Readiness review guide L closes initial support and launch contract decisions; no extra plan or new subsystems. RSC17/RSC18 implement in order on final rechecked merged 2.3 baseline. Explicit unsupported combinations remain legacy; validate target Qwen hybrid path, distinguish cold packed L from mixed request guarantee. Integration owns versioned receipt/ready evidence and one canonical candidate, not repeated full builds. No qualification claimed.
+
 ## Change Log
 
 - 2026-11-27T03:33:31.874138+00:00 (created-by): Created by agent
@@ -85,3 +86,7 @@ RV4700 fourth deep review, guide J: exact page vector guarantee and cap semantic
 - 2026-11-27T04:01:33.215760+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - RV4700
 - 2026-11-27T04:18:54.576854+00:00 (updated-by): Updated: section:notes, section:validation
+- 2026-11-27T07:13:29.577610+00:00 (updated-by): Updated: section:steps, section:notes
+- RV4750
+- RV4751
+- 2026-11-27T07:29:37.209550+00:00 (updated-by): Updated: section:notes

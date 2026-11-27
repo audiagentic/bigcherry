@@ -19,9 +19,7 @@ RSC16 stage C owner, depends on RSC17 capacity contract. Reuse KVManager and Sch
 
 ## Steps
 
-1. Test unchanged scheduler with RSC17 shared capacity. 2. Fix proven demand/accounting/progress gaps only; reuse existing allocator and prefill/recompute guards. 3. Measure rectangular block tables; no ABI redesign without evidence. 4. Extend existing metrics and tests for exact pages, cancellation, fairness, overflow, exhaustion, speculation and deferred release. 5. Hand off to RSC16.
-
-- I4: Verify existing admission using common group-demand geometry; fix only demonstrated differences and standardize metrics via existing server adapters.
+1. Run existing 2.3 mem/sched/paging-fence fixtures unchanged with RSC17 geometry; reuse blocks_still_needed/refill_cap, can_grow window logic, ensure_admission and native external-capacity/error states. 2. Add only missing exact page-demand, multi-group failure/retry and progress cases; fix demonstrated mismatch, preserve legitimate safe recycling/recall. 3. Reuse existing occupancy/availability/cache-only counters and adapter; keep legacy metrics, expose actual backed vs recallable. 4. Measure rectangular overhead only; hand off integrated mixed-length qualification to RSC16.
 
 ## Detailed Solution & Technical Design
 
@@ -42,6 +40,8 @@ Existing mem/kv_window/sched/checkpoint/server and engine e2e tests; shared pref
 Guide I4: deterministic page conservation (total=held+usable free+lent), failed recall, flex room, shared prefix/COW, window wrap, state slots, deferred release, zero/sentinel, multi-group capacity and exact metric scope; no hot-path allocation/scan regression.
 
 Test 65+1 tokens with B16 = 6 pages; distinguish active/queued/idle-retained, cold L alone versus busy pool; verify pressure and impossible fit separately; actual group page receipts under mixed requests.
+
+Guide L4: existing fixture plus shared-only gate resolution, generation/embed context boundaries, mixed-page and COW/progress tests, allocator error during RUNNING with other request/cache vs ordinary FULL and retry; no unnecessary eviction, no lost readable keys, retained refs/fences correct.
 
 ## Effort & Risk
 
@@ -65,6 +65,10 @@ Consolidated cleanup I4: metrics and demand accounting belong here; RHP16/20 liv
 
 Fourth review guide J2/J4: explicit minimum is packed capacity, not arbitrary mixed workload guarantee. Account actual sum of per-session rounded pages, sharing/COW and progress; preserve legacy flex and distinguish backed vs reserved, actual recallable. Reuse existing cache_only_blocks counters.
 
+Guide K2/K5/K6 replaces old assumption can_grow lacks window cap: 2.3 adds native cap and runtime window geometry; verify real keep_from versus ensure. Pass 0 recycles and pass 1 recalls, so do not require global transaction rollback if safety/retry proven. Native Fleet wait and transfer fences must survive. No second scheduler, demand gate, metric stream or blanket ABI redesign.
+
+Readiness review guide L4: native prefill_room_gate defaults false; resolve on only in shared mode, reject explicit off. Reuse scheduler; runtime reference-plus-ring is not a bounded lookback window and is deferred in shared mode. Validate generation L-1 plus 1, L prompt refusal, exact-L embeddings, speculation guard; running ensure_from currently drops actual status (distinguish FULL from other errors, preserve native fatal/fence policy). No unconditional rollback or alternate scheduler.
+
 ## Change Log
 
 - 2026-11-27T03:42:08.275428+00:00 (created-by): Created by agent
@@ -73,3 +77,6 @@ Fourth review guide J2/J4: explicit minimum is packed capacity, not arbitrary mi
 - 2026-11-27T04:00:52.358563+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:effort_risk, section:notes
 - 2026-11-27T04:01:25.833107+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - 2026-11-27T04:18:47.331154+00:00 (updated-by): Updated: section:notes, section:validation
+- 2026-11-27T07:13:21.540426+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-27T07:29:29.417425+00:00 (updated-by): Updated: section:notes, section:validation
+- 2026-11-27T07:30:36.115403+00:00 (updated-by): Updated: section:notes
