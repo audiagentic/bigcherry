@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.82.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.82.0...bc-platform-1.82.1) (2026-11-27)
+
+
+### Fixes
+
+* **release:** reconcile manifests for every release component ([#1724](https://github.com/audiagentic/bigcherry/issues/1724)) ([437799b](https://github.com/audiagentic/bigcherry/commit/437799b4ef3dc0c0d60dfa7f183e8b96488f2b56))
+
 ## [1.82.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.81.1...bc-platform-1.82.0) (2026-11-27)
 
 
