@@ -19,7 +19,7 @@ BC 2020.23.2 IQ8R TP2, 4096-token target and 128 generated tokens: four concurre
 
 ## Steps
 
-Reuse existing interleave, busy-prefill chunk, mixed-step target and governor; isolate each on the released runtime, then test finalists using matched repeats and mixed arrivals. Inspect scheduler plans before code changes. Keep VTP42 long policy untouched unless independently qualified. Carry verified changes to candidate.
+1. Audit resolved defaults and provenance on all shipped layouts: historical, 2.2, candidate. 2. Sparse boundary screen, then repeated fresh-start ABBA on anomalies. 3. Isolate interleave, mixed target, chunk budget, busy chunk, pipeline, governor and depth using measured critical path, not Cartesian sweep. 4. Reuse VTP42 simulator and scheduler tests; no duplicate controller. 5. Qualify per model/layout class, preserve long policy. 6. MRC08 matched cohort records and MEN17 exact runtime gates before bump.
 
 ## Detailed Solution & Technical Design
 
@@ -35,7 +35,7 @@ Reuse existing interleave, busy-prefill chunk, mixed-step target and governor; i
 
 ## Validation
 
-Identical model/build/topology/power/input hashes; 1/2/4 streams at 512 and 4096 prompt targets, 128 and 512 output; per-request TTFT, token count, gap tails, decode overlap, actual prefill and decode time, no preemption, deterministic outputs and independent quality gate. Repeated starts, ABBA for finalist. Check short arrival beside long prefill.
+Tier A: 64/128/256/512/1024/2048/4096/6144 and max context minus output reserve; output 32/128/512/1024; concurrency 1/2/4/6/8 and admission limit+1. Sparse screen first; exact realized B-1/B/B+1 at tile, chunk, checkpoint, page and speculative-row boundaries; repeat anomalies ABBA. Tier B: staggered arrivals, short beside long, sustained decoding beside prefill, independent/shared prefix cold/warm, cancellation and KV pressure. Long profiles 8k/16k/32k/64k/100k within capacity. IQ8R TP2/TP3, IQ6R V4 TP3, long fp8/bf16/bf16i8, FlashNext IQ4R/HCBF16 helper/native, single-card control. Match actual token IDs, model/drafter, power, topology, seed and effective config. Measure prefill and mixed duration, pure decode, active rows/step, prompt progress, TTFT, event and token gap tails, output throughput, errors/preemption, fairness, KV and independent quality. Predeclare noise/latency budgets.
 
 ## Effort & Risk
 
@@ -47,7 +47,12 @@ Identical model/build/topology/power/input hashes; 1/2/4 streams at 512 and 4096
 
 ## Acceptance Criteria
 
-Demonstrate improved four-stream long-prompt throughput and decode overlap versus baseline with no material short-stream or mixed-arrival latency/quality regression; explicit evidence and qualified configuration or scheduler fix merged before bump promotion. No blanket disabling interleave.
+- [ ] Audit all shipped effective defaults and preserve intentional policies with provenance and tests.
+- [ ] Boundary/arrival screening recorded; classify all regressions with matched independent repeated cohorts; no silent omissions.
+- [ ] Per-class settings improve medium concurrency without material short/long/mixed or quality regression; explicit noise and latency budgets; separate profiles if needed.
+- [ ] Same model/layout historical comparison identifies earliest regression or documents unavailable history.
+- [ ] MRC08 and MEN17 bind exact old/current/candidate runtime and workload; candidate qualification before promotion.
+- [ ] Merge validated implementation and evidence before bump promotion.
 
 ## Notes
 
@@ -59,6 +64,8 @@ Eight-session TP2 admitted 65536 tokens, 2.24 GiB KV/card and no preemptions. Sa
 
 Completed eight-stream screens (3 reps each): 4096/512 auto 126.244 aggregate, 243.853 decode tok/s, 27.014 s max TTFT vs 0+250 ms 156.078/565.703, 18.951 s, 205 ms p95 gap. Raising batch budget to 4096 with 0+250 ms for 4096/128 gives 52.133/642.389, 18.025 s, 266 ms p95 gap. All owner exits clean; no preemptions in eight-stream screening. 19 benchmark report summaries retained; raw local evidence archived. Prefill remains limiting; next isolate pipelined prefill on supported TP2 and TP3 (already explicitly enabled on TP3), measure pure prefill and mixed-step timing separately, tune admission and latency using measured costs, verify quality and repeated starts before promotion. No production configuration changed.
 
+TP3 IQ8R same release, 1/8 streams, 128 outputs, one repetition per cell, targets 128/1024/2048/4096/6144. Auto:1 eight-stream decode 721/400/245/220/137 tok/s vs interleave 0 + 250 ms mixed target 733/612/648/694/671. Aggregate 527/183/93/58/41 vs 502/182/110/61/45. Max TTFT 0.510/4.456/10.096/16.527/24.164 s vs 0.642/3.939/7.753/15.173/21.275 s. Tuned 128 prompt wall throughput -4.7%; event gap at 4K 250ms vs 24ms. Both clean stops, screening not qualification; exact boundary cases, fresh-start repeats, historical match, quality and other models pending. 29 reports in summary.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -67,3 +74,7 @@ Completed eight-stream screens (3 reps each): 4096/512 auto 126.244 aggregate, 2
 - 2026-11-27T09:53:03.850531+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T09:59:08.618360+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:00:47.780286+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T10:08:15.236236+00:00 (updated-by): Updated: section:steps
+- 2026-11-27T10:08:22.443495+00:00 (updated-by): Updated: section:validation
+- 2026-11-27T10:08:29.661326+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-27T10:11:26.253821+00:00 (updated-by): Updated: section:notes
