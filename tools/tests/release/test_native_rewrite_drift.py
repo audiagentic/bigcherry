@@ -170,10 +170,23 @@ class AdapterTests(unittest.TestCase):
 
 
 class DriftPhaseTests(unittest.TestCase):
-    def phase(self, checks):
+    def phase(self, checks, set_aside=()):
+        def split(context, source, failures):
+            return {f: p for f, p in failures.items() if f not in set_aside}, sorted(set(set_aside) & set(failures))
+
         with patch.object(pin_bump, "adapter") as get:
             get.return_value.source_drift_checks.return_value = tuple(checks)
+            get.return_value.split_patch_created.side_effect = split
             return pin_bump.run_phase_drift(engine="radiance", vendor_root=Path("/vendor"), target_ref="v1.8.0")
+
+    def test_rules_for_patch_created_sources_are_not_pristine_drift(self):
+        made = {"libr3/native/bc_made.h.rw": ["libr4d has no source bc_made.h"]}
+        self.assertIsNone(self.phase([DriftCheck("libr3-native-rewrite", "NATIVE_REWRITE_DRIFT", "fix", lambda: made)],
+                                     set_aside=made))
+        other = {**made, "libr3/native/a.rw": ["block 1 ..."]}
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            self.phase([DriftCheck("libr3-native-rewrite", "NATIVE_REWRITE_DRIFT", "fix", lambda: other)], set_aside=made)
+        self.assertEqual(ctx.exception.evidence["failures"], {"libr3/native/a.rw": ["block 1 ..."]})
 
     def test_phase_sits_between_pull_and_audit(self):
         phases = pin_bump.PHASES

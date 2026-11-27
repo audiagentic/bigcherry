@@ -316,6 +316,42 @@ def rewrite_drift(component: components.Component, source_dir: Path, runner: Rew
     return {f"{component.name}/{name}": list(problems) for name, problems in sorted(failures.items())}
 
 
+_NO_SOURCE = re.compile(r"^(?P<tree>[^\s]+) has no source (?P<name>\S+)$")
+
+
+def split_patch_created(
+    context: "ProjectContext", root: Path, failures: dict[str, list[str]],
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Split off rules whose target source does not exist upstream but is created by a registered managed patch.
+
+    A rule file for such a source cannot be judged against pristine upstream: it applies to the patched tree, which
+    the composition anchor gate checks after the patches are rebased. Reporting it as drift against pristine upstream would fail every triage and bump at the pin
+    itself. Only a missing source that some registered patch declares is split off; any other missing source stays drift.
+    """
+    from ..patch import registry as patch_registry
+
+    registry = patch_registry.load_registry(context.engine, context.patches_root)
+    declared = {
+        Path(patch.path).as_posix()
+        for descriptor in registry.descriptors
+        for patch in patch_registry.load_implementation(context.engine, descriptor, root=context.patches_root)
+    }
+    kept: dict[str, list[str]] = {}
+    owned: set[str] = set()
+    for file, problems in failures.items():
+        remaining = []
+        for problem in problems:
+            match = _NO_SOURCE.match(problem)
+            path = f"{match['tree']}/{match['name']}" if match else ""
+            if match and path in declared and not (root / path).exists():
+                owned.add(file)
+            else:
+                remaining.append(problem)
+        if remaining:
+            kept[file] = remaining
+    return kept, sorted(owned)
+
+
 def source_drift_checks(context: ProjectContext, source_dir: Path, runner: RewriteRunner = _run_rewrite) -> tuple[DriftCheck, ...]:
     """One drift check per declared component that rewrites the engine's sources (it carries r3_rewrite.py)."""
     declared = components.load_all(paths.REPO_ROOT, context.engine)

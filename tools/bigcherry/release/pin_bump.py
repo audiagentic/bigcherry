@@ -459,7 +459,8 @@ def run_phase_drift(*, engine: str, vendor_root: Path, target_ref: str) -> None:
 
     resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
     try:
-        checks = adapter(engine).source_drift_checks(ProjectContext.resolve(engine=engine), vendor_root)
+        context = ProjectContext.resolve(engine=engine)
+        checks = adapter(engine).source_drift_checks(context, vendor_root)
     except (ValueError, OSError) as exc:
         raise PinBumpStop(
             "drift",
@@ -479,6 +480,8 @@ def run_phase_drift(*, engine: str, vendor_root: Path, target_ref: str) -> None:
                 evidence={"check": check.id, "error": str(exc)},
                 recommended_actions=[f"fix the cause, then {resume}"],
             ) from exc
+        # rules for sources a managed patch creates are checked on the patched tree by the composition gate
+        failures, _ = adapter(engine).split_patch_created(context, vendor_root, failures)
         if failures:
             count = sum(len(problems) for problems in failures.values())
             raise PinBumpStop(

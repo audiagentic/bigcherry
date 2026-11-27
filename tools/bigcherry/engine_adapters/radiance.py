@@ -137,6 +137,11 @@ class RadianceAdapter(EngineAdapter):
 
         return radiance_bump.source_drift_checks(context, source_dir)
 
+    def split_patch_created(self, context: ProjectContext, source_dir: Path, failures: dict[str, list[str]]):
+        from . import radiance_bump
+
+        return radiance_bump.split_patch_created(context, source_dir, failures)
+
     def audit_checks(self, context: ProjectContext):
         from . import radiance_bump
 

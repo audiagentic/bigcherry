@@ -248,6 +248,13 @@ class EngineAdapter(ABC):
         pin-bump's drift phase before any patch work; empty when the engine has nothing derived from upstream text. Each
         reports what no longer matches, per file, so one bump shows the whole port."""
 
+    def split_patch_created(
+        self, context: ProjectContext, source_dir: Path, failures: dict[str, list[str]],
+    ) -> tuple[dict[str, list[str]], list[str]]:
+        """Drift failures minus those of rules whose target source a registered managed patch creates (judged on the patched
+        tree, not pristine upstream), and the set-aside rule files. Engines with no such rules set nothing aside."""
+        return failures, []
+
     @abstractmethod
     def audit_checks(self, context: ProjectContext) -> tuple[Callable[[Any], None], ...]:
         """Source-audit checks (``bigcherry audit``, pin-bump's audit and reaudit phases) for this engine's tree. Each takes
