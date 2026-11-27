@@ -1,7 +1,8 @@
-"""Card-free contract tests for the scheduler burst lab launcher."""
+"""Card-free contract tests for the native scheduler gate adapter."""
 import importlib.util
 import json
 from pathlib import Path
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -12,57 +13,92 @@ burst = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(burst)
 
 
-def native_build(tmp_path):
-    build = tmp_path / "build"
-    cwd = build / "tests"
-    link_dir = cwd / "CMakeFiles/sched_test.dir"
-    link_dir.mkdir(parents=True)
-    source = tmp_path / "src/tests/sched_test.cpp"
-    source.parent.mkdir(parents=True)
-    source.touch()
-    scheduler = source.parent.parent / "core/sched/scheduler.cpp"
-    scheduler.parent.mkdir(parents=True)
-    scheduler.touch()
-    obj = "CMakeFiles/sched_test.dir/sched_test.cpp.o"
-    (build / "CMakeCache.txt").write_text(
-        "RAD_WITH_HIP:STRING=OFF\nCMAKE_GENERATOR:INTERNAL=Unix Makefiles\n")
-    (build / "compile_commands.json").write_text(json.dumps([{
-        "directory": str(cwd), "file": str(source),
-        "arguments": ["c++", "-O3", "-o", obj, "-c", str(source)],
-    }]))
-    (link_dir / "link.txt").write_text(
-        f"c++ {obj} -o sched_test -Wl,--dependency-file=link.d ../core/librad_core.a")
-    return build, source
+def test_stage_native_target_once(tmp_path):
+    tests = tmp_path / "tests"
+    tests.mkdir()
+    (tests / "sched_test.cpp").write_text("RAD_TEST_MAIN()\n")
+    (tests / "config_test.cpp").write_text("RAD_TEST_MAIN()\n")
+    core = tmp_path / "core"
+    core.mkdir()
+    (core / "engine_bringup.cpp").write_text("    if (!cfg_.prefill_interleave_set) {\n    }\n\n    /* Control vectors are resolved before any rank declares")
+    (tests / "CMakeLists.txt").write_text("add_executable(sched_test sched_test.cpp)\n")
+    burst.stage_fixture(tmp_path)
+    assert '#include "bc_scheduler_burst_cases.h"' in (tests / "sched_test.cpp").read_text()
+    assert '#include "sched_test.cpp"' not in (tests / "bc_scheduler_burst_cases.h").read_text()
+    cmake = (tests / "CMakeLists.txt").read_text()
+    for case, name in zip(burst.CASES + burst.CONFIG_CASES, burst.TESTS):
+        target = "sched_test" if case in burst.CASES else "config_test"
+        assert f"add_test(NAME {name} COMMAND {target} {case})" in cmake
+    assert "PASS_REGULAR_EXPRESSION" not in cmake
+    with pytest.raises(ValueError, match="already staged"):
+        burst.stage_fixture(tmp_path)
 
 
-def test_reuses_native_flags_and_archive_without_writing_to_build(tmp_path):
-    build, source = native_build(tmp_path)
-    scratch = tmp_path / "scratch"
-    cwd, actual, comp, link, binary = burst.commands(build, scratch)
-    assert cwd == build / "tests"
-    assert actual == source
-    assert str(burst.FIXTURE) in comp
-    assert "-O3" in comp and comp[-1] == "-O0"
-    assert "-I" + str(source.parent) in comp
-    assert str(scratch / "burst.o") in comp and str(scratch / "burst.o") in link
-    assert "../core/librad_core.a" in link
-    assert str(binary) in link
-    assert not any(x.startswith("-Wl,--dependency-file") for x in link)
-    assert not scratch.exists()
+def test_copy_is_private_and_content_exact(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "core.cpp").write_text("original")
+    (src / ".git").write_text("ignored")
+    dst = tmp_path / "dst"
+    burst.copy_snapshot(src, dst)
+    assert not (dst / ".git").exists()
+    (dst / "core.cpp").write_text("different")
+    assert (src / "core.cpp").read_text() == "original"
+    assert burst.tree_files(src) != burst.tree_files(dst)
 
 
-def test_rejects_gpu_build(tmp_path):
-    build, _ = native_build(tmp_path)
-    (build / "CMakeCache.txt").write_text(
-        "RAD_WITH_HIP:STRING=ON\nCMAKE_GENERATOR:INTERNAL=Unix Makefiles\n")
-    with pytest.raises(ValueError, match="HIP-off"):
-        burst.commands(build, tmp_path / "scratch")
+def test_external_symlink_refused(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "bad").symlink_to(tmp_path)
+    with pytest.raises(ValueError, match="external"):
+        burst.copy_snapshot(src, tmp_path / "dst")
 
 
-def test_rejects_ambiguous_compile_entry(tmp_path):
-    build, _ = native_build(tmp_path)
-    path = build / "compile_commands.json"
-    rows = json.loads(path.read_text())
-    path.write_text(json.dumps(rows * 2))
-    with pytest.raises(ValueError, match="one native scheduler"):
-        burst.commands(build, tmp_path / "scratch")
+def test_slice_mismatch_refused_before_attestation(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    source.with_name(source.name + ".metadata.json").write_text(json.dumps(
+        {"source_slice_id": "other"}))
+    with pytest.raises(ValueError, match="source slice"):
+        burst.attestation(source, "expected")
+
+
+@pytest.fixture
+def junit(tmp_path):
+    root = ET.Element("testsuite")
+    for name, case in zip(burst.TESTS, burst.CASES + burst.CONFIG_CASES):
+        node = ET.SubElement(root, "testcase", {"name": name})
+        ET.SubElement(node, "system-out").text = "  ok   " + case + "\n1 check(s)"
+    path = tmp_path / "tests.xml"
+    return root, path
+
+
+def test_valid_native_pass(junit):
+    root, path = junit
+    ET.ElementTree(root).write(path)
+    burst.validate_results(path)
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "skip", "failure", "vacuous"])
+def test_invalid_native_result(junit, mutation):
+    root, path = junit
+    case = root[0]
+    if mutation == "missing":
+        root.remove(case)
+    elif mutation == "duplicate":
+        root.append(case)
+    elif mutation == "skip":
+        ET.SubElement(case, "skipped")
+    elif mutation == "failure":
+        ET.SubElement(case, "failure")
+    else:
+        case.find("system-out").text = "no case matches"
+    ET.ElementTree(root).write(path)
+    with pytest.raises(ValueError):
+        burst.validate_results(path)
+
+
+def test_missing_default_seam_refuses():
+    with pytest.raises(ValueError, match="seam changed"):
+        burst.extract_interleave_block("not a supported source")

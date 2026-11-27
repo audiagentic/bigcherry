@@ -1,0 +1,73 @@
+{
+  "build_s": 151.04492779402062,
+  "component_repo_revision": "9d9b5d8db4089b7c3464662b9a6f3d57bfc846e2",
+  "configure_s": 1.281761559075676,
+  "fixture_sha256": "047c0c47f46d6f3ef94e760cb7e6fbc5e88e5345ca6015017790c4e07fa55e81",
+  "kind": "native-host-scheduler-screen",
+  "serving_component_sha256": "3f0e829ba48e0cdcf9d26a7904386780e0ff95916eee488d1012730254382fde",
+  "source_revision": "3b13fd32663ef52252a7f0be255523480aa22ffe",
+  "source_slice_id": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "source_tree_oid": "4725962c4b5da8b9506b5427e56d771015c78a07",
+  "status": "passed",
+  "test_binary_sha256": "a1a9b0ce5e00daa420e2ce80717ff7c6dc6817d20170a2a338ff9c96c77c7fec",
+  "test_s": 0.2585105219623074,
+  "tests": [
+    "bc_host_the_device_fakes_are_the_ones_linked",
+    "bc_host_bc_burst_prompt_boundary_contract",
+    "bc_host_bc_burst_detects_decode_overlap_loss"
+  ],
+  "scope": "host screen; source slice verified, component snapshot recorded; no release qualification",
+  "incremental_config_build_s": 8.658545700949617,
+  "restored_ctest": [
+    {
+      "name": "bc_host_the_device_fakes_are_the_ones_linked",
+      "seconds": 0.00126954,
+      "checks": 2
+    },
+    {
+      "name": "bc_host_bc_burst_prompt_boundary_contract",
+      "seconds": 0.0266858,
+      "checks": 17098
+    },
+    {
+      "name": "bc_host_bc_burst_detects_decode_overlap_loss",
+      "seconds": 0.00376915,
+      "checks": 1059
+    },
+    {
+      "name": "bc_host_bc_interleave_effective_default",
+      "seconds": 0.00236497,
+      "checks": 8
+    },
+    {
+      "name": "bc_host_bc_interleave_effective_exceptions_and_precedence",
+      "seconds": 0.0025634,
+      "checks": 30
+    },
+    {
+      "name": "bc_host_prefill_interleave_takes_a_step_count_up_to_64",
+      "seconds": 0.00260686,
+      "checks": 18
+    },
+    {
+      "name": "bc_host_mixed_step_target_is_an_opt_in_soft_millisecond_target",
+      "seconds": 0.00372106,
+      "checks": 6
+    }
+  ],
+  "mutation_rejected": true,
+  "pytest_passed": 31,
+  "sha256": {
+    "configure.log": "ef00cce327542dd0e769ebf139bc0da3b65c41ffcd77a7958e18e2c71c2f4dc3",
+    "build.log": "63249338161c84e4b69fe16b1f1078376cefeec3cae3f4f7f8d7966b1551c1a2",
+    "test.log": "8fadfe1d301cdc1f34bb9f6f373b455ccd10ff0374ed767a373352c8beb65999",
+    "result.json": "184021dae2110677a4e927693dff8f3845000d2ed7a3a2729272e8a611bb151b",
+    "tests.xml": "9fb39a02cbca7fb1e54ce8526e954aff1f465aa92b8bdba7f55ac57465e49404",
+    "combined.xml": "dafa8ec06dfb0de950cd41d36ced41f18eab793e8becbd4fb90dc1aab138fc28",
+    "restored.xml": "ef70edfcc8dd47629e52d0c67593b4f64439e2438ae970cb6a91751fdfce4f79",
+    "mutation.log": "b0112eecb93d02758530c2ecfe80531949136e7c2c57b4e66a78834900046cac",
+    "upstream-sim--1.log": "4ba693b97ea570830c89a9e8fa105b25eca8321a8a9cd8dc338adf25cec5d041",
+    "upstream-sim-0.log": "348a3229f45e3b53b5ceb6d1f1df9e84405987f23cef377c91cd01e166e51821"
+  },
+  "config_binary_sha256": "65d4128175213621039815ad75267227a2d590f95ae3ff0a5f176a843a91e9ac"
+}
