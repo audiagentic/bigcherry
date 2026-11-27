@@ -11,8 +11,289 @@
       "warnings": 0
     }
   },
-  "bigcherry_revision": "85e0c14be9a2035b5c7a0806b5225eefcf09a061",
-  "evidence_gate": {},
+  "bigcherry_revision": "9e7e9fdb72e9205ea4fff4d5a8c52b682c0e3814",
+  "evidence_gate": {
+    "failures": [],
+    "first_five_patch_ids": [],
+    "message": "",
+    "mode": "enforced",
+    "notes": [
+      {
+        "note": "evidence recorded at pin v1.9.0 (now v2.3.0)",
+        "patch": "rad0008_hc_upmix_rt_sweep"
+      },
+      {
+        "note": "evidence recorded at patch digest 8211e4ec6433 (now c6a30293693e)",
+        "patch": "rad0008_hc_upmix_rt_sweep"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0070_managed_native_entry"
+      },
+      {
+        "note": "evidence recorded at patch digest 3a4f647efa1e (now f8680e164982)",
+        "patch": "rad0070_managed_native_entry"
+      },
+      {
+        "note": "evidence recorded at pin v1.14.0 (now v2.3.0)",
+        "patch": "rad0002_moe_remote_handoff"
+      },
+      {
+        "note": "evidence recorded at patch digest 663b0856fbc4 (now de3cf7e5ed7b)",
+        "patch": "rad0002_moe_remote_handoff"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0011_plan_memory"
+      },
+      {
+        "note": "evidence recorded at patch digest e596bc827e08 (now 8f53dc107804)",
+        "patch": "rad0011_plan_memory"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0016_vtp14_rank_code_selection"
+      },
+      {
+        "note": "evidence recorded at patch digest d0ebdd420de2 (now 091598180ed2)",
+        "patch": "rad0016_vtp14_rank_code_selection"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0017_vtp14_n3_shared_rendezvous"
+      },
+      {
+        "note": "evidence recorded at patch digest aa3726c03e65 (now 0c2f4fb8d993)",
+        "patch": "rad0017_vtp14_n3_shared_rendezvous"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0018_vtp14_n2_tp_ownership"
+      },
+      {
+        "note": "evidence recorded at patch digest 054334366137 (now f7879d427f0f)",
+        "patch": "rad0018_vtp14_n2_tp_ownership"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0019_vtp14_n2_tp_ownership_fp8"
+      },
+      {
+        "note": "evidence recorded at patch digest 1ad5cb38df51 (now e61d4c3f27ef)",
+        "patch": "rad0019_vtp14_n2_tp_ownership_fp8"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0020_vtp14_tp3_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at patch digest 9eaabd2df616 (now 065925a35910)",
+        "patch": "rad0020_vtp14_tp3_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0025_multiseq_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at patch digest 5a0e47f549c7 (now 74a8bb663083)",
+        "patch": "rad0025_multiseq_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0026_mixed_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at patch digest 42b969452a1f (now 7b6c23e053fe)",
+        "patch": "rad0026_mixed_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0027_mixed_one_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at patch digest 4e16be5a1a08 (now f5754dc2515b)",
+        "patch": "rad0027_mixed_one_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0021_vtp14_weighted_twoshot_3rank"
+      },
+      {
+        "note": "evidence recorded at patch digest ded6097adcd4 (now 164e7ad5894a)",
+        "patch": "rad0021_vtp14_weighted_twoshot_3rank"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0022_tune_pin"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0024_ts3_decode"
+      },
+      {
+        "note": "evidence recorded at patch digest 9983442cb7ca (now b5323c923095)",
+        "patch": "rad0024_ts3_decode"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0031_ts_timeline"
+      },
+      {
+        "note": "evidence recorded at patch digest f33e2b2277d2 (now baadf55d4eaf)",
+        "patch": "rad0031_ts_timeline"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0032_ts3_duplex"
+      },
+      {
+        "note": "evidence recorded at patch digest bbadccf5259f (now 6e03d6f5c286)",
+        "patch": "rad0032_ts3_duplex"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0033_ts3_once"
+      },
+      {
+        "note": "evidence recorded at patch digest 23bbac837e61 (now ba9eacbfc5ea)",
+        "patch": "rad0033_ts3_once"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0028_rank_consistent_block_drafts"
+      },
+      {
+        "note": "evidence recorded at patch digest acd1afc5ab59 (now 8a894351fe4d)",
+        "patch": "rad0028_rank_consistent_block_drafts"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0029_rank_own_split"
+      },
+      {
+        "note": "evidence recorded at patch digest f02b25d53edb (now a01610522038)",
+        "patch": "rad0029_rank_own_split"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0012_helper_kernel_config"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0023_ar_timeline"
+      },
+      {
+        "note": "evidence recorded at patch digest 951a19677545 (now 14cfe358dd0e)",
+        "patch": "rad0023_ar_timeline"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0030_int8_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at patch digest aa98f5be17b4 (now aed3eccb89c0)",
+        "patch": "rad0030_int8_pipelined_prefill"
+      },
+      {
+        "note": "evidence recorded at pin v1.17.0 (now v2.3.0)",
+        "patch": "rad0036_prefill_governor"
+      },
+      {
+        "note": "evidence recorded at patch digest 88a0d3bfef92 (now 53b6282a25e1)",
+        "patch": "rad0036_prefill_governor"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0046_retained_moe_rows"
+      },
+      {
+        "note": "evidence recorded at patch digest 4658a926d594 (now 8fdf624c0d05)",
+        "patch": "rad0046_retained_moe_rows"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0048_abi44_kv_contract"
+      },
+      {
+        "note": "evidence recorded at patch digest 905c5a788ca7 (now 2f6b34bbfdc3)",
+        "patch": "rad0048_abi44_kv_contract"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0049_qwen4exp_e4m3_kv"
+      },
+      {
+        "note": "evidence recorded at patch digest fd904b06c35d (now ab4d78ed7ca7)",
+        "patch": "rad0049_qwen4exp_e4m3_kv"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0050_b16_kv_runtime_contract"
+      },
+      {
+        "note": "evidence recorded at patch digest 178395801a3e (now e35cd816cd6a)",
+        "patch": "rad0050_b16_kv_runtime_contract"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0051_b16_kv_kernels"
+      },
+      {
+        "note": "evidence recorded at patch digest 719fd8b906fd (now 884e3a6a8180)",
+        "patch": "rad0051_b16_kv_kernels"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0052_b16_kv_geometries"
+      },
+      {
+        "note": "evidence recorded at patch digest daa881b2c445 (now a9eddc6fbc70)",
+        "patch": "rad0052_b16_kv_geometries"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0053_v4_kv_layouts"
+      },
+      {
+        "note": "evidence recorded at patch digest 7ff58497249a (now b71831255bbb)",
+        "patch": "rad0053_v4_kv_layouts"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0054_attn_prefill_fp8"
+      },
+      {
+        "note": "evidence recorded at patch digest cfb38205baab (now e173d897c74e)",
+        "patch": "rad0054_attn_prefill_fp8"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0055_step_phase_trace"
+      },
+      {
+        "note": "evidence recorded at patch digest dc6326fa3802 (now eb52911c07e8)",
+        "patch": "rad0055_step_phase_trace"
+      },
+      {
+        "note": "evidence recorded at pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa (now v2.3.0)",
+        "patch": "rad0064_owned_weighted_head"
+      }
+    ],
+    "pending_count": 0,
+    "pin": "v2.3.0",
+    "result": "passed",
+    "skipped_sets": [
+      {
+        "required_state": "untested",
+        "set": "helper-config"
+      },
+      {
+        "required_state": "untested",
+        "set": "vtp14-mixed-tp"
+      }
+    ],
+    "validated_count": 34
+  },
   "first_seen": "2026-11-27T04:01:23.618835+00:00",
   "manifest_hash": "",
   "notes": "",
@@ -558,5 +839,5 @@
   "runtime_assets": {},
   "stage": "patched",
   "tree_state": "",
-  "updated_at": "2026-11-27T23:33:40.794060+00:00"
+  "updated_at": "2026-11-27T23:40:27.895164+00:00"
 }
