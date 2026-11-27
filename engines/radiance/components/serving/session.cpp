@@ -3382,6 +3382,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     if (engine_identity(engine, frozen_runtime_home) != matched_engine_identity)
         throw PlanFailed("native v3 engine or runtime changed during YAML inspection");
     lap("runtime_identity");
+    out.summary["native_scheduler"] = {{"snapshot_sha256", native_inspection.snapshot_sha256},
+                                       {"parsed", native_inspection.receipt.at("engine").at("scheduler")}};
     const auto& settings = native_inspection.settings;
     const Resolved native_resolved = resolve(in.options, facts, &settings);
     // A lab experiment measures afresh and leaves the named store alone: its manifest is a lab one, which neither
@@ -4130,6 +4132,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                    {"helper_cards", source.at("spec").at("processes").at("helpers")},
                    {"manifest_digest", accepted.metadata.content_digest},
                    {"replay", true}};
+    out.summary["native_scheduler"] = {{"snapshot_sha256", report.snapshot_sha256},
+                                       {"parsed", report.receipt.at("engine").at("scheduler")}};
     out.summary["plan_measurement_attempt"] = bound->native_measurement->attempt_id;
     // Replay starts no writer or measuring child. The owner admits power
     // durably before the serving engine can be forked.

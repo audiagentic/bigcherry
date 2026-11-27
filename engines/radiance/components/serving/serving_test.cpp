@@ -1555,6 +1555,9 @@ void session_engine_plan(Fixture& t) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tune_pin", ""}}.dump(); });
             refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
+            // Strict JSON safe-integer bound is also INT64_MAX / 1024, the native wire-byte limit.
+            refused_for("report failed strict protocol", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tp_wire_min_kb", INT64_MAX}}.dump(); });
             for (const auto& share : {"0.25", "1.0", "0.12345678901234568"}) {
                 const std::string pass = preflight([&](ss::Env& e) {
                     e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"prefill_interleave", nullptr}}.dump();
@@ -2297,6 +2300,8 @@ void helper_vram_owner_graph(Fixture& t) {
     const auto measured_samples = samples;
     const auto stored = fs::path(fresh.at("manifest").get<std::string>());
     const auto attempt = fresh.at("selection").at("plan_measurement_attempt");
+    const auto scheduler = fresh.at("selection").at("native_scheduler");
+    assert(scheduler.at("parsed").is_object());
     size_t attempts = 0;
     for (const auto& dir : fs::directory_iterator(owner.run_dir / "measurement-attempts")) {
         ++attempts;
@@ -2312,6 +2317,7 @@ void helper_vram_owner_graph(Fixture& t) {
                                                 "helper1", "engine"};
     const auto check_replay = [&](const Json& replayed) {
         assert(replayed.at("selection").at("replay") == true);
+        assert(replayed.at("selection").at("native_scheduler") == scheduler);
         assert(replayed.at("manifest") == stored.string());
         assert(replayed.at("handoff_shm") == fresh.at("handoff_shm"));
         assert(replayed.at("selection").at("plan_measurement_attempt") == attempt);

@@ -298,11 +298,65 @@ def _manifest_tuning_expectations(manifest: dict) -> dict[str, str]:
     return expected
 
 
+def _context_tuning_expectations(context: dict) -> dict[str, str]:
+    """Use the matched owner's parsed scheduler, bound to the sealed native YAML."""
+    expected = _manifest_tuning_expectations(context["manifest"])
+    selection = context["session"].get("selection", {})
+    if "native_scheduler" not in selection:
+        return expected  # older owner; explicit arm expectations remain necessary
+    receipt = selection["native_scheduler"]
+    native = context["manifest"]["spec"].get("native_config", {})
+    if (not isinstance(receipt, dict) or set(receipt) != {"snapshot_sha256", "parsed"}
+            or not native.get("sha256") or receipt["snapshot_sha256"] != native["sha256"]):
+        raise run_records.RecordError("parsed scheduler does not bind native YAML")
+    parsed = receipt["parsed"]
+    if not isinstance(parsed, dict):
+        raise run_records.RecordError("malformed parsed scheduler")
+    for key in ("interleave_authored", "mixed_step_target_authored", "room_gate",
+                "room_gate_authored", "long_prefill_authored", "preempt_wait_authored"):
+        if type(parsed.get(key)) is not bool:
+            raise run_records.RecordError(f"malformed parsed scheduler: {key}")
+    for key, lo, hi in (("interleave_steps", -1, 64), ("mixed_step_target_ms", 0, 60000),
+                        ("long_prefill_token_threshold", 0, 2**63-1), ("preempt_wait_ms", 0, 2**63-1)):
+        if type(parsed.get(key)) is not int or not lo <= parsed[key] <= hi:
+            raise run_records.RecordError(f"malformed parsed scheduler: {key}")
+    # Interleave omission is resolved by engine bring-up, not assumed off.
+    steps = parsed["interleave_steps"]
+    share = parsed.get("interleave_share")
+    if steps == -1:
+        try:
+            if not isinstance(share, str) or not 0 < float(share) <= 4:
+                raise ValueError()
+        except ValueError as exc:
+            raise run_records.RecordError("malformed parsed interleave share") from exc
+    elif share is not None:
+        raise run_records.RecordError("unexpected parsed interleave share")
+    scheduler = {
+        "--mixed-step-target-ms": str(parsed["mixed_step_target_ms"] or "off"),
+        "--prefill-room-gate": "on" if parsed["room_gate"] else "off",
+        "--long-prefill-token-threshold": str(parsed["long_prefill_token_threshold"] or "0 (off)"),
+        "--preempt-wait-ms": str(parsed["preempt_wait_ms"]),
+    }
+    if parsed["interleave_authored"]:
+        scheduler["--prefill-interleave"] = (
+            f"auto:{float(share):.6f}" if steps == -1 else str(steps or "off")
+        )
+    elif steps != 0 or "--prefill-interleave" in expected:
+        raise run_records.RecordError("omitted interleave contradicts parsed/manifest values")
+    for flag, value in scheduler.items():
+        if flag in expected and expected[flag] != value:
+            raise run_records.RecordError(f"parsed scheduler contradicts manifest: {flag}")
+    expected.update(scheduler)
+    return expected
+
+
 def capture_tuning_receipt(run_dir: Path, url: str, expected: dict[str, str]) -> dict:
     """Bind live native diagnostics to the admitted build/session and exact manifest."""
     context = _session_context(run_dir)
     _verify_live_context(context, url)
-    manifest_expected = _manifest_tuning_expectations(context["manifest"])
+    manifest_expected = _context_tuning_expectations(context)
+    if not expected and "native_scheduler" not in context["session"].get("selection", {}):
+        raise run_records.RecordError("older native owner requires explicit tuning expectations")
     for flag, value in expected.items():
         if flag in manifest_expected and manifest_expected[flag] != value:
             raise run_records.RecordError(f"tuning expectation contradicts manifest: {flag}")
@@ -317,7 +371,7 @@ def capture_tuning_receipt(run_dir: Path, url: str, expected: dict[str, str]) ->
     _verify_live_context(after, url)
     if (after["run_id"], after["manifest_bytes"], after["identity"]) != (
         context["run_id"], context["manifest_bytes"], context["identity"]
-    ):
+    ) or _context_tuning_expectations(after) != manifest_expected:
         raise run_records.RecordError("native owner changed during tuning receipt capture")
     return {
         "schema_version": 1, "run_id": context["run_id"],
@@ -346,7 +400,7 @@ def _tuning_receipt_inputs(context: dict) -> dict:
         if not isinstance(expected, dict) or not isinstance(observed, dict):
             raise run_records.RecordError("malformed tuning receipt")
         if not all(flag in expected and expected[flag] == value for flag, value in
-                   _manifest_tuning_expectations(context["manifest"]).items()):
+                   _context_tuning_expectations(context).items()):
             raise run_records.RecordError("tuning receipt does not reconcile the manifest")
         if not set(observed) <= TUNING_DIAGNOSTIC_OPTIONS or not all(
                 isinstance(row, dict) and set(row) == {"value", "source"} for row in observed.values()):

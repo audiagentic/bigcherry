@@ -503,3 +503,25 @@ def test_capture_tuning_receipt_refuses_manifest_conflict(tmp_path, monkeypatch)
     monkeypatch.setattr(lab.urllib.request, "urlopen", unexpected)
     with pytest.raises(run_records.RecordError, match="contradicts manifest"):
         lab.capture_tuning_receipt(tmp_path, "http://127.0.0.1:9000", {"--tp": "2"})
+
+
+@pytest.mark.parametrize("authored,steps,share,expected", [
+    (False, 0, None, None), (True, 0, None, "off"), (True, 2, None, "2"),
+    (True, -1, "0.25", "auto:0.250000"), (True, -1, "1.0", "auto:1.000000"),
+])
+def test_scheduler_expectations_from_sealed_owner(authored, steps, share, expected):
+    from bigcherry.bench.radiance_lab_records import _context_tuning_expectations
+    parsed = {"interleave_authored": authored, "interleave_steps": steps, "interleave_share": share,
+              "mixed_step_target_ms": 75, "mixed_step_target_authored": True,
+              "room_gate": False, "room_gate_authored": False, "long_prefill_token_threshold": 0,
+              "long_prefill_authored": False, "preempt_wait_ms": 5000, "preempt_wait_authored": False}
+    ctx = {"manifest": {"spec": {"native_config": {"sha256": "a"*64}, "intent": {},
+                                "processes": {"engine": {}}}},
+           "session": {"selection": {"native_scheduler": {"snapshot_sha256": "a"*64, "parsed": parsed}}}}
+    observed = _context_tuning_expectations(ctx)
+    assert observed["--mixed-step-target-ms"] == "75"
+    assert observed["--prefill-room-gate"] == "off"
+    assert observed.get("--prefill-interleave") == expected
+    ctx["session"]["selection"]["native_scheduler"]["snapshot_sha256"] = "b"*64
+    with pytest.raises(run_records.RecordError, match="bind native YAML"):
+        _context_tuning_expectations(ctx)

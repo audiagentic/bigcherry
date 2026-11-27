@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_134943_automatically-validate-tuning_1481",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/bc_serving_managed_bind.cpp",
+    "tools/bigcherry/bench/radiance_lab_records.py",
+    "engines/radiance/configs/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC19"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Journal sealed native scheduler intent for fresh/replayed runs, derive benchmark expectations, refuse capability-waiver configs.",
+  "timestamp-utc": "2026-11-27T13:49:43.144216Z",
+  "user-summary-candidate": "Automatically validate tuning settings from native configuration and preserve compatibility gates."
+}

@@ -106,7 +106,9 @@ quality or attestation validity. Do not archive the entire diagnostics document.
 
 This is a lab qualification seam, not a replacement for the serving owner's
 admission or the planned matched-build runtime reconciliation. Dynamic defaults
-and capability checks remain engine-owned. The next step is to consume the
-matched inspector's authored/parsed scheduler receipt rather than hand-author
-additional expectations, and qualify per model, topology and workload with
+and capability checks remain engine-owned. The matched owner now journals the parsed scheduler under session selection
+with the sealed native YAML SHA-256, including on replay. The adapter derives
+stable scheduler expectations from that receipt (pass an empty expectations
+dict to use it); older owners need explicit arm expectations. Omitted interleave
+is left to native bring-up. Qualify per model, topology and workload with
 independent quality gates before production YAML changes.

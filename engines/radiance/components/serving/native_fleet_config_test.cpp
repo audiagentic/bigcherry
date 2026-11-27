@@ -197,6 +197,7 @@ int main() {
     invalid("scheduler: {stuck-exit: 0s}\n" + original, "fleet-only setting: scheduler.stuck-exit");
     invalid("scheduler: {warm-up: false}\n" + original, "fleet-only setting: scheduler.warm-up");
     invalid(original + "    aliases: [tiny-alias]\n", "fleet-only setting: aliases");
+    invalid("server: {proceed-with-incompatible-configuration: true}\n" + original, "cannot waive engine capability checks");
     invalid(original + "    priority: 1\n", "fleet-only setting: priority");
     invalid(original + "    pin: true\n", "fleet-only setting: pin");
     invalid("defaults: {ttl: 30s}\n" + original, "fleet-only setting: ttl");

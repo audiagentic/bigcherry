@@ -146,6 +146,8 @@ NativeFleetConfig::NativeFleetConfig(NativeConfigSnapshot snapshot, const std::s
     // Managed manifests construct one Engine from the model Config. These
     // settings have no effect without the upstream Fleet lifecycle.
     const auto& model = fleet_.models.front();
+    if (model.cfg.proceed_incompatible)
+        throw std::invalid_argument("managed native fleet YAML cannot waive engine capability checks");
     const rad::fleet::FleetConfig defaults;
     const std::pair<bool, const char*> fleet_only[] = {
         {fleet_.host_mib != defaults.host_mib, "memory.host-mib"},
