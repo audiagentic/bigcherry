@@ -63,6 +63,8 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 
 2026-11-27 native owner hardening: full represented-control checks and final fleet readback on both shader control kinds; legacy absolute journals recover identity from bound original receipt; receipt mismatch refuses before writes; recovery disqualifies entire transaction; sysfs command errors identify command and errno, short writes fail closed. Native card-free acceptance executable passes all five groups including four golden profiles, recovery and fault injection, with contract fingerprint matched. Operational recovery and reciprocal journal admission remain open; no hardware writes in this slice.
 
+2026-11-27: native D1 recovery PASS under exclusive GPU lease using new bc-serve power-recover. Pre-recovery journal and receipt byte-identical to original archived copies. Independent full physical identity and controls for all four GPUs matched original before and after. Native exit 0, journal and receipt restored, original failure and recovery events retained, non-qualifying. Lease free. Raw proof retained in work-root archive PWR15-native-recovery-20261127; managed harvest blocked by remote policy. Native component build and acceptance pass; 140 targeted pytest cases pass. Shared-root reciprocal admission implemented, offline tested; legacy private roots inventory and reviewed release deployment remain gates. No new candidate settings or production promotion.
+
 ## Change Log
 
 - 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
@@ -77,3 +79,4 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 - 2026-11-26T23:13:35.421669+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
 - RV4693
 - 2026-11-27T00:05:12.419653+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T00:15:12.379866+00:00 (updated-by): Updated: section:notes

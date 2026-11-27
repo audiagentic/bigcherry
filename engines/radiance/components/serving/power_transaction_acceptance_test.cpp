@@ -1028,6 +1028,25 @@ void python_refusal_and_recovery_parity() {
            "Python successful crash recovery event projection");
 }
 
+void peer_platform_admission() {
+    Temporary t;
+    auto fixture = load_json(fs::path(__FILE__).parent_path() / "testdata/power_qualified_inputs.json").at("cases").at(0);
+    auto hardware = make_hardware(fixture);
+    DiskRecords records(t.root / "power/journals", t.root / "power/receipts");
+    const auto peer = t.root / "flashnext/power/journals/platform-run.json";
+    Json doc = {{"schema_version", 1}, {"run_id", "platform-run"}, {"state", "restore_failed"},
+                {"devices", Json::array()}, {"events", Json::array()}, {"touched", Json::array()}};
+    write_text(peer, doc.dump());
+    SessionPower blocked(make_plan(fixture), "blocked", hardware, records, [] { return true; }, [] { return true; });
+    assert_error(blocked.begin(), ConfigErrorCode::admission_refused, "unresolved power journal");
+    expect(hardware.issued.empty(), "platform journal blocks native writes");
+    write_text(peer, "invalid JSON");
+    expect(!records.unresolved_journals(), "malformed platform journal refuses");
+    doc["state"] = "restored";
+    write_text(peer, doc.dump());
+    SessionPower clean(make_plan(fixture), "clean", hardware, records, [] { return true; }, [] { return true; });
+    expect(!clean.begin() && !clean.finish(), "resolved platform record permits native transaction");
+}
 void real_records_are_safe() {
     Temporary t;
     const auto fixture =
@@ -1553,6 +1572,7 @@ int main() {
         injected_interface_exception_matrix();
         python_refusal_and_recovery_parity();
         real_records_are_safe();
+        peer_platform_admission();
         recovery_binding_disk();
         receipts_qualify();
         diagnostics();

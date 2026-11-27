@@ -484,6 +484,44 @@ bool valid_run_id(std::string_view id) {
                ch == '_';
     });
 }
+// Admission only: the platform owns its own journal grammar and recovery.
+// Read just the shared durable envelope; unknown or malformed is never idle.
+v2::Result<bool> platform_journal_idle(const fs::path& path) {
+    const auto loaded = durable_read(path);
+    if (!loaded) return loaded.error();
+    const auto& j = loaded.value();
+    try {
+        if (!j.is_object() || j.at("schema_version") != 1 ||
+            j.at("run_id") != path.stem().string() ||
+            !j.at("devices").is_array() || !j.at("events").is_array() ||
+            !j.at("touched").is_array())
+            return false;
+        const auto state = j.at("state").get<std::string>();
+        if (state == "prepared") return j.at("touched").empty();
+        return state == "restored" || state == "rolled_back";
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+v2::Result<std::vector<fs::path>> platform_pending(const fs::path& root) {
+    const auto folder = root / "flashnext/power/journals";
+    std::error_code ec;
+    const auto stat = fs::symlink_status(folder, ec);
+    if (ec == std::errc::no_such_file_or_directory) return std::vector<fs::path>{};
+    if (ec || !fs::is_directory(stat))
+        return error(Code::io_failure, folder.string(), "platform journal directory unavailable or symlinked");
+    std::vector<fs::path> pending;
+    for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
+        const auto path = it->path();
+        if (path.extension() != ".json") continue;
+        const auto idle = platform_journal_idle(path);
+        if (!idle) return idle.error();
+        if (!idle.value()) pending.push_back(path);
+    }
+    if (ec) return error(Code::io_failure, folder.string(), "platform journal scan failed: " + ec.message());
+    std::sort(pending.begin(), pending.end());
+    return pending;
+}
 } // namespace
 
 fs::path DiskRecords::do_journal_path(std::string_view run_id) const {
@@ -624,12 +662,17 @@ v2::Result<Journal> DiskRecords::do_load(const fs::path& path) {
     return parsed;
 }
 v2::Result<std::vector<fs::path>> DiskRecords::do_unresolved_journals() {
-    std::error_code ec;
-    if (!fs::exists(journal_dir_, ec)) {
-        if (ec)
-            return error(Code::io_failure, journal_dir_.string(), ec.message());
-        return std::vector<fs::path>{};
+    std::vector<fs::path> pending;
+    if (journal_dir_.filename() == "journals" && journal_dir_.parent_path().filename() == "power") {
+        auto peer = platform_pending(journal_dir_.parent_path().parent_path());
+        if (!peer) return peer.error();
+        pending = std::move(peer.value());
     }
+    std::error_code ec;
+    const auto status = fs::symlink_status(journal_dir_, ec);
+    if (ec == std::errc::no_such_file_or_directory) return pending;
+    if (ec || !fs::is_directory(status))
+        return error(Code::io_failure, journal_dir_.string(), "native journal directory unavailable or symlinked");
     auto dir = directory(journal_dir_, false);
     if (!dir)
         return dir.error();
@@ -647,7 +690,6 @@ v2::Result<std::vector<fs::path>> DiskRecords::do_unresolved_journals() {
         (void)::close(scanning_fd);
         return error(Code::io_failure, journal_dir_.string(), "cannot enumerate journal directory");
     }
-    std::vector<fs::path> pending;
     for (;;) {
         errno = 0;
         dirent* entry = ::readdir(stream.get());

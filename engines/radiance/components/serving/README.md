@@ -80,6 +80,29 @@ effective settings. The calibration key's `power_profile` is the profile name, o
 settings when the plan applies.
 This host's per-BDF settings come from `<work-root>/power-site.yaml` (`schema: 1`, `devices: {BDF: {settings, evidence}}`,
 read through the engine's YAML parser) and replace the profile's settings for that card only.
+New physical applies require the shared host work root: set the existing
+`BC_WORK_ROOT` and pass the same directory as `--work-root`. Native
+`power/journals` and platform `flashnext/power/journals` each inspect the
+other owner's durable journal envelope before admitting a new apply.
+Do not create per-arm work roots for physical writes. Legacy private or
+XDG journal directories require an operator inventory and recovery before
+adopting the shared root; a scan of the shared root does not prove they
+are clear.
+
+Recover an existing native transaction with the actual original session
+directory, the work root that owned its journal, and its journal run ID:
+
+```sh
+bc-serve power-recover --run-dir DIR --work-root DIR --run-id ID --processes-exited
+```
+
+Use the existing exclusive GPU lease. The operator identifies the original
+session; the command verifies owner and child-group exit, fresh KFD
+idleness, lease, journal/receipt binding and exact restoration. It keeps
+prior failure events and marks recovery as non-qualifying. Do not use a
+recovered receipt as a qualification or apply any new candidate until the
+old unresolved journal is reconciled.
+
 No unit test calls the real Linux write interface: power tests use injected
 `power::Hardware`, `power::Records` and `power::Sensor`.
 PWR06 captures a no-process floor after measurement children exit, before
