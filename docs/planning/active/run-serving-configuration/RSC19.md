@@ -65,6 +65,8 @@ Fresh and replay owner session selection now records the matched parsed schedule
 
 Canonical Radiance 2.3 stock build plan 927a24bf85c2ac29d3dbe0b779063323 succeeded; 18/18 staged native config explain preflights passed. Matched enhanced owner TP3 IQ8R FP8 KV 75/50/75ms fresh starts, automatic scheduler reconciliation with empty explicit expectations, both receipts verified for all three runs. 4K/512 aggregate 188.774/180.289/180.855 t/s; max TTFT 14.574/15.768/15.763s; p95 event gaps 41.509/161.219/162.438ms. 512/128 aggregate 279.875/270.253/279.928 t/s; max TTFT 1.979/2.157/1.980s; p95 gaps 40.065/165.666/40.445ms. Six reports match previous prompt hashes/token counts, zero preemptions, clean owner stops. Long workload scheduling regimes persist; 75ms short result repeats, not a universal winner. Evidence docs/evidence/RSC19-VTP59-matched-owner/{build-preflight,summary}.json. Next mixed arrivals/interleave/phase tracing and independent quality then TP2/TP3/other model qualification. No production promotion.
 
+Qwen FlashNext true TP4 native lab arm (2 gfx1100, gfx1201, gfx1030) on matched 2.3 build 927a24bf85c2ac29d3dbe0b779063323 refused before GPU launch: architecture gfx1030 cannot run the engine (archs.toml roles). Existing flashnext-4gpu is TP1+3 helpers. No role override; libr2 only builds helper MoE/activation quant units, no full engine coverage. Future TP4 requires full gfx1030 provider coverage, per-rank graph/collective and numerical qualification, then explicit role admission. Four-card control at FP8 KV, 8192 context bound, 8 streams, batch2048, no prefix cache, interleave/mixed target off completed 4096/512 workload: aggregate 173.412 t/s, max TTFT 11.417s, p95 event gap 66.229ms, zero preemptions, 8x512 outputs. Job daemon lost record before short workload/final receipt; owner stopped cleanly, GPU free. Not a qualified control or TP4 performance result. Evidence docs/evidence/RSC19-FN-topology/summary.json.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
@@ -74,3 +76,4 @@ Canonical Radiance 2.3 stock build plan 927a24bf85c2ac29d3dbe0b779063323 succeed
 - 2026-11-27T13:39:37.473752+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:49:43.098266+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:09:47.084434+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T14:27:55.436958+00:00 (updated-by): Updated: section:notes

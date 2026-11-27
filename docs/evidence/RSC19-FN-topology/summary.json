@@ -1,0 +1,58 @@
+{
+  "kind": "topology-admission-and-incomplete-control",
+  "tp4_refusal": "architecture gfx1030 cannot run the engine (archs.toml roles)",
+  "notes": [
+    "TP4 refused before GPU execution. gfx1030 helper-only role and helper-only libr2 units; no role bypass.",
+    "TP1 + 3 helpers control 8192 context bound, FP8 KV, 8 streams, batch2048, prefix off, interleave off, mixed target off. Long workload completed, zero preemptions, all eight streams 512 tokens. Job service lost job record; short workload and end tuning receipt absent, owner stopped exit 0, GPU free. Do not use as qualified baseline."
+  ],
+  "arms": {
+    "flashnext-tp4": {
+      "profile": "flashnext-tp4.yaml",
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "owner_sha256": "6cf2765850f8b46e40c7f8736d1bb6d657a2e3018615091a84472421688cdd08",
+      "requests": [],
+      "ok": false,
+      "owner_exit": 1,
+      "raw_sha256": {
+        "owner.log": "e8c9d01dd6654292ab0b786b9efdd957290c89b24627fbc82210aa0d0a04f348",
+        "result.json": "cc337fa070276b89015bfafade19dbbdcee852a31ec5b551805e72b39d50c5ac",
+        "native.yaml": "de678b04561f79a234d97d47d821012490fac91fd83223a55f2a3b859f5e4733"
+      }
+    },
+    "flashnext-4gpu": {
+      "profile": "flashnext-4gpu.yaml",
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "owner_sha256": "6cf2765850f8b46e40c7f8736d1bb6d657a2e3018615091a84472421688cdd08",
+      "requests": [
+        {
+          "depth": 4096,
+          "output": 512,
+          "ok": true,
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 173.412,
+              "ttft_ms_max_median": 11417.25,
+              "event_gap_ms_p95_median": 66.229,
+              "decode_ms_per_step_median": 61.173,
+              "draft_acceptance_median": 0.6011,
+              "requests_running_mean_median": 7.49
+            }
+          }
+        }
+      ],
+      "ok": false,
+      "startup_s": 198.65918785193935,
+      "stop_exit": 0,
+      "owner_exit": 0,
+      "raw_sha256": {
+        "stream-4096-512.json": "6e0f39a35d685f88b10fe2746819ff0dd0dd9c61d272ec6cb018bf6aca622ebc",
+        "owner.log": "133d35d95ef9c3a4f17168414628e6ebf88c1c3e52c1571b97e7b6aa79dc3376",
+        "result.json": "87acc9fa3defb6e8fa1b526de3d9382a5254b4d7c5debe59355d9ad1697e19de",
+        "native.yaml": "113fa10dac293ca2f6c5fccaede1b4ccc7ef9914d91b85b01a22f1d23f900d53"
+      }
+    }
+  }
+}
