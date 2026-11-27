@@ -105,6 +105,8 @@ Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same 
 
 Owner decision 2026-11-28: VTP59 is no longer a bump prerequisite. The concurrency inversion and the TP3 short-prompt deficit against 2020.8.5 already exist on installed 2.2 (TP2 4-stream 4K/128 old 42.315 vs candidate default 42.763; TP3 512/192 2.2 351.3 vs 2020.8.5 360.8), so they are not 2.3 regressions. The bump gate is MEN24's no-regression check against 2020.24.1 only. Stop historical-recovery and tuning screens on the bump branch; resume this item on the 2.3 pin after the bump merges, starting from VTP61's bisect result. All screens above remain valid evidence and are not repeated.
 
+Direct kernel replay vs installed 2.2: all 3197 common owned IQR instruction symbols identical per architecture, 347 matched timing cases; equal-call GEMM B/A .990526 gfx1100 and 1.002293 gfx1201; logits 1.008191 and 1.000194. No kernel rewrite justified; timing-only, not correctness qualification. Evidence kernel-recovery.json and raw VTP37-kernel-recovery. Historical recovery deferred under VTP61 per d9a015982.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -141,3 +143,4 @@ Owner decision 2026-11-28: VTP59 is no longer a bump prerequisite. The concurren
 - 2026-11-27T22:32:10.251009+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T23:02:04.520679+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T23:02:26.141517+00:00 (updated-by): Updated: section:title, section:acceptance_criteria
+- 2026-11-27T23:06:55.884757+00:00 (updated-by): Updated: section:notes

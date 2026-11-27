@@ -1,0 +1,48 @@
+{
+  "kind": "independent-flashnext-quality-diagnostic",
+  "build_plan_id": "f3b75ae7e258f3a0c75870e20060a40f",
+  "source_slice_id": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+  "owner_sha256": "49a6ded690eba605fc05412660373173d1430e39437ad8eacff253ab8ec0f2f7",
+  "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
+  "config_sha256": "248634bb743aef4e5ecd60008a4f58ae8765a43480ae8c4128238b509666906f",
+  "heat_sha256": "230398970a6f744723a90f4799e4885a664e06742d8a6f1224ee32f0bfd83b29",
+  "reference_release": "1170.34.0",
+  "reference_sha256": {
+    "kld.json": "f2324f85438b9494cc5b3f606556d5492e024a93770931e74790cd32e64b27c9",
+    "logp.f16": "a6e1faf4d7f491edaaebede95b58fed5987802ec31c7e971b011547f420bc2a4",
+    "rows.f32": "7022f85b30d4f175c4da827ec385a5db462bd4fe5e47931ebe3ec81d3afbe7be",
+    "tokens.i32": "098d5651874dfa14e8bef1dc34cf9a7b87a7d348f204ef58d49a244b61966e8a",
+    "top.bin": "775595c8f412b3bb3fcd188f4f102ecaf6d3d46e71ef5d3cc728a412e6bc753e"
+  },
+  "reference_inputs": [
+    "06f0adca094b4d72bfcded8be2fec4bc23014bc80896eb54276ff86820d454ee",
+    "c335b9a3128dc94947c5d78c6380187431e554ab7462d4c5dcfd6e77641a125b"
+  ],
+  "result": {
+    "kld_mean": 0.0628456015188132,
+    "kld_median": 0.01563119702041149,
+    "kld_p99": 0.7458968389034245,
+    "kld_p999": 1.8685609747171739,
+    "top1_percent": 88.59223300970875,
+    "ppl": 8.980531690487325,
+    "ppl_reference": 8.980467813807826
+  },
+  "score_sha256": "961b7f96a869123f0aa41bea3cdc443d26482a08ef95b3e87218d945dcce2a30",
+  "rows_sha256": "44b89d50fcd1664c80de4fb886f0aee3aef666bab643832d6417992b8430140c",
+  "positions": 8240,
+  "docs": 4,
+  "owner_state": "stopped",
+  "all_processes_exited": true,
+  "component_tests": {
+    "libr3": 5,
+    "moe": 48,
+    "serving": 40
+  },
+  "old_release_score": "blocked by retained admission defect",
+  "notes": [
+    "reference hashes match prior reference.sha256 and unchanged before/after scoring",
+    "not formal acceptance; older stored quality baseline uses different helper topology and reference provenance"
+  ],
+  "raw": "MEN17-flashnext-quality"
+}

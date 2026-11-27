@@ -116,6 +116,8 @@ Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same 
 
 RV4756: FlashNext quality refused in installed 2.2 and candidate 2.3 because owner releases quality-specific sealed admission after spawn's exec handshake. Reproduced with delayed fake child verifying parent inode, pre-fix full bc_serving_test fails; fixed by retaining both sealed inputs in Session owner through child cleanup. Post-fix bc_serving_test passes 42.46s. No guard weakened or old release modified; exact rebuilt lane and independent helper quality still required.
 
+Canonical rebuild f3b75ae7e258f3a0c75870e20060a40f includes b95ac61c0 retained quality admission fix; 93/93 declared component tests (5/48/40). Four-GPU FlashNext IQ4R independent 1170.34.0 reference scoring completed, 8240 positions/4 docs, KLD mean .0628456 p99 .745897 top1 88.5922% PPL ratio 1.000007; ref hashes verified against original list before/after, stopped all children. Installed 2.2 and prior candidate fail same retained-admission gate, not an identical-release comparison. No formal acceptance claim. Evidence flashnext-quality-admission.json, raw MEN17-flashnext-quality. RV4756 fix hardware-proven.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -155,3 +157,4 @@ RV4756: FlashNext quality refused in installed 2.2 and candidate 2.3 because own
 - 2026-11-27T22:32:25.637257+00:00 (updated-by): Updated: section:notes
 - RV4756
 - 2026-11-27T22:54:29.822389+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T23:06:16.525942+00:00 (updated-by): Updated: section:notes

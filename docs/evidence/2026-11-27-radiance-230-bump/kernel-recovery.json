@@ -1,0 +1,55 @@
+{
+  "status": "diagnostic-timing-only",
+  "fixture_sha256": "1ef17fb9cf0a5401f8426b110fcc665c9a70ef6c568b7cf01e8141a17c6a92dd",
+  "old_release": "2020.24.1",
+  "candidate_build": "927a24bf85c2ac29d3dbe0b779063323",
+  "replay": {
+    "gfx1100": {
+      "gemm_nt_q": {
+        "a_us": 36894.41,
+        "b_us": 36544.85999999999,
+        "cases": 139,
+        "calls": 139,
+        "invalid": 0,
+        "unverified": 139,
+        "noise_missing": 0,
+        "ratio_b_over_a": 0.9905256649991148
+      },
+      "logits_gemm": {
+        "a_us": 16835.84,
+        "b_us": 16973.75,
+        "cases": 7,
+        "calls": 7,
+        "invalid": 0,
+        "unverified": 7,
+        "noise_missing": 0,
+        "ratio_b_over_a": 1.008191453470691
+      }
+    },
+    "gfx1201": {
+      "gemm_nt_q": {
+        "a_us": 31192.97999999999,
+        "b_us": 31264.509999999995,
+        "cases": 194,
+        "calls": 194,
+        "invalid": 0,
+        "unverified": 194,
+        "noise_missing": 0,
+        "ratio_b_over_a": 1.0022931441625649
+      },
+      "logits_gemm": {
+        "a_us": 15274.94,
+        "b_us": 15277.91,
+        "cases": 7,
+        "calls": 7,
+        "invalid": 0,
+        "unverified": 7,
+        "noise_missing": 0,
+        "ratio_b_over_a": 1.0001944361156245
+      }
+    }
+  },
+  "raw": "VTP37-kernel-recovery",
+  "iqr_common_symbols_per_arch": 3197,
+  "iqr_changed_common_instruction_bytes": 0
+}
