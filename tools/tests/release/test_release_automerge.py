@@ -3,7 +3,8 @@ import os
 import subprocess
 from pathlib import Path
 
-import pytest
+import tempfile
+import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -14,7 +15,7 @@ def candidate(number=10, **kw):
                 isCrossRepository=False, isDraft=False, autoMergeRequest=None) | kw
 
 
-@pytest.mark.parametrize("prs,state,expected", [
+CASES = [
     ([candidate(20), candidate(10)], "CLEAN", "10"),
     ([candidate()], "BLOCKED", "10"),
     ([candidate()], "BEHIND", "10"),
@@ -23,8 +24,9 @@ def candidate(number=10, **kw):
     ([candidate(author={"login": "other"}), candidate(isDraft=True),
       candidate(isCrossRepository=True), candidate(headRefName="arbitrary")], "CLEAN", ""),
     ([], "CLEAN", ""),
-])
-def test_queue(tmp_path, prs, state, expected):
+]
+
+def check_queue(tmp_path, prs, state, expected):
     body = (ROOT / ".github/workflows/release-please.yml").read_text().split("      - name: queue eligible release PR\n", 1)[1]
     script = "\n".join(x[10:] for x in body.split("        run: |\n", 1)[1].splitlines())
     gh = tmp_path / "gh"
@@ -43,5 +45,13 @@ def test_queue(tmp_path, prs, state, expected):
     env = dict(os.environ, PATH=str(tmp_path) + ":" + os.environ["PATH"],
                PRS=json.dumps(prs), STATE=json.dumps({"mergeStateStatus": state, "headRefOid": "abc"}),
                MERGED=str(merged))
-    subprocess.run(["bash", "-c", script], env=env, check=True)
+    env.pop("BASH_ENV", None)
+    subprocess.run(["bash", "-c", "gh() { bash "+str(gh)+" \"$@\"; }\n"+script], env=env, check=True)
     assert (merged.read_text().strip() if merged.exists() else "") == expected
+
+
+class ReleaseAutomergeTests(unittest.TestCase):
+    def test_queue(self):
+        for prs, state, expected in CASES:
+            with self.subTest(prs=prs, state=state), tempfile.TemporaryDirectory() as tmp:
+                check_queue(Path(tmp), prs, state, expected)
