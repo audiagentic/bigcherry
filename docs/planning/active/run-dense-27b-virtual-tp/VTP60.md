@@ -65,6 +65,8 @@ KV follow-up: native rad0071_native_kv_tools patch commit 1bd1b5d45 on isolated 
 
 TTFT phase instrumentation first increment: stream_bench.py records client start/first/end wall timestamps alongside monotonic TTFT, input+output wall rate and all-step counter rate. Pure-decode token/step and token/time ratios now withheld unless mixed counter observed zero; missing/reset counters not assumed zero; per-round revision 2. 35 targeted tests passed. TP2 2.3 cold tuned pipeline 4066 input/1 output: 1495ms client TTFT, 1493.423ms scheduler prefill step, 2722.604 computed prompt tok/s. Rank model-pass span 1470.7ms, subsequent two draft-pass spans about21.3ms, residual ~3ms unattributed. Both ranks valid, tape entirely unclassified; no additive kernel family/communication attribution. Evidence docs/evidence/VTP60-ttft-trace/summary.json; matched fresh-start untraced control, general analyzer, tape segment ownership, native request timestamps, per-phase token counters and MRC08 integration pending. No production default changed.
 
+Extended existing RUM09 analyzer with single-request prefill/first-token mode --prefill-ranks, rank interval union, draft/overlap/unattributed durations and step-count checks. Replayed actual TP2 trace: 1495.006506 ms client, 1470.676011 main,21.294446 draft,3.036049 unattributed; all GPU segments unclassified. 37 targeted tests passed. Evidence phase-analysis.json. Native live-op trace patch rad0072 commit d611b548e in node/live-prefill-trace (isolated bump-based worktree): shared phase ring, actual lane/op index/collective status, preserves capture and replay; unclassified capture envelope not compute. Applied and CPU radiance build passed; GPU-enabled build request blocked, no GPU trace with patch. Patch untested/not in recipe; exact row/provider mapping, capture coverage, mixed/request lifecycle and on/off parity gates outstanding. Fold into RUM09 once qualified.
+
 ## Change Log
 
 - 2026-11-27T10:22:17.436914+00:00 (created-by): Created by agent
@@ -80,3 +82,4 @@ TTFT phase instrumentation first increment: stream_bench.py records client start
 - 2026-11-27T11:17:37.522329+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:27:49.418209+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T12:01:46.381304+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T12:11:05.716331+00:00 (updated-by): Updated: section:notes
