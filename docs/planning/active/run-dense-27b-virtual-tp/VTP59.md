@@ -66,6 +66,8 @@ Completed eight-stream screens (3 reps each): 4096/512 auto 126.244 aggregate, 2
 
 TP3 IQ8R same release, 1/8 streams, 128 outputs, one repetition per cell, targets 128/1024/2048/4096/6144. Auto:1 eight-stream decode 721/400/245/220/137 tok/s vs interleave 0 + 250 ms mixed target 733/612/648/694/671. Aggregate 527/183/93/58/41 vs 502/182/110/61/45. Max TTFT 0.510/4.456/10.096/16.527/24.164 s vs 0.642/3.939/7.753/15.173/21.275 s. Tuned 128 prompt wall throughput -4.7%; event gap at 4K 250ms vs 24ms. Both clean stops, screening not qualification; exact boundary cases, fresh-start repeats, historical match, quality and other models pending. 29 reports in summary.
 
+Fast host scheduler screen implemented in tools/lab/radiance/scheduler_burst.{cpp,py}, reuses real upstream sched_test.cpp and existing HIP-off rad_core archive. 62 scenarios, 18,157 checks, 0.06 s CPU (0.08 wall), 5.4 s compile/link; 23 launcher and existing kernel-harness pytest checks passed. Synthetic cost injection demonstrates 8x4096/128 auto 201 decode-containing steps peak 5 vs tuned 79 peak 8; all 1024 outputs and exact input rows completed. Not a GPU prediction; existing 2.2 host build scheduler/test source hashes match inspected 2.2 snapshot, not full candidate provenance. Promote to CTest in canonical build lane, generate scenarios from MRC08 workload keys, replay measured per-class cost curves, add negative mutation and arrival/KV pressure cases, native effective default drift tests; use unit_harness/kernel-group replay for changed kernels, narrow full serving gate for real latency/quality/communication.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -78,3 +80,4 @@ TP3 IQ8R same release, 1/8 streams, 128 outputs, one repetition per cell, target
 - 2026-11-27T10:08:22.443495+00:00 (updated-by): Updated: section:validation
 - 2026-11-27T10:08:29.661326+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-11-27T10:11:26.253821+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T10:17:55.733251+00:00 (updated-by): Updated: section:notes

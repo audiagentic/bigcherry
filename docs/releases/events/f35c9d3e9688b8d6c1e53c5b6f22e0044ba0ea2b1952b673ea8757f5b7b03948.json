@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261127_101832_screen-scheduler-concurrency-r_8034",
+  "files": [
+    "tools/lab/radiance/scheduler_burst.cpp",
+    "tools/lab/radiance/scheduler_burst.py",
+    "tools/tests/lab/test_scheduler_burst.py",
+    "tools/lab/radiance/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP59"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add card-free native scheduler burst workload screening using existing CMake host test build; record structural overlap and exact completion at prompt boundaries.",
+  "timestamp-utc": "2026-11-27T10:18:32.950608Z",
+  "user-summary-candidate": "Screen scheduler concurrency regressions without launching an inference engine."
+}

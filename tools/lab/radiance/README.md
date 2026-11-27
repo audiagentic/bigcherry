@@ -175,3 +175,30 @@ Do not place credentials in side environment overrides. Use equal fixture,
 seed, warm-up, flush footprint, filters and runtime policy on both sides.
 An omitted flag uses rad-kbench's own default, so specify it to make a
 measurement fully pinned.
+
+## Host scheduler burst screen (VTP59)
+
+Reuse an existing HIP-disabled Radiance host test build with
+`CMAKE_EXPORT_COMPILE_COMMANDS=ON` and Unix Makefiles. The build must have
+a current `rad_core` archive and native `sched_test` compile/link records.
+Rebuild those targets when the source or recipe changes; the launcher does not
+verify complete source-to-object provenance or build a new core.
+
+```sh
+python3 tools/lab/radiance/scheduler_burst.py \
+  --build "$HOST_BUILD" --output "$BC_WORK_ROOT/host-burst.json"
+```
+
+The fixture includes upstream `sched_test.cpp` (actual scheduler, fake device
+and KV interfaces), adds exact-token burst workloads, and reuses native CMake
+compile and link inputs in isolated scratch. It never runs a model, server or
+GPU. It measures structural work, admission, completion and decode overlap
+under deterministic synthetic step costs, not hardware throughput or model
+quality. The raw receipt includes source, fixture, archive and executable
+digests. Keep it in the work root. A zero exit is screening evidence only.
+
+Future promotion: run this scenario matrix through native CTest on every
+candidate host build, feed versioned cost curves from existing kernel replay
+and serving trace evidence, and use the same workload keys as MRC08. Add
+mixed-arrival, cancellation and KV-pressure scenarios; compare effective
+profile defaults independently through the native config/manifest tests.
