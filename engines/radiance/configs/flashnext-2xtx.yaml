@@ -18,6 +18,7 @@ models:
     rope-scaling: none
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Flash-Next on the R9700, both 7900 XTX cards holding the hottest experts"
   ranks:
     - {arch: "gfx1201", count: 1}

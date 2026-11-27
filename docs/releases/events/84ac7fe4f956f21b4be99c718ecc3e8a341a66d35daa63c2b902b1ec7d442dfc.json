@@ -1,0 +1,34 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_031411_all-shipped-radiance-model-con_4965",
+  "files": [
+    "engines/radiance/configs/flashnext-2xtx-combine.yaml",
+    "engines/radiance/configs/flashnext-2xtx-rdna2-head.yaml",
+    "engines/radiance/configs/flashnext-2xtx-rdna2-tail-combine.yaml",
+    "engines/radiance/configs/flashnext-2xtx-rdna2-tail.yaml",
+    "engines/radiance/configs/flashnext-2xtx.yaml",
+    "engines/radiance/configs/flashnext-4gpu-bf16i8.yaml",
+    "engines/radiance/configs/flashnext-4gpu.yaml",
+    "engines/radiance/configs/flashnext-r9700.yaml",
+    "engines/radiance/configs/flashnext-tp2xtx-r9700.yaml",
+    "engines/radiance/configs/flashnext-tp2xtx.yaml",
+    "engines/radiance/configs/qwen27b-2xtx.yaml",
+    "engines/radiance/configs/qwen27b-tp3-capacity.yaml",
+    "engines/radiance/configs/qwen27b-tp3-iq6r.yaml",
+    "engines/radiance/configs/qwen27b-tp3-long-bf16.yaml",
+    "engines/radiance/configs/qwen27b-tp3-long-bf16i8.yaml",
+    "engines/radiance/configs/qwen27b-tp3-long-iq6r.yaml",
+    "engines/radiance/configs/qwen27b-tp3-long.yaml",
+    "engines/radiance/configs/qwen27b-tp3.yaml",
+    "tools/lab/radiance/flashnext-parity.sh",
+    "tools/lab/radiance/pwr01-baseline.sh",
+    "tools/tests/release/test_native_profiles.py"
+  ],
+  "plan-item-ids": [
+    "PWR16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Select canonical efficient intent for shipped model configurations; preserve explicit stock benchmark arms and existing apply gates.",
+  "timestamp-utc": "2026-11-27T03:14:11.883412Z",
+  "user-summary-candidate": "All shipped Radiance model configs select efficient, while stock benchmarks and guarded application remain available."
+}

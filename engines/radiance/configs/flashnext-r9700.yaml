@@ -19,6 +19,7 @@ models:
     rope-scaling: none
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory"
   ranks:
     - {arch: "gfx1201", count: 1}
