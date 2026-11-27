@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261127_064033_continued-the-legacy-run-conso_3890",
+  "files": [
+    "External host-local MRC migration inventory and RUM09 index; both intentionally excluded from Git."
+  ],
+  "plan-item-ids": [
+    "MEN29"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Completed historical run evidence migration and audit. Added 1,379 documents since the prior 272-record inventory, reaching 1,651 total. Imported 156 provenance-rich RUM09 paired workload results, reconciled migration indexes, expanded the host-local inventory, and verified record document count and quality-metric coverage. Run data and blobs remain outside Git.",
+  "timestamp-utc": "2026-11-27T06:40:33.776460Z",
+  "user-summary-candidate": "Continued the legacy run consolidation. The external MRC store now has 1,651 records, including newly converted RUM09 results. The inventory lists what was converted, deduplicated, and excluded; large run data remains outside Git."
+}
