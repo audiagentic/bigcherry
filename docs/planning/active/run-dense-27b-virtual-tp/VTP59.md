@@ -80,6 +80,8 @@ TP3 retry completed 3 reps each: 4K/128 aggregate 61.224 vs 56.919, engine decod
 
 TP3 IQ8R cold FP8 KV, eight streams, pipeline on/min256, batch2048, interleave off: fresh-launch ABBA mixed target 200/50/50/200 ms. 4K/512 aggregate 188.209/179.742/179.111/180.963 tok/s, max TTFT 14599.65/15818.91/15877.36/15615.70 ms, p95 event gaps 41.129/163.733/161.008/173.433 ms. 512/128 aggregate 270.325/280.315/278.785/278.959, max TTFT 2134.39/1973.44/2006.00/1989.36 ms, p95 gaps 194.062/40.337/40.248/40.697 ms. Eight completed reports, same prompt hashes and token counts, zero preemptions; all owner and stop exits zero. 50ms repeat stable, 200ms varies with schedule; text hashes differ, no independent quality gate. No universal default or production change. Evidence docs/evidence/VTP59-latency-abba/summary.json; raw evidence via existing evidence_dir. Next screen intermediate target and explicit interleave under mixed arrivals, trace phase variance and qualify quality independently.
 
+RSC19 integration on node/serving-config-enhancement a3969b3c6: native /diagnostics before/after checks via existing lab-record adapter against exact manifest and explicit scheduler expectation. 100/150ms single-repeat TP3 IQ8R FP8 cold arms: 4K/512 aggregate 179.990/186.543, p95 gap 161.933/41.349ms; 512/128 aggregate 281.492/269.749, p95 gap 166.390/174.782ms. Same prompt hashes and token counts as ABBA, zero preemptions; no new default. Evidence owned once by RSC19 at docs/evidence/RSC19-VTP59-latency/summary.json after integration. Continue 75ms, interleave, mixed arrival, phase and independent quality gates using the shared receipt path; use matched inspector v3 once integrated.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -99,3 +101,4 @@ TP3 IQ8R cold FP8 KV, eight streams, pipeline on/min256, batch2048, interleave o
 - 2026-11-27T11:47:13.447881+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:49:17.864160+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:31:22.876011+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T13:40:02.220162+00:00 (updated-by): Updated: section:notes
