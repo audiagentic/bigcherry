@@ -7,6 +7,7 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "power_qualification.h"
+#include "power_io.h"
 #include "rank_demand.h"
 #include "sha256.h"
 #include "config_loader.h"
@@ -21,6 +22,9 @@
 #include <charconv>
 #include <cerrno>
 #include <csignal>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
 #include <limits>
 #include <cstdlib>
 #include <ctime>
@@ -97,6 +101,17 @@ void usage() {
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
 
+// This is host-local owner fencing, not a manifest/engine setting.
+fs::path shared_power_root() {
+    const char* configured = std::getenv("BC_WORK_ROOT");
+    if (!configured || !*configured)
+        throw std::runtime_error("physical power mutation requires BC_WORK_ROOT");
+    const fs::path root(configured);
+    if (!root.is_absolute() || !fs::is_directory(root))
+        throw std::runtime_error("BC_WORK_ROOT must be an existing absolute directory");
+    return fs::canonical(root);
+}
+
 // Explicit native recovery; no fresh plan or alternate writer.
 int power_recover_command(int argc, char** argv) {
     namespace ss = bc::serving::session;
@@ -153,11 +168,26 @@ int power_recover_command(int argc, char** argv) {
         }
         return ss::alive_recorded(*record).empty() && idle();
     };
+    const auto shared = shared_power_root();
+    const auto lock = bc::serving::power::detail::lock_power_owner(shared);
     power::LinuxHardware hardware("/");
-    const auto root = fs::absolute(work_root) / "power";
+    const auto root = fs::canonical(work_root) / "power";
     power::DiskRecords records(root / "journals", root / "receipts");
+    const auto target = records.journal_path(run_id);
+    const auto check_pending = [&](power::DiskRecords& owner) {
+        const auto pending = owner.unresolved_journals();
+        if (!pending) throw std::runtime_error(pending.error().message);
+        for (const auto& path : pending.value())
+            if (path != target)
+                throw std::runtime_error("another unresolved power journal blocks recovery: " + path.string());
+    };
+    check_pending(records);
+    if (root != shared / "power") {
+        power::DiskRecords current(shared / "power/journals", shared / "power/receipts");
+        check_pending(current);
+    }
     // Re-check live lease and KFD idleness at every recovery write.
-    const auto error = power::recover(records.journal_path(run_id), hardware, records,
+    const auto error = power::recover(target, hardware, records,
                                       [&] { return ss::owner_has_gpu_lease() && idle(); }, exited);
     if (error) {
         std::cerr << "power-recover refused or failed: " << error->path << ": " << error->message << '\n';
@@ -475,16 +505,24 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     bc::serving::power::LinuxSensor sensor(opts.sys_root / "sys");
     auto power = std::make_shared<ss::ManifestPower>(
         hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply, config_name);
+    // Keep the fence until the native session owner and its transaction exit.
+    auto power_lock = std::make_shared<bc::serving::power::detail::FileDescriptor>();
     ss::Session session;
-    session.power_hook.begin_manifest = [power, work_root](const fs::path&, const bc::serving::v2::Manifest& plan, bc::serving::v2::PlanUse use) -> bc::serving::v2::Status {
+    session.power_hook.begin_manifest = [power, work_root, power_lock](const fs::path&, const bc::serving::v2::Manifest& plan, bc::serving::v2::PlanUse use) -> bc::serving::v2::Status {
         if (plan.spec.plan.power.mode == bc::serving::v2::PowerMode::kApply) {
-            const char* configured = std::getenv("BC_WORK_ROOT");
-            std::error_code ec;
-            const auto root = configured && *configured ? fs::path(configured) : fs::path{};
-            if (root.empty() || !root.is_absolute() || work_root.empty() ||
-                !fs::is_directory(root, ec) || ec || !fs::equivalent(root, work_root, ec) || ec)
+            try {
+                const auto root = shared_power_root();
+                if (work_root.empty() || !fs::equivalent(root, work_root))
+                    throw std::runtime_error("physical apply requires --work-root matching BC_WORK_ROOT");
+                if (!ss::owner_has_gpu_lease())
+                    throw std::runtime_error("physical apply requires a verified GPU lease");
+                if (*power_lock)
+                    throw std::runtime_error("duplicate native power admission");
+                *power_lock = bc::serving::power::detail::lock_power_owner(root);
+            } catch (const std::exception& e) {
                 return bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::admission_refused,
-                    "session.power", "physical apply requires --work-root matching existing absolute BC_WORK_ROOT");
+                                                   "session.power", e.what());
+            }
         }
         return power->begin(plan, use);
     };

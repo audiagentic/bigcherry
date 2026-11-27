@@ -1,3 +1,4 @@
+#include "power_io.h"
 // Card-free RSC02 S12 acceptance: domain assertions and checked-in Python
 // behavioural golden fixtures. No Python imports and no physical GPU access.
 #include "power_transaction.h"
@@ -1028,6 +1029,20 @@ void python_refusal_and_recovery_parity() {
            "Python successful crash recovery event projection");
 }
 
+void owner_lock_contention() {
+    Temporary t;
+    auto held = bc::serving::power::detail::lock_power_owner(t.root);
+    bool refused = false;
+    try {
+        auto other = bc::serving::power::detail::lock_power_owner(t.root);
+    } catch (const std::runtime_error&) {
+        refused = true;
+    }
+    expect(refused, "second owner must not enter while first owns the fence");
+    held = bc::serving::power::detail::FileDescriptor{};
+    auto next = bc::serving::power::detail::lock_power_owner(t.root);
+    expect(bool(next), "lock is released with descriptor");
+}
 void peer_platform_admission() {
     Temporary t;
     auto fixture = load_json(fs::path(__FILE__).parent_path() / "testdata/power_qualified_inputs.json").at("cases").at(0);
@@ -1573,6 +1588,7 @@ int main() {
         python_refusal_and_recovery_parity();
         real_records_are_safe();
         peer_platform_admission();
+        owner_lock_contention();
         recovery_binding_disk();
         receipts_qualify();
         diagnostics();

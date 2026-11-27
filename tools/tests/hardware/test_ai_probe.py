@@ -604,7 +604,7 @@ def test_instruction_case_uses_existing_managed_capture_without_mutation(tmp_pat
         assert cmd_screen(ns) == 0
     assert execute.call_count == 3
     tx.assert_not_called()
-    assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR13"
+    assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR12"
 
 
 def test_instruction_apply_refused_before_transaction(tmp_path):
@@ -666,7 +666,7 @@ def test_explicit_geometry_resolves_mixed_case_n_and_provider(tmp_path):
         assert cmd_screen(ns) == 0
     assert calls == [("fp16", 19, [15,19,7,18,11,21], "hipblaslt"),
                      ("wave", 768, None, "hip-native")]
-    assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR13"
+    assert rm.read_manifest(ns.output.parent)["plan"]["item"] == "PWR12"
 
 def test_resident_coverage_including_partial_last_chunk():
     # 5 MiB -> 4 MiB + 1 MiB chunks; 5 epochs visits 4,1,4,1,4.

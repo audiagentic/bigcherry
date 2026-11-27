@@ -105,7 +105,7 @@ def cmd_peer(args):
         result.update(request={"bdf":args.bdf,"arch":args.arch,"headroom_mib":args.headroom_mib,
             "max_hotspot_c":args.max_hotspot_c,"max_memory_c":args.max_memory_c,
             "probe":source,"timeout":args.timeout},before=before)
-        run=workspace.create_run(root,"capture","gpu-ai-peer",plan_item="PWR13",engine="none",
+        run=workspace.create_run(root,"capture","gpu-ai-peer",plan_item="PWR12",engine="none",
             argv=sys.argv[:],purpose="Independent explicit pair copy correctness",inputs=[source],
             subkind="gpu-ai-peer",repo=paths.REPO_ROOT)
         result["run_id"]=run.run_id

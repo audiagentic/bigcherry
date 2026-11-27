@@ -113,7 +113,7 @@ def cmd_screen(args: argparse.Namespace) -> int:
             inputs.append({"role":"qualification-plan","uri":str(args.qualification_path),
                            "sha256":binding["digest"].removeprefix("sha256:")})
         args.input_digests = {i["role"]: "sha256:" + i["sha256"] for i in inputs}
-        plan_item = "PWR13" if getattr(args,"qualification",None) or args.matrix_shape is not None or args.resident_mib or any(dtype in ai_probe.INSTRUCTION_ALGORITHMS for dtype in args.dtype) else "PWR12"
+        plan_item = "PWR12"
         run = workspace.create_run(root, "capture", "gpu-ai-screen", plan_item=plan_item, engine="none",
                                    argv=sys.argv[:], purpose="Independent GPU power-profile screen",
                                    inputs=inputs, references=refs, subkind="gpu-ai-screen", repo=paths.REPO_ROOT)

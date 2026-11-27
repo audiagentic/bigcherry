@@ -96,6 +96,40 @@ class TxTest(unittest.TestCase):
 
     S = gpu_power.Setting
 
+    def test_shared_owner_lock_fences_all_platform_mutations(self):
+        from bigcherry.core.host_lock import HostFileLock
+        root = self.jd.parent
+        self.jd = root / "flashnext/power/journals"
+        lock = HostFileLock(root / "power/owner.lock")
+        t = self.tx()
+        lock.acquire(timeout_seconds=0)
+        try:
+            with self.assertRaisesRegex(PowerRefused, "owner lock"):
+                t.prepare({A: self.S(vddgfx_offset_mv=-50)}, [A])
+        finally:
+            lock.release()
+        t.prepare({A: self.S(vddgfx_offset_mv=-50)}, [A])
+        lock.acquire(timeout_seconds=0)
+        try:
+            with self.assertRaisesRegex(PowerRefused, "owner lock"):
+                t.apply()
+        finally:
+            lock.release()
+        self.assertEqual(self.drv.log, [])
+        t.apply()
+        count = len(self.drv.log)
+        lock.acquire(timeout_seconds=0)
+        try:
+            with self.assertRaisesRegex(PowerRefused, "owner lock"):
+                t.restore(processes_exited=True)
+            with self.assertRaisesRegex(PowerRefused, "owner lock"):
+                PowerTransaction.recover(t.journal_path, sysfs_root=self.root,
+                    fileops=self.drv, lease_ok=lambda: True, processes_exited=True)
+        finally:
+            lock.release()
+        self.assertEqual(len(self.drv.log), count)
+        self.assertTrue(t.restore(processes_exited=True))
+
     def test_native_peer_journal_blocks_platform_apply(self):
         root = self.jd.parent
         self.jd = root / "flashnext/power/journals"
