@@ -51,14 +51,12 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 # The copy above is made from the (patched) upstream sources, so a change to any of them must regenerate it: without
 # these dependencies an existing build directory would keep the copy made from the old text.
 file(GLOB r4d_inputs CONFIGURE_DEPENDS ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_SRC}/libr4d/*.h ${RADIANCE_SRC}/libr4d/*.cpp
-     ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
+     ${RADIANCE_SRC}/libr4d/*.inc ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${r4d_inputs})
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/r3_groups.cmake)
 r3_read_unit_lines("${RADIANCE_SRC}" unit_lines)
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/exclude.txt excluded REGEX "^r4d_")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-  ${CMAKE_CURRENT_SOURCE_DIR}/r3_groups.cmake)
 foreach(group IN LISTS R3_KERNEL_GROUPS)
   set(r3_group_units_${group} "")
 endforeach()

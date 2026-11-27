@@ -180,7 +180,7 @@ def gate1(engine: str, tree: Path) -> dict[str, list[str]]:
 
     failures: dict[str, list[str]] = {}
     for component in components.load_all(paths.REPO_ROOT, engine).values():
-        if (component.root / radiance_bump.REWRITE_SCRIPT).is_file():
+        if (component.root / radiance_bump.REWRITE_SCRIPT).is_file() or component.name == "libr2":
             failures.update(radiance_bump.rewrite_drift(component, tree))
     return failures
 

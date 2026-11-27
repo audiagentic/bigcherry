@@ -295,6 +295,8 @@ def rewrite_drift(component: components.Component, source_dir: Path, runner: Rew
     """The component's rewrite script in its no-write mode against ``source_dir``: failing rules and blocks by file name,
     prefixed with the component. BumpCheckError when the script cannot run or does not answer with the JSON document."""
     script = component.root / REWRITE_SCRIPT
+    if component.name == "libr2":
+        script = component.root.parent / "libr3" / REWRITE_SCRIPT
     argv = [sys.executable, str(script), "--check", "--source", str(source_dir / REWRITE_SOURCE),
             "--rules", str(component.root / REWRITE_RULES)]
     if (component.root / REWRITE_NATIVE).is_dir():

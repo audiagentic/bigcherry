@@ -46,3 +46,9 @@ All 44 patches compose and native gate 1 passes; 64 targeted HIP syntax passes o
 ## RDNA2 inventory checkpoint
 
 Canonical build e48149491 completed the base link (libr4d.so at 658/662), then failed configuring libr2: old r4d_fused_quant_fp8 unit name. Upstream exact target retains gated FP8 and rotated quant entry points in renamed r4d_fused_quant. Updated libr2 units.txt; isolated CMake configure with the same pinned composed source, SDK and runtime prefix succeeds (all three gfx1030 units selected). No device compilation or runtime pass claimed.
+
+## Shared include fragments and kernel grouping checkpoint
+
+The 1977b71a5 canonical lane stopped because r4d_rows.cpp and r4d_shapes.cpp in libr2 could not include new DS41 .inc fragments. Shared rewriter now handles .inc and verifies quoted local include copying and missing r4d_*.inc; both CMake dependency lists include .inc. Gate 1 checks libr2 and libr3; libr2 reuses canonical mixed-case parser, keeps its three-unit allowlist. Removed redundant explicit r3_groups.cmake dependency after duplicate Ninja output surfaced. All 22 tests passed without skips (0.386s), exact production gate1 PASS. Both actual isolated component configurations copied eight fragments and compiled registry and shape objects with recipe SDK and prior candidate runtime prefix. libr3 registry warns rad_kernel_chain macro redefined; full link/runtime still unqualified.
+
+Grouping audit: 115 -> 130 unique upstream units, four renames and 15 additions, same eight families. core 34, gemm_quant 27, gemm_dense 6, attention 33, moe 4, speculation 5, multimodal 11, collectives 10. Configured manifest: 124 base units plus six overlay-owned. See KERNEL_GROUPS.md for explicit assignments; no ownership changes, .inc fragments are dependencies not units. No GPU or duplicate full engine build. Final canonical link and acceptance pending.

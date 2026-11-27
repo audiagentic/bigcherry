@@ -98,6 +98,38 @@ class RewriteCheckScriptTests(unittest.TestCase):
         self.assertIn("native/k.hip.rw: block 1", done.stderr)
         self.assertFalse(out.exists())
 
+    def test_include_fragments_are_rewritten_refreshed_and_removed(self):
+        root = _tmp(self)
+        component = _component(root)
+        source = root / "src/libr4d"
+        fragment = source / "rows.inc"
+        fragment.write_text("launch(a);\n")
+        (source / "uses.cpp").write_text('#include "rows.inc"\n')
+        out = root / "out"
+        argv = [sys.executable, str(component.root / "r3_rewrite.py"),
+                "--source", str(source), "--out", str(out),
+                "--rules", str(component.root / "rewrites.txt"),
+                "--native", str(component.root / "native")]
+        for content in ("launch(a);\n", "launch(a);\nint n = 1;\n"):
+            fragment.write_text(content)
+            done = subprocess.run(argv, capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual((out / fragment.name).read_text(),
+                             content.replace("launch(a);", "launch_gfx11(a);"))
+        (source / "rows.def").write_text("int n = 2;\n")
+        (source / "uses.cpp").write_text('#include "rows.def"\n')
+        self.assertIn("local include not copied: rows.def",
+                      radiance_bump.rewrite_drift(component, root / "src")["libfix/uses.cpp"])
+        (source / "uses.cpp").write_text('#include "r4d_missing.inc"\n')
+        self.assertIn("missing local include: r4d_missing.inc",
+                      radiance_bump.rewrite_drift(component, root / "src")["libfix/uses.cpp"])
+        (source / "uses.cpp").unlink()
+        fragment.unlink()
+        done = subprocess.run(argv, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse((out / "rows.inc").exists())
+        self.assertFalse((out / "uses.cpp").exists())
+
     def test_a_script_that_does_not_answer_is_a_check_that_could_not_run(self):
         component = _component(_tmp(self))
         broken = subprocess.CompletedProcess([], 2, stdout="", stderr="usage: boom")
