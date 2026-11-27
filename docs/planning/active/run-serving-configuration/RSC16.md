@@ -19,7 +19,7 @@ Deliver model-neutral shared paged cache planning and admission for independent 
 
 ## Steps
 
-A. Instrument per-rank ledger and reproduce 512K IQ8R BF16_I8 refusal. B. Native capacity intent and exact per-rank common-token solver; version calibration and replay. C. Runtime allocation, fairness and existing metrics. D. Mixed-length GPU proof with actual token counts. E. Cross-family/tier/fleet regressions and release acceptance; use ENG04/ENG03/MEN17.
+1. RSC17 owns A/B: instrument failure, typed native intent, exact allocation and sealed policy. 2. RSC18 owns C: live accounting, scheduler pressure and metrics; depends on RSC17. 3. RSC16 integrates D/E: overlapping mixed-length GPU and cross-family/tier/fleet tests, release decision. Reuse ENG04/ENG03/MEN17 and RSC12; no duplicate implementation.
 
 ## Detailed Solution & Technical Design
 
@@ -35,7 +35,7 @@ A. Instrument per-rank ledger and reproduce 512K IQ8R BF16_I8 refusal. B. Native
 
 ## Validation
 
-Card-free arithmetic, schema, replay, tiny-model concurrency, rollback and fairness gates; managed GPU captures under lease. Compare existing baselines with explicit thresholds. Separate stock/efficient. See design.
+RSC17 and RSC18 card-free gates required. RSC16 owns managed installed GPU proof, actual per-rank/group capacity versus observed pages and allocations, mixed resident lengths, accuracy and performance, legacy and unsupported-path regressions. Owner-approved thresholds before promotion.
 
 ## Effort & Risk
 
@@ -53,6 +53,13 @@ No S*L backing demand in shared mode; independently reported L/S/C; measured per
 
 Motivation: 2020.23.1 IQ8R TP3, yarn:2, bf16_i8, 524288, 16/8/4 slots and batch512 refused RAD_E_NOMEM at refit; no inference. RSC12 owns variants, ENG04 owns format/quality, MEN17 release acceptance. No GPU or code changes in planning stage.
 
+Code-level review RV4697: reuse existing fresh-prefill/recompute guards and KVManager; measure rectangular BatchBuilder overhead before changing ABI; replace fixed-inclusive kv_one/L assumptions in shared mode; rank feasibility must use same-rank costs. See docs/design/radiance-shared-kv-capacity-code-guide.md. No implementation yet.
+
 ## Change Log
 
 - 2026-11-27T03:33:31.874138+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4697
+- 2026-11-27T03:42:47.951296+00:00 (updated-by): Updated: section:steps, section:notes, section:validation

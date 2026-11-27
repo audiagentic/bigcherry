@@ -2,6 +2,8 @@
 
 Status: proposed engine contract; not implemented or qualified.
 Date: 2026-11-27. Owner scope: Radiance generic serving and memory planning.
+Implementation detail: [code-level guide](radiance-shared-kv-capacity-code-guide.md).
+RSC17 owns startup planning and RSC18 owns runtime; RSC16 integrates and qualifies.
 The client harness owns client-specific context limits. The engine owns physical
 capacity, maximum request length, active sequence slots and safe scheduling.
 No model-specific exceptions, static reservations of one max window per client,
@@ -26,6 +28,8 @@ the single authored interface, per existing native launch design.
 Separate L (maximum logical tokens per request including output), S (maximum
 active slots), and C (aggregate logical paged-token target). C=auto means
 largest safe backing after fixed allocations and configured headroom, not S*L.
+Resolve at startup from measured facts, then track actual occupied pages at
+runtime. No automatic live physical pool expansion beyond sealed capacity.
 An explicit aggregate target means minimum guaranteed shared capacity; if
 unattainable refuse with limiting rank and measured deficit. Report achieved
 capacity separately. No implicit host tier or reduced precision. L must be
@@ -75,7 +79,8 @@ other paths retain legacy behavior until their gates pass.
 Reuse existing paged allocation, prefix cache, preemption and prefill governor.
 At request admission check L, S and actual per-group allocatable pages plus
 fixed slot state; distinguish queued requests from active slots. Account for
-prompt plus reserved output and speculative/temporary pages; grow incrementally
+actual prompt, bounded next-step output and speculative/temporary pages (not
+each client's maximum output or context); grow incrementally
 with atomic multi-group/rank allocation or rollback. Prevent deadlock when
 several requests fill cache: evict unreferenced prefixes first, then existing
 bounded preempt/resume policy or queue/refuse with actionable capacity reason.
