@@ -90,6 +90,8 @@ RV4754: required baseline gate is resolving documented concurrent medium-prompt 
 
 Matched TP2 regression screen: released 2.2 bc-radiance-2020.24.1 vs candidate 927a24bf85c2ac29d3dbe0b779063323 default vs tuned pipe on/min256 batch4096 interleave off mixed250; three repeats at 2/4 streams, 4096/128 and 512/128; 36 rounds, all exact prompt hashes and per-stream token counts matched, paired native receipts and six portable exports, zero preemptions. Long aggregate 2/4: old49.662/42.315, default50.790/42.763, tuned49.998/56.798; four-stream worst TTFT 11.0095/10.9684/7.7688s, p95 gap28.606/27.465/273.160ms. Short aggregate 148.286/229.950,153.690/232.900,159.728/218.523. Existing inversion persists at default; tuned restores scaling but materially worsens latency, not promote. Need narrower latency-safe scheduling, repeat ABBA and mixed/quality qualification. Evidence baseline-matched-tp2.json. Failed lab setup and record attempts preserved; no GPU lease left. Native record validity still unverified, no formal acceptance claim.
 
+Historical raw recovery: 18 ab-tp2 VTP36 records indexed. Seed1 2020.8.5 W (TP2 wht6) and T (TP3 exact) both have 6 successful eight-stream rounds across two launches. Content-addressed records verified, all eight prompt SHA256 and actual prompt counts match existing 2.3 512/192 screen exactly; all generated counts 192. TP2 historical seed1 median327.1015 t/s/2496.67ms max TTFT/36.5655ms p95 gap vs tuned355.173/2017.25/37.732. TP3 360.8315/2053.02/38.5305 vs tuned350.280/1987.82/40.298. Same cohort inputs now established, but historical engine/model provenance remains legacy and launch spread differs; not independent formal acceptance. Eight older 4K/256 RUM06/RUM09 records recovered with same seed1 prompt family; different output length than 4K/128 or 512, distinct tuning. See historical-cohort-reconciliation.json. No need to repeat all historical short benchmarks.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -114,3 +116,4 @@ Matched TP2 regression screen: released 2.2 bc-radiance-2020.24.1 vs candidate 9
 - 2026-11-27T14:18:57.650130+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:13:21.107632+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T20:17:48.556882+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T20:33:02.555776+00:00 (updated-by): Updated: section:notes
