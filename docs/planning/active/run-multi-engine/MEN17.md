@@ -88,6 +88,10 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 0 source finding: 2020.17.0 overlay parity evidence could not use normal baseline comparator because two launches in one measure share run_id; tools/bigcherry/core/results.py:70 intentionally requires distinct launch IDs. Correct existing producer to allocate distinct existing run IDs with common parent/campaign context (reuse core/workspace.py and campaign/planner.py patterns); preserve comparator independent-launch check, no new ID/receipt scheme. Card-free two-launch regression, replay existing receipts only where independent identity actually known. Bind actual candidate/installed home and independent reference, no redundant GPU measurement.
 
+Owner requires VTP59 medium-prompt prefill/decode batching fix before bump promotion. Current 2.2 baseline: four streams at 4096 prompt and 128 output collapse to 124.02 engine tok/s; interleave 0 restores 410.16 but p95 event gap rises to 974 ms. Require matched quality, latency and throughput validation of a balanced fix on old release and candidate; do not blindly turn interleave off.
+
+VTP59 expanded stability gate: audit all resolved profile defaults with field provenance before and after pin change; sparse prompt/output/concurrency boundary and arrival screening, then matched repeats on anomalies; qualify IQ8R/IQ6R TP2/TP3, long KV variants, FlashNext IQ4R/HCBF16 helper/native classes. Independent MRC08 cohort records must include realized tokens, effective scheduler settings and separate prefill/mixed/decode metrics; do not treat short-prompt kernel gates as concurrency qualification. No promotion until VTP59 fix and per-class checks accepted.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -112,3 +116,5 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 - RV4702
 - 2026-11-27T09:21:10.868081+00:00 (updated-by): Updated: section:validation
 - 2026-11-27T09:22:03.040708+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-27T09:45:30.038198+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T10:09:00.551273+00:00 (updated-by): Updated: section:notes
