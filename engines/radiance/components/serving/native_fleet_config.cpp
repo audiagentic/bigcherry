@@ -263,7 +263,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"scheduler", {{"interleave_authored", cfg.prefill_interleave_set},
                                         {"interleave_steps", cfg.prefill_interleave},
                                         {"interleave_share", cfg.prefill_interleave < 0
-                                            ? nlohmann::json(cfg.prefill_interleave_share) : nlohmann::json(nullptr)},
+                                            ? nlohmann::json(nlohmann::json(cfg.prefill_interleave_share).dump()) : nlohmann::json(nullptr)},
                                         {"mixed_step_target_ms", cfg.mixed_step_target_ms},
                                         {"mixed_step_target_authored", cfg.given.contains("--mixed-step-target-ms")},
                                         {"room_gate", cfg.prefill_room_gate},

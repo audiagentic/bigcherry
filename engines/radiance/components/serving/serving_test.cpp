@@ -1555,10 +1555,18 @@ void session_engine_plan(Fixture& t) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tune_pin", ""}}.dump(); });
             refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
+            for (const auto& share : {"0.25", "1.0", "0.12345678901234568"}) {
+                const std::string pass = preflight([&](ss::Env& e) {
+                    e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"prefill_interleave", nullptr}}.dump();
+                    e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_authored", true},
+                        {"interleave_steps", -1}, {"interleave_share", share}}.dump();
+                });
+                if (!pass.empty()) throw std::runtime_error("preflight: valid automatic interleave refused: " + pass);
+            }
             refused_for("invalid scheduler room_gate", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"room_gate", "on"}}.dump(); });
             refused_for("invalid scheduler interleave", [](ss::Env& e) {
-                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", -1}, {"interleave_share", 5.0}}.dump(); });
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", -1}, {"interleave_share", "5.0"}}.dump(); });
             refused_for("inconsistent scheduler interleave", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", 2}}.dump(); });
             refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });

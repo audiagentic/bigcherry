@@ -57,8 +57,11 @@ Owner build: bc_serving_test and bc_session_test linked. Matched Radiance host b
 
 Second slice: native inspector v3 projects parse-time scheduler values and authorship (interleave steps/share, mixed-step target, room gate, long-prefill threshold, preemption wait). Distinguishes omitted, zero, auto and auto:1 without upstream patches. Strict owner validation and parser/mutation tests added. Effective bring-up receipt/manifest reconciliation and capability qualification remain pending; runtime test execution requires authorized runner.
 
+CTest is authorized. Initial native parser and all four session groups passed; serving mutation gate exposed strict JSON rejecting floating-point shares. Fixed with round-trip decimal text, bounded numeric validation, strict-parser regression and valid auto-share admission tests; bc-serve explain now surfaces parsed scheduler. Rebuilt both owners: native test 1/1 passed, serving/session tests 5/5 passed (58.90s). Native /diagnostics already exposes configuration option/value/source and bring-up decisions; next slice should reuse it for effective-value reconciliation without a new engine patch. GPU/capability gates remain pending.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
 - 2026-11-27T12:58:57.211030+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T13:14:50.590396+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T13:22:28.116046+00:00 (updated-by): Updated: section:notes

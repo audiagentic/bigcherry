@@ -2584,9 +2584,18 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
             throw PlanFailed(std::string("native config inspector: invalid scheduler ") + key);
     const auto& steps = scheduler.at("interleave_steps");
     const auto& share = scheduler.at("interleave_share");
+    bool valid_share = share.is_null();
+    if (steps == -1 && share.is_string()) {
+        const auto& decimal = share.get_ref<const std::string&>();
+        double value = 0;
+        const auto parsed = std::from_chars(decimal.data(), decimal.data() + decimal.size(), value);
+        valid_share = parsed.ec == std::errc{} && parsed.ptr == decimal.data() + decimal.size() &&
+                      value > 0 && value <= 4;
+    } else if (steps == -1) {
+        valid_share = false;
+    }
     if (!steps.is_number_integer() || steps < -1 || steps > 64 ||
-        scheduler.at("mixed_step_target_ms") > 60000 ||
-        (steps == -1 ? (!share.is_number() || !(share > 0 && share <= 4)) : !share.is_null()))
+        scheduler.at("mixed_step_target_ms") > 60000 || !valid_share)
         throw PlanFailed("native config inspector: invalid scheduler interleave or mixed-step target");
     const Json fixed = scheduler.at("interleave_authored") == true && steps >= 0 ? steps : Json(nullptr);
     if (fixed != runtime.at("prefill_interleave"))

@@ -290,11 +290,13 @@ int main() {
         std::cout.rdbuf(saved);
         ::close(fd);
         check(status && *status == 0, "explicit scheduler inspection failed");
-        const auto scheduler = Json::parse(buf.str()).at("engine").at("scheduler");
+        const auto strict_report = v2::parse_strict_json(buf.str(), "scheduler inspector receipt");
+        check(static_cast<bool>(strict_report), "scheduler receipt incompatible with strict JSON");
+        const auto scheduler = strict_report.value().at("engine").at("scheduler");
         const bool automatic = mode != "0";
         check(scheduler == Json({
                   {"interleave_authored", true}, {"interleave_steps", automatic ? -1 : 0},
-                  {"interleave_share", automatic ? Json(mode == "auto" ? 0.25 : 1.0) : Json(nullptr)},
+                  {"interleave_share", automatic ? Json(mode == "auto" ? "0.25" : "1.0") : Json(nullptr)},
                   {"mixed_step_target_ms", 17}, {"mixed_step_target_authored", true},
                   {"room_gate", true}, {"room_gate_authored", true},
                   {"long_prefill_token_threshold", 128}, {"long_prefill_authored", true},
