@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -101,11 +102,13 @@ class RadianceAdapter(EngineAdapter):
 
     def compile_checks(
         self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+        canonical_build: Callable[[], Path] | None = None,
     ) -> tuple[BumpCheck, ...]:
         """The component gate: build the engine and its components, check every plugin's ABI, run the component tests."""
         from . import radiance_bump
 
-        return radiance_bump.compile_checks(context, source_dir, workdir, platform_name=platform_name)
+        return radiance_bump.compile_checks(context, source_dir, workdir, platform_name=platform_name,
+                                            canonical_build=canonical_build)
 
     def source_drift_checks(self, context: ProjectContext, source_dir: Path) -> tuple[DriftCheck, ...]:
         """libr3's native rewrites, run against the bumped libr4d sources."""

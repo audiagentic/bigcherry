@@ -232,11 +232,13 @@ class EngineAdapter(ABC):
     @abstractmethod
     def compile_checks(
         self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+        canonical_build: Callable[[], Path] | None = None,
     ) -> tuple[BumpCheck, ...]:
         """The checks pin-bump's compile phase runs on the patched tree ``source_dir`` (``workdir`` is scratch space for
         them), in order; the first failing check STOPs the bump. ``platform_name`` is the recipe ``[platform.*]`` named by
         ``--platform``; a gate that builds configures exactly as ``bigcherry build`` does for that platform and raises
-        ValueError when it is missing or unknown, a gate that does not build ignores it."""
+        ValueError when it is missing or unknown, a gate that does not build ignores it. An optional
+        canonical_build callback supplies the planner-built runtime to a component gate instead of a scratch build."""
 
     @abstractmethod
     def source_drift_checks(self, context: ProjectContext, source_dir: Path) -> tuple[DriftCheck, ...]:

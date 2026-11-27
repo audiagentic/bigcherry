@@ -1735,7 +1735,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
         return pin_bump.LaneBuildOutcome(
             build_plan_id="plan-123", build_dir=Path("/builds/slice/plan-123"), binary_sha256="f" * 64)
 
-    def _run(self, *, cpu_phase=None, **kwargs):
+    def _run(self, *, cpu_phase=None, compile_phase=None, **kwargs):
         clean_report = {"checks": [], "summary": {}, "patches": []}
         known_good = pin_bump.patch_rebase.ApplyKnownGoodResult(
             ok=True, selected_patch_ids=(), known_good_patch_ids=(), partial=False)
@@ -1756,6 +1756,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
                 patch.object(pin_bump, "run_phase_declare", return_value="c" * 40),
                 patch.object(pin_bump, "_selector_patch_ids", return_value=("0100_x",)),
                 patch.object(pin_bump, "_sync_campaign_mirror_best_effort"),
+                patch.object(pin_bump, "run_phase_drift"),
                 patch("bigcherry.cli.source.cmd_pull", return_value=0),
                 patch("bigcherry.source.audit.audit", return_value=clean_report),
                 patch("bigcherry.source.audit.passed", return_value=True),
@@ -1768,7 +1769,7 @@ class LaneBuildPhaseTests(unittest.TestCase):
                 patch.object(pin_bump, "run_patch_tests", return_value=[]),
                 patch.object(pin_bump, "_write_release_doc_best_effort"),
                 patch.object(pin_bump, "_commit_release_records", side_effect=self._commit_mark),
-                patch.object(pin_bump, "run_phase_compile", return_value="compiled-tree-oid"),
+                patch.object(pin_bump, "run_phase_compile", return_value="compiled-tree-oid", side_effect=compile_phase),
                 patch.object(pin_bump, "_compile_tree_oid", return_value="compiled-tree-oid"),
                 patch.object(pin_bump, "execute_lane_build", side_effect=self._fake_lane),
                 patch.object(pin_bump, "run_phase_cpu_smoke", side_effect=cpu_phase or default_cpu_phase),
@@ -1789,6 +1790,29 @@ class LaneBuildPhaseTests(unittest.TestCase):
         self._run()
         self.assertEqual(self.commit_marks[0], 0, "the records are committed before the lane build, not only after it")
         self.assertEqual(self.commit_marks[-1], 1, "and again at completion")
+
+    def test_radiance_compile_and_cpu_smoke_share_one_canonical_lane(self):
+        import hashlib
+        from bigcherry.core import engines, paths
+        build_dir = self.root.parent / "canonical"
+        binary = build_dir / engines.load(paths.REPO_ROOT, "radiance").serve.binary
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"canonical launcher")
+        original_lane = self._fake_lane
+        def build(**kwargs):
+            original_lane(**kwargs)
+            return pin_bump.LaneBuildOutcome("plan-123", build_dir, hashlib.sha256(binary.read_bytes()).hexdigest())
+        self._fake_lane = build
+        def compile(**kwargs):
+            self.assertEqual(kwargs["canonical_build"](), build_dir)
+            self.assertEqual(kwargs["canonical_build"](), build_dir)
+            self.order.append("component-checks")
+            return "compiled-tree-oid"
+        result = self._run(engine="radiance", source_name="radiance", compile_phase=compile)
+        self.assertEqual(self.order, ["lane-build", "component-checks", "cpu-smoke"])
+        self.assertEqual(len(self.lane_calls), 1)
+        self.assertEqual(self.cpu_mock.call_args.kwargs["build_dir"], build_dir)
+        self.assertEqual(result.state.lane_build_status, "passed")
 
     def test_phase_order_puts_lane_build_between_compile_and_cpu_smoke(self):
         phases = pin_bump.PHASES

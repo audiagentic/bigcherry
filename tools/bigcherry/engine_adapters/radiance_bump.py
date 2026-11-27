@@ -125,6 +125,7 @@ class ComponentGate:
     def __init__(
         self, context: ProjectContext, source_dir: Path, workdir: Path, runner: Runner, abi_reader: AbiReader,
         platform_name: str | None, lister: runtime_bundle.TestLister,
+        canonical_build: Callable[[], Path] | None = None,
     ):
         self.engine = context.engine
         self.layout = context.layout
@@ -136,6 +137,7 @@ class ComponentGate:
         self.declared = components.load_all(paths.REPO_ROOT, context.engine)
         self.platform = _build_platform(context.engine, platform_name) if self.declared else None
         self.built = False
+        self.canonical_build = canonical_build
 
     @property
     def home(self) -> Path:
@@ -144,6 +146,14 @@ class ComponentGate:
     def build(self) -> list[str]:
         """Configure and build the engine for the components' GPU targets, then build the components (runtime_bundle)."""
         if not self.declared:
+            return []
+        if self.canonical_build is not None:
+            # The planner already built the selected engine and every declared runtime component.
+            # ABI and component tests below consume that exact build, not a second scratch build.
+            self.build_dir = self.canonical_build()
+            if not self.home.is_dir():
+                return [f"canonical lane has no runtime home: {self.home}"]
+            self.built = True
             return []
         platform = self.platform
         targets = sorted({*platform.targets, *(t for component in self.declared.values() for t in component.targets)})
@@ -250,8 +260,9 @@ class CompositionGates:
 def compile_checks(
     context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = run_checked,
     abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
+    canonical_build: Callable[[], Path] | None = None,
 ) -> tuple[BumpCheck, ...]:
-    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)
+    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister, canonical_build)
     composition = CompositionGates(context, source_dir)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"
     return (

@@ -1199,6 +1199,7 @@ def run_phase_compile(
     recipe_report_path: Path,
     target_ref: str,
     platform_name: str | None,
+    canonical_build: Callable[[], Path] | None = None,
 ) -> str:
     """Run the engine's compile checks (its adapter's ``compile_checks``) and return the checked tree OID.
 
@@ -1206,8 +1207,11 @@ def run_phase_compile(
 
     resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
     try:
+        kwargs: dict[str, Any] = {"platform_name": platform_name}
+        if canonical_build is not None:
+            kwargs["canonical_build"] = canonical_build
         checks = adapter(engine).compile_checks(
-            ProjectContext.resolve(engine=engine), vendor_root, workdir, platform_name=platform_name)
+            ProjectContext.resolve(engine=engine), vendor_root, workdir, **kwargs)
     except (ValueError, OSError) as exc:
         raise PinBumpStop(
             "compile",
@@ -2247,6 +2251,18 @@ def _run_phases(
             state.advance(report_dir, "apply", "compile")
 
         if state.next_phase == "compile":
+            canonical_outcome: LaneBuildOutcome | None = None
+            canonical_lane = f"{selector_name}:{build_name}:{platform_name}"
+
+            def build_for_compile() -> Path:
+                nonlocal canonical_outcome
+                if canonical_outcome is None:
+                    _commit_release_records(repo_root=repo_root, target_ref=target_ref)
+                    canonical_outcome = run_phase_lane_build(
+                        engine=engine, lane=canonical_lane, run_id=f"pin-bump-{state.run_id[:12]}",
+                        target_ref=target_ref)
+                return canonical_outcome.build_dir
+
             if skip_compile:
                 compile_tree_oid = _compile_tree_oid(
                     engine, vendor_root, state.selector_patch_ids
@@ -2261,8 +2277,18 @@ def _run_phases(
                     recipe_report_path=recipe_report_path,
                     target_ref=target_ref,
                     platform_name=platform_name,
+                    **({"canonical_build": build_for_compile}
+                       if not skip_cpu_smoke
+                       and cpu_smoke_build is None and build_name and platform_name else {}),
                 )
                 state.compile_status = "passed"
+                if canonical_outcome is not None:
+                    state.lane_build_status = "passed"
+                    state.lane_build_name = build_name or ""
+                    state.lane_build_lane = canonical_lane
+                    state.lane_build_plan_id = canonical_outcome.build_plan_id
+                    state.lane_build_dir = str(canonical_outcome.build_dir)
+                    state.lane_build_binary_sha256 = canonical_outcome.binary_sha256
             state.compile_platform = platform_name or ""
             state.compile_tree_oid = compile_tree_oid
             state.advance(report_dir, "compile", "evidence")
@@ -2292,8 +2318,20 @@ def _run_phases(
                 # The lane build refuses a dirty controller tree and the records written so far are this run's own:
                 # commit exactly those (idempotent) before it, not only at the end.
                 _commit_release_records(repo_root=repo_root, target_ref=target_ref)
-                outcome = run_phase_lane_build(
-                    engine=engine, lane=lane, run_id=f"pin-bump-{state.run_id[:12]}", target_ref=target_ref)
+                if state.lane_build_status == "passed":
+                    # The compile gates already checked this exact canonical build.
+                    binary = Path(state.lane_build_dir) / engines.load(paths.REPO_ROOT, engine).serve.binary
+                    if (state.lane_build_lane != lane or not state.lane_build_plan_id
+                            or not binary.is_file()
+                            or _sha256_file(binary) != state.lane_build_binary_sha256):
+                        raise PinBumpStop("lane-build", "LANE_BUILD_FAILED",
+                                          "the canonical build checked during compile is missing or changed",
+                                          recommended_actions=["restore the checked build or start a fresh bump"])
+                    outcome = LaneBuildOutcome(state.lane_build_plan_id, Path(state.lane_build_dir),
+                                               state.lane_build_binary_sha256)
+                else:
+                    outcome = run_phase_lane_build(
+                        engine=engine, lane=lane, run_id=f"pin-bump-{state.run_id[:12]}", target_ref=target_ref)
                 state.lane_build_status = "passed"
                 state.lane_build_lane = lane
                 state.lane_build_plan_id = outcome.build_plan_id
