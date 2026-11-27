@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_201439_record-canonical-candidate-per_1954",
+  "files": [
+    "tools/bigcherry/bench/workloads.py",
+    "tools/bigcherry/bench/radiance_lab_records.py",
+    "tools/tests/bench/test_mrc06_producers.py"
+  ],
+  "plan-item-ids": [
+    "MRC08",
+    "MEN17"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Resolve canonical build source revision through verified materialization rather than empty or controller revision.",
+  "timestamp-utc": "2026-11-27T20:14:39.684186Z",
+  "user-summary-candidate": "Record canonical candidate performance with verified upstream source identity."
+}

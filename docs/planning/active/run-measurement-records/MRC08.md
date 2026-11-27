@@ -56,6 +56,8 @@ Draft adds opt-in --record and --export-dir, with a local record written before 
 
 RV4754: committed capture/export changes merged into bump and combined tests passed. Baseline must consume exact candidate and independent old runtime, matching cohort and quality; unverified data stays unverified. General export retry, depth and warm matrices after baseline.
 
+MEN17 matched native candidate record attempt identified canonical source metadata lacks source_commit (only source_slice_id), causing run-record validation failure. Reuse worker materialization attestation and actual source verification when publishing candidate record; retain source sidecar as evidence, installed identity continues tag-bound. Legacy lab slice-only records stay unverified. 50 targeted tests passed.
+
 ## Change Log
 
 - 2026-11-27T08:36:23.897113+00:00 (created-by): Created by agent
@@ -66,3 +68,4 @@ RV4754: committed capture/export changes merged into bump and combined tests pas
 - 2026-11-27T08:40:12.305943+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T09:39:36.725327+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:14:05.801833+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T20:14:39.641368+00:00 (updated-by): Updated: section:notes

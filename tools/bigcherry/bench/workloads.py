@@ -307,13 +307,38 @@ def _metric_phase(name: str) -> str | None:
     return None
 
 
-def _release_identity(root: Path, meta: dict, receipt_path: Path | None) -> tuple[dict, dict]:
+def _release_identity(root: Path, meta: dict, receipt_path: Path | None, *, allow_slice_only: bool = False) -> tuple[dict, dict]:
     # Release binaries may be stripped: source build metadata names the
     # pre-packaging bytes, whereas the tag receipt names the shipped bytes.
     manifest_path = root / "bundle.json"
     install_path = root / "install.json"
     if not manifest_path.exists() and receipt_path is None:
-        return meta, {}
+        if meta.get("source_commit"):
+            return meta, {}
+        if allow_slice_only and not (root / "CMakeCache.txt").is_file():
+            # Legacy lab records carry an explicit source-slice identity only.
+            # They remain unverified, never qualified acceptance records.
+            return meta, {}
+        # Canonical development builds record the source slice rather than
+        # the upstream revision. Resolve the verified materialization, not
+        # the current controller checkout's commit.
+        from ..campaign.build import CampaignBuildError, _source_metadata_path
+        from ..campaign.workers import _source_attestation, _verify_source
+        try:
+            cache = (root / "CMakeCache.txt").read_text(encoding="utf-8")
+            source = Path(next(line.split("=", 1)[1] for line in cache.splitlines()
+                               if line.startswith("CMAKE_HOME_DIRECTORY:")))
+            sidecar = _source_metadata_path(source)
+            if not sidecar.is_file() or not meta.get("source_slice_id"):
+                raise ValueError("source materialization metadata missing")
+            attestation = _source_attestation(source, source_slice_id=meta["source_slice_id"])
+            if attestation is None:
+                raise ValueError("source attestation missing")
+            _verify_source(source, attestation)
+        except (OSError, ValueError, KeyError, StopIteration, CampaignBuildError) as exc:
+            raise WorkloadError(f"candidate source identity unavailable: {exc}") from exc
+        return {**meta, "source_commit": attestation.upstream_revision}, {
+            "source_attestation": sidecar.read_bytes()}
     from ..release import runtime_assets
     if receipt_path is not None:
         receipt = receipt_path.read_bytes()

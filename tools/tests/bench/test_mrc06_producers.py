@@ -529,6 +529,26 @@ def test_scheduler_expectations_from_sealed_owner(authored, steps, share, expect
         _context_tuning_expectations(ctx)
 
 
+def test_candidate_identity_resolves_materialized_source(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from bigcherry.campaign import workers
+    _, meta, binary = _manifest(tmp_path)
+    root = binary.parent.parent
+    meta.pop("source_commit")
+    source = tmp_path / "source"
+    (root / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n")
+    with pytest.raises(ValueError, match="materialization metadata missing"):
+        workloads._release_identity(root, meta, None)
+    (tmp_path / "source.metadata.json").write_text("{}")
+    monkeypatch.setattr(workers, "_source_attestation",
+                        lambda *a, **kw: SimpleNamespace(upstream_revision="a"*40))
+    verified = []
+    monkeypatch.setattr(workers, "_verify_source", lambda *a: verified.append(a))
+    identity, inputs = workloads._release_identity(root, meta, None)
+    assert verified and identity["source_commit"] == "a"*40
+    assert inputs["source_attestation"] == b"{}"
+
+
 def test_release_record_identity_binds_shipped_binary_and_source(tmp_path, monkeypatch):
     import hashlib
     from bigcherry.release import runtime_assets

@@ -84,7 +84,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         raise run_records.RecordError("native build binary hash is not SHA-256")
     from .workloads import _release_identity
     try:
-        metadata, release_inputs = _release_identity(build, metadata, None)
+        metadata, release_inputs = _release_identity(build, metadata, None, allow_slice_only=True)
     except (OSError, ValueError, KeyError) as exc:
         raise run_records.RecordError(f"invalid native release identity: {exc}") from exc
     binary = build / "bin/radiance"
