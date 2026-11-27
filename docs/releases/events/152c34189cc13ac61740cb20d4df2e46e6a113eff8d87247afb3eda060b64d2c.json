@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261127_042506_run-records-can-now-represent_8774",
+  "files": [
+    "tools/bigcherry/core/schemas/run-record-v1.schema.json",
+    "tools/bigcherry/core/run_records.py",
+    "tools/bigcherry/core/results.py",
+    "tools/bigcherry/cli/results.py",
+    "docs/reference/tooling/TOOLING.md"
+  ],
+  "plan-item-ids": [
+    "MEN29"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Generalized MRC01 metric groups and query qualification beyond decode/prefill/TTFT; added typed metric metadata and versioned namespaced extension payloads. Archived KLD data migration remains deferred until the new schema is released, to avoid making records unreadable by deployed v1 readers.",
+  "timestamp-utc": "2026-11-27T04:25:06.811282Z",
+  "user-summary-candidate": "Run records can now represent and query quality metrics such as KLD alongside performance metrics, with versioned extension payloads for future structured additions."
+}
