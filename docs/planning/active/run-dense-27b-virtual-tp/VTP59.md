@@ -68,6 +68,8 @@ TP3 IQ8R same release, 1/8 streams, 128 outputs, one repetition per cell, target
 
 Fast host scheduler screen implemented in tools/lab/radiance/scheduler_burst.{cpp,py}, reuses real upstream sched_test.cpp and existing HIP-off rad_core archive. 62 scenarios, 18,157 checks, 0.06 s CPU (0.08 wall), 5.4 s compile/link; 23 launcher and existing kernel-harness pytest checks passed. Synthetic cost injection demonstrates 8x4096/128 auto 201 decode-containing steps peak 5 vs tuned 79 peak 8; all 1024 outputs and exact input rows completed. Not a GPU prediction; existing 2.2 host build scheduler/test source hashes match inspected 2.2 snapshot, not full candidate provenance. Promote to CTest in canonical build lane, generate scenarios from MRC08 workload keys, replay measured per-class cost curves, add negative mutation and arrival/KV pressure cases, native effective default drift tests; use unit_harness/kernel-group replay for changed kernels, narrow full serving gate for real latency/quality/communication.
 
+VTP60 owns reusable fast qualification integration; see docs/design/radiance-fast-qualification.md. VTP59 retains pre-bump production scheduler qualification.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -81,3 +83,4 @@ Fast host scheduler screen implemented in tools/lab/radiance/scheduler_burst.{cp
 - 2026-11-27T10:08:29.661326+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-11-27T10:11:26.253821+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:17:55.733251+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T10:26:28.686503+00:00 (updated-by): Updated: section:notes
