@@ -71,6 +71,8 @@ Guide K is normative 2.3 implementation map, A-J requirements retained. Source c
 
 Readiness review guide L closes initial support and launch contract decisions; no extra plan or new subsystems. RSC17/RSC18 implement in order on final rechecked merged 2.3 baseline. Explicit unsupported combinations remain legacy; validate target Qwen hybrid path, distinguish cold packed L from mixed request guarantee. Integration owns versioned receipt/ready evidence and one canonical candidate, not repeated full builds. No qualification claimed.
 
+RV4754 baseline-first decision: keep full new L/S/C shared capacity as post-baseline implementation on exact qualified 2.3. Preserve plan steps, design guide L and acceptance. Bump must retain existing capacity/admission and correct only demonstrated legacy defects; no new shared-mode release gate, no duplicate allocator.
+
 ## Change Log
 
 - 2026-11-27T03:33:31.874138+00:00 (created-by): Created by agent
@@ -90,3 +92,4 @@ Readiness review guide L closes initial support and launch contract decisions; n
 - RV4750
 - RV4751
 - 2026-11-27T07:29:37.209550+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:12:34.555899+00:00 (updated-by): Updated: section:notes

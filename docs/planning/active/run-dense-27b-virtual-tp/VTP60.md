@@ -67,6 +67,8 @@ TTFT phase instrumentation first increment: stream_bench.py records client start
 
 Extended existing RUM09 analyzer with single-request prefill/first-token mode --prefill-ranks, rank interval union, draft/overlap/unattributed durations and step-count checks. Replayed actual TP2 trace: 1495.006506 ms client, 1470.676011 main,21.294446 draft,3.036049 unattributed; all GPU segments unclassified. 37 targeted tests passed. Evidence phase-analysis.json. Native live-op trace patch rad0072 commit d611b548e in node/live-prefill-trace (isolated bump-based worktree): shared phase ring, actual lane/op index/collective status, preserves capture and replay; unclassified capture envelope not compute. Applied and CPU radiance build passed; GPU-enabled build request blocked, no GPU trace with patch. Patch untested/not in recipe; exact row/provider mapping, capture coverage, mixed/request lifecycle and on/off parity gates outstanding. Fold into RUM09 once qualified.
 
+RV4754: use already integrated native host tests, stream phase correction and receipts for baseline. Full rad-tune/rad-kbench format extension, simulator evolution, phase-trace production seam and held-out tuning campaign follow baseline unless required to prove affected regression; no experimental recipe promotion. Committed portion integrated, separate staged amendment remains in source worktree.
+
 ## Change Log
 
 - 2026-11-27T10:22:17.436914+00:00 (created-by): Created by agent
@@ -83,3 +85,4 @@ Extended existing RUM09 analyzer with single-request prefill/first-token mode --
 - 2026-11-27T11:27:49.418209+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T12:01:46.381304+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T12:11:05.716331+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:13:29.031686+00:00 (updated-by): Updated: section:notes

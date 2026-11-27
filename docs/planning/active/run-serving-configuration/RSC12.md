@@ -102,6 +102,8 @@ Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPL
 
 Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md section Scope and acceptance rule governs. Preserve behavior; smallest native launch and YAML policy change, no generalized machinery. Reuse existing tests/evidence, one shared dense/helper installed acceptance plus materially different affected paths only; cheap parser checks across approved YAMLs. Independent outstanding work stays with its owner, not a blanket S18 prerequisite.
 
+RV4754: baseline preserve all approved YAML variants, native parser and cache compatibility; defer variant deletion/consolidation unless proven identical and separately approved. RSC19 is integrated; do not introduce second resolver.
+
 ## Status 2026-11-19
 
 Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml` with named variants, strict loader, `bc-serve explain`, and stored manifests (a start of an unchanged config replays the stored manifest; policy-on replay fixed in #1177). Step 6 (retire `server-args` and `[layout.NAME.settings]`, the layout files) depends on RSC04's leftovers. Open review RV4230 (reuse the verified Radiance bundle identity within a named start) stays open. Note for operators: the replay key hashes every operator `--set`, so any differing `--set` plans afresh instead of replaying.
@@ -131,3 +133,4 @@ Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml`
 - 2026-11-25T03:26:20.544488+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T03:34:12.454886+00:00 (updated-by): Updated: section:steps
 - 2026-11-25T04:30:25.792580+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-27T15:13:05.777438+00:00 (updated-by): Updated: section:notes

@@ -92,6 +92,8 @@ Owner requires VTP59 medium-prompt prefill/decode batching fix before bump promo
 
 VTP59 expanded stability gate: audit all resolved profile defaults with field provenance before and after pin change; sparse prompt/output/concurrency boundary and arrival screening, then matched repeats on anomalies; qualify IQ8R/IQ6R TP2/TP3, long KV variants, FlashNext IQ4R/HCBF16 helper/native classes. Independent MRC08 cohort records must include realized tokens, effective scheduler settings and separate prefill/mixed/decode metrics; do not treat short-prompt kernel gates as concurrency qualification. No promotion until VTP59 fix and per-class checks accepted.
 
+RV4754 baseline-first: consume MRC08/MEN29, not duplicate their record system. Current helper-ab uses legacy flags, diagnostic/observe, ambient RAD_BIN/RAD_HOME; helper-kld records same-run reference. These cannot qualify promotion. Fail closed before GPU for wrong/missing candidate, missing independently identified reference or diagnostic-only record; use existing benchmark/lab records and native owner. Required affected existing-model/format/topology cohorts, scheduler regression and quality; broad optimization and new shared KV mode after baseline.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -118,3 +120,4 @@ VTP59 expanded stability gate: audit all resolved profile defaults with field pr
 - 2026-11-27T09:22:03.040708+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-11-27T09:45:30.038198+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:09:00.551273+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:12:13.103651+00:00 (updated-by): Updated: section:notes

@@ -1,5 +1,7 @@
 # Radiance 2.3.0: bump execution and minimal sufficient tests
 
+**Baseline-first scope:** [BASELINE-SCOPE.md](BASELINE-SCOPE.md), MEN24 review RV4754, controls subsequent integration decisions. Existing required safety and quality gates remain; new shared-capacity mode and experimental additions are not promotion prerequisites.
+
 Review baseline BigCherry main f818ec5da (includes 2020.23.2, PRs #1714, #1717 and #1718); target Radiance v2.3.0 3b13fd32663ef52252a7f0be255523480aa22ffe, previous b6b8751cccb0e834a13ae9e5afca824ee9a487aa. This is a planning decision, not a changed pin or passed test. [Model inventory](MODEL-COMPATIBILITY.md) is a snapshot; rederive from actual approved configs and containers before release. Source triage and failed patch probes remain in draft PR #1713. MEN24 owns execution sequence, not a new test framework.
 
 ## Review findings and decisions

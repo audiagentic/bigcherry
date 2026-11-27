@@ -69,6 +69,8 @@ Qwen FlashNext true TP4 native lab arm (2 gfx1100, gfx1201, gfx1030) on matched 
 
 Owner direction: retain existing FlashNext four-card TP1+3-helper layout; concentrate tuning on dense Qwen 27B TP3 (two gfx1100 plus gfx1201). No true TP4 expansion required for this campaign. Matched owner 2.3 build 927a24bf85c2ac29d3dbe0b779063323, 75ms target, FP8 KV, 8 streams, pipeline min256, batch2048. Auto:0.25/auto:1/room-on (interleave off) long aggregate 160.398/132.717/184.784 t/s, worst TTFT 18.927/26.169/14.808s, p95 gap 133.871/34.020/41.409ms; short aggregate 262.525/255.018/278.946 t/s, worst TTFT 2.387/2.807/2.154s, p95 gap 40.201/30.592/169.665ms. Six reports automatic paired receipts passed, zero preemptions, clean stops. Single repetition per arm; auto interleave poor aggregate tradeoff; room gate mixed results. Archive docs/evidence/RSC19-VTP59-admission/summary.json. Continue arrival/admission controls, mixed workloads, quality and provider/geometry qualification on TP3. No production promotion.
 
+RV4754: owned changes from f0d991032 integrated into bump with MRC08 and VTP59/60; combined 117 tests/24 subtests. Required candidate-specific sealed configuration/capability and matched receipts; no new production defaults. Defer broad tuning/config feature work; reuse shared-capacity contracts later.
+
 ## Change Log
 
 - 2026-11-27T12:56:15.096909+00:00 (created-by): Created by agent
@@ -80,3 +82,4 @@ Owner direction: retain existing FlashNext four-card TP1+3-helper layout; concen
 - 2026-11-27T14:09:47.084434+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:27:55.436958+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:47:04.187572+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:13:13.449521+00:00 (updated-by): Updated: section:notes

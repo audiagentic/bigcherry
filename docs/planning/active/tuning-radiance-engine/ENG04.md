@@ -56,6 +56,9 @@ Measured capacity, throughput and quality per KV format on the current build, an
 
 Source: gateway prior-work audit 2026-11-10 (missing item 5). Old llama.cpp memory ceilings (QFN03/04) must not be copied into Radiance limits.
 
+RV4754: qualify existing approved FP8/BF16/BF16-I8 formats and capacity boundaries in affected cohorts; new formats and comprehensive 1M/context matrix after baseline. Shared mode remains RSC16-18.
+
 ## Change Log
 
 - 2026-11-10T13:12:01.542345+00:00 (created-by): Created by agent
+- 2026-11-27T15:13:58.181503+00:00 (updated-by): Updated: section:notes

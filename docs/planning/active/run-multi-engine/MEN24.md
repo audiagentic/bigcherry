@@ -103,6 +103,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 Owner request 2026-11-27: include MRC08 portable benchmark records in current Radiance 2.3 bump. MEN17 owns matched independent baseline/candidate comparison and promotion gate; MRC08 owns capture/export. Integrate reviewed MRC08 through normal PR flow before comparison. Retain exact old/candidate build identities, collect necessary matched cohorts, bind both run records and comparison verdict to formal bump receipts. Do not rerun passed compile/smoke gates merely to populate exports. See MEN17 RV4702.
 
+Baseline first: 71 ABI45 DSOs, 93 offline tests, actual four-container/18-YAML preflight and smoke on prior canonical build; RSC19 matched owner build and VTP59 screens subsequently verified. Latest origin/main marks MEN29 completed. Integrated RSC19, VTP59/60 and MRC08 commits into bump; 117 tests/24 subtests passed. Actual release acceptance still uses self-recorded helper KLD and ambient binary; no qualifying release evidence. Shared KV guide L requires new versioned plan/receipt, retained host layout, physical allocation and scheduler boundaries; not a cheap pin reconciliation. Do not conflate native format tool or phase trace experimental patches with production. Baseline-first controlling scope: docs/evidence/2026-11-27-radiance-230-bump/BASELINE-SCOPE.md. Preserve existing phase acceptance. Shared KV RSC16-18 new mode remains post-baseline; only legacy rank/page/refit/accounting fixes needed to preserve current approved configurations belong in this bump.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -126,3 +128,5 @@ Owner request 2026-11-27: include MRC08 portable benchmark records in current Ra
 - 2026-11-27T06:15:56.224380+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T08:01:27.930195+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T09:21:15.704257+00:00 (updated-by): Updated: section:notes
+- RV4754
+- 2026-11-27T15:10:03.429238+00:00 (updated-by): Updated: section:notes

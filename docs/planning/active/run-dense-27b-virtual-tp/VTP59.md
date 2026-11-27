@@ -86,6 +86,8 @@ RSC19 matched owner build 927a24bf85c2ac29d3dbe0b779063323, evidence commit c96b
 
 VTP60 live trace qualification (node/live-prefill-trace e802b5b34, docs/evidence/VTP60-live-phase/summary.json). Same trace-experiment build control/trace 75ms TP3 cold, 4K512 180.396/151.656 t/s, 512128 278.761/228.477; tracing perturbs timing ~16-18%, not a performance selection. 969 valid pass records per rank; all three ranks exactly reconcile 253 long and 57 short main steps incl phase counts. Long trace mixed model pass median ~222ms at 452 rows, all_reduce and gemm_nt_q largest device interval categories (overlap, not additive wall). Historical matched owner 75ms fast vs slow: pure prefill 9/4, mixed 39/63, waiting max 3/7, earliest TTFT 6.49/2.69s, worst 14.57/15.76s; points to admission regime, not simply kernels. First trace run had runner stop CLI argument error, stopped with signal, retained separately and excluded from passing pair. No provider attribution or quality proof. Automatic-interleave runner preparation tool call blocked; no new interleave experiment yet. Continue arrival/admission controls and mixed workloads on matched enhanced owner.
 
+RV4754: required baseline gate is resolving documented concurrent medium-prompt regression with matched old/new evidence and no unacceptable short/long/quality regression. Preserve FlashNext four-card layout; TP3 27B focus. Existing screens guide selection but single runs and tracing are not qualified. New shared KV mode and exhaustive policy/arrival tuning are follow-ups, not reasons to delay baseline unless a regression is demonstrated.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -108,3 +110,4 @@ VTP60 live trace qualification (node/live-prefill-trace e802b5b34, docs/evidence
 - 2026-11-27T13:40:02.220162+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:10:04.816913+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T14:18:57.650130+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:13:21.107632+00:00 (updated-by): Updated: section:notes

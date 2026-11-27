@@ -64,6 +64,8 @@ L. Interface refactor of admission/walk order is the risky part (identity test g
 
 **2026-11-16 owner decision:** -long default switched to `kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000` (acceptance criterion 3: budget beats the VTP41 defaults on the 100k mean with mid-size waits unchanged).
 
+RV4754: preserve deployed governor and existing long-profile admission in baseline. Test budget/cap/arrival and prefix-aware starvation/progress; only fix actual regressions. New policy-factor search and simulator/backfill extension after baseline unless required by VTP59.
+
 ## Change Log
 
 - 2026-11-15T13:01:55.739115+00:00 (created-by): Created by agent
@@ -71,3 +73,4 @@ L. Interface refactor of admission/walk order is the risky part (identity test g
 - 2026-11-15T15:16:17.767179+00:00 (updated-by): Updated: section:notes
 - 2026-11-15T15:16:25.831934+00:00 (state-transition): State: pending → in_progress
 - 2026-11-15T21:14:43.227715+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:13:42.568082+00:00 (updated-by): Updated: section:notes

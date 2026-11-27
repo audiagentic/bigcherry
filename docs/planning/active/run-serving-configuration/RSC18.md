@@ -69,6 +69,8 @@ Guide K2/K5/K6 replaces old assumption can_grow lacks window cap: 2.3 adds nativ
 
 Readiness review guide L4: native prefill_room_gate defaults false; resolve on only in shared mode, reject explicit off. Reuse scheduler; runtime reference-plus-ring is not a bounded lookback window and is deferred in shared mode. Validate generation L-1 plus 1, L prompt refusal, exact-L embeddings, speculation guard; running ensure_from currently drops actual status (distinguish FULL from other errors, preserve native fatal/fence policy). No unconditional rollback or alternate scheduler.
 
+RV4754: full new-mode admission/metrics follows RSC17 after baseline. In bump preserve existing actual-demand growth, prefix-aware governor and failure/progress/rollback tests; fix proven legacy defects only. Do not introduce unconditional room-gate or new L/S/C mode.
+
 ## Change Log
 
 - 2026-11-27T03:42:08.275428+00:00 (created-by): Created by agent
@@ -80,3 +82,4 @@ Readiness review guide L4: native prefill_room_gate defaults false; resolve on o
 - 2026-11-27T07:13:21.540426+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-27T07:29:29.417425+00:00 (updated-by): Updated: section:notes, section:validation
 - 2026-11-27T07:30:36.115403+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:12:50.065161+00:00 (updated-by): Updated: section:notes
