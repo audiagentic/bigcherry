@@ -11,7 +11,7 @@ priority: P1
 work: M
 ---
 
-# Fix medium-prompt concurrent prefill and decode batching before 2.3 bump
+# Fix medium-prompt concurrent prefill and decode batching (post 2.3 bump)
 
 ## Description
 
@@ -50,9 +50,9 @@ Tier A: 64/128/256/512/1024/2048/4096/6144 and max context minus output reserve;
 - [ ] Audit all shipped effective defaults and preserve intentional policies with provenance and tests.
 - [ ] Boundary/arrival screening recorded; classify all regressions with matched independent repeated cohorts; no silent omissions.
 - [ ] Per-class settings improve medium concurrency without material short/long/mixed or quality regression; explicit noise and latency budgets; separate profiles if needed.
-- [ ] Same model/layout historical comparison identifies earliest regression or documents unavailable history.
+- [ ] Earliest-regression history comparison delivered by VTP61 (release bisect 2020.8.5 -> 2020.24.1) and its result applied here.
 - [ ] MRC08 and MEN17 bind exact old/current/candidate runtime and workload; candidate qualification before promotion.
-- [ ] Merge validated implementation and evidence before bump promotion.
+- [ ] Merge validated implementation and evidence on the 2.3 pin (after the bump merges).
 
 ## Notes
 
@@ -102,6 +102,9 @@ Completed 128/256/512-row pipeline floor screen plus matched installed 2.2 2020.
 
 Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same FP8, exact wire, tune pieces4/fuse1/once1/duplex1, pipe min256, batch2048, target75, no prefix, stock observe. Four fresh managed starts and 16 successful matched-prompt rounds, pre/post receipts, 8 portable exports, 0 preemptions, clean stops. Pooled 512/192 medians 4 groups 344.5355 t/s, TTFT2.001s, P95 gap40.154ms; 2 groups341.3955,2.054s,40.001ms. 4K/256 106.884 vs104.746 t/s, TTFT15.810 vs16.199s, P95 gap213.366 vs218.498ms. No compelling gain: retain4 groups, no production change. Historic360.8315 short throughput still above provisional target; investigate actual per-rank small-batch replay vs old binary, not more grid/pipeline sweeps. Evidence tp3-collective-recovery.json. No numerical quality claim for experimental geometry; no formal acceptance. DFlash tree not active at chain depth3; do not enable wider on TP3 until rank agreement over token AND parent arrays qualified.
 
+
+Owner decision 2026-11-28: VTP59 is no longer a bump prerequisite. The concurrency inversion and the TP3 short-prompt deficit against 2020.8.5 already exist on installed 2.2 (TP2 4-stream 4K/128 old 42.315 vs candidate default 42.763; TP3 512/192 2.2 351.3 vs 2020.8.5 360.8), so they are not 2.3 regressions. The bump gate is MEN24's no-regression check against 2020.24.1 only. Stop historical-recovery and tuning screens on the bump branch; resume this item on the 2.3 pin after the bump merges, starting from VTP61's bisect result. All screens above remain valid evidence and are not repeated.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -136,3 +139,5 @@ Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same 
 - 2026-11-27T22:07:00.818690+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T22:28:39.893257+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T22:32:10.251009+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T23:02:04.520679+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T23:02:26.141517+00:00 (updated-by): Updated: section:title, section:acceptance_criteria

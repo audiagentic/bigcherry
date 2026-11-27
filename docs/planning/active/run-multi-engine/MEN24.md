@@ -107,6 +107,9 @@ Baseline first: 71 ABI45 DSOs, 93 offline tests, actual four-container/18-YAML p
 
 Owner approved focused historical recovery pass (RV4755): target TP3 exact seed1 512/192 aggregate >=353.615 t/s (within2% of legacy360.8315, provisional; historical 8-stream decode noise0.26ms is not aggregate noise). Preserve TP2 gains, matched TTFT/gap, quality and exact wire; prior TP2 W is lossy. Match older RUM06 4K/256 as additional bridge. First bounded configuration screen pipeline floors128/256/512 on same enhanced build, 75ms target, 2048 batch, FP8, no prefix, stock observe. Existing all-reduce piece sweep rejected one-piece; don't repeat. Native architecture already has shared quantized activations, norm/add/quant and GDN/gated fusion; verify active row eligibility before new owned enhancements. No new shared KV/streamed/arena or scheduler architecture in bump; only promote confirmed win with repeat controls and independent quality. Correct previous initial mixed cap: 512 on real TP3 2048 batch; 128 was smaller host fixture.
 
+
+Owner decision 2026-11-28 (supersedes the RV4755 provisional bump target): the 2.3.0 performance gate is no regression against the installed 2.2 release bc-radiance-2020.24.1, not recovery of the historical 2020.8.5 figure. Same-session evidence already in this bump: TP3 IQ8R 8x512/192 candidate 342.4-344.5 t/s vs installed 2.2 351.3, decode ms/step 36.75 vs 37.36 (candidate faster per step), draft acceptance 0.70 vs 0.70; 4K/256 107.1 vs 106.6. Most of the deficit against 2020.8.5 (360.8) predates the bump (2.2 is already -2.6%). Remaining bump gate: one ABBA candidate vs 2020.24.1 under one lease, several seeds, decode ms/step and TTFT/prefill reported separately (not aggregate t/s alone); a confirmed prefill/admission regression is fixed narrowly in the bump, otherwise pass. No further historical-recovery or tuning screens in the bump. Post-bump follow-ons: VTP61 (TP3 short-prompt history bisect 2020.8.5 -> 2020.24.1), VTP59 historical recovery, RCS23 IQ8R prefill row comparison (upstream r3d_gemm_i8a8 vs rad0061) on the merged 2.3 build, then RCS21/RCS23 ownership decisions.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -133,3 +136,4 @@ Owner approved focused historical recovery pass (RV4755): target TP3 exact seed1
 - RV4754
 - 2026-11-27T15:10:03.429238+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T22:07:24.087969+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T23:01:45.598946+00:00 (updated-by): Updated: section:notes
