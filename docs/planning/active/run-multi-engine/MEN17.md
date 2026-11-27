@@ -98,6 +98,8 @@ First baseline acceptance implementation: candidate plan/binary SHA/source attes
 
 Integrated baseline repair validated: 251 Python tests and 34 subtests passed with host environment explicitly selected; actual candidate 927a24bf85c2ac29d3dbe0b779063323 source attestation and launcher SHA verified, actual ComponentGate.plugin_abi 71/71 passed. Six owned DSO hashes differ from earlier build, so do not reuse all old component proof. See integrated-offline-gates.json. GPU occupied by independent Gate E; no new GPU acceptance. Final managed record comparisons/independent quality, current bundle component gates, formal bump and installed lifecycle still open.
 
+Actual integrated candidate 927a24bf85c2ac29d3dbe0b779063323 completed 93/93 declared offline component tests (5 libr3, 48 MoE, 40 serving); engine, owner and 71 plugins unchanged after test build. Independent historical BF16 Qwen reference (8240 scored positions, 4 docs) scored using installed bc-radiance-2020.24.1 2.2 and enhanced 2.3, same native YAML, FP8 KV, one seq, speculation and prefix off. IQ8R mean KLD 0.0013790939135882837/top1 97.22087378640776%, IQ6R-V4 0.0015840392022430626/96.90533980582524%, both exact aggregate, per-doc and byte-identical per-position row files across versions; four clean owner exits. Evidence baseline-qwen-quality.json. No formal promotion claim, references predate MRC08. Native lab identity now shares installed-release verification (49 tests passed), no second verifier.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -127,3 +129,4 @@ Integrated baseline repair validated: 251 Python tests and 34 subtests passed wi
 - 2026-11-27T15:12:13.103651+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:24:06.385547+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:24:47.511828+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T20:10:02.027053+00:00 (updated-by): Updated: section:notes

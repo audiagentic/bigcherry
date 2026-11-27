@@ -552,6 +552,14 @@ def test_release_record_identity_binds_shipped_binary_and_source(tmp_path, monke
     assert actual["source_commit"] == "f" * 40
     assert inputs["release_manifest"] == raw
     assert meta["binary_hash"] != shipped
+    # Native lab receipts must resolve the same installed runtime identity.
+    (root / "install.json").write_text(json.dumps({"record": json.loads(receipt.read_text())}))
+    from bigcherry.bench import radiance_lab_records as lab
+    context = lab._session_context(tmp_path)
+    assert context["identity"]["binary_sha256"] == shipped
+    assert context["identity"]["source_revision"] == "f" * 40
+    assert context["inputs"]["release_manifest"] == raw
+    (root / "install.json").unlink()
     with pytest.raises(ValueError, match="requires its tagged receipt"):
         workloads._release_identity(root, meta, None)
     (root / "bundle.json").write_bytes(raw + b" ")

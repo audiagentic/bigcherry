@@ -82,6 +82,11 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
             raise run_records.RecordError(f"native build metadata lacks {key}")
     if not _SHA.fullmatch(metadata["binary_hash"]):
         raise run_records.RecordError("native build binary hash is not SHA-256")
+    from .workloads import _release_identity
+    try:
+        metadata, release_inputs = _release_identity(build, metadata, None)
+    except (OSError, ValueError, KeyError) as exc:
+        raise run_records.RecordError(f"invalid native release identity: {exc}") from exc
     binary = build / "bin/radiance"
     if binary.is_file() and _digest(binary.read_bytes()) != metadata["binary_hash"]:
         raise run_records.RecordError(
@@ -118,6 +123,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         "native_session": session_file,
         "native_feature_states": native_states,
         "native_build_metadata": metadata_file,
+        **release_inputs,
     }
     for p in session.get("processes", []):
         if not isinstance(p, dict) or not isinstance(p.get("log"), str):
