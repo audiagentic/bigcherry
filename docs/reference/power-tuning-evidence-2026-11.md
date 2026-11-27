@@ -326,3 +326,28 @@ Independent BF16/FP32 screen: 16 of 16 cases passed, 163232 verified GEMMs, both
 
 
 See the [power session closeout inventory](../evidence/2026-11-26-power-session-closeout/README.md) for preserved source and data, verified capture IDs and remaining gates.
+
+### Selected profile intent (2026-11-27)
+
+The selected operating profiles are stock and efficient. Stock has no
+setting rules; efficient requests a 2700 MHz shader ceiling and -125 mV
+on gfx1100, and a -300 MHz signed shader offset, -125 mV and 210 W cap
+on gfx1201, for engine and helper roles. No memory clock settings or
+gfx1030 changes. These are named intent, not a universal per-card
+qualification. Existing host calibration, exact-device admission,
+explicit apply and lease requirements remain. Observe mode is the
+default; stock is unchanged. Historical profile names remain readable
+for reproducibility, not as further supported tuning targets.
+
+The earlier D1 unresolved journal described above was subsequently
+recovered under lease, with all four original hardware snapshots exact.
+The original failure remains non-qualifying. Native owner recovery and
+reciprocal admission fixes merged in PRs 1701 and 1704.
+
+The exact 210 W candidate passed 48/48 independent cases over twelve
+stock/efficient/stock captures, 2931360 verified GEMMs and six full
+VRAM patterns; four exact candidate restores. All twelve managed
+bundles verified. PWR12 records individual capture IDs. The 300 W
+point is historical comparison only. These are diagnostic screens,
+not an automatic production grant. Native matched extended serving,
+driver health and system energy gates remain open.

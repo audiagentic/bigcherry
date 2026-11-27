@@ -7,8 +7,28 @@ schema: 1
 profiles:
   stock:
     default_mode: observe
+  # Selected efficient intent; exact-device evidence and explicit apply remain mandatory.
+  # Final native serving qualification is still outstanding. No memory-clock rules.
   efficient:
     default_mode: observe
+    rules:
+      - role: engine
+        arch: gfx1100
+        evidence: docs/reference/power-tuning-evidence-2026-11.md
+        settings: {sclk_max_mhz: 2700, vddgfx_offset_mv: -125}
+      - role: "helper*"
+        arch: gfx1100
+        evidence: docs/reference/power-tuning-evidence-2026-11.md
+        settings: {sclk_max_mhz: 2700, vddgfx_offset_mv: -125}
+      - role: engine
+        arch: gfx1201
+        evidence: docs/reference/power-tuning-evidence-2026-11.md
+        settings: {sclk_offset_mhz: -300, vddgfx_offset_mv: -125, power_cap_w: 210}
+      - role: "helper*"
+        arch: gfx1201
+        evidence: docs/reference/power-tuning-evidence-2026-11.md
+        settings: {sclk_offset_mhz: -300, vddgfx_offset_mv: -125, power_cap_w: 210}
+  # Legacy names retained for old configurations and reproducible research; not new supported targets.
   quiet:
     default_mode: observe
   performance:

@@ -27,10 +27,23 @@ def test_builtin_profiles_observe_and_are_portable():
         "xtx-sclk2700-uv125",
     } <= profiles.keys()
     assert all(profile.default_mode == "observe" for profile in profiles.values())
-    for name in ("stock", "quiet", "efficient", "performance"):
+    for name in ("stock", "quiet", "performance"):
         assert profiles[name].settings_for("engine", "gfx1201") == {}
         assert profiles[name].settings_for("helper0", "gfx1100") == {}
         assert profiles[name].settings_for("helper1", "gfx1030") == {}
+
+
+def test_efficient_intent_is_frozen_but_observe_only():
+    p = load_profiles(ROOT / "engines/radiance/power-profiles.yaml")["efficient"]
+    for role in ("engine", "helper0", "helper1", "helper2"):
+        assert p.settings_for(role, "gfx1100") == {
+            "sclk_max_mhz": 2700, "vddgfx_offset_mv": -125,
+        }
+        assert p.settings_for(role, "gfx1201") == {
+            "sclk_offset_mhz": -300, "vddgfx_offset_mv": -125, "power_cap_w": 210,
+        }
+        assert p.settings_for(role, "gfx1030") == {}
+    assert p.default_mode == "observe"
 
 
 def test_soak_candidate_is_not_a_portable_default():

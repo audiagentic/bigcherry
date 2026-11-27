@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_030303_efficient-now-specifies-the-se_2622",
+  "files": [
+    "engines/radiance/power-profiles.yaml",
+    "tools/tests/hardware/test_power_profiles.py"
+  ],
+  "plan-item-ids": [
+    "PWR16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Freeze the chosen efficient named profile with existing role/architecture matching and explicit apply qualification unchanged.",
+  "timestamp-utc": "2026-11-27T03:03:03.484148Z",
+  "user-summary-candidate": "Efficient now specifies the selected clock, voltage and 210 W cap intent; stock remains unchanged."
+}
