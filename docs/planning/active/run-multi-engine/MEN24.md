@@ -105,6 +105,8 @@ Owner request 2026-11-27: include MRC08 portable benchmark records in current Ra
 
 Baseline first: 71 ABI45 DSOs, 93 offline tests, actual four-container/18-YAML preflight and smoke on prior canonical build; RSC19 matched owner build and VTP59 screens subsequently verified. Latest origin/main marks MEN29 completed. Integrated RSC19, VTP59/60 and MRC08 commits into bump; 117 tests/24 subtests passed. Actual release acceptance still uses self-recorded helper KLD and ambient binary; no qualifying release evidence. Shared KV guide L requires new versioned plan/receipt, retained host layout, physical allocation and scheduler boundaries; not a cheap pin reconciliation. Do not conflate native format tool or phase trace experimental patches with production. Baseline-first controlling scope: docs/evidence/2026-11-27-radiance-230-bump/BASELINE-SCOPE.md. Preserve existing phase acceptance. Shared KV RSC16-18 new mode remains post-baseline; only legacy rank/page/refit/accounting fixes needed to preserve current approved configurations belong in this bump.
 
+Owner approved focused historical recovery pass (RV4755): target TP3 exact seed1 512/192 aggregate >=353.615 t/s (within2% of legacy360.8315, provisional; historical 8-stream decode noise0.26ms is not aggregate noise). Preserve TP2 gains, matched TTFT/gap, quality and exact wire; prior TP2 W is lossy. Match older RUM06 4K/256 as additional bridge. First bounded configuration screen pipeline floors128/256/512 on same enhanced build, 75ms target, 2048 batch, FP8, no prefix, stock observe. Existing all-reduce piece sweep rejected one-piece; don't repeat. Native architecture already has shared quantized activations, norm/add/quant and GDN/gated fusion; verify active row eligibility before new owned enhancements. No new shared KV/streamed/arena or scheduler architecture in bump; only promote confirmed win with repeat controls and independent quality. Correct previous initial mixed cap: 512 on real TP3 2048 batch; 128 was smaller host fixture.
+
 ## Change Log
 
 - 2026-10-21T00:30:00+00:00 (created-by): Created by agent
@@ -130,3 +132,4 @@ Baseline first: 71 ABI45 DSOs, 93 offline tests, actual four-container/18-YAML p
 - 2026-11-27T09:21:15.704257+00:00 (updated-by): Updated: section:notes
 - RV4754
 - 2026-11-27T15:10:03.429238+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T22:07:24.087969+00:00 (updated-by): Updated: section:notes

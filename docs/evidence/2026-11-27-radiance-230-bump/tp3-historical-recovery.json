@@ -1,0 +1,1343 @@
+{
+  "kind": "matched-tp3-historical-recovery-screen-not-release-qualified",
+  "notes": [
+    "3 repetitions per workload, each arm one managed start; same candidate, FP8 exact wire, 8 slots, stock observe, prefix off, seed1, 75ms mixed target and batch2048; pipeline min rows differs across candidate arms; installed 2.2 uses the 256-row control. Historical inputs matched separately. Screen, not qualified promotion."
+  ],
+  "arms": {
+    "256-a": {
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "owner_sha256": "6cf2765850f8b46e40c7f8736d1bb6d657a2e3018615091a84472421688cdd08",
+      "ok": true,
+      "startup_s": 29.29741503391415,
+      "effective": {
+        "--tp": "3",
+        "--tp-wire": "exact",
+        "--tp-wire-min-kb": "128",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "256",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--max-num-batched-tokens": "2048",
+        "--busy-prefill-chunk": "auto",
+        "--prefill-governor": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+        "--prefill-interleave": "off",
+        "--mixed-step-target-ms": "75",
+        "--long-prefill-token-threshold": "0 (off)",
+        "--prefill-room-gate": "off",
+        "--preempt-wait-ms": "5000",
+        "--max-num-seqs": "8",
+        "--kv-cache-dtype": "fp8",
+        "--attn-prefill-fp8": "off",
+        "--state-cache-dtype": "f32",
+        "--no-prefix-cache": "prefix caching off"
+      },
+      "receipt_sha256": [
+        "290653c7da8a9b23d036b05696be573f73a16654839bd30472bf0dedf4256dbc",
+        "d1edd7bb489947bf3dd8313b9d7c9c42988aea9eab867edd0ed0ad156ee0df05"
+      ],
+      "mixed_target_metrics": {
+        "radiance:mixed_step_target_steps_total": 212,
+        "radiance:mixed_step_target_misses_total": 209,
+        "radiance:mixed_step_target_prefill_cap": 64
+      },
+      "reports": [
+        {
+          "workload": "stream-4096-256.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 107.114,
+              "decode_ms_per_step_median": 36.4015,
+              "draft_acceptance_median": 0.5975,
+              "event_gap_ms_p95_median": 213.467,
+              "reps_ok": 3,
+              "requests_running_mean_median": 7.182,
+              "ttft_ms_max_median": 15796.19
+            }
+          },
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "96775c47995635e5c6acc174184bec0c6f27f8ed4d18237b2205c721064e5b2d"
+        },
+        {
+          "workload": "stream-512-192.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 342.399,
+              "decode_ms_per_step_median": 36.75,
+              "draft_acceptance_median": 0.7032,
+              "event_gap_ms_p95_median": 40.236,
+              "reps_ok": 3,
+              "requests_running_mean_median": 6.526,
+              "ttft_ms_max_median": 1999.86
+            }
+          },
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "ddbe2413e691a1ce6d8f0ec3ffbe4dc4a27e53b376b236b1a64724243b93224b"
+        }
+      ],
+      "exports": [
+        {
+          "run_id": "stream-bench-c1e1f1e7ce5e44eab6733c5346d9c379",
+          "sha256": "82b06976e64c8914db8b802487145b08f877793073307b9eb544fa46bb71ea57"
+        },
+        {
+          "run_id": "stream-bench-dbf7b286c1a143dd915c0a0f770f2745",
+          "sha256": "2260207ab643473f8e28a75731f17d410ec92bf6cfb9a317322fec3f633b46ea"
+        }
+      ]
+    },
+    "128-b": {
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "owner_sha256": "6cf2765850f8b46e40c7f8736d1bb6d657a2e3018615091a84472421688cdd08",
+      "ok": true,
+      "startup_s": 27.266122328001074,
+      "effective": {
+        "--tp": "3",
+        "--tp-wire": "exact",
+        "--tp-wire-min-kb": "128",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "128",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--max-num-batched-tokens": "2048",
+        "--busy-prefill-chunk": "auto",
+        "--prefill-governor": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+        "--prefill-interleave": "off",
+        "--mixed-step-target-ms": "75",
+        "--long-prefill-token-threshold": "0 (off)",
+        "--prefill-room-gate": "off",
+        "--preempt-wait-ms": "5000",
+        "--max-num-seqs": "8",
+        "--kv-cache-dtype": "fp8",
+        "--attn-prefill-fp8": "off",
+        "--state-cache-dtype": "f32",
+        "--no-prefix-cache": "prefix caching off"
+      },
+      "receipt_sha256": [
+        "900a986c907b2d39ab39d1940d401e9ffcc3a16d88dba6abb36632d41733a903",
+        "87dc5fb9ca7cd239c60887e7366072548b3afc72230f77a117ba2ebe40ea1f1f"
+      ],
+      "mixed_target_metrics": {
+        "radiance:mixed_step_target_steps_total": 212,
+        "radiance:mixed_step_target_misses_total": 208,
+        "radiance:mixed_step_target_prefill_cap": 64
+      },
+      "reports": [
+        {
+          "workload": "stream-4096-256.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 107.588,
+              "decode_ms_per_step_median": 36.4993,
+              "draft_acceptance_median": 0.6103,
+              "event_gap_ms_p95_median": 214.045,
+              "reps_ok": 3,
+              "requests_running_mean_median": 7.182,
+              "ttft_ms_max_median": 15730.46
+            }
+          },
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "e099951c9c092eefacccd27ba4f1b05c945cb1a6e40c436b4da497e018799e62"
+        },
+        {
+          "workload": "stream-512-192.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 343.173,
+              "decode_ms_per_step_median": 36.8617,
+              "draft_acceptance_median": 0.6907,
+              "event_gap_ms_p95_median": 40.272,
+              "reps_ok": 3,
+              "requests_running_mean_median": 6.632,
+              "ttft_ms_max_median": 1997.28
+            }
+          },
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "91740b9dc8f2eb8ce4f282068ebe33fe9fa770442738b80fbb6325573c135d62"
+        }
+      ],
+      "exports": [
+        {
+          "run_id": "stream-bench-ae1e5a64a073414b810c1036e78fde6b",
+          "sha256": "db25f18055274860ef2e86a683d601deddf5883b6b262721294af426a3b67d85"
+        },
+        {
+          "run_id": "stream-bench-d881037395e14b549bbafd29881e71e7",
+          "sha256": "c854b4dbdbbe2b190468760b629918277e462a36d1afc3efaf19a58e17c28e22"
+        }
+      ]
+    },
+    "512-c": {
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "owner_sha256": "6cf2765850f8b46e40c7f8736d1bb6d657a2e3018615091a84472421688cdd08",
+      "ok": true,
+      "startup_s": 27.305247297044843,
+      "effective": {
+        "--tp": "3",
+        "--tp-wire": "exact",
+        "--tp-wire-min-kb": "128",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "512",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--max-num-batched-tokens": "2048",
+        "--busy-prefill-chunk": "auto",
+        "--prefill-governor": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+        "--prefill-interleave": "off",
+        "--mixed-step-target-ms": "75",
+        "--long-prefill-token-threshold": "0 (off)",
+        "--prefill-room-gate": "off",
+        "--preempt-wait-ms": "5000",
+        "--max-num-seqs": "8",
+        "--kv-cache-dtype": "fp8",
+        "--attn-prefill-fp8": "off",
+        "--state-cache-dtype": "f32",
+        "--no-prefix-cache": "prefix caching off"
+      },
+      "receipt_sha256": [
+        "efd20b61ddb6cf38bd7f7da1985b8125d9acb19a500853cf7937d4f706b57616",
+        "4299b7fcf2a51749406a72ac627495aab3831eb2a343e5761c9a8126f0016357"
+      ],
+      "mixed_target_metrics": {
+        "radiance:mixed_step_target_steps_total": 193,
+        "radiance:mixed_step_target_misses_total": 189,
+        "radiance:mixed_step_target_prefill_cap": 64
+      },
+      "reports": [
+        {
+          "workload": "stream-4096-256.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 83.954,
+              "decode_ms_per_step_median": 36.4257,
+              "draft_acceptance_median": 0.6104,
+              "event_gap_ms_p95_median": 306.983,
+              "reps_ok": 3,
+              "requests_running_mean_median": 7.388,
+              "ttft_ms_max_median": 21123.16
+            }
+          },
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "0a12fb5deea53d1cc54441cc88d988201d3827c7db46af097b2cfc482409c866"
+        },
+        {
+          "workload": "stream-512-192.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 294.933,
+              "decode_ms_per_step_median": 37.3154,
+              "draft_acceptance_median": 0.6907,
+              "event_gap_ms_p95_median": 40.156,
+              "reps_ok": 3,
+              "requests_running_mean_median": 6.455,
+              "ttft_ms_max_median": 2807.81
+            }
+          },
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "8453b6c23484525ac30aa9693ef19a833ceab9e37772140da4a13ccb867876e7"
+        }
+      ],
+      "exports": [
+        {
+          "run_id": "stream-bench-60ced5df49764c748b9da9b3bbbc03b4",
+          "sha256": "27e6950f336c51c9babb19861815e0bc0f417752f8106ef7c620ca87f0dabee0"
+        },
+        {
+          "run_id": "stream-bench-e5210a3327ce41b28de0adbf05c6c57c",
+          "sha256": "9f7d1898ad8698532e02fad27aa315afda92b4b740d5c07d101946f55ec1d4d6"
+        }
+      ]
+    },
+    "256-old-retry": {
+      "build_plan_id": "bc-radiance-2020.24.1",
+      "binary_sha256": "6f7d7dd8a515105778cd3c1c1a5f55d9eb2d3e89feeab678c1651acec3015d1d",
+      "owner_sha256": "67c69c4015b29b7556943d710ab451ca338c7e520222d9294cf5be4f911afd45",
+      "ok": true,
+      "startup_s": 24.81678779493086,
+      "effective": {
+        "--tp": "3",
+        "--tp-wire": "exact",
+        "--tp-wire-min-kb": "128",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "256",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--max-num-batched-tokens": "2048",
+        "--busy-prefill-chunk": "auto",
+        "--prefill-governor": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+        "--prefill-interleave": "off",
+        "--mixed-step-target-ms": "75",
+        "--prefill-room-gate": "off",
+        "--preempt-wait-ms": "5000",
+        "--max-num-seqs": "8",
+        "--kv-cache-dtype": "fp8",
+        "--attn-prefill-fp8": "off",
+        "--state-cache-dtype": "f32",
+        "--no-prefix-cache": "prefix caching off"
+      },
+      "receipt_sha256": [
+        "8c71b66fe8a180e594d32da91a29f79935a2425aec50d496e6667fb58d753dfc",
+        "471293b0a5fc141ff997d9639c4b6752a50b27b8d7593abdbf5eafd11e47a7b6"
+      ],
+      "mixed_target_metrics": {
+        "radiance:mixed_step_target_steps_total": 217,
+        "radiance:mixed_step_target_misses_total": 213,
+        "radiance:mixed_step_target_prefill_cap": 64
+      },
+      "reports": [
+        {
+          "workload": "stream-4096-256.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 106.637,
+              "decode_ms_per_step_median": 36.3286,
+              "draft_acceptance_median": 0.6165,
+              "event_gap_ms_p95_median": 214.103,
+              "reps_ok": 3,
+              "requests_running_mean_median": 7.208,
+              "ttft_ms_max_median": 15843.52
+            }
+          },
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4045,
+                  256
+                ],
+                [
+                  4029,
+                  256
+                ],
+                [
+                  4049,
+                  256
+                ],
+                [
+                  4066,
+                  256
+                ],
+                [
+                  4100,
+                  256
+                ],
+                [
+                  4028,
+                  256
+                ],
+                [
+                  4078,
+                  256
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "306aebc86e5fa1f3e3d4423f9df877612ea20ad2d827285278ab60c0647ddf7d"
+        },
+        {
+          "workload": "stream-512-192.json",
+          "summary": {
+            "8": {
+              "aggregate_tps_median": 351.31,
+              "decode_ms_per_step_median": 37.3643,
+              "draft_acceptance_median": 0.6976,
+              "event_gap_ms_p95_median": 40.19,
+              "reps_ok": 3,
+              "requests_running_mean_median": 6.579,
+              "ttft_ms_max_median": 1974.67
+            }
+          },
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_counts": [
+            [
+              8,
+              0,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              1,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ],
+            [
+              8,
+              2,
+              [
+                [
+                  501,
+                  192
+                ],
+                [
+                  510,
+                  192
+                ],
+                [
+                  509,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  513,
+                  192
+                ],
+                [
+                  520,
+                  192
+                ],
+                [
+                  503,
+                  192
+                ],
+                [
+                  525,
+                  192
+                ]
+              ]
+            ]
+          ],
+          "preemptions": 0.0,
+          "sha256": "839184e9fc3ed633036b7b5bf1fa1ac0390bda60e5bce3d1c9792471393a0e3d"
+        }
+      ],
+      "exports": [
+        {
+          "run_id": "stream-bench-7787ae262db1491381496084058445a4",
+          "sha256": "6ab6eba35c09362a611909f07e91f7a7011fdc76f9847f7a7336fbf25f814535"
+        },
+        {
+          "run_id": "stream-bench-d02c45f644b04390a1ffc0ec4ab2ecc3",
+          "sha256": "bce500acb21249f96507d0264ca3e34d811aa998b2a89eb1ee2d05de1054741f"
+        }
+      ]
+    }
+  }
+}
