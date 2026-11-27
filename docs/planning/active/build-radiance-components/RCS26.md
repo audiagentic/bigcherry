@@ -51,6 +51,8 @@ One source per dimension; no duplicate taxonomy; no unsupported scope silently p
 
 ## Notes
 
+2026-11-27: [Enhancement parity guide](../../../design/radiance-enhancement-parity.md) defines source counterexample, old/new actual recipe and per-block rewrite inventory and owner/row/closure proof before adoption. Use existing pin-triage, compose_check and origins, no second catalogue. Unknown scope widens affected compile closure; unresolved capability blocks retirement, not automatic full-engine assessment. Keep archived/shelved ownership evidence and advance last-integrated only after verified integration.
+
 Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.md. No active related item edited.
 
 2026-11-26: PR1644 merged as f29a806e8. Follow-up uses compose_check local include closure, widens unresolved/header/removed paths to full inventory, imports existing pin-triage JSON changed_files. Real 115 canonical/109 configured units; stale manifest refused (six excluded units). Private composed build scratch prevents source-cache edits. Remaining: compiler dependency/complete lexical exception audit and automatic pin gate integration.

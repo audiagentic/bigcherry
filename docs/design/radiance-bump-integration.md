@@ -14,6 +14,8 @@ Status: target design and implementation order, 2026-11-25. Owner: MEN24 (one se
 
 > **Fast-gate scope (2026-11-27):** [Reviewed execution/test decisions](../evidence/2026-11-27-radiance-230-bump/FAST-GATES.md) at main f818ec5da supersede any broad reading of the earlier gates. Repair with existing focused patch/compile/harness, one integrated canonical lane at release, no repeated engine or historical matrix; require only affected capabilities with real evidence. RSC16–18 shared-KV feature, XDP11 converter recovery and optional provider migration remain separate. No new orchestration or prerequisite programme.
 
+> **Active enhancement parity (2026-11-27):** [Detailed replacement proof and patch-group execution guide](radiance-enhancement-parity.md) governs active patch, rewrite and provider dispositions. All active capabilities remain protected separately from the four-model roster. Existing focused harnesses, source counterexamples and one final integrated lane; archive only with proved equivalence or explicit owner decision. No additional test framework.
+
 ## 1. Actual baseline and gaps
 
 Audited BigCherry c7d791540 (including #1550 native launch design and #1553 overlay design clarification); reconciled with #1557 at 35e0d7697, including the owner simplicity rule and RCS25 discrete harness, not a claim of implemented runtime changes. Prior review confirmed Radiance pin b6b8751cccb0e834a13ae9e5afca824ee9a487aa. Re-read recipe and current branch before implementation.

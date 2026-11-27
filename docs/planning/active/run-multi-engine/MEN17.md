@@ -51,6 +51,10 @@ radiance accept on the 1.7.0 pin passes against the 1.3.0 baselines (2,050 pp409
 
 Offline fake exact lane and missing/wrong/ambiguous/stale pin, runtime home, binary or provider and inherited env, independent KLD wrong/missing, degraded arm and no GPU/skip refusal. Real helper-ab on qualified handoff lane without manually exported env, independent quality and dense/mixed/helper native lifecycle against exact candidate, RHP12 matched cohorts and PWR10 profile evidence. Actual acceptance run receipts link candidate build and actual policy. pin-bump --accept and standalone accept share executor; required evidence verified by release, no closure on existing code or prior release record. Existing MEN23 acceptance remains.
 
+### Enhancement parity integration (2026-11-27)
+
+[Enhancement parity guide](../../../design/radiance-enhancement-parity.md): reuse small fixture/discrete proof for active enhancement contract, including optional/diagnostic paths; actual full-engine test only for unresolved cross-boundary behaviour, combined with final installed model canary where possible. Missing/changed active capability requires explicit disposition and proof or owner-approved contract change before promotion. No production promotion of untested diagnostic work. No duplicate measurements for already proven paths.
+
 ### Minimal integrated acceptance (2026-11-27)
 
 [Fast-gate review](../../../evidence/2026-11-27-radiance-230-bump/FAST-GATES.md): no engine tests per kernel edit; use discrete evidence. At release, reuse one matched canonical lane and existing installed canaries; exercise each model and affected path with the shortest real generation/quality/capacity check, combine in one load, reuse exact unchanged proofs, and run paired repeats only where performance changed or verdict uncertain. All YAML preflight is not 18 full serving benchmarks. Measure actual group carve/admission where capacity changed; long prompt only if needed to resolve a specific capacity/scheduler boundary. Keep independent baseline, no self-reference or skipped required proof. RSC16 new mode and XDP11 converter qualification are separate.
