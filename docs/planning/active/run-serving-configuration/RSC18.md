@@ -41,6 +41,8 @@ Existing mem/kv_window/sched/checkpoint/server and engine e2e tests; shared pref
 
 Guide I4: deterministic page conservation (total=held+usable free+lent), failed recall, flex room, shared prefix/COW, window wrap, state slots, deferred release, zero/sentinel, multi-group capacity and exact metric scope; no hot-path allocation/scan regression.
 
+Test 65+1 tokens with B16 = 6 pages; distinguish active/queued/idle-retained, cold L alone versus busy pool; verify pressure and impossible fit separately; actual group page receipts under mixed requests.
+
 ## Effort & Risk
 
 No new scheduler, allocator or telemetry stream. Ragged tables/dynamic state only if measured dominant, with separate ABI/lifetime review.
@@ -61,6 +63,8 @@ RSC16 second design review/code guide H: existing Scheduler::init/add_locked/fre
 
 Consolidated cleanup I4: metrics and demand accounting belong here; RHP16/20 live placement remain separate.
 
+Fourth review guide J2/J4: explicit minimum is packed capacity, not arbitrary mixed workload guarantee. Account actual sum of per-session rounded pages, sharing/COW and progress; preserve legacy flex and distinguish backed vs reserved, actual recallable. Reuse existing cache_only_blocks counters.
+
 ## Change Log
 
 - 2026-11-27T03:42:08.275428+00:00 (created-by): Created by agent
@@ -68,3 +72,4 @@ Consolidated cleanup I4: metrics and demand accounting belong here; RHP16/20 liv
 - 2026-11-27T03:49:13.270930+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T04:00:52.358563+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:effort_risk, section:notes
 - 2026-11-27T04:01:25.833107+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
+- 2026-11-27T04:18:47.331154+00:00 (updated-by): Updated: section:notes, section:validation

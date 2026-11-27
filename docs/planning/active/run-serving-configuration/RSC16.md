@@ -42,6 +42,8 @@ RSC17 and RSC18 card-free gates required. RSC16 owns managed installed GPU proof
 
 Guide I5: review scope and actual caller/link inventory, legacy fixture/replay checks, patch-lint and affected chains, staged installed qualification and preserved historical evidence. Existing ENG04/03 and MEN17 evidence reused.
 
+Require target production chain identity, preallocation proposal + live verifier, actual configured carve, late startup/front-ready, and simultaneous active/resident long decode with short progress. Unique prompts first, sharing control second; physical refusal not target pass.
+
 ## Effort & Risk
 
 
@@ -66,6 +68,8 @@ RV4698 second review: rad0029 already solves a subset of per-rank capacity; rad0
 
 RV4699 third review: consolidated all cleanup into existing three plans. Preserve RSC12/RHP16/20 in-progress ownership, RSC15 deferred scope, ENG07/RAD38 format work and PVPS14 checkpoint investigation. No engine changes.
 
+RV4700 fourth deep review, guide J: exact page vector guarantee and cap semantics; source inspection used experimental slice, archived .1 production slice differs. Do not promote plan-only measurement to actual capacity. Initial qualification fixed-backed single text engine including hybrid state/window geometry; fleet flex legacy until separately proven.
+
 ## Change Log
 
 - 2026-11-27T03:33:31.874138+00:00 (created-by): Created by agent
@@ -79,3 +83,5 @@ RV4699 third review: consolidated all cleanup into existing three plans. Preserv
 - RV4699
 - 2026-11-27T04:01:00.468365+00:00 (updated-by): Updated: section:detailed_solution, section:code_samples, section:notes
 - 2026-11-27T04:01:33.215760+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
+- RV4700
+- 2026-11-27T04:18:54.576854+00:00 (updated-by): Updated: section:notes, section:validation
