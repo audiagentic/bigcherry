@@ -40,6 +40,7 @@ models:
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   variant-of: "qwen27b-tp3"
   differs: ["models.qwen27b.model"]
   description: "Qwen3.8-27B IQR-V4 (6-bit trellis, 22.8 GiB) over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"

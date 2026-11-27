@@ -63,9 +63,10 @@ class NativeProfileTests(unittest.TestCase):
             with self.subTest(name=name):
                 section = load(name)["x-bigcherry"]
                 self.assertEqual(section["schema"], 1)
+                self.assertEqual(section["power"], {"profile": "efficient"})
                 self.assertTrue(section["description"] and section["ranks"])
                 self.assertLessEqual(set(section), {"schema", "description", "variant-of", "differs", "ranks", "helpers",
-                                                    "service", "memory", "handoff", "helper", "kernels"})
+                                                    "service", "memory", "handoff", "helper", "kernels", "power"})
                 tp = next(iter(load(name)["models"].values()))["tp"]
                 self.assertEqual(sum(r["count"] for r in section["ranks"]), tp)
                 self.assertEqual("variant-of" in section, "differs" in section)

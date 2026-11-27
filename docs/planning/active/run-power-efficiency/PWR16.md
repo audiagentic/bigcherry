@@ -75,6 +75,10 @@ Owner direction 2026-11-27: stock and efficient only. Efficient: both XTX 2700 M
 
 2026-11-27 exact 210W/-300MHz/-125mV R9700 final independent pressure/matrix brackets: 48/48 cases across 12 managed runs, 2931360 verified GEMMs plus six full memory patterns, four exact candidate restores and full fleet original snapshot equality. Refer PWR12 for IDs. Existing XTX same-settings evidence reused. Tagged 2020.23.1 remains older than merged owner fixes; no repeat native model test or release promotion. CPU counters and kernel health log unavailable.
 
+2026-11-27 owner-selected intent locked in canonical power-profiles.yaml: stock empty; efficient gfx1100 2700 MHz/-125 mV and gfx1201 -300 MHz/-125 mV/210 W for engine and helpers, gfx1030 and memory unchanged. Observe-only default; existing per-device evidence and apply checks unchanged. Legacy names retained for historical compatibility, not new tuning targets. Python hardware/CLI tests 304 pass, 1 skipped. No automatic application, release promotion or closure of native stability gates.
+
+Owner requested model selection: all 18 shipped native YAMLs select efficient as named intent. Stock parity and PWR01 baseline explicitly select stock; no change to explicit apply, lease, qualification or observe mode. Native production application still awaits acceptance and updated release.
+
 ## Change Log
 
 - 2026-11-26T08:12:38.552070+00:00 (created-by): Created by agent
@@ -93,3 +97,5 @@ Owner direction 2026-11-27: stock and efficient only. Efficient: both XTX 2700 M
 - 2026-11-27T02:41:59.212978+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T02:42:10.223512+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
 - 2026-11-27T03:00:31.112506+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T03:03:01.761424+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T03:14:05.940167+00:00 (updated-by): Updated: section:notes

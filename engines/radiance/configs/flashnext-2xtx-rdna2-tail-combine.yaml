@@ -20,6 +20,7 @@ models:
     mixed-step-target-ms: 0
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "flashnext-2xtx-rdna2-tail with the helper-row combine over all three helpers (flashnext-4gpu's settings)"
   variant-of: "flashnext-4gpu"
   differs: []

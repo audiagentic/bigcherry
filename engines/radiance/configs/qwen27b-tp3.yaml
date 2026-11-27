@@ -39,6 +39,7 @@ models:
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Qwen3.8-27B IQ8R over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
   ranks:
     - {arch: "gfx1100", count: 2}

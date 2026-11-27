@@ -39,6 +39,7 @@ models:
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "qwen27b-tp3-long with bf16 keys and int8 values (bf16_i8): 818,896 tokens, the bf16 cache's decode speed"
   variant-of: "qwen27b-tp3-long"
   differs: ["models.qwen27b.kv-cache-dtype"]

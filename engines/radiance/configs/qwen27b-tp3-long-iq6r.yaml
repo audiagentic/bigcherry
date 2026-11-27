@@ -39,6 +39,7 @@ models:
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "qwen27b-tp3-long with the IQR-V4 container: about 5% more pageable tokens than IQ8R"
   variant-of: "qwen27b-tp3-long"
   differs: ["models.qwen27b.model"]

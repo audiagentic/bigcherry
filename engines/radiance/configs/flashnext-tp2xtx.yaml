@@ -21,6 +21,7 @@ models:
     p2p: "off"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Flash-Next tensor-parallel on the two 7900 XTX; the R9700 (head) and the RX 6900 XT (tail) as helpers with the combine; 8 sessions of up to 131,072 tokens"
   variant-of: "flashnext-tp2xtx-r9700"
   differs: ["models.flashnext.max-model-len", "models.flashnext.max-num-seqs", "x-bigcherry.helper.combine", "x-bigcherry.helpers", "x-bigcherry.memory.host-pool-mib"]
