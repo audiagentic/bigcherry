@@ -461,3 +461,147 @@ are separate fleet/placement work; do not touch until evidence demands
 it. Site/profile cleanup RSC15 remains deferred. No new plans merely
 for speculative improvements; each investigation produces measured
 reason to proceed or a documented no-change decision.
+
+## J. Fourth review: exact guarantees and qualification boundaries (2026-11-27)
+
+This section refines H/I, not a new owner or additional allocator. Source
+review used materialization e3d02821f12bd25b34e58ef4d0a0c37b, upstream
+b6b8751cccb0e834a13ae9e5afca824ee9a487aa (2.2.0), classified experimental,
+tree 61fe7eb3708e6727e50cba98e1b424c8833019d7. Archived .1 release has same
+upstream but source slice b6bd832be944a4ab31cc29906dece6c5, not the reviewed
+slice e699f40e7a8b5a8efaea63818c239798. Exact .1 slice was not found in
+local source metadata. Review confirms source mechanisms, not byte-for-byte
+production equivalence. RSC17 must materialize the exact target production
+patch chain and record release/build/source/patch identities before tests;
+check bump branch changes separately and reuse upstream replacements.
+Archived four-slot log says 24% and '1.0 full-length sessions' before
+refit refusal. Rounded display is NOT one full-context proof, and refit
+failure does not identify a physical limiting rank. The initial probe
+need=-1 path may leave f.kv_one unset; validate all probe return values
+and distinguish no paged group from failed geometry or impossible inverse.
+
+### J1. Exact inverse and page demand (RSC17)
+
+KVManager::paged_split sums double bytes_per_block/block_size then truncates
+to scalar tokens; out[g]=tokens/block_size truncates again. Its inverse
+pool_mib_for_tokens checks scalar t>=target, not the out vector. E.g. t=65,
+B=16 yields four pages=64 tokens, not five. Do not use either scalar as
+proof of a guaranteed minimum. Keep the native planner, factor out a
+checked group-vector calculation and exact feasibility predicate using
+actual block counts and carve layout; reuse the inverse/search only if
+the predicate is monotone in the chosen fixed placement regime.
+
+For ordinary full groups and a packed token target T, require at least
+ceil_div(T,B_g) logical pages per group, not floor(T/B_g). A cold request
+of length L must fit every group including resolved state, window/drafter
+requirements, and required next-position/verify scratch for its legal
+final step. Use checked integer arithmetic, actual per-reservation
+RAD_ALIGN_UNIT padding, per-pool MiB rounding, and actual ID/offset type
+bounds (carve_into uses int32_t IDs; HostArena uses int32_t slot IDs).
+Compare the vector to carve_into's reserve sequence, including state
+copies, checkpoint stage, window maps and zero groups. Fixed_ already
+includes per-group padding and ring costs: do not charge them twice.
+Avoid changing float heuristic on legacy path without parity tests.
+Test fixed==budget (inverse currently accepts equal in some no-page
+cases; carve_into rejects), missing/zero groups, invalid geometry,
+65/16, unequal group page sizes, one byte/page/MiB over, overflow,
+and plan/carve disagreement. Refuse incompatible geometry rather than
+fall back to arbitrary scalar. All ranks must have same logical ID
+space while their byte costs and actual backing differ.
+
+### J2. Capacity contract and elasticity (RSC17/RSC18)
+
+Distinguish max individual L, active slots S, packed logical capacity
+C_packed (min of comparable full-group block_count*block_size), currently
+backed pages, reclaimable/lent pages and actual workload fit. Explicit
+kv-cache-capacity target is minimum packed capacity, not a promise that
+any mix totalling C tokens fits. For lengths l_i, full group demand is
+sum(ceil_div(l_i,B_g)) less proven shared references plus COW/in-flight
+and progress reserve. E.g. 65+1 tokens with B=16 consume six pages
+(96 token slots), not five. If offering a worst-case guarantee, specify
+the number of sequences and reserve policy, and derive it from exact
+group vectors; do not conflate it with packed capacity. No independent
+per-client reservation for unused contexts. S is scheduler slots, not
+number of idle/retained conversations or outstanding queued requests.
+Guarantee one feasible L on an otherwise available pool, not immediate
+admission of a long client regardless of currently active work.
+Report transient pressure, bounded queue/preemption, and permanent
+impossibility separately; external harness bounds do not replace safety.
+
+Fleet already has flex: Engine::plan broker sets vram_claim and
+kv_reserve from ask, and configure_kv calls set_flex; the manager may
+reserve a larger address space than it physically backs. Do not disable
+existing legacy elasticity by wording 'no live expansion'. For shared
+mode initial qualification use fixed backed pools, not optimistic
+virtual reservations or fleet growth; existing fleet mode remains legacy
+until exact grant/backed/reserved/recall semantics are proven. A future
+shared flex capacity must differentiate guaranteed grant from potential
+additional broker-approved room and avoid counting it twice. Auto is
+bounded by hard caps, explicit grants and nominal addressable geometry.
+
+### J3. Host geometry, cap semantics and checkpoint policy (RSC17)
+
+TierExec::slot_layout computes slot=sum own_bytes+rep_bytes and
+entry_bytes=max(rep_bytes+own_bytes), no arbitrary per-slot padding.
+HostArena::open computes floor(cap_bytes/slot_bytes) slots, commits
+that product and bitmap separately, refuses cap smaller than one slot.
+Use exact native slot bytes, not a newly invented alignment. Native
+prefix-cache-mib is an authored cap, not an independently requested
+retention minimum. manifest_writer currently derives retained target
+from this cap using kv_one/L and clamps to L*S. Preserve cap authority:
+if cap H is supplied, report floor(H/slot)*entry_tokens; do not round
+a requested minimum UP past an explicit cap. If a minimum R is ever
+explicitly supported, require ceil(R/Q)*slot <= cap and safe host room,
+or refuse; only derive whole MiB when the contract permits it.
+Account for real committed bytes, metadata, pin/cgroup and reserve
+margins once. Retention target can represent packed histories, not
+active slots. Do not change authored cap semantics or add retention
+knobs simply to retire scalar. Preserve zero and disabled-tier cases.
+
+checkpoint_slots_want in prefix.cpp uses S*(policy.held(L,interval)+1),
+with independent floor/want/room selection in checkpoint_slots_auto.
+Record floor, want, actual slots and bytes separately; do not scale
+snapshot bytes with C or delete this legitimate upper-bound policy.
+If host pressure is dominant, review auto checkpoint retention
+independently using current policy and prefix-resume correctness;
+no weakening of minimum state/replay safety. Test cap below one slot,
+exact slot, slot+1, MiB cap rounding, replicated/sharded/zero,
+snapshot and bitmap costs, and shared-mode zero host tier even on a
+state-only or non-demotable model. Preserve legacy fixture semantics.
+
+### J4. Measurement and staged acceptance (RSC16/RSC17/RSC18)
+
+Engine::plan may configure pools; bc_plan_memory_done runs after plan,
+before load_weights and configure_kv. A plan-memory record alone does
+not prove that actual group carve, staging, runtime metadata, late
+allocations, drafter, or server initialization fit. Split evidence:
+(1) preallocation proposal + live gate on complete rank facts,
+(2) actual configured pools and final KV carve/group/slot geometry,
+(3) all late startup allocations complete and scheduler/front ready.
+Verify before listener admits traffic; capture failure at each stage
+and release all reservations. Do not report plan-only as actual
+capacity. Preserve existing admission and typed refusal paths.
+Source-inspection and card-free tests do not substitute for installed
+GPU qualification; read-only planning may still need device allocations,
+so use lease and do not change power settings in RSC17 diagnostics.
+
+Initial scope is one text engine on discrete GPUs, fixed backed pools,
+full-context trunk plus its declared recurrent/conv and bounded
+drafter/window groups (Qwen27B IQ8R is hybrid, not full-paged-only).
+Qualify by group capability, not model name. TP1/TP2/TP3 as supported;
+unsupported generator/streamed/flex/unified paths retain legacy or
+explicit refusal. Extend to MoE and remaining group policies after
+qualification, not model-specific forks. Use stock for capacity
+comparison; efficient separate and only under existing qualification.
+
+For mixed long+short acceptance use actual tokenized prompt+output
+length and simultaneous active/resident full-group page receipts:
+long decode stays active while shorter prompts are admitted, then
+short decode and long decode progress. A long idle cached prefix or
+preempted/recomputed request is not proof of simultaneous residence.
+Use unique prompts first (no sharing hides pressure), then intentional
+prefix sharing control; test 512K+128K+additional if feasible, 16
+slot target and exhaustion. Check long output, short progress and
+numerical quality with matched context/YaRN controls. A capacity
+refusal is valid physical evidence, not successful target acceptance.
+Set explicit performance/no-regression criteria before run.
