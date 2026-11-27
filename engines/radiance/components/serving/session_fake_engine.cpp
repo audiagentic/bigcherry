@@ -299,7 +299,21 @@ int main(int argc, char** argv) {
         std::printf("fake engine: native v3 %s snapshot, root and environment verified\n", measuring ? "measuring" : "serving");
         m["port"] = std::atoi(std::getenv("TEST_NATIVE_INSPECT_PORT") ? std::getenv("TEST_NATIVE_INSPECT_PORT") : "0");
         m["engine_cards"] = admission.at("bdfs");
-        if (admission.at("quality").is_object()) m["quality"] = admission.at("quality");
+        if (admission.at("quality").is_object()) {
+            // The real managed binder checks the parent still holds the same sealed
+            // admission after exec. Let spawn return before exercising that check.
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            const int fd = std::atoi(admission_fd_text.c_str());
+            const pid_t parent = ::getppid();
+            const std::string retained = "/proc/" + std::to_string(parent) + "/fd/" + std::to_string(fd);
+            struct stat local {}, remote {};
+            if (parent <= 1 || ::fstat(fd, &local) != 0 || ::stat(retained.c_str(), &remote) != 0 ||
+                local.st_dev != remote.st_dev || local.st_ino != remote.st_ino || ::getppid() != parent) {
+                std::fprintf(stderr, "fake engine: owner did not retain the quality admission after exec\n");
+                return 9;
+            }
+            m["quality"] = admission.at("quality");
+        }
         m["host_pool_mib"] = admission.at("host").at("pool_mib_per_rank");
         if (const char* context = std::getenv("TEST_NATIVE_INSPECT_MAX_CONTEXT")) m["max_context"] = std::atoll(context);
         if (const char* settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS")) {

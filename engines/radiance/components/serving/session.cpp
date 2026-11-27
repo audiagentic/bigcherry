@@ -1611,6 +1611,9 @@ class Owner {
     std::vector<int> stop_clients_;
     std::vector<Child> children_;
     EngineStart plan_;
+    // The quality engine verifies the parent's retained sealed admission after exec.
+    // Keep it alive through the finite run and child cleanup, just like plan_.admission.
+    std::optional<EngineInputs> quality_inputs_;
     Json record_;
 
     // A record that cannot be written is reported, never a reason to skip stopping a child (but no process is
@@ -2028,7 +2031,8 @@ class Owner {
             run.reference = quality->reference.string();
             run.corpus = quality->corpus.string();
             run.output = quality->output.string();
-            inputs = engine_inputs(manifest.value(), false, std::move(run));
+            quality_inputs_.emplace(engine_inputs(manifest.value(), false, std::move(run)));
+            inputs = *quality_inputs_;
             argv = engine_argv(argv.front(), inputs);
         } else if (manifest && manifest.value().spec.handoff &&
                    manifest.value().spec.handoff->telemetry.histogram_file) {

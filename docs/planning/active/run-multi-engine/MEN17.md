@@ -114,6 +114,8 @@ Completed 128/256/512-row pipeline floor screen plus matched installed 2.2 2020.
 
 Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same FP8, exact wire, tune pieces4/fuse1/once1/duplex1, pipe min256, batch2048, target75, no prefix, stock observe. Four fresh managed starts and 16 successful matched-prompt rounds, pre/post receipts, 8 portable exports, 0 preemptions, clean stops. Pooled 512/192 medians 4 groups 344.5355 t/s, TTFT2.001s, P95 gap40.154ms; 2 groups341.3955,2.054s,40.001ms. 4K/256 106.884 vs104.746 t/s, TTFT15.810 vs16.199s, P95 gap213.366 vs218.498ms. No compelling gain: retain4 groups, no production change. Historic360.8315 short throughput still above provisional target; investigate actual per-rank small-batch replay vs old binary, not more grid/pipeline sweeps. Evidence tp3-collective-recovery.json. No numerical quality claim for experimental geometry; no formal acceptance. DFlash tree not active at chain depth3; do not enable wider on TP3 until rank agreement over token AND parent arrays qualified.
 
+RV4756: FlashNext quality refused in installed 2.2 and candidate 2.3 because owner releases quality-specific sealed admission after spawn's exec handshake. Reproduced with delayed fake child verifying parent inode, pre-fix full bc_serving_test fails; fixed by retaining both sealed inputs in Session owner through child cleanup. Post-fix bc_serving_test passes 42.46s. No guard weakened or old release modified; exact rebuilt lane and independent helper quality still required.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -151,3 +153,5 @@ Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same 
 - 2026-11-27T22:07:16.426628+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T22:28:55.238532+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T22:32:25.637257+00:00 (updated-by): Updated: section:notes
+- RV4756
+- 2026-11-27T22:54:29.822389+00:00 (updated-by): Updated: section:notes
