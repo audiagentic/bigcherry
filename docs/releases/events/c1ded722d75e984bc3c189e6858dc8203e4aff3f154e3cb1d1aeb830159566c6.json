@@ -1,0 +1,20 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261127_035640_preserve-deferred-ci-security_7257",
+  "files": [
+    "experiments/ci-pin-action-shas/README.md",
+    "experiments/ci-pin-action-shas/change.patch",
+    "experiments/ci-pin-action-shas/original-commits.patch",
+    "experiments/README.md",
+    "docs/planning/completed/build-ci-speed/BU04.md",
+    "docs/planning/completed/build-ci-speed/BU05.md"
+  ],
+  "plan-item-ids": [
+    "BU04",
+    "BU05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Archive rejected CI hardening as inert reproducible patches; defer SHA pinning and permission narrowing independently.",
+  "timestamp-utc": "2026-11-27T03:56:40.388697Z",
+  "user-summary-candidate": "Preserve deferred CI security experiment without changing active workflows."
+}

@@ -13,3 +13,7 @@ Do not discard completed or rejected work. Before removing a branch or its workt
 ## Host experiments
 
 - [GFXOFF Linux 7.0.13 reconstruction](host-kernel-gfxoff-7.0.13/README.md) — BHK01–BHK04; archived source/patch/config/build recipes and observed power evidence. No module installation, no exact installed-binary claim; generated runs stay outside Git.
+
+## CI experiments
+
+- [Deferred CI action SHA pinning and package permissions](ci-pin-action-shas/README.md) — BU04–BU05; inactive historical patch, PR #1366.
