@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261127_065026_the-final-source-pass-added-th_4837",
+  "files": [
+    "External host-local MRC migration inventory and RUM09 result indexes; intentionally excluded from Git."
+  ],
+  "plan-item-ids": [
+    "MEN29"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Final reconciliation corrected the RUM09 count to 166 unique scored stream results, including ten successful results from an interrupted runner attempt, and added 78 unique long-document prefill measurements. Exact duplicate prefill copies were retained as source-path references. Store count is now 1,739 documents; inventory and indexes agree. All reconstructed results remain unverified; large raw data stays outside Git.",
+  "timestamp-utc": "2026-11-27T06:50:26.520505Z",
+  "user-summary-candidate": "The final source pass added the ten scored results from an interrupted run and 78 long-document prefill measurements. The external MRC store now contains 1,739 records, and exact duplicate copies are linked without being counted twice."
+}
