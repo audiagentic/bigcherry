@@ -92,10 +92,10 @@ def _metric_specs(rec: dict) -> dict[str, dict]:
     if not isinstance(specs, dict):
         raise ResultsError("metric_specs with explicit metric direction required in every run record")
     found = {}
-    for phase in PHASES:
-        for metric, spec in specs[phase].items():
+    for phase, metrics in specs.items():
+        for metric, spec in metrics.items():
             if (
-                set(spec) - {"direction", "gated", "repeat_groups", "covariate"}
+                set(spec) - {"direction", "gated", "repeat_groups", "covariate", "unit", "aggregation", "definition"}
                 or spec["direction"] not in ("higher", "lower")
                 or type(spec["gated"]) is not bool
             ):
@@ -134,16 +134,14 @@ def _metrics(rows: Sequence[dict]) -> dict[str, dict]:
     for row in rows:
         specs = _metric_specs(row["record"])
         for metric, spec in specs.items():
-            if metric in catalog and (
-                catalog[metric]["direction"] != spec["direction"]
-                or catalog[metric]["gated"] != spec["gated"]
-            ):
-                raise ResultsError(f"metric direction or gated state differs for {metric}")
-            catalog[metric] = {
-                "direction": spec["direction"], "gated": spec["gated"],
+            semantic = {
+                key: spec[key] for key in
+                ("direction", "gated", "covariate", "unit", "aggregation", "definition")
+                if key in spec
             }
-            if spec.get("covariate"):
-                catalog[metric]["covariate"] = spec["covariate"]
+            if metric in catalog and catalog[metric] != semantic:
+                raise ResultsError(f"metric semantics differ for {metric}")
+            catalog[metric] = semantic
     if not catalog:
         raise ResultsError("baseline has no recorded metric directions")
     result = {}
@@ -467,7 +465,7 @@ def history(
     workload: str, metric: str, baseline: dict | None = None,
     trailing_window: int = 3, since: str | None = None, until: str | None = None
 ) -> dict:
-    """One phase-qualified metric over time, with two-launch drift signals.
+    """One group-qualified metric over time, with two-launch drift signals.
 
     Each signal compares the latest two launches, never a single launch, to
     either the reproducible baseline or an earlier non-overlapping trailing
@@ -475,7 +473,7 @@ def history(
     replacements for a provenance-aware cohort compare.
     """
     if not run_records._METRIC.fullmatch(metric):
-        raise ResultsError("metric must be phase.name (decode, prefill or ttft)")
+        raise ResultsError("metric must be group.name (for example decode.tokens_per_second or quality.kld_mean)")
     if trailing_window < 2:
         raise ResultsError("trailing window must contain at least two launches")
     rows = store.query(engine=engine, layout=layout, workload=workload,
