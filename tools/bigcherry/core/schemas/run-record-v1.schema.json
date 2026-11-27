@@ -328,7 +328,9 @@
     },
     "metric_specs": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": {
+        "$ref": "#/$defs/metric_group_specs"
+      },
       "required": [
         "decode",
         "prefill",
@@ -365,6 +367,10 @@
             "$ref": "#/$defs/metric_spec"
           }
         }
+      },
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
       }
     },
     "validity": {
