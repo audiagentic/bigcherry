@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_070015_preserve-required-retained-moe_7989",
+  "files": [
+    "docs/evidence/2026-11-27-radiance-230-bump/RETAINED-MOE-BUILD.md",
+    "engines/radiance/patches/rad0046_retained_moe_rows/patch.py",
+    "tools/tests/patch/test_radiance_rad0046.py"
+  ],
+  "plan-item-ids": [
+    "MEN24",
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Repair retained rad0046 registry and block scale contracts for 2.3 host compile. Four affected C++ units and exact-pin geometry/replay passed.",
+  "timestamp-utc": "2026-11-27T07:00:15.733743Z",
+  "user-summary-candidate": "Preserve required retained MoE helper rows while migrating to Radiance 2.3."
+}

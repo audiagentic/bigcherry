@@ -48,6 +48,11 @@ constexpr bool wide_n(long long n, int parts, const long long* class_widths,
         ),
     ),
     FilePatch(language="none", path="libr4d/r4d_rows.cpp", description="Register the retained E4M3 rows.", edits=(
+        before("grouped-constraint", 'static const RadConstraint cMoeGemmI8[] = {',
+               '''static const RadConstraint cMoeGemmQ[] = {
+    C_GE("M", 1), C_DIV("N", 64), C_DIV("K", 128), C_GE("n_expert", 1), C_LE("n_expert", 65536),
+    C_GE("top_k", 1), C_EQ("group", 128), C_IN("dtype", "fp8a8"),
+};''', "Keep the former exact block-E4M3 row constraint for the retained helper."),
         before("rotated-schema", '    SCHEMA("quant_act_fp8",',
                '''    SCHEMA("had_quant_act_fp8", pQuantActFp8, oQuantActFp8,
            "128-wide Hadamard before per-block E4M3 quantisation, paired with rotated W4 experts."),''',
@@ -127,10 +132,11 @@ constexpr bool wide_n(long long n, int parts, const long long* class_widths,
     const int rc = fgeom(p, n_p, &g);
     if (rc != RAD_OK) return rc;
     if (operand != FL_B && operand != FL_BSCALE) return RAD_E_UNSUPPORTED;
-    if (!fp8_block_enc(enc)) return RAD_E_DTYPE;
+    if (!r4d_enc::affine(enc, RAD_F8E4M3, RAD_BF16, R4D_I8_GROUP, R4D_I8_GROUP))
+        return RAD_E_DTYPE;
     const bool scale = operand == FL_BSCALE;
     if (!r4d_enc::selects(enc, sel, n, scale ? "scale" : "codes") ||
-        !r4d_enc::dims(pl[0], scale ? g.sn : g.N, scale ? g.sk : g.K)) return RAD_E_SHAPE;
+        !r4d_enc::dims(pl[0], scale ? (g.N - 1) / R4D_I8_GROUP + 1 : g.N, scale ? g.sk : g.K)) return RAD_E_SHAPE;
     return RAD_E_UNSUPPORTED; // Verified canonical plane; no relayout.
 }
 ''', "Use upstream geometry and encoding checks for the checkpoint-native plane contract."),
@@ -138,10 +144,12 @@ constexpr bool wide_n(long long n, int parts, const long long* class_widths,
     FilePatch(language="none", path="libr4d/r4d_plugin.h", description="Declare the retained entry points.", edits=(
         before("entry-declarations", 'int r4d_rad_layout_moe_i8(',
                '''int r4d_rad_moe_gemm_q(const RadArgs*, RadStream);
+int r4d_rad_had_quant_act_fp8(const RadArgs*, RadStream);
+int r4d_shape_moe_gemm_q(const RadParam*, int, int, RadOpdDesc*);
 int r4d_rad_layout_moe_fp8(const RadParam*, int, int, const RadEncoding*, const int*,
                            const RadTensor*, int, RadLayout*);
 int r4d_rad_layout_fp8_rowmajor(const RadParam*, int, int, const RadEncoding*, const int*,
                                 const RadTensor*, int, RadLayout*);''',
-               "The current SDK already declares the rotated launch and grouped shape callback."),
+               "Declare the retained launch, shape and layout callbacks explicitly; upstream 2.3 removed them."),
     )),
 )
