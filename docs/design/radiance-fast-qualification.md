@@ -92,3 +92,70 @@ Native sim_burst already supplies seeded acceptance, burst/pre-existing decoder 
 Freeze scenario, seed, cost table digest, policy, geometry, capacity and arrival order. Deterministically enumerate a bounded set of legal policies with stable ordering and tie-breaks. Hard reject invalid requests, missing cost coverage, deadlock, starvation, conservation/quality failures or latency-budget violations. Compare nondominated choices on aggregate throughput, TTFT, gap tails and fairness; uncertainty bands and held-out measured cohorts determine whether a policy merits hardware confirmation. Record schedule digest over ordered steps, per-sequence IDs/progress/acceptance/completion and controller decisions; exclude wall-clock/log paths. Require repeated identical digests and metrics for the same inputs, including with different host load. Changing the cost/acceptance profile is a separate cohort. Native simulator estimates are not measured tok/s and cannot promote production settings.
 
 Implementation status: 724ebe40c replaced the old manual link launcher with attested snapshots and native CTest. Seven cases/18,221 checks in 0.21 s on restored 2.3 host build, 31 Python tests and default mutation rejected. Existing scheduler assertions remain until upstream equivalents prove same coverage. Fresh combined launcher validation, complete profile audit, deterministic simulator extension, cost ingestion and MRC08/MEN17 integration are open. No production configuration changed. See docs/evidence/VTP60-native-host/summary.json.
+
+## 11. Native tuning on heterogeneous TP and KV formats
+
+Reviewed the composed 2.3 candidate (slice 90bca121c9dcee4cac6cf2b41a8d7b3e).
+rad0071_native_kv_tools shares core/mem/packed_kv.h with both native tools;
+it compiles but is not yet promoted. Existing KV layout descriptors in
+abi/rad_builder.h are the authority, not a separate list of quantisation
+formats. Reuse ENG04/ENG06 format and retrieval gates and RSC12 profiles.
+
+**Do not publish a TP3 cache from an unqualified rad-tune run.** Three
+concrete gaps in the composed source:
+
+- tools/rad_tune.cpp declares the requested TP width but omits the engine's
+  ownership split, pipeline/min rows, FP8 attention product selector and
+  effective max context. core/engine_bringup.cpp Engine::build_ctx is the
+  actual authority. Factor out its pure config-derived fields rather than
+  replicating them. Preserve runtime-only fields (slot, calibration,
+  controls, streaming capabilities) as explicit inputs/refusals. Prefer the
+  existing native fleet/config reader for the model selection; compare
+  effective declared graphs and source provenance.
+- rad-tune iterates progs[0].tune_requests, and noncollective launches use
+  rank zero. For the XTX/XTX/R9700 deployment, that can miss different
+  rank geometries and kernel providers. Enumerate the union of per-rank
+  Program::TuneRequest records; measure noncollective work on its actual
+  rank, and group collective requests by the existing instance and
+  compatible geometry. A collective lacking a matching peer is uncovered,
+  not a valid timed case. Use native rad-kbench recorded fixtures for
+  independent correctness on every affected rank/provider/geometry.
+- core/format/machine_key.cpp identifies device 0 and visible device count,
+  not the whole heterogeneous topology; TuneCache currently keys on kernel,
+  plugin and geometry. A shared provider/key can collide if two ranks
+  require different optimal axes. Initially keep caches isolated, and
+  admit a shared row only when every rank that consumes it is validated
+  for that choice. For real collisions extend the native key and lookup
+  together (backward-compatible reader, explicit ambiguity refusal),
+  never invent a BigCherry tune cache. Validate reordered devices,
+  homogeneous vs heterogeneous topology, identical and differing
+  geometries, pin precedence (RADIANCE_TUNE / tune-pin), stale source and
+  plugin changes. Only publish after exact cache readback in engine and
+  independent quality/serving gates. Model format and runtime identity
+  belong in existing MRC08 evidence, not in an unrelated store.
+
+Performance attribution: use matching prompt hashes and actual token
+counts, repeat fresh starts in ABBA order, report both step latency and
+tokens per step (draft acceptance can change independently), wall output
+rate, TTFT, gap tails and actual prefix hits. Preserve cold prefill vs
+cached workload as separate cohorts. Measure 16/8 against FP8/BF16 over
+context lengths that physically fit, then I8/V4/K6V4 with quality and
+retrieval controls. Compare memory at a common page/token budget before
+claiming capacity gains. Reject unsupported geometries before timing.
+
+Packed KV correctness is a separate required gate, not supplied by accepting
+a CLI string. The current libref/ref_attn.cpp explicitly returns
+RAD_E_UNSUPPORTED for packed layouts; ref_shapes.cpp's paged recipe
+uses native 2*hd, and tools/opshapes.cpp has the same native fallback.
+libr4d/r4d_shapes.cpp already computes actual packed storage extent via
+rad_kv_group_row_elems. Prevent reference-shape fallback from passing an
+incorrect native extent to a packed kernel. Reuse that ABI row descriptor
+for physical extent, build finite legal packed fixtures using independent
+known source K/V and validated packers, and compare decoded attention
+against the independent dense/native reference (not the tested GPU
+packer/dequant as its own oracle). Inspect the existing device selftests
+and packed replay fixtures before adding a new helper. Record uncovered
+formats explicitly if an independent oracle/fixture does not exist.
+A tune candidate agreeing with its own default is insufficient quality
+evidence. Native tools must refuse or skip these unsupported cases with
+coverage accounting; no random opaque packed bytes as numerical evidence.

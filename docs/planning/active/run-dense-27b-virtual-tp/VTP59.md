@@ -74,6 +74,8 @@ Use VTP60 native-first tuning path: rad-tune for kernel variants only, rad-kbenc
 
 2.3 exact candidate 69cccadc518f5282d312b0d84a08bc01: 6 managed IQ8R arms, 18 reports, all successful clean stops, no preemptions, matching prompt hashes/counts per cohort. TP2 0/250ms/4096 candidate 512/128,4096/128,4096/512 aggregate 261.646/52.583/157.212 vs auto 270.558/48.221/123.241; 4K512 p95 gap47.074ms vs auto34.82 and tuned 2048 budget203.904. TP3 0/200ms/2048 gives 278.018/61.314/189.469 vs auto296.786/62.496/148.594; 4K512 p95 gap41.186 vs34.287. TP3 0/100ms/4096 288.157/58.467/182.9, 4K128 decode715.476 but wall throughput lower. Recommend TP2 4096 budget and TP3 200ms 2048 as long-response finalists; retain default short-response controls. Single repetition only; require ABBA, mixed arrivals, latency bounds and independent quality; no production promotion. Evidence docs/evidence/VTP60-deterministic-screen/candidate-gpu-summary.json.
 
+Combined 2.3 TP2 (pipeline on/min256 + 0/250ms/4096) and default: 3 reps each 512/192,4K/128,4K/512. Aggregate 355.173/60.880/172.127 vs 318.721/48.497/128.521; max TTFT 2.017/15.135/16.448s vs 2.638/20.020/26.102s. P95 long gaps 233/225ms vs29/37; no preemptions, matching actual prompts. Historical 2020.8.5 same target 512/192 TP2 335.7 aggregate/569 engine decode vs 355.173/673.717; old prompt identities not verified. TP3 default 347.917/570.182 vs tuned 350.280/644.140; old 361.2/574. TP3 tuned original interrupted after short workload; retry separate. Do not promote without ABBA, mixed arrival/quality and latency budgets. Evidence docs/evidence/VTP60-combined-screen/summary.json.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -90,3 +92,4 @@ Use VTP60 native-first tuning path: rad-tune for kernel variants only, rad-kbenc
 - 2026-11-27T10:26:28.686503+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:53:41.556574+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:08:19.072053+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T11:47:13.447881+00:00 (updated-by): Updated: section:notes
