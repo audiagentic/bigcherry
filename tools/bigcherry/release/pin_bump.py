@@ -1457,7 +1457,8 @@ def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, t
         ) from exc
 
 
-def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root: Path) -> None:
+def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root: Path,
+                     state: PinBumpState | None = None) -> None:
     """MEN17 (`--accept`): the engine's hardware acceptance against its stored baselines, after the CPU smoke.
 
     Needs the GPUs; with none visible the bump STOPs rather than recording an acceptance that did not happen. The
@@ -1482,7 +1483,12 @@ def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root
         ) from exc
     try:
         layout = _engines.load(_paths.REPO_ROOT, engine)
-        passed, results, evidence = acceptance.accept(_paths.REPO_ROOT, layout, None, out_dir)
+        candidate = None
+        if state is not None and state.lane_build_status == "passed":
+            candidate = acceptance.CandidateRuntime(Path(state.lane_build_dir), state.lane_build_plan_id,
+                                                    state.lane_build_binary_sha256, state.to_sha)
+        passed, results, evidence = acceptance.accept(_paths.REPO_ROOT, layout, None, out_dir,
+                                                      candidate=candidate)
     except (acceptance.AcceptanceError, _engines.EngineError, FileExistsError) as exc:
         raise PinBumpStop(
             "cpu-smoke", "ACCEPT_UNRUNNABLE", f"hardware acceptance could not run: {exc}",
@@ -2354,7 +2360,7 @@ def _run_phases(
                 run_phase_cpu_smoke(engine=engine, build_dir=Path(state.lane_build_dir) if state.lane_build_dir else None, out_dir=report_dir / "cpu-smoke", target_ref=target_ref)
                 state.cpu_smoke_status = "passed"
             if accept and state.accept_status != "passed":
-                run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root)
+                run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root, state=state)
                 state.accept_status = "passed"
             state.advance(report_dir, "cpu-smoke", "reaudit")
 

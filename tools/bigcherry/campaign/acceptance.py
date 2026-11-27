@@ -246,6 +246,91 @@ def prepare(repo_root: Path, layout: engines.EngineLayout, only: list[str] | Non
     return prepared
 
 
+@dataclasses.dataclass(frozen=True)
+class CandidateRuntime:
+    build_dir: Path
+    build_plan_id: str
+    binary_sha256: str
+    upstream_revision: str
+
+    def verify(self, layout: engines.EngineLayout) -> Path:
+        from ..build.builds import binary_hash
+        from .build import CampaignBuildError
+        from .workers import _source_attestation, _verify_source
+
+        binary = (self.build_dir / layout.serve.binary).resolve()
+        try:
+            meta = json.loads((self.build_dir / f"bigcherry-build-metadata-{binary.name}.json").read_text())
+            if not self.upstream_revision:
+                raise ValueError("candidate upstream revision missing")
+            if not self.build_plan_id or meta["build_plan_id"] != self.build_plan_id:
+                raise ValueError("candidate plan ID mismatch")
+            if meta["binary_hash"] != self.binary_sha256 or binary_hash(binary) != self.binary_sha256:
+                raise ValueError("candidate binary SHA-256 mismatch")
+            cache = (self.build_dir / "CMakeCache.txt").read_text()
+            source = next(Path(line.split("=", 1)[1]) for line in cache.splitlines()
+                          if line.startswith("CMAKE_HOME_DIRECTORY:"))
+            attestation = _source_attestation(source, upstream_revision=self.upstream_revision,
+                                              source_slice_id=meta["source_slice_id"])
+            if attestation is None:
+                raise ValueError("candidate source attestation missing")
+            _verify_source(source, attestation)
+        except (OSError, KeyError, TypeError, ValueError, StopIteration, CampaignBuildError) as exc:
+            raise AcceptanceError(f"candidate runtime verification failed: {exc}") from exc
+        return binary
+
+
+def validate_qualified_entries(layout: engines.EngineLayout, prepared: list, output: Path = Path(".")) -> None:
+    """Radiance release acceptance must not use legacy diagnostic captures.
+
+    Keep declaration parsing and the diagnostic benchmark runner available.
+    A diagnostic/observe capture or a reference recorded by the candidate
+    cannot qualify a release. Validate the whole selected cohort before
+    running any entry.
+    """
+    if layout.name != "radiance":
+        return
+    problems = []
+    for entry, config, sets in prepared:
+        doc = json.loads(config.read_text(encoding="utf-8"))
+        quality = doc.get("quality")
+        if any(b.metric in QUALITY_METRICS for group in sets for b in group.baselines) and not isinstance(quality, dict):
+            problems.append(f"{entry.name}: quality baseline without quality block")
+        if isinstance(quality, dict):
+            if "record" in quality or "corpus" in quality:
+                problems.append(f"{entry.name}: candidate-recorded quality reference")
+            if not quality.get("reference_metadata"):
+                problems.append(f"{entry.name}: missing independent reference metadata")
+        arms = doc.get("arms")
+        if not isinstance(arms, list) or not arms or any(
+            not isinstance(arm, dict) or arm.get("binary") != "${RAD_BIN}" for arm in arms
+        ):
+            problems.append(f"{entry.name}: arms must use the bound candidate binary")
+        else:
+            bound_keys = {"RAD_BIN", "RAD_HOME", "RADIANCE_HOME"}
+            controls = [dict(entry.env), doc.get("environment", {})]
+            for arm in arms:
+                controls.extend([arm.get("environment", {}), arm.get("settings", {})])
+            if any(not isinstance(c, dict) or bound_keys.intersection(c) for c in controls):
+                problems.append(f"{entry.name}: candidate runtime environment override")
+        if doc.get("evidence_role") != "production" or doc.get("execution_evidence") != "required":
+            problems.append(f"{entry.name}: diagnostic or unverified execution evidence")
+    if problems:
+        raise AcceptanceError("unqualified Radiance acceptance declarations: " + "; ".join(problems))
+    from .quality_capture import check_reference_state, validate_quality_block
+    for entry, config, _ in prepared:
+        doc = json.loads(config.read_text(encoding="utf-8"))
+        if "quality" in doc:
+            try:
+                with _entry_environment(entry, output / entry.name):
+                    quality = validate_quality_block(doc["quality"], [arm["name"] for arm in doc["arms"]])
+                    if Path(quality["reference_dir"]).resolve().is_relative_to(output.resolve()):
+                        raise ValueError("reference must be independent of this output directory")
+                    check_reference_state(quality)
+            except (OSError, ValueError, KeyError) as exc:
+                raise AcceptanceError(f"{entry.name}: independent quality reference not usable: {exc}") from exc
+
+
 @contextlib.contextmanager
 def _entry_environment(entry: engines.AcceptanceEntry, entry_dir: Path) -> Iterator[None]:
     """The entry's declared variables, unless the caller already set them."""
@@ -261,7 +346,8 @@ def _entry_environment(entry: engines.AcceptanceEntry, entry_dir: Path) -> Itera
             os.environ.pop(key, None)
 
 
-def run_entry(entry: engines.AcceptanceEntry, config: Path, sets: list[BaselineSet], output: Path) -> EntryResult:
+def run_entry(entry: engines.AcceptanceEntry, config: Path, sets: list[BaselineSet], output: Path,
+              *, require_admitted: bool = False) -> EntryResult:
     """Run one entry through the server-comparison capture and compare it with its baselines."""
     from .benchmark import run_server_comparison_capture
 
@@ -285,6 +371,10 @@ def run_entry(entry: engines.AcceptanceEntry, config: Path, sets: list[BaselineS
             error = error or f"run.json is unreadable: {exc}"
     if returncode not in (0, None) and not error:
         error = f"the comparison run exited {returncode} (see {run_json})"
+    if require_admitted and any(
+            base.metric not in QUALITY_METRICS for found in sets for base in found.baselines):
+        if run.get("performance_admitted") is not True:
+            error = error or "performance capture is not admitted"
     rows = [row for found in sets for row in compare(entry.name, found, run)]
     return EntryResult(
         entry.name, entry.config, str(run_dir), returncode, error, rows,
@@ -311,17 +401,40 @@ def render(results: list[EntryResult]) -> str:
 
 def accept(
     repo_root: Path, layout: engines.EngineLayout, only: list[str] | None, output: Path,
+    *, candidate: CandidateRuntime | None = None,
 ) -> tuple[bool, list[EntryResult], Path]:
     """Run the selected entries; (all passed, their results, the evidence file). Raises AcceptanceError first when a
     declaration, config or baseline file is bad, before any hardware is used."""
     prepared = prepare(repo_root, layout, only)
+    validate_qualified_entries(layout, prepared, output)
+    if layout.name == "radiance" and candidate is None:
+        raise AcceptanceError("Radiance acceptance requires a verified candidate lane receipt")
+    binary = candidate.verify(layout) if candidate else None
+    if candidate and layout.name == "radiance" and not (candidate.build_dir / layout.runtime_home).is_dir():
+        raise AcceptanceError("candidate runtime home missing")
     output.mkdir(parents=True, exist_ok=True)
     started = time.strftime("%Y-%m-%dT%H:%M:%S%z")
-    results = [run_entry(entry, config, sets, output) for entry, config, sets in prepared]
+    bound = {} if binary is None or layout.name != "radiance" else {
+        "RAD_BIN": str(binary), "RAD_HOME": str((candidate.build_dir / layout.runtime_home).resolve()),
+        "RADIANCE_HOME": str((candidate.build_dir / layout.runtime_home).resolve()),
+    }
+    saved = {k: os.environ.get(k) for k in bound}
+    try:
+        os.environ.update(bound)
+        results = [run_entry(entry, config, sets, output, require_admitted=layout.name == "radiance")
+                   for entry, config, sets in prepared]
+    finally:
+        for key, value in saved.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
     passed = all(r.passed for r in results)
     evidence = output / EVIDENCE_NAME
     evidence.write_text(json.dumps({
         "schema": SCHEMA, "engine": layout.name, "started": started, "passed": passed,
         "entries": [r.document() for r in results],
+        **({"candidate": {"build_plan_id": candidate.build_plan_id, "binary_sha256": candidate.binary_sha256,
+                          "upstream_revision": candidate.upstream_revision}} if candidate else {}),
     }, indent=2) + "\n", encoding="utf-8")
     return passed, results, evidence

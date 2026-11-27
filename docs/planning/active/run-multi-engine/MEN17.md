@@ -94,6 +94,10 @@ VTP59 expanded stability gate: audit all resolved profile defaults with field pr
 
 RV4754 baseline-first: consume MRC08/MEN29, not duplicate their record system. Current helper-ab uses legacy flags, diagnostic/observe, ambient RAD_BIN/RAD_HOME; helper-kld records same-run reference. These cannot qualify promotion. Fail closed before GPU for wrong/missing candidate, missing independently identified reference or diagnostic-only record; use existing benchmark/lab records and native owner. Required affected existing-model/format/topology cohorts, scheduler regression and quality; broad optimization and new shared KV mode after baseline.
 
+First baseline acceptance implementation: candidate plan/binary SHA/source attestation verified; pin-bump passes saved lane, standalone accepts existing candidate-state-dir; bound runtime environment cannot inherit an ambient engine. Legacy diagnostic, unadmitted performance and same-run/missing independent quality references refuse. Current helper-ab/helper-kld remain diagnostic, so no qualified GPU verdict. Next reuse native managed run records and independently identified quality references for affected cohorts, not force old diagnostic config through the gate.
+
+Integrated baseline repair validated: 251 Python tests and 34 subtests passed with host environment explicitly selected; actual candidate 927a24bf85c2ac29d3dbe0b779063323 source attestation and launcher SHA verified, actual ComponentGate.plugin_abi 71/71 passed. Six owned DSO hashes differ from earlier build, so do not reuse all old component proof. See integrated-offline-gates.json. GPU occupied by independent Gate E; no new GPU acceptance. Final managed record comparisons/independent quality, current bundle component gates, formal bump and installed lifecycle still open.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -121,3 +125,5 @@ RV4754 baseline-first: consume MRC08/MEN29, not duplicate their record system. C
 - 2026-11-27T09:45:30.038198+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T10:09:00.551273+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:12:13.103651+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:24:06.385547+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:24:47.511828+00:00 (updated-by): Updated: section:notes

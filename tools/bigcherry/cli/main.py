@@ -860,6 +860,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="run only this acceptance entry (engine.toml [[acceptance]] name); may repeat. Default: every entry",
     )
     accept_cmd.add_argument("--output", required=True, help="new directory for the runs and the evidence (acceptance.json)")
+    accept_cmd.add_argument("--candidate-state-dir", type=Path, default=None,
+                            help="existing pin-bump report directory containing the verified candidate lane receipt")
     accept_cmd.set_defaults(func=cmd_accept)
 
     smoke_cpu_cmd = sub.add_parser(
