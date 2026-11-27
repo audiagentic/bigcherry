@@ -118,6 +118,8 @@ RV4756: FlashNext quality refused in installed 2.2 and candidate 2.3 because own
 
 Canonical rebuild f3b75ae7e258f3a0c75870e20060a40f includes b95ac61c0 retained quality admission fix; 93/93 declared component tests (5/48/40). Four-GPU FlashNext IQ4R independent 1170.34.0 reference scoring completed, 8240 positions/4 docs, KLD mean .0628456 p99 .745897 top1 88.5922% PPL ratio 1.000007; ref hashes verified against original list before/after, stopped all children. Installed 2.2 and prior candidate fail same retained-admission gate, not an identical-release comparison. No formal acceptance claim. Evidence flashnext-quality-admission.json, raw MEN17-flashnext-quality. RV4756 fix hardware-proven.
 
+Exact corrected canonical build f3b75ae7e258f3a0c75870e20060a40f: 71/71 ABI45, 93/93 component tests; final candidate IQ8R and IQ6R each score all 8240 positions, byte-identical row files to independently captured installed 2020.24.1, clean stop. Evidence final-canonical-qwen-quality.json; FlashNext four-GPU independent reference passes corrected owner but installed owner cannot complete identical helper-backed scoring. ABBA installed-release comparison in MEN24. Formal qualified native acceptance and package/install/rollback remain outstanding; do not promote diagnostic records.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
@@ -158,3 +160,4 @@ Canonical rebuild f3b75ae7e258f3a0c75870e20060a40f includes b95ac61c0 retained q
 - RV4756
 - 2026-11-27T22:54:29.822389+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T23:06:16.525942+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T23:15:34.084422+00:00 (updated-by): Updated: section:notes
