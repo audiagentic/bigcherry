@@ -41,6 +41,8 @@ Guide I1-I3: test mutated rank facts/BDF/live room, exact pool boundary, replica
 
 Guide J1/J3/J4: 65-token target at block 16 needs 5 pages, not 4; fixed==budget, invalid inverse, ID/offset bounds, exact cap/slot and late startup failure; prove preallocation gate, actual carve and ready receipt separately.
 
+Guide L adds native option absent/auto/minimum and unsupported cases, native inspector strict roundtrip, legacy cache/replay and stale version/policy refusal. Check exact group vector/offset/ID/wire bounds, raw-free vs usable rank margin (including scratch/prefetch/held-out), cap and ceiling, next-page/MiB failure, invalid probe, before-pool drift and post-carve/backing/late-ready distinction; independent retention/checkpoint cap.
+
 ## Effort & Risk
 
 Refactor only after measured failure diagnosis. Host entry geometry is required for truthful shared-mode retention; unsupported tier combinations refuse, not approximate. Verify actual production reachability before deleting old arithmetic.
@@ -67,6 +69,8 @@ Fourth review (RSC16 guide J): exact target production source identity mandatory
 
 2.3 review guide K1-K4/K6: exact upstream and 34 materialized patch hashes checked. Native named-card reserve/spare, window/ring and checkpoint-draft-window policy reused. rad0011 still precedes rad0029; scalar inverse/floor bug remains. plan_done occurs AFTER pools.configure. No duplicate solver, kernels or allocator. Do not start until final merged identity is rechecked; retain fixed-backed discrete hybrid state/window scope and fail closed unsupported combinations.
 
+Readiness review guide L1-L3/L5: explicit fixed-backed discrete dense text scope (ordinary bounded windows and linear/conv state included; runtime reference-ring, generators, streaming, expert/fleet/lending/unified/explicit cap unsupported initially). Native config/inspector and owner reader migrate together. Shared auto bounded by existing service ceiling; numeric packed minimum >= L; legacy untouched. Per-rank receipt currently omits queue scratch/prefetch and uses raw free, not usable room; reuse native ledger and distinguish limiting margin. Version actual shared EnginePlan/managed producer-consumer chain, keep historical readers. Proposal/live gate before first pool, allocated and carved receipts and front readiness distinct. See guide L for exact code anchors and tests.
+
 ## Change Log
 
 - 2026-11-27T03:42:00.914197+00:00 (created-by): Created by agent
@@ -76,3 +80,5 @@ Fourth review (RSC16 guide J): exact target production source identity mandatory
 - 2026-11-27T04:01:17.824450+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - 2026-11-27T04:18:31.945889+00:00 (updated-by): Updated: section:notes, section:validation, section:acceptance_criteria
 - 2026-11-27T07:13:13.774456+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-27T07:29:21.650576+00:00 (updated-by): Updated: section:notes, section:validation
+- 2026-11-27T07:30:28.167324+00:00 (updated-by): Updated: section:notes

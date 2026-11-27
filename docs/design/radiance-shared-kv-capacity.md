@@ -3,7 +3,8 @@
 Status: proposed engine contract; not implemented or qualified.
 Date: 2026-11-27. Owner scope: Radiance generic serving and memory planning.
 Implementation detail: [code-level guide](radiance-shared-kv-capacity-code-guide.md).
-Section K records the verified Radiance 2.3 reuse map and consolidated test ladder;
+Sections K-L record the verified Radiance 2.3 reuse map, exact launch contract,
+initial capability boundaries and consolidated test ladder;
 implementation targets the final merged bump, not the historical 2.2 source.
 RSC17 owns startup planning and RSC18 owns runtime; RSC16 integrates and qualifies.
 The client harness owns client-specific context limits. The engine owns physical

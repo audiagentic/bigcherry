@@ -1,7 +1,7 @@
 # Shared KV capacity: code-level implementation guide (RSC16)
 
 Proposed, not implemented. Read radiance-shared-kv-capacity.md first. Source anchors
-originally checked against Radiance 2.2; section K records verified 2.3 target
+originally checked against Radiance 2.2; sections K-L record verified 2.3 target
 source and overrides stale implementation anchors/assumptions. Recheck the final
 merged recipe and source identity before edits.
 Keep upstream changes as managed patches under engines/radiance/patches, following
@@ -779,3 +779,160 @@ alone unless measured S*L fixed overhead is dominant.
    twice. Recheck actual rank pages and host retention receipts; refusal is
    actionable evidence, not a successful 512K test. No full-engine test after
    each host change; do not skip required final integration gates.
+
+## L. Implementation readiness: exact launch contract (2026-11-27)
+
+K is the source/reuse map; L closes implementation choices, not a new work
+package. Reviewed bump 1977b71a5: since K's e48149491 only libr2 unit inventory
+and evidence changed, not the host patch chain. Main includes PR1727
+(ecb354643). Reviewed the same verified 2.3 materialization and current
+main serving consumers. No engine execution, build or GPU qualification.
+
+### L1. Scope and configuration
+
+Start with a single discrete fixed-backed text engine, TP1 or TP across
+distinct devices, dense weights, ordinary full paged groups plus native
+bounded sliding windows and linear/conv state. Qwen27B hybrid is required.
+Decline generator branches, runtime reference/ring, streaming, unified,
+expert placement/lending, broker/claim, explicit GPU cap and duplicate BDF
+until their contracts are qualified. This is an explicit shared-mode
+capability gate only; legacy must continue unchanged. Do not infer a
+supported path from a model name or dtype. Check resolved declarations,
+placement and rank facts, not YAML strings alone. Native ordinary windows
+recycle; KVManager::blocks_for (1096) adds a ring to the full reference for
+runtime_win, while scheduler full-group gate excludes WINDOW/RING. Thus
+reference-plus-ring is not safely equivalent to bounded lookback.
+
+Use the proposed native kv-cache-capacity option once: omitted = legacy,
+auto = greatest safe backed packed capacity within native full-service
+ceiling, integer = minimum packed target, not a hard cap nor guaranteed
+arbitrary mixed demand. Require C >= L and reject explicit targets above
+supported logical service ceiling (initially checked S*L); bound block
+vectors by native per-group ceiling S*ceil(L/B), with existing bounded
+window cap, not ceil(S*L/B). Leave excess VRAM unclaimed; idle retention
+beyond ceiling is separate future work. Actual physical rounded capacity
+may exceed requested logical minimum. Do not reduce L/S, change dtype,
+offload weights or relax reserves to make a target fit. For auto with
+measured-cache replay, remeasure on changed proposal or refuse; no silent
+reseal in serving mode. Same native snapshot and resolved policy at measure
+and start. Keep explicit cap semantics for legacy; no new raw-pool knobs.
+
+Implement typed absent/auto/minimum in rad_core.h Config, config.cpp option
+parser/given/report, native YAML route and native_fleet_config.cpp inspector
+(protocol bigcherry.native-fleet-inspect/v2) paired with session.cpp strict
+exact_keys runtime reader (around 2535), serving settings and native
+manifest/cache contract. Version inspector producer/consumer together
+where schema changes; test fake engine and native fleet config fixtures.
+Do not add an x-bigcherry alias or parse YAML twice. Native snapshot digest
+already participates in plan_cache v3 identity; add resolved policy and
+geometry version to measurement identity; keep old readers explicitly.
+Legacy option --vram-kv-mib is not a public override (config.cpp:873).
+
+### L2. Exact rank and geometry handoff
+
+VramFacts contains queue_scratch, prefetch, held_out and host_reserve.
+Native resolve counts n_queues*queue_bytes + queue_scratch, prefetch,
+arena/staging, drift, reserves, unified host_pinned; weights rounding and
+stage funding occur later. Do not copy a partial ledger from
+bc_plan_memory_note_ranks: overhead there is arena+staging+queues+stage,
+omits queue_scratch/prefetch and reports raw f.free as claimable. That
+record is consumed by p1_producer and plan_cache (rank_demand kind).
+bc_plan_check::check selects least raw free BDF, not limiting margin.
+Reuse native reserve/driver/held-out semantics in an extracted per-rank
+budget calculation; account terms exactly once at the correct sampling
+boundary. Maintain raw free separately. Report limiting rank by minimum
+usable margin on same-rank terms; bind ordered BDF, reject duplicate
+physical device. Test asymmetry where smallest free is not limiting,
+nonzero queue scratch/prefetch/held_out, exact MiB and reserve shortfall.
+
+Do not call vram_budget_resolve on shared mode then assume its conservative
+common-floor rejection can be recovered; instrument both common native
+refusal and rad0011 refit refusal. Trial on copied config preserves legacy
+resolver behavior; shared proposal must consume exact same-rank facts and
+native placement predicates. Reject unsupported combinations before
+refit/physical pools. Single proposal contains resolved L/S/C policy,
+per-rank weights/KV MiB, exact group IDs/kinds/block sizes/counts/bytes/
+offsets, fixed state and checkpoint stage, usable room and limiting margin.
+Use checked arithmetic on all multiplication/addition/alignment including
+wire integer bound 2^53-1, int32 IDs and slot expressions; no float proof.
+Pool::reserve (pools.cpp:96) aligns current cursor before each reservation:
+mirror exact order, avoid counting both conservative fixed padding and
+actual padding. Preserve alignment, reserve order and stream-map semantics
+in legacy. Inverse acceptance uses vector and actual reserve cursor, not
+a returned scalar. Test max feasible target plus next page/MiB, zero groups,
+fixed==budget, failed group planning, multi-block geometry, cap and overflow.
+Use KVManager plans not separate format-specific byte math. Initial fixed
+backed path must actually commit all advertised usable pages.
+
+### L3. Managed plan/replay chain
+
+bc_plan_memory_note runs pre-pool, mutates cfg and then calls bc_plan::check;
+note_ranks runs before pools.configure, done after plan and before
+load_weights/configure_kv. Separate (1) immutable proposal + live check
+before first pool, (2) successful allocation receipt, (3) post-carve
+geometry/backing receipt and (4) front readiness. Use existing managed
+receipt path; measure-only exit at done is not (3) or (4). No artifact
+called actual capacity from plan alone. Ensure late startup failure cannot
+produce a ready receipt or publish a successful deployment.
+
+Version the shared EnginePlan alongside contract/serving.toml (v1
+literal), v2/admission.cpp check_engine_plan/admission_margins and
+refit_serving_pools, bc_plan_memory/check, engine_admission envelope,
+bc_serving_engine, plan_cache, native_measurement/p1_measurement,
+p1_producer, s8_rules/s8_replay, manifest_writer and existing fixture
+consumers. Both native/P1 measurements currently demand version 1 and
+divide fixed-inclusive kv_one_session by L, and P1 rejects retention>S*L.
+Do not pass shared facts through these validators disguised as v1.
+Keep legacy historical readers, strict expected/live field validation,
+owner provenance/digests, no silent fallbacks. Shared retention uses
+actual whole-engine entry slot size and floor(cap/slot), independent
+checkpoint slots. Keep native prefix-cache-mib byte cap, no second
+retention resolver; if unsupported native helper/remote-expert path
+requires scalar-only facts reject explicitly before use. Check actual
+reachable consumers before implementation; retain existing code guide
+I2/I3 migration inventory. No arbitrary new receipt stream.
+
+### L4. Native admission and context boundaries
+
+Config.prefill_room_gate defaults false (rad_core.h:938); fresh gate in
+scheduler.cpp:1991 is conditional. Shared mode must resolve it on
+(omitted -> enabled for shared only; explicit off -> typed refusal for
+shared mode), preserve legacy behavior. Inspect resolved gate in receipt.
+Reuse existing governor, no alternate demand gate. Scheduler::init derives
+ctx_limit from builder and pool_tokens via can_ever_fit. add_locked
+checks prompt alone; step at 2770 refuses generation prompt == L, permits
+embedding == L. Fresh prefill currently demands prompt+1 even for embed;
+test if a full-capacity embedding is blocked and correct only if needed,
+with no extra decode reservation for embedding. Generation test L-1
+prompt + 1 output, L prompt refusal, overflow, exact L limit, speculative
+headroom trimmed by existing context guard. Do not reserve maximum
+requested output upfront. C >= L is packed cold-one guarantee, not
+promise for arbitrary concurrent outputs; ensure runner extra block
+headroom and bounded progress do not strand an otherwise feasible lone
+request. Reject context overflow distinctly from temporary pressure.
+
+At scheduler.cpp:2660 running ensure_from loop compares only <0; it evicts
+then preempts or reports RAD_E_FULL even if allocator status was different.
+2.3 admission path has exact failure status; extend/test same distinction
+for running growth, preserving legacy behavior unless separately qualified.
+Use existing error/close_request and external-capacity machinery, no new
+error namespace; ensure serious device failure follows native fatal/fence
+policy, never evict live data in response to a non-capacity error. Test
+allocation error with another runner and cached prefix, retryable FULL,
+deferred release/cancel, window recycling and partially recalled loan
+in later-group failure. Retain existing tests; only add failing gaps.
+
+### L5. Definition of ready for implementation
+
+No further design plan needed. Work in order: pin and capability/typed
+config fixture, extract/verify exact rank geometry and proposal, version
+measure/check receipts and retention, run unchanged native scheduler with
+shared geometry then minimal fixes, one integrated candidate and managed
+GPU qualification. RSC17 first two stages and receipts/retention; RSC18
+runtime; RSC16 final qualification and retirement. Implement in small
+reviewable commits; no second allocation engine. Required pre-code gate:
+confirm final merged 2.3 source/patch identity and reconcile any changed
+anchors. Required before release: card-free tests for every named boundary,
+actual post-carve and readiness receipts, cold L and overlapping mixed
+long-active/short progress, legacy parity and supported family coverage.
+No engine/GPU validation has occurred in this review.
