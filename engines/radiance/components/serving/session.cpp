@@ -2,6 +2,7 @@
 #include "power_transaction.h"
 
 #include "config_loader.h"
+#include "native_tuning_fields.h"
 #include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
@@ -508,11 +509,11 @@ bool starts_with(const std::string& s, const char* prefix) {
 
 // Variables that carry bigcherry configuration or choose devices: a child never inherits them.
 bool stripped(const std::string& name) {
-    for (const char* p : {"R3_", "RAD_", "BC_", "BIGCHERRY_"})
+    for (const char* p : {"R3_", "RAD_", "BC_", "BIGCHERRY_", "RADIANCE_"})
         if (starts_with(name, p))
             return true;
     return name == "ROCR_VISIBLE_DEVICES" || name == "HIP_VISIBLE_DEVICES" || name == "CUDA_VISIBLE_DEVICES" ||
-           name == "GPU_DEVICE_ORDINAL" || name == "RADIANCE_HOME";
+           name == "GPU_DEVICE_ORDINAL";
 }
 
 // The control socket's address. sun_path holds at most 107 bytes; a longer run directory is reached through a
@@ -2518,16 +2519,17 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     settings.max_sequences = static_cast<uint32_t>(sequences);
     {
         const Json& tuning = engine_report.at("tuning");
-        if (!tuning.is_object() ||
-            !exact_keys(tuning, {"p2p", "pipelined_prefill", "pipelined_prefill_min_rows", "prefill_governor",
-                                 "tp_ownership", "tune_pin"}))
+        if (!tuning.is_object() || tuning.size() != std::size(kNativeTuningFields))
             throw PlanFailed("native config inspector: report omitted the tuning settings");
-        for (const auto& [name, value] : tuning.items()) {
+        for (const auto& field : kNativeTuningFields) {
+            if (!tuning.contains(field.name))
+                throw PlanFailed(std::string("native config inspector: missing tuning ") + field.name);
+            const auto& value = tuning.at(field.name);
             if (value.is_null()) continue;
-            const bool rows = name == "pipelined_prefill_min_rows";
-            if (rows ? !value.is_number_integer() : (!value.is_string() || value.get_ref<const std::string&>().empty()))
-                throw PlanFailed("native config inspector: ill-typed tuning " + name);
-            out.settings.tuning.emplace(name, value);
+            if (field.integer ? (!value.is_number_integer() || value < 0)
+                              : (!value.is_string() || value.get_ref<const std::string&>().empty()))
+                throw PlanFailed(std::string("native config inspector: ill-typed tuning ") + field.name);
+            out.settings.tuning.emplace(field.name, value);
         }
     }
     const Json& runtime = engine_report.at("settings");
@@ -3050,10 +3052,9 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
 static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
     const fs::path& resolution_root, const fs::path& runtime_home, const Env& selected, Env overrides,
     const fs::path& sys_root) {
-    for (const char* key : {"RADIANCE_HOME", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
-                            "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL"})
-        if (overrides.count(key))
-            throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
+    for (const auto& [key, value] : overrides)
+        if (stripped(key))
+            throw PlanFailed("native config admission: runtime override cannot select " + key);
     for (const auto& [key, value] : selected)
         overrides[key] = value;
     overrides["RADIANCE_HOME"] = runtime_home.string();
@@ -3081,6 +3082,13 @@ static bool native_settings_match(const NativeEngineSettings& native, const v2::
     const auto& execution = engine.execution;
     const auto& service = spec.intent.service;
     const auto prefill = engine.tuning ? engine.tuning->prefill_interleave : std::nullopt;
+    const Json manifest_tuning = engine.tuning ? v2::encode(*engine.tuning) : Json::object();
+    for (const auto& field : kNativeTuningFields) {
+        const auto authored = native.tuning.find(field.name);
+        if ((authored != native.tuning.end()) != manifest_tuning.contains(field.name) ||
+            (authored != native.tuning.end() && authored->second != manifest_tuning.at(field.name)))
+            return false;
+    }
     return native.port == engine.server.port &&
            native.max_context == service.max_context_tokens && native.max_sequences == service.max_sessions &&
            native.kernels == engine.runtime.kernels &&

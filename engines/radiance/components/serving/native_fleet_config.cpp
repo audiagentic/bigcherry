@@ -248,7 +248,17 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                                            ? nlohmann::json(cfg.pipelined_prefill_min_rows) : nlohmann::json(nullptr)},
                                       {"prefill_governor", stated("--prefill-governor", cfg.prefill_governor)},
                                       {"tp_ownership", stated("--tp-ownership", cfg.tp_ownership)},
-                                      {"tune_pin", stated("--tune-pin", cfg.tune_pin)}}},
+                                      {"tune_pin", stated("--tune-pin", cfg.tune_pin)},
+                                      {"attn_prefill_fp8", stated("--attn-prefill-fp8",
+                                          cfg.attn_prefill_fp8 == RAD_ATTN_FP8_QK ? "qk" :
+                                          cfg.attn_prefill_fp8 == RAD_ATTN_FP8_PV ? "pv" :
+                                          cfg.attn_prefill_fp8 == (RAD_ATTN_FP8_QK | RAD_ATTN_FP8_PV) ? "both" : "off")},
+                                      {"busy_prefill_chunk", stated("--busy-prefill-chunk",
+                                          cfg.busy_prefill_chunk < 0 ? "auto" : cfg.busy_prefill_chunk == 0 ? "off" :
+                                          std::to_string(cfg.busy_prefill_chunk))},
+                                      {"state_cache_dtype", stated("--state-cache-dtype", cfg.state_cache_dtype)},
+                                      {"tp_wire_min_kb", cfg.given.contains("--tp-wire-min-kb")
+                                          ? nlohmann::json(cfg.tp_wire_min_kb) : nlohmann::json(nullptr)}}},
                          {"settings", {{"max_batched_tokens", cfg.max_tok},
                                        {"checkpoint_interval", cfg.checkpoint_interval},
                                        {"placement", cfg.placement},

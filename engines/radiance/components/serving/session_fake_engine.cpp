@@ -188,7 +188,9 @@ int main(int argc, char** argv) {
             kernels = parsed;
         }
         json native_tuning = {{"p2p", nullptr}, {"pipelined_prefill", nullptr}, {"pipelined_prefill_min_rows", nullptr},
-                              {"prefill_governor", nullptr}, {"tp_ownership", nullptr}, {"tune_pin", nullptr}};
+                              {"prefill_governor", nullptr}, {"tp_ownership", nullptr}, {"tune_pin", nullptr},
+                              {"attn_prefill_fp8", nullptr}, {"busy_prefill_chunk", nullptr},
+                              {"state_cache_dtype", nullptr}, {"tp_wire_min_kb", nullptr}};
         if (const char* configured_tuning = std::getenv("TEST_NATIVE_INSPECT_TUNING"))
             native_tuning.update(json::parse(configured_tuning));
         json x_bigcherry = {{"schema", 1}, {"description", "fake inspector config"},

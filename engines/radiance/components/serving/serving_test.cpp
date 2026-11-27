@@ -1506,7 +1506,9 @@ void session_engine_plan(Fixture& t) {
                 pre.native_preflight = true;
                 pre.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_TUNING"] =
                     Json{{"tp_ownership", "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"},
-                         {"tune_pin", "all_reduce:nblocks=4"}, {"p2p", "off"}, {"pipelined_prefill_min_rows", 256}}
+                         {"tune_pin", "all_reduce:nblocks=4"}, {"p2p", "off"}, {"pipelined_prefill_min_rows", 256},
+                         {"attn_prefill_fp8", "off"}, {"busy_prefill_chunk", "512"},
+                         {"state_cache_dtype", "f32"}, {"tp_wire_min_kb", 128}}
                         .dump();
                 const fs::path tuned_run = run / "native-preflight-tuning";
                 fs::create_directories(tuned_run);
@@ -1515,6 +1517,8 @@ void session_engine_plan(Fixture& t) {
                 assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
                 assert(tuning.at("tune_pin") == "all_reduce:nblocks=4" && tuning.at("p2p") == "off");
                 assert(tuning.at("pipelined_prefill_min_rows") == 256 && !tuning.contains("prefill_governor"));
+                assert(tuning.at("attn_prefill_fp8") == "off" && tuning.at("busy_prefill_chunk") == "512");
+                assert(tuning.at("state_cache_dtype") == "f32" && tuning.at("tp_wire_min_kb") == 128);
             }
             {   // The BigCherry-owned section: one pass with every table, then one refusal per rule.
                 const auto section = [](Json section) {
@@ -2103,6 +2107,18 @@ void session_engine_plan(Fixture& t) {
                                std::string_view::npos;
         }
         assert(selector_refused && power_admit_calls == power_calls_before_invalid_override);
+        reserved_override.native_admission->runtime_overrides.erase("CUDA_VISIBLE_DEVICES");
+        for (const char* key : {"RADIANCE_TUNE", "RADIANCE_KERNELS", "RADIANCE_OP_ORACLE"}) {
+            reserved_override.native_admission->runtime_overrides[key] = "unmanaged";
+            bool refused = false;
+            try { (void)ss::plan_engine_only(reserved_override, gated_run, admission_hooks); }
+            catch (const ss::PlanFailed& error) {
+                refused = std::string_view(error.what()).find(std::string("runtime override cannot select ") + key)
+                          != std::string_view::npos;
+            }
+            assert(refused && power_admit_calls == power_calls_before_invalid_override);
+            reserved_override.native_admission->runtime_overrides.erase(key);
+        }
     }
 }
 

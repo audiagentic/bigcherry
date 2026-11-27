@@ -57,3 +57,29 @@ Do not use qualification mode as a production bypass. Stock remains available
 by selecting `x-bigcherry.power.profile: stock` in a separate config or lab arm;
 stock baseline and parity arms explicitly select it. No model weights, context
 limits, kernel choices or memory controls change.
+
+
+### Managed tuning enhancements (RSC19)
+
+The native YAML remains authoritative for native engine options. BigCherry's
+owned serving component projects values from the matched Radiance parser;
+it does not parse native options again or implement a second scheduler.
+Explicit native values override upstream defaults through the native parser.
+New upstream native options should be inspected and qualified, not duplicated
+under x-bigcherry.
+
+The managed child environment does not inherit RADIANCE_ tuning, kernel
+selection or diagnostic variables (nor the existing reserved RAD_, R3_, BC_,
+BIGCHERRY_ and device-visibility settings). The owner supplies the selected
+runtime home and device visibility. Use a non-reserved environment name for
+an explicitly referenced API credential; unmanaged direct Radiance invocation
+retains its own environment semantics. An approved lab arm authors native YAML
+with the existing arm_yaml tool, rather than inserting ambient overrides.
+
+The existing typed manifest fields for attention prefill precision, busy
+prefill chunk, recurrent state precision and TP compression threshold now join
+the native tuning projection. Reconciliation checks the presence and value of
+all projected fields. The projection is not a new authoring schema. It records
+authored intent; engine bring-up may still resolve defaults or refuse a
+combination. Mixed-step target and automatic interleave/share need further
+receipt coverage under RSC19, coordinated with the native-launch design.

@@ -223,7 +223,9 @@ int main() {
 
 #if defined(__linux__)
     const std::string inspected_yaml = "server: {host: 127.0.0.1, port: 8123}\ncards: [2, 0]\nmodels:\n"
-                                       "  tiny:\n    model: tiny.rad\n    mixed-step-target-ms: 17\n";
+                                       "  tiny:\n    model: tiny.rad\n    mixed-step-target-ms: 17\n"
+                                       "    attn-prefill-fp8: qk\n    busy-prefill-chunk: 512\n"
+                                       "    state-cache-dtype: f16\n    tp-wire-min-kb: 256\n";
     const Json inspected_field = config_field(inspected_yaml);
     // The inspector's form: the authored YAML bytes themselves, the root being the process's own working directory.
     const int sealed_fd = sealed_memfd(inspected_yaml);
@@ -258,6 +260,10 @@ int main() {
               report.at("engine").at("model") == "tiny.rad" &&
               report.at("engine").at("x_bigcherry").is_null() && report.at("engine").at("tp_wire").is_null() &&
               report.at("engine").at("tuning").at("tune_pin").is_null() &&
+              report.at("engine").at("tuning").at("attn_prefill_fp8") == "qk" &&
+              report.at("engine").at("tuning").at("busy_prefill_chunk") == "512" &&
+              report.at("engine").at("tuning").at("state_cache_dtype") == "f16" &&
+              report.at("engine").at("tuning").at("tp_wire_min_kb") == 256 &&
               report.at("engine").at("max_context") == 0 &&
               report.at("engine").at("settings") == Json({
                   {"max_batched_tokens", 2048}, {"checkpoint_interval", 2048},

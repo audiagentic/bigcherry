@@ -1,4 +1,5 @@
 #include "serving.h"
+#include "native_tuning_fields.h"
 #include "calibration.h"
 #include "config_loader.h"
 #include "moe_remote_shm.h"
@@ -1299,8 +1300,8 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
             native_value("engine.no_prefix_cache", "on");
         }
         // The YAML is the one source of the tuning options: nothing else (config, site, profile, --set) sets them.
-        for (const char* name : {"p2p", "pipelined_prefill", "pipelined_prefill_min_rows", "prefill_governor",
-                                 "tp_ownership", "tune_pin"}) {
+        for (const auto& field : kNativeTuningFields) {
+            const char* name = field.name;
             if (values.contains("tuning") && values.at("tuning").contains(name)) {
                 values.at("tuning").erase(name);
                 provenance.erase(std::string("tuning.") + name);
