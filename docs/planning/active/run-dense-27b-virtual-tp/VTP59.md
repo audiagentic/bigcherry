@@ -78,6 +78,8 @@ Combined 2.3 TP2 (pipeline on/min256 + 0/250ms/4096) and default: 3 reps each 51
 
 TP3 retry completed 3 reps each: 4K/128 aggregate 61.224 vs 56.919, engine decode 663.669 vs 221.807, TTFT 15.156 vs17.083s, p95 gap215 vs25ms; 4K/512 aggregate178.884 vs148.314, engine decode574.025 vs287.700, TTFT15.724 vs22.357s, p95 gap164 vs35ms. Retry separate launch after interrupted tuned short arm; all completed reports matched prompts and zero preemptions; not fresh-start ABBA. Prior single-run 189.469 not repeat median. TP2+TP3 totals 36 completed rounds. Do not select universal default; investigate latency-oriented profile and per-step efficiency.
 
+TP3 IQ8R cold FP8 KV, eight streams, pipeline on/min256, batch2048, interleave off: fresh-launch ABBA mixed target 200/50/50/200 ms. 4K/512 aggregate 188.209/179.742/179.111/180.963 tok/s, max TTFT 14599.65/15818.91/15877.36/15615.70 ms, p95 event gaps 41.129/163.733/161.008/173.433 ms. 512/128 aggregate 270.325/280.315/278.785/278.959, max TTFT 2134.39/1973.44/2006.00/1989.36 ms, p95 gaps 194.062/40.337/40.248/40.697 ms. Eight completed reports, same prompt hashes and token counts, zero preemptions; all owner and stop exits zero. 50ms repeat stable, 200ms varies with schedule; text hashes differ, no independent quality gate. No universal default or production change. Evidence docs/evidence/VTP59-latency-abba/summary.json; raw evidence via existing evidence_dir. Next screen intermediate target and explicit interleave under mixed arrivals, trace phase variance and qualify quality independently.
+
 ## Change Log
 
 - 2026-11-27T09:44:54.101057+00:00 (created-by): Created by agent
@@ -96,3 +98,4 @@ TP3 retry completed 3 reps each: 4K/128 aggregate 61.224 vs 56.919, engine decod
 - 2026-11-27T11:08:19.072053+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:47:13.447881+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T11:49:17.864160+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T13:31:22.876011+00:00 (updated-by): Updated: section:notes
