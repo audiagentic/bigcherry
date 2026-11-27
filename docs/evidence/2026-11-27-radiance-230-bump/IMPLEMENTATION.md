@@ -42,3 +42,7 @@ rad0002 now attaches to MoeQ/rad_linear and uses the native RAD_SCALE_GROUP (128
 ## 2026-11-27 — native and owned sources
 
 All 44 patches compose and native gate 1 passes; 64 targeted HIP syntax passes on the actual recipe SDK plus corrected owned plugin host pass. Simplifications, retired blocks, toolchain correction and remaining qualification recorded in [NATIVE-RECONCILIATION.md](NATIVE-RECONCILIATION.md).
+
+## RDNA2 inventory checkpoint
+
+Canonical build e48149491 completed the base link (libr4d.so at 658/662), then failed configuring libr2: old r4d_fused_quant_fp8 unit name. Upstream exact target retains gated FP8 and rotated quant entry points in renamed r4d_fused_quant. Updated libr2 units.txt; isolated CMake configure with the same pinned composed source, SDK and runtime prefix succeeds (all three gfx1030 units selected). No device compilation or runtime pass claimed.
