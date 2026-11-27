@@ -458,7 +458,7 @@ PATCHES += (
         ? ((1u << RAD_KVQ_B16F8) | (1u << RAD_KVQ_B16I8)) : 0;
 """, "out->kv_layout_ok"),
     )),
-    FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none", edits=(
+    FilePatch(path="arch/common/rad_block_attn_gated_q.h", language="none", edits=(
         _replace("b16-arch-q4-no-resolve", "    if (qsa_sel && qsa_nsel)\n        op_resolve = kv_resolve_declare",
                  "    const bool resident_packed = rad_kvq_from_name(g.kv_dtype) != RAD_KVQ_NONE;\n"
                  "    if (!resident_packed && qsa_sel && qsa_nsel)\n        op_resolve = kv_resolve_declare"),
@@ -470,10 +470,18 @@ PATCHES += (
     FilePatch(path="libref/ref_attn.cpp", language="none", edits=(
         _before("b16-ref-header", '#include "ref_common.h"\n', '#include "rad_builder.h"\n',
                 '#include "rad_builder.h"'),
-        _before("b16-ref-attention-refusal", "    const int64_t q_len = cus ? 0 : rows / n_seq;\n",
+        _before("b16-ref-attention-refusal", "    const int64_t q_len = cus ? 0 : rows / n_seq;\n"
+                "    if (numel(o) < rows * q_heads * head_dim) return RAD_E_SHAPE;\n"
+                "    if (kv->rank == 4 && kv->shape[2] != block_size) return RAD_E_SHAPE;\n",
                 """    if (rad_kvq_from_name(p_str(a, "kv_dtype", nullptr)) != RAD_KVQ_NONE)
         return RAD_E_UNSUPPORTED;   /* the host oracle reads native layouts */
 """, "return RAD_E_UNSUPPORTED;   /* the host oracle reads native layouts */"),
+        _before("b16-ref-relative-attention-refusal", "    const int64_t q_len = cus ? 0 : rows / n_seq;\n"
+                "    if (numel(o) < rows * q_heads * head_dim) return RAD_E_SHAPE;\n"
+                "    /* The bias operands:",
+                """    if (rad_kvq_from_name(p_str(a, "kv_dtype", nullptr)) != RAD_KVQ_NONE)
+        return RAD_E_UNSUPPORTED;   /* the relative host oracle reads native layouts */
+""", "return RAD_E_UNSUPPORTED;   /* the relative host oracle reads native layouts */"),
         _replace("b16-ref-store-refusal", "int ref_kv_store(const RadArgs* a, RadStream) {\n",
                  """int ref_kv_store(const RadArgs* a, RadStream) {
     if (rad_kvq_from_name(p_str(a, "kv_dtype", nullptr)) != RAD_KVQ_NONE)

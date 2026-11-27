@@ -78,7 +78,8 @@ inline int64_t b16_kv_block_bytes(const RadKVGroupDecl& d, int64_t page, int64_t
 
 _CONFIG_HELP = '''    { "--kv-cache-dtype",     "T",      "bf16 (default) | i8 | fp8 -- i8 halves what a token of\\n"
                                         "context costs: K and V as int8 with one scale each per token\\n"
-                                        "and head. fp8 (E4M3) is GLM-5.3's latent cache only" },
+                                        "and head. fp8 (E4M3): GLM-5.3's latent cache; DeepSeek-V4.1's\\n"
+                                        "compressed latent and index keys, exact (the bf16 cache's bits)" },
 '''
 
 _CONFIG_PARSE = '''            if (std::strcmp(v, "bf16") && std::strcmp(v, "i8") && std::strcmp(v, "fp8")) {
@@ -347,6 +348,8 @@ PATCHES = (
                  '#include "rad_core.h"\n#include "mem/packed_kv.h"\n'),
         _replace("b16-config-help", _CONFIG_HELP,
                  '''    { "--kv-cache-dtype",     "T",      "bf16 (default) | i8 | fp8 | bf16_fp8 | bf16_i8 -- "
+                                        "i8: int8 K and V, one scale each per token and head.\\n"
+                                        "fp8 (E4M3): GLM-5.3 latent; DeepSeek-V4.1 compressed latent and index keys.\\n"
                                         "packed caches require model support and stay resident" },
 ''', "packed caches require model support and stay resident"),
         _replace("b16-native-cli-yaml", _CONFIG_PARSE,
