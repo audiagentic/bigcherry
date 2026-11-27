@@ -80,16 +80,18 @@ bool qualifies(const Json& receipt, const std::string& bdf, const Json& want, st
     const auto& events = transaction.at("events");
     if (!requested_here || !has_event(events, "applied", bdf) || !has_event(events, "restored", bdf))
         return false;
-    for (const char* bad : {"apply_failed", "restore_failed", "restore_refused", "rollback"})
-        if (has_event(events, bad, bdf))
-            return false;
+    // Qualification is transaction-wide; recovery is not a clean run.
+    for (const auto& event : events)
+        for (const char* bad : {"apply_failed", "restore_failed", "restore_refused", "rollback", "recovery"})
+            if (event.value("kind", "") == bad)
+                return false;
     const auto& seen = receipt.at("observations");
     if (!seen.is_object() || !seen.contains("start") || !seen.contains("post_apply") || !seen.contains("stop"))
         return false;
     const Json* start = card_of(seen.at("start"), bdf);
     const Json* applied = card_of(seen.at("post_apply"), bdf);
     const Json* stop = card_of(seen.at("stop"), bdf);
-    if (!start || !applied || !stop || identity.empty() || start->value("identity", "") != identity)
+    if (!start || !applied || !stop || identity.empty() || start->value("identity", "") != identity || stop->value("identity", "") != identity)
         return false;
     if (want.contains("sclk_offset_mhz") && (!start->contains("sclk_offset_mhz") ||
         !start->at("sclk_offset_mhz").is_number_integer() || !stop->contains("sclk_offset_mhz")))

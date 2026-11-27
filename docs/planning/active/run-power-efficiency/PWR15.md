@@ -61,6 +61,8 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 
 2026-11-27: consolidate portable power safety and startup observability from PWR07 into PWR15; retain existing acceptance and historical evidence.
 
+2026-11-27 native owner hardening: full represented-control checks and final fleet readback on both shader control kinds; legacy absolute journals recover identity from bound original receipt; receipt mismatch refuses before writes; recovery disqualifies entire transaction; sysfs command errors identify command and errno, short writes fail closed. Native card-free acceptance executable passes all five groups including four golden profiles, recovery and fault injection, with contract fingerprint matched. Operational recovery and reciprocal journal admission remain open; no hardware writes in this slice.
+
 ## Change Log
 
 - 2026-11-26T05:48:37.575642+00:00 (created-by): Created by agent
@@ -73,3 +75,5 @@ Absorb PWR07/PWR04: explicit unsupported requests refuse before writes; optional
 - RV4680
 - 2026-11-26T23:12:00.089479+00:00 (updated-by): Updated: section:notes
 - 2026-11-26T23:13:35.421669+00:00 (updated-by): Updated: section:steps, section:acceptance_criteria
+- RV4693
+- 2026-11-27T00:05:12.419653+00:00 (updated-by): Updated: section:notes

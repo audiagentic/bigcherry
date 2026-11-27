@@ -50,7 +50,7 @@ Status original_can_restore(const SavedDevice& saved, const CardSnapshot& curren
     };
     const bool signed_shader = before.at(ControlId::shader_offset).current.has_value();
     const bool live_signed = current.at(ControlId::shader_offset).current.has_value();
-    if (signed_shader && (before.identity.empty() || current.identity != before.identity))
+    if (before.identity.empty() || current.identity != before.identity)
         return unsafe("power.devices", bdf + ": physical identity changed");
     if (signed_shader != live_signed)
         return unsafe("power.devices", bdf + ": original shader offset missing or changed control kind");
@@ -84,64 +84,26 @@ Status verify_readback(const SavedDevice& saved, const CardSnapshot& current, bo
     const auto& original = saved.before;
     if (current.pci != original.pci || current.amdgpu != original.amdgpu || current.hwmon != original.hwmon)
         return unsafe("power.readback", original.pci.value + ": controller identity changed");
-    // Signed-shader cards save and compare the complete represented state,
-    // even controls not requested. Do not confuse missing readback with zero.
-    if (original.at(ControlId::shader_offset).current) {
-        if (original.identity.empty() || current.identity != original.identity)
-            return unsafe("power.readback", original.pci.value + ": physical identity changed");
-        for (size_t index = 0; index < control_count; ++index) {
-            const auto id = static_cast<ControlId>(index);
-            auto desired = original.at(id).current;
-            if (!restoring) {
-                if (id == ControlId::voltage && tuning.voltage_offset)
-                    desired = tuning.voltage_offset->value;
-                if (id == ControlId::shader_offset && tuning.shader_offset)
-                    desired = tuning.shader_offset->value;
-                if (id == ControlId::memory && tuning.memory_ceiling)
-                    desired = tuning.memory_ceiling->value;
-                if (id == ControlId::board_cap && tuning.board_cap)
-                    desired = tuning.board_cap->value * kMicrowattsPerWatt;
-            }
-            if (current.at(id).current != desired)
-                return unsafe("power.readback", original.pci.value + ": signed-card control readback mismatch");
+    if (original.identity.empty() || current.identity != original.identity)
+        return unsafe("power.readback", original.pci.value + ": physical identity changed");
+    // All represented controls, including those not requested, must match.
+    for (size_t index = 0; index < control_count; ++index) {
+        const auto id = static_cast<ControlId>(index);
+        auto desired = original.at(id).current;
+        if (!restoring) {
+            if (id == ControlId::voltage && tuning.voltage_offset)
+                desired = tuning.voltage_offset->value;
+            if (id == ControlId::shader && tuning.shader_ceiling)
+                desired = tuning.shader_ceiling->value;
+            if (id == ControlId::shader_offset && tuning.shader_offset)
+                desired = tuning.shader_offset->value;
+            if (id == ControlId::memory && tuning.memory_ceiling)
+                desired = tuning.memory_ceiling->value;
+            if (id == ControlId::board_cap && tuning.board_cap)
+                desired = tuning.board_cap->value * kMicrowattsPerWatt;
         }
-        return std::nullopt;
-    }
-    const auto check = [&](ControlId id, std::optional<int64_t> desired, std::string_view label) -> Status {
-        if (desired && current.at(id).current != desired)
-            return unsafe("power.readback",
-                          original.pci.value + ": " + std::string(label) + " readback mismatch");
-        return std::nullopt;
-    };
-    if (tuning.changes_overdrive()) {
-        std::optional<int64_t> offset = original.at(ControlId::voltage).current;
-        if (!restoring && tuning.voltage_offset)
-            offset = tuning.voltage_offset->value;
-        if (auto error = check(ControlId::voltage, offset, "voltage offset"))
-            return error;
-    }
-    if (current.at(ControlId::shader_offset).current)
-        return unsafe("power.readback", original.pci.value + ": shader offset readback mismatch");
-    if (tuning.shader_ceiling || tuning.voltage_offset) {
-        auto shader = original.at(ControlId::shader).current;
-        if (!restoring && tuning.shader_ceiling)
-            shader = tuning.shader_ceiling->value;
-        if (auto error = check(ControlId::shader, shader, "shader clock"))
-            return error;
-    }
-    if (tuning.memory_ceiling) {
-        auto memory = original.at(ControlId::memory).current;
-        if (!restoring && tuning.memory_ceiling)
-            memory = tuning.memory_ceiling->value;
-        if (auto error = check(ControlId::memory, memory, "memory clock"))
-            return error;
-    }
-    if (tuning.board_cap) {
-        auto board = original.at(ControlId::board_cap).current;
-        if (!restoring && tuning.board_cap)
-            board = tuning.board_cap->value * kMicrowattsPerWatt;
-        if (auto error = check(ControlId::board_cap, board, "board cap"))
-            return error;
+        if (current.at(id).current != desired)
+            return unsafe("power.readback", original.pci.value + ": full control readback mismatch");
     }
     return std::nullopt;
 }
@@ -596,14 +558,6 @@ v2::Status SessionPower::begin() {
         const auto& saved = *selected;
         if (auto failure = checked(lease_, "power.lease", "GPU lease lost before device write"))
             return attempted_write ? abort_apply(*failure, saved.policy.device.pci) : failure;
-        if (saved.before.at(ControlId::shader_offset).current) {
-            auto current = probe(hardware_, saved.policy.device.pci);
-            if (!current) return abort_apply(current.error(), saved.policy.device.pci);
-            if (auto err = original_can_restore(saved, current.value()))
-                return abort_apply(*err, saved.policy.device.pci);
-            if (auto err = verify_readback(saved, current.value(), true))
-                return abort_apply(*err, saved.policy.device.pci);
-        }
         journal_.touched.push_back(saved.policy.device.pci);
         record(EventKind::touched, saved.policy.device.pci);
         if (auto err = persist()) {
@@ -618,7 +572,7 @@ v2::Status SessionPower::begin() {
         else if (current.value().pci != saved.before.pci || current.value().hwmon != saved.before.hwmon ||
                  !current.value().amdgpu)
             fault = unsafe("power.devices", "hardware controller changed before writing");
-        if (!fault && saved.before.at(ControlId::shader_offset).current) {
+        if (!fault) {
             fault = original_can_restore(saved, current.value());
             if (!fault && current.value().identity != saved.before.identity)
                 fault = unsafe("power.devices", "physical identity changed before writing");
@@ -654,8 +608,7 @@ v2::Status SessionPower::begin() {
         record(EventKind::applied, saved.policy.device.pci);
     }
     for (const auto& saved : journal_.devices) {
-        if (!saved.before.at(ControlId::shader_offset).current) continue;
-        if (auto failure = checked(lease_, "power.lease", "GPU lease lost before final signed readback"))
+        if (auto failure = checked(lease_, "power.lease", "GPU lease lost before final readback"))
             return abort_apply(*failure, saved.policy.device.pci);
         auto current = probe(hardware_, saved.policy.device.pci);
         if (!current) return abort_apply(current.error(), saved.policy.device.pci);
@@ -725,13 +678,16 @@ v2::Status SessionPower::restore_touched(bool rollback) {
         }
     }
     for (const auto* saved : reverse) {
-        if (!saved->before.at(ControlId::shader_offset).current) continue;
-        if (auto failure = checked(lease_, "power.lease", "GPU lease lost before final signed restore readback"))
-            return failure;
-        auto current = probe(hardware_, saved->policy.device.pci);
-        if (!current) return current.error();
-        if (auto err = verify_readback(*saved, current.value(), true))
-            return err;
+        auto problem = checked(lease_, "power.lease", "GPU lease lost before final restore readback");
+        if (!problem) {
+            auto current = probe(hardware_, saved->policy.device.pci);
+            if (!current) problem = current.error();
+            else problem = verify_readback(*saved, current.value(), true);
+        }
+        if (problem) {
+            record(EventKind::restore_failed, saved->policy.device.pci, problem->message);
+            if (!first_error) first_error = problem;
+        }
     }
     return first_error;
 }
@@ -792,6 +748,7 @@ v2::Status recover(const fs::path& journal_path, Hardware& hardware, Records& re
     if (!allowed)
         return allowed.error();
     Journal record = std::move(allowed.value());
+    record.events.push_back({EventKind::recovery, {}, "explicit recovery; not a qualification"});
     v2::Status failure;
     Observation stopping{Moment::stop, ObservationState::restored, "", {}};
     for (auto it = record.touched.rbegin(); it != record.touched.rend(); ++it) {
@@ -824,6 +781,7 @@ v2::Status recover(const fs::path& journal_path, Hardware& hardware, Records& re
                 if (!problem) {
                     ObservedCard card;
                     card.pci = found->policy.device.pci;
+                    card.identity = now.value().identity;
                     for (size_t index = 0; index < control_count; ++index)
                         card.values[index] = now.value().controls[index].current;
                     stopping.cards.push_back(std::move(card));
@@ -836,10 +794,9 @@ v2::Status recover(const fs::path& journal_path, Hardware& hardware, Records& re
             failure = problem;
     }
     for (const auto& saved : record.devices) {
-        if (!saved.before.at(ControlId::shader_offset).current ||
-            std::find(record.touched.begin(), record.touched.end(), saved.policy.device.pci) == record.touched.end())
+        if (std::find(record.touched.begin(), record.touched.end(), saved.policy.device.pci) == record.touched.end())
             continue;
-        if (auto gate = SessionPower::checked(lease, "power.recovery", "GPU lease lost before final signed recovery readback")) {
+        if (auto gate = SessionPower::checked(lease, "power.recovery", "GPU lease lost before final recovery readback")) {
             if (!failure) failure = gate;
             continue;
         }

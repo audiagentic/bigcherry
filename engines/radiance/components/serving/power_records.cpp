@@ -142,13 +142,15 @@ std::string event_label(EventKind kind) {
         return "restore_refused";
     case EventKind::rollback:
         return "rollback";
+    case EventKind::recovery:
+        return "recovery";
     }
     return "invalid";
 }
 v2::Result<EventKind> parse_event(std::string_view label) {
     for (auto value :
          {EventKind::prepared, EventKind::touched, EventKind::applied, EventKind::apply_failed,
-          EventKind::restored, EventKind::restore_failed, EventKind::restore_refused, EventKind::rollback})
+          EventKind::restored, EventKind::restore_failed, EventKind::restore_refused, EventKind::rollback, EventKind::recovery})
         if (label == event_label(value))
             return value;
     return error(Code::invalid_format, "power.events", "unknown power event");
@@ -341,7 +343,7 @@ Json journal_json(const Journal& journal) {
                                           : Json(nullptr)},
              {"setting", tuning_json(saved.policy.tuning, true)},
              {"before", original_json(saved.before)}});
-        if (saved.before.at(ControlId::shader_offset).current)
+        if (!saved.before.identity.empty())
             cards.back()["identity"] = saved.before.identity;
     }
     Json touched = Json::array();
@@ -444,11 +446,9 @@ v2::Result<Journal> parse_journal(const Json& raw, const fs::path& from) {
             }
             if (auto failure = load_original(before, entry.at("before")))
                 return *failure;
-            if (before.at(ControlId::shader_offset).current) {
-                before.identity = entry.value("identity", std::string());
-                if (before.identity.empty())
-                    return error(Code::invalid_format, from.string(), "signed shader journal lacks original identity");
-            }
+            before.identity = entry.value("identity", std::string());
+            if (before.at(ControlId::shader_offset).current && before.identity.empty())
+                return error(Code::invalid_format, from.string(), "signed shader journal lacks original identity");
             result.devices.push_back(
                 {DevicePolicy{{role.value(), pci.value()}, tuning.value()}, std::move(before)});
         }
@@ -571,7 +571,57 @@ v2::Result<Journal> DiskRecords::do_load(const fs::path& path) {
     auto data = durable_read(path);
     if (!data)
         return data.error();
-    return parse_journal(data.value(), path);
+    auto parsed = parse_journal(data.value(), path);
+    if (!parsed || !unresolved(parsed.value().stage) || parsed.value().touched.empty())
+        return parsed;
+    auto& journal = parsed.value();
+    // Bind recovery to the original receipt before any hardware writes.
+    const auto receipt = durable_read(receipt_dir_ / (journal.run_id + ".power.json"));
+    if (!receipt) return receipt.error();
+    const auto bad = [&] { return error(Code::invalid_format, path.string(),
+                                       "recovery receipt identity mismatch"); };
+    try {
+        const auto& r = receipt.value();
+        const auto& request = r.at("request");
+        if (r.at("schema_version") != 1 || r.at("run_id") != journal.run_id ||
+            r.at("manifest").at("status") != "resolved" ||
+            r.at("manifest").at("content_digest") != journal.manifest_digest.value ||
+            request.at("mode") != "apply" || request.at("profile_digest") != journal.profile_digest.value)
+            return bad();
+        const auto& devices = request.at("devices");
+        const auto& start = r.at("observations").at("start");
+        const auto& cards = start.at("cards");
+        if (!devices.is_array() || !cards.is_array() || start.at("status") != "observed")
+            return bad();
+        for (auto& saved : journal.devices) {
+            size_t matched = 0;
+            for (const auto& dev : devices)
+                if (dev.at("bdf") == saved.policy.device.pci.value &&
+                    dev.at("role") == saved.policy.device.role.label() &&
+                    dev.at("settings") == tuning_json(saved.policy.tuning, false))
+                    ++matched;
+            if (matched != 1) return bad();
+            const Json* original = nullptr;
+            for (const auto& card : cards)
+                if (card.at("bdf") == saved.policy.device.pci.value) {
+                    if (original) return bad();
+                    original = &card;
+                }
+            if (!original) return bad();
+            CardSnapshot observed;
+            if (auto e = load_original(observed, *original)) return bad();
+            for (size_t i = 0; i < control_count; ++i)
+                if (observed.controls[i].current != saved.before.controls[i].current)
+                    return bad();
+            const auto identity = original->at("identity").get<std::string>();
+            if (identity.empty() || (!saved.before.identity.empty() && saved.before.identity != identity))
+                return bad();
+            saved.before.identity = identity;
+        }
+    } catch (const std::exception&) {
+        return bad();
+    }
+    return parsed;
 }
 v2::Result<std::vector<fs::path>> DiskRecords::do_unresolved_journals() {
     std::error_code ec;
