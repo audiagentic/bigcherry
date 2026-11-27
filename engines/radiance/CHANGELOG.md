@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.24.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.24.0...bc-radiance-2020.24.1) (2026-11-27)
+
+
+### Fixes
+
+* **serving:** join the heat-test helper threads before asserting ([#1729](https://github.com/audiagentic/bigcherry/issues/1729)) ([ff1796b](https://github.com/audiagentic/bigcherry/commit/ff1796b228b52edbc40587f74eb86ec16b39bf48))
+
 ## [2020.24.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.23.2...bc-radiance-2020.24.0) (2026-11-27)
 
 
