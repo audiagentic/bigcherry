@@ -47,7 +47,7 @@ class Int8PipelinedPrefillTests(unittest.TestCase):
     def test_plain_norm_writes_the_pair_step_writes(self):
         text = {e.id: e.text for f in load(PKG) for e in f.edits}["plain-norm-fed-pair"]
         self.assertIn("brow_slice(hi8 ? a.q8 : a.q, r0, rows, n),", text)
-        self.assertIn("brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / (hi8 ? a.g8 : (int64_t)RAD_FP8_BLOCK)),", text)
+        self.assertIn("brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / (hi8 ? a.g8 : (int64_t)RAD_SCALE_GROUP)),", text)
 
     def test_int8_trunk_is_opt_in(self):
         edits = {e.id: e.text for f in load(PKG) for e in f.edits}
@@ -80,7 +80,7 @@ class Int8PipelinedPrefillTests(unittest.TestCase):
                 text = (root / f.path).read_text()
                 for e in f.edits:
                     self.assertIn(e.text, text, e.id)
-            norm = (root / "arch/common/rad_fp8.h").read_text()
+            norm = (root / "arch/common/rad_linear.h").read_text()
             plugin = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
             self.assertEqual(norm.count("BC_VTP37_PLAIN_FED"), 1)
             # no issue of the plain norm names the E4M3 pair outright any more

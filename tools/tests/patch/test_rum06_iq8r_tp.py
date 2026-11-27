@@ -39,9 +39,9 @@ def compile_and_run(testcase: unittest.TestCase, source: str) -> subprocess.Comp
 class Iq8rTpTests(unittest.TestCase):
     def test_rmsnorm_plain_uses_probed_code_group(self):
         norm = edit(PKG30, "plain-norm-fed-pair")
-        self.assertIn("n / (hi8 ? a.g8 : (int64_t)RAD_FP8_BLOCK)", norm)
+        self.assertIn("n / (hi8 ? a.g8 : (int64_t)RAD_SCALE_GROUP)", norm)
         self.assertIn("hi8 ? a.s8 : a.s", norm)
-        self.assertNotIn("n / RAD_FP8_BLOCK),", norm)
+        self.assertNotIn("n / RAD_SCALE_GROUP),", norm)
 
     def test_fused_mlp_code_scales_follow_pair(self):
         self.assertIn("g.n_embd / w.h.cg()", edit(PKG30, "iq8r-mlp-fold-input-scale"))
@@ -92,19 +92,19 @@ class Iq8rTpTests(unittest.TestCase):
             "    /* Rows [lo, hi) of the stored block-fp8 weight", 1)[0]
         self.assertIn("w8h ? (rows ? 1 : g8)", method)
         self.assertIn("w8h_s_full", method)
-        self.assertIn("mx || m2x || w8h", method)
+        self.assertIn("mx || w8h", method)
         self.assertIn("linear_w8h_rowf(enc) || linear_w8h_scale2(enc) || iq8r",
                       edit(PKG19, "n2f-dense-scale-view-probe"))
         source = (
             "#include <cstdint>\n#include <cstdio>\n#include <cassert>\n"
             "using RadBuilder=int; using rad_weight=int;\n"
-            "constexpr int RAD_FP8_BLOCK=128,RAD_MX_GROUP=32,RAD_SHARD_ROW=0,RAD_SHARD_COL=1,"
+            "constexpr int RAD_SCALE_GROUP=128,RAD_MX_GROUP=32,RAD_SHARD_ROW=0,RAD_SHARD_COL=1,"
             "RAD_E_INVAL=1,RAD_OK=0;\n"
             "int64_t swlo=-1,swhi=-1;\n"
             "int rad_weight_shard_span(RadBuilder*,rad_weight w,int64_t lo,int64_t hi) {\n"
             "  if(w==2){swlo=lo;swhi=hi;}return 0;\n}\n"
             "#define RAD_ARCH_TRY(expr) do {int rc=(expr);if(rc)return rc;}while(0)\n"
-            "struct Dense {bool mx=false,m2x=false,w8h=false,w8h_s_full=false;"
+            "struct Dense {bool mx=false,w8h=false,w8h_s_full=false;"
             "int64_t g8=128;rad_weight w=1,s=2,ref=0;\n"
             + method + "};\n"
             "int main() {\n"
@@ -127,9 +127,9 @@ class Iq8rTpTests(unittest.TestCase):
         if checkout is None:
             self.skipTest("no pinned Radiance source; set RADIANCE_SRC")
         with patched_pinned_source(checkout, PKG30) as root:
-            norm = (root / "arch/common/rad_fp8.h").read_text()
+            norm = (root / "arch/common/rad_linear.h").read_text()
             qwen = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
-            self.assertIn("n / (hi8 ? a.g8 : (int64_t)RAD_FP8_BLOCK)", norm)
+            self.assertIn("n / (hi8 ? a.g8 : (int64_t)RAD_SCALE_GROUP)", norm)
             self.assertIn("BC_RUM06_TP_SCALE", qwen)
             self.assertIn("BC_RUM06_DENSE_SCALE_PROBE", norm)
 

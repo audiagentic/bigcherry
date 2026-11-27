@@ -6,6 +6,8 @@ with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), a
 from __future__ import annotations
 
 import sys
+import shutil
+import subprocess
 import tomllib
 import unittest
 from pathlib import Path
@@ -41,10 +43,10 @@ class RankOwnSplitTests(unittest.TestCase):
 
     def test_own_split_rules(self):
         text = {e.id: e.text for f in load(PKG) for e in f.edits}["own-split"]
-        self.assertIn("facts.size() == ranks_.size() &&\n                       cfg_.gpu_memory_mib <= 0;", text)
+        self.assertIn("facts.size() == ranks_.size() &&\n                       !broker_ && cfg_.vram_claim <= 0 && cfg_.gpu_memory_mib <= 0;", text)
         self.assertNotIn("kv_planned_tokens_ == 0", text)
         self.assertIn("own = own && f.experts == 0 && !f.unified;", text)
-        self.assertIn("std::max<int64_t>(facts[i].free - free_min, 0) / kMiB", text)
+        self.assertIn("vram_budget_rank_spare_mib(cfg_, facts, i, false)", text)
         self.assertIn("if (own && T_own > T_common && T_common > 0) {", text)
         self.assertIn("need[i] = own_kv[i]->pool_mib_for_tokens(T_own, own_pool[i]);", text)
         self.assertIn("if (own) kv_planned_tokens_ = T_own;", text)
@@ -60,7 +62,7 @@ class RankOwnSplitTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no pinned radiance checkout; set RADIANCE_SRC")
-        with patched_pinned_source(checkout, PKG.name) as root:
+        with patched_pinned_source(checkout, PKG.name, full_checkout=True) as root:
             for f in load(PKG):
                 text = (root / f.path).read_text()
                 for e in f.edits:
@@ -69,6 +71,18 @@ class RankOwnSplitTests(unittest.TestCase):
             self.assertEqual(bringup.count("BC_VTP33_OWN_SPLIT"), 1)
             again = apply_all(load(PKG), root)
             self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+            cxx = shutil.which("c++")
+            self.assertIsNotNone(cxx, "requires C++ compiler for rank spare contract")
+            fixture = Path(__file__).parent / "fixtures/radiance_rank_spare_test.cpp"
+            exe = root / "rank-spare-test"
+            build = subprocess.run([cxx, "-std=c++17", "-O0", "-ffunction-sections",
+                                    "-fdata-sections", "-Wl,--gc-sections",
+                                    "-I", str(root / "abi"), "-I", str(root / "core"),
+                                    str(fixture), str(root / "core/mem/vram_budget.cpp"), "-o", str(exe)],
+                                   capture_output=True, text=True, timeout=30)
+            self.assertEqual(build.returncode, 0, build.stderr[-6000:])
+            subprocess.run([str(exe)], check=True, timeout=5)
+
 
 
 if __name__ == "__main__":
