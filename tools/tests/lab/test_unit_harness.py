@@ -42,7 +42,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([uh.classify(r, 0.04) for r in (0.5, 1.0, 1.1)], ["win", "same", "regress"])
 
     def test_selftest_edit_needs_both_anchors_once(self):
-        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR
+        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR + uh.I8A8_CASES_ANCHOR + uh.I8A8_HASH_ANCHOR
                 + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
         self.assertIn("uh_extra[uh_i]", edited)                      # the IQ8R case's extra shapes and output hash

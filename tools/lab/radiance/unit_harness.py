@@ -571,6 +571,27 @@ HEAD_HASH_PRINT = ('    {\n'
                    '    }\n')
 
 
+# The int8 trunk case (i8a8_numeric, group 128): extra "N:K:M" shapes from UH_HASH_CASES (the 16-token row up to 64 rows,
+# the tiled row above; the case's own oracle samples about 96 columns a row, so it runs on them too) and a hash of every
+# GEMM output.
+I8A8_CASES_ANCHOR = '        i8a8_numeric(pl, "gemm_i8a8_tiled", 2048, 512, 2560);\n'
+I8A8_CASES_BLOCK = ('        if (const char* uh_cases = std::getenv("UH_HASH_CASES"))\n'
+                    '            for (const char* s = uh_cases; *s;) {\n'
+                    '                long long un = 0, uk = 0, um = 0; int used = 0;\n'
+                    '                if (std::sscanf(s, "%lld:%lld:%lld%n", &un, &uk, &um, &used) < 3) break;\n'
+                    '                i8a8_numeric(pl, um <= 64 ? "gemm_i8a8_nt_m16" : "gemm_i8a8_tiled", um, un, uk);\n'
+                    '                s += used;\n'
+                    "                if (*s == ',') ++s;\n"
+                    '            }\n')
+I8A8_HASH_ANCHOR = ("    std::vector<uint16_t> hy((size_t)(M * N));\n"
+                    "    st_memcpy(hy.data(), d_y, hy.size() * 2, hipMemcpyDeviceToHost);\n")
+I8A8_HASH_PRINT = ('    {\n'
+                   '        uint64_t uh = 1469598103934665603ull;\n'
+                   '        for (uint16_t hv : hy) { uh ^= hv; uh *= 1099511628211ull; }\n'
+                   '        std::printf("UNITHASH %s rb=%lld %016llx\\n", nm, (long long)rb, (unsigned long long)uh);\n'
+                   '    }\n')
+
+
 # A plugin that carries only some units has no entry point for the rest: the loader notes the absence and goes on
 # (the rows without a kernel then return "unsupported", like libr3's own stubbed rows).
 SYM_ANCHOR = '    if (e || !p) { std::printf("  FAIL  dlsym(%s): %s\\n", n, e ? e : "null"); ++g_fail; return false; }\n'
@@ -721,6 +742,12 @@ def inject_selftest(text: str) -> str:
             raise HarnessError("the selftest changed: the harness's IQ8R edit anchor is not found exactly once "
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(IQ8R_SHAPES_ANCHOR, IQ8R_SHAPES_NEW, 1)
+    for anchor in (I8A8_CASES_ANCHOR, I8A8_HASH_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError("the selftest changed: the harness's int8 trunk edit anchor is not found exactly once "
+                               f"({anchor.splitlines()[0].strip()!r})")
+    text = text.replace(I8A8_CASES_ANCHOR, I8A8_CASES_ANCHOR + I8A8_CASES_BLOCK, 1)
+    text = text.replace(I8A8_HASH_ANCHOR, I8A8_HASH_ANCHOR + I8A8_HASH_PRINT, 1)
     for anchor in (HEAD_CASES_ANCHOR, HEAD_HASH_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError("the selftest changed: the harness's int8 head edit anchor is not found exactly once "

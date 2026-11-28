@@ -73,6 +73,9 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 
 2026-11-28 model-driven coverage: saved the qwen27b-tp3 /graph from bc-radiance-2030.0.0 (rank 0 of 3, 111 declared rows). Families now name every row their case checks (`rows`), so iq8r covers both GEMMs, the quantiser and the three fused producers. Added family head_i8 (r4d_logits_gemm_i8 + r4d_rowtopk_bf16; rows logits_gemm_i8, logit_rerank_i8), hashed at the three 248320-token vocabulary shards (82816/82688 x 5120) and decode/draft/verify row counts: 166 kernels resource-unchanged, 14 shapes hash-equal, selftest 0/0, checks_passed on gfx1100. A family without a timing command passes only on identical kernel code; changed code is inconclusive until a replay exists (--perfvocab needs the bc-iqr rows too). Remaining qwen27b rank-0 device rows without a harness family: attention (h256 gqa6 / h128 gqa4 fp8kv decode and prefill, kv_store_fp8, qk_norm_rope_gate_kv_store), GDN, the 3-rank all-reduce, DFlash, embed/gather/scatter, rope, rmsnorm/silu/add, cast and sampling. Per this item's notes those keep their existing selftest/collective tests rather than harness families unless a kernel change needs one. FlashNext /graph captured on 2030.1.0 for its rows next.
 
+
+2026-11-28 Flash-Next: saved the flashnext-4gpu engine /graph on bc-radiance-2030.1.0 (gfx1201, world 1, 77 device rows). Its int8 trunk runs gemm_i8a8_nt_m16 (M <= 64) and gemm_i8a8_tiled (above) at group 128 on six (N, K) shapes. Added family i8a8 (r4d_gemm_i8a8 with the quantiser and keyed blocks; case quant_act_i8g, which runs every int8 trunk check) with those shapes and an output hash per GEMM; replay through --perfw8. gfx1201 on bc-radiance-2030.2.0: 218 kernels unchanged, 71 shapes hash-equal, selftest 0/0, checks_passed. Remaining Flash-Next engine rows without a family: the w4nl64a8i8h expert GEMM (moe_gemm_w4a8i8), bc-gfx12 HC rows, MTP/ngram/QSA rows, attention, GDN, router and sampling.
+
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent
@@ -80,3 +83,4 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 - 2026-11-26T05:07:03.703862+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T06:21:30.682022+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T07:25:59.101118+00:00 (updated-by): Updated: section:notes
+- 2026-11-28T08:33:47.490967+00:00 (updated-by): Updated: section:notes

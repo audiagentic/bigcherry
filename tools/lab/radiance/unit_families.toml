@@ -83,6 +83,31 @@ rows = [1, 8, 9, 33, 64]
 tail_rows = [1, 64]
 tail_shape = [82688, 5120]
 
+# The int8 trunk rows at group 128 (int8 codes with a bf16 scale per row per 128 of K, int8 activations with an f32 scale
+# per 128): Flash-Next's engine trunk, the 16-token row up to 64 rows and the tiled row above.
+[family.i8a8]
+units = ["r4d_gemm_i8a8"]
+support_units = ["r4d_quant_act_fp8", "r4d_keyed"]
+kernels = "i8a8|8a8_prefill"
+# the selftest's int8 trunk cases all answer to the quantiser's name, so one case runs both rows
+case = "quant_act_i8g"
+rows = ["gemm_i8a8_nt_m16", "gemm_i8a8_tiled", "quant_act_i8g"]
+
+[family.i8a8.hash]
+# Flash-Next's trunk shapes (N, K) at decode, draft and prefill row counts around the tile edges.
+shapes = [[12288, 2560], [16384, 2560], [1280, 2560], [512, 2560], [2560, 6144], [2560, 640]]
+rows = [1, 8, 9, 32, 33, 64, 65, 128, 129, 2047]
+tail_rows = [257]
+tail_shape = [16384, 2560]
+
+[family.i8a8.replay]
+rows = ["gemm_i8a8_tiled"]
+command = ["--perfw8", "{N}", "{K}", "{M}", "{iters}", "--cold", "256"]
+label = "gemm_i8a8_tiled"
+shapes = [[16384, 2560], [2560, 6144], [12288, 2560]]
+rows_m = [65, 128, 129, 512, 2048]
+bits = [8]
+
 # Overlays: an owned plugin whose rows are listed ahead of the base library. The harness builds the plugin, runs the base's
 # selftest case through the overlay row (selftest rows are found by `row-prefix` + name), and compares with the base alone.
 [overlay.iqr_embed]
