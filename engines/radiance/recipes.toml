@@ -107,19 +107,19 @@ required-state = "diagnostic"
 
 [source.radiance-native]
 class = "production"
-description = "Frozen upstream source snapshot b6b8751cccb0e834a13ae9e5afca824ee9a487aa: no overlay, no patches."
+description = "The pinned upstream source as released: no overlay, no patches."
 overlay = false
 patch-sets = []
 
 [source.radiance]
 class = "production"
-description = "Radiance snapshot b6b8751cccb0e834a13ae9e5afca824ee9a487aa with BigCherry's migrated production patch sets."
+description = "The pinned upstream source with BigCherry's production patch sets."
 overlay = false
 patch-sets = ["serving-core", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-diag]
 class = "diagnostic"
-description = "Frozen upstream snapshot b6b8751cccb0e834a13ae9e5afca824ee9a487aa with the migrated production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
+description = "The pinned upstream source with the production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "moe-remote-diag", "helper-config", "vtp14-mixed-tp"]
 
