@@ -200,7 +200,7 @@ int main(int argc, char** argv) {
         json native_settings = {{"max_batched_tokens", 2048}, {"checkpoint_interval", 4096},
                                 {"placement", "expert_tiered"}, {"ngram_placement", "ram"}, {"kv_dtype", "fp8"},
                                 {"speculative_tokens", 3}, {"rope_scaling", "none"}, {"prefix_resume", "nearest"},
-                                {"prefix_cache", true}, {"prefill_interleave", nullptr}};
+                                {"prefix_cache", true}, {"profile_ops", false}, {"prefill_interleave", nullptr}};
         if (const char* configured_settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS"))
             native_settings.update(json::parse(configured_settings));
         json scheduler = {{"interleave_authored", !native_settings.at("prefill_interleave").is_null()},

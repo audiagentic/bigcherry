@@ -276,9 +276,22 @@ int main() {
                   {"max_batched_tokens", 2048}, {"checkpoint_interval", 2048},
                   {"placement", "auto"}, {"ngram_placement", "auto"}, {"kv_dtype", "bf16"},
                   {"speculative_tokens", -1}, {"rope_scaling", ""}, {"prefix_resume", "exact"},
-                  {"prefix_cache", true}, {"prefill_interleave", nullptr}}) &&
+                  {"prefix_cache", true}, {"profile_ops", false}, {"prefill_interleave", nullptr}}) &&
               report.dump().find(inspected_yaml) == std::string::npos,
           "native inspect report changed identity, ordering, parsed values or exposed source YAML");
+
+    {   // per-op timing set in the native YAML reaches the owner through the inspector's parsed settings
+        const int fd = sealed_memfd(inspected_yaml + "    profile-ops: true\n");
+        const auto arg = std::to_string(fd);
+        char* argv[] = {command, inspect, const_cast<char*>(arg.c_str()), nullptr};
+        std::ostringstream buf;
+        auto* saved = std::cout.rdbuf(buf.rdbuf());
+        const auto status = bc::serving::inspect_native_fleet_config_command(3, argv);
+        std::cout.rdbuf(saved);
+        ::close(fd);
+        check(status && *status == 0 && Json::parse(buf.str()).at("engine").at("settings").at("profile_ops") == true,
+              "a native profile-ops: true is not reported by the inspector");
+    }
 
     for (const auto& mode : {std::string("0"), std::string("auto"), std::string("auto:1")}) {
         const int fd = sealed_memfd(inspected_yaml + "    prefill-interleave: " + mode +

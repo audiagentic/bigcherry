@@ -1775,6 +1775,23 @@ void power_apply_reaches_the_admitted_plan() {
     }
 }
 
+// A native YAML's profile-ops reaches the start the owner launches, so the runtime MTP replay guard exempts it (a profiled
+// engine at depth > 1 need not log a recorded draft pass); without it the start is not profiled.
+void native_profile_ops_reaches_the_start() {
+    for (const bool on : {false, true}) {
+        auto native = bc::test::native_session_inputs(g_host, g_root / (std::string("profile-ops-") + (on ? "on" : "off")),
+                                                      bc::test::free_port());
+        auto& inspected = native.inputs.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_SETTINGS"];
+        Json settings = inspected.empty() ? Json::object() : Json::parse(inspected);
+        settings["profile_ops"] = on;
+        inspected = settings.dump();
+        const fs::path plan_dir = g_root / (std::string("profile-ops-plan-") + (on ? "on" : "off"));
+        fs::create_directories(plan_dir);
+        const auto start = ss::plan_engine_only(native.inputs, plan_dir, bc::test::standalone_plan_hooks());
+        assert(start.native_profile_ops == on);
+    }
+}
+
 void premeasurement_manifest_hook_integration() {
     // One owner, one run, and one manifest admission *before* measuring.
     // Explicit fake hooks record their sequencing without ever touching sysfs.
@@ -1921,7 +1938,7 @@ int test_main(int argc, char** argv) {
     // all. Every test is in exactly one group.
     static const std::vector<std::vector<void (*)()>> groups = {
         {real_session_power_returned_errors, manifest_writer_before_durable_admission, native_config_inspector_before_admission, callback_exception_matrix, power_hook_returned_status_errors, stop_while_waiting_for_health, stop_during_plan, unwritable_record_still_stops},
-        {native_only_planning_refusals, power_apply_reaches_the_admitted_plan, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, calibration_ingest_never_fails_serving, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
+        {native_only_planning_refusals, power_apply_reaches_the_admitted_plan, native_profile_ops_reaches_the_start, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, calibration_ingest_never_fails_serving, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
         {injected_owner_plan_exception, feature_state_start_status_and_warning, feature_state_invalid_manifest_prevents_child, helper_failure_unwinds, helper_shared_segment_gate, long_run_dir, shared_run_dir_and_stale_socket, engine_refuses_the_stored_plan, engine_never_healthy, plan_refused},
         {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_refuses_host_room, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
     };

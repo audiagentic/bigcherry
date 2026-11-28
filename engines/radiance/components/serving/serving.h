@@ -76,6 +76,7 @@ struct NativeEngineSettings {
     std::vector<std::string> kernels;
     std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;   // rope_scaling empty: model-defined
     bool prefix_cache;
+    bool profile_ops = false;   // per-op timing (models.<id>.profile-ops): the runtime MTP replay guard exempts it
     std::optional<uint32_t> prefill_interleave;
     // The native tuning projection (kNativeTuningFields). The engine validates YAML;
     // the resolver validates the manifest field types and ranges.

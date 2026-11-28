@@ -119,7 +119,8 @@ the advisory result in the session power receipt. Missing sensors cannot
 be misreported as healthy GFXOFF.
 
 A successful canary is followed by a **manifest-driven** MTP replay guard
-(depth greater than one, absent `profile_ops`): an engine log must include a
+(depth greater than one, not profiled: neither the native YAML's `profile-ops`, as the
+engine's inspector reports it, nor a lab experiment's `profile_ops`): an engine log must include a
 recorded nonzero draft pass, with exactly one retry canary before refusal.
 The heat-stream guard reads the unchanged engine histogram producer layout:
 native-endian cumulative `uint32_t[128][model.experts]`, including zero-padded

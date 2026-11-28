@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.5.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.5.0...bc-radiance-2030.5.1) (2026-11-28)
+
+
+### Fixes
+
+* **serving:** the runtime MTP guard exempts a native profile-ops start ([#1778](https://github.com/audiagentic/bigcherry/issues/1778)) ([daa11e0](https://github.com/audiagentic/bigcherry/commit/daa11e0be0191738e4fe614f72c7e8a75497924e))
+
 ## [2030.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.4.0...bc-radiance-2030.5.0) (2026-11-28)
 
 

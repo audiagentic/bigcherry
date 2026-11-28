@@ -235,6 +235,11 @@ int main(int argc, char** argv) {
         using bc::serving::v2::LivePolicy;
         expect(replay_verdict(1, false, "") == ReplayVerdict::disabled, "MTP depth <= 1 is exempt");
         expect(replay_verdict(4, true, "") == ReplayVerdict::profiled, "profile-ops is exempt");
+        {   // a native YAML's profile-ops makes the start profiled; without it or a lab profile_ops it is not
+            bc::serving::v2::Manifest plain{};
+            expect(start_is_profiled(plain, true), "a native profile-ops start is profiled");
+            expect(!start_is_profiled(plain, false), "a start without profile-ops is not profiled");
+        }
         expect(replay_verdict(4, false, "recorded pass: draft pass 0 \n") == ReplayVerdict::absent,
                "only draft pass zero is the serial replay regression");
         expect(replay_verdict(4, false, "recorded pass: draft pass -1 token\n") == ReplayVerdict::observed,
