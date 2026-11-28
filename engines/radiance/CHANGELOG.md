@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.1.1...bc-radiance-2030.2.0) (2026-11-28)
+
+
+### New and changed
+
+* **unit-harness:** int8 vocabulary head family; families name every row their case checks ([#1751](https://github.com/audiagentic/bigcherry/issues/1751)) ([ba0da4d](https://github.com/audiagentic/bigcherry/commit/ba0da4dee61c6a87606885fe102d747ffa496d4a))
+
 ## [2030.1.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.1.0...bc-radiance-2030.1.1) (2026-11-28)
 
 
