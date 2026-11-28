@@ -703,7 +703,13 @@ FIND_ANCHOR = ("static const RadKernelInfo* find(const Plugin& pl, const char* n
                "        if (!std::strcmp(pl.kernel_at(k)->name, name)) return pl.kernel_at(k);\n"
                "    return nullptr;\n"
                "}\n")
-FIND_NEW = ("static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
+FIND_NEW = ("/* an overlay run: the base plugin the overlay's absent rows (the int8 reference rows) come from */\n"
+            "static const Plugin* uh_base() {\n"
+            "    static Plugin uh_pl; static bool uh_tried = false, uh_ok = false;\n"
+            "    if (!uh_tried) { uh_tried = true; if (const char* b = std::getenv(\"UH_BASE_PLUGIN\")) uh_ok = load(&uh_pl, b); }\n"
+            "    return uh_ok ? &uh_pl : nullptr;\n"
+            "}\n"
+            "static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
             "    if (const char* uh_pre = std::getenv(\"UH_ROW_PREFIX\")) {\n"
             "        const std::string uh_name = std::string(uh_pre) + name;\n"
             "        for (int k = 0; k < pl.kernel_count(); ++k)\n"
@@ -711,14 +717,9 @@ FIND_NEW = ("static const RadKernelInfo* find(const Plugin& pl, const char* name
             "    }\n"
             "    for (int k = 0; k < pl.kernel_count(); ++k)\n"
             "        if (!std::strcmp(pl.kernel_at(k)->name, name)) return pl.kernel_at(k);\n"
-            "    /* an overlay run: the rows the overlay does not carry (the int8 reference rows) come from the base plugin */\n"
-            "    if (const char* uh_base = std::getenv(\"UH_BASE_PLUGIN\")) {\n"
-            "        static Plugin uh_pl; static bool uh_tried = false, uh_ok = false;\n"
-            "        if (!uh_tried) { uh_tried = true; uh_ok = load(&uh_pl, uh_base); }\n"
-            "        if (uh_ok)\n"
-            "            for (int k = 0; k < uh_pl.kernel_count(); ++k)\n"
-            "                if (!std::strcmp(uh_pl.kernel_at(k)->name, name)) return uh_pl.kernel_at(k);\n"
-            "    }\n"
+            "    if (const Plugin* uh_pl = uh_base())\n"
+            "        for (int k = 0; k < uh_pl->kernel_count(); ++k)\n"
+            "            if (!std::strcmp(uh_pl->kernel_at(k)->name, name)) return uh_pl->kernel_at(k);\n"
             "    return nullptr;\n"
             "}\n")
 EMBED_ANCHOR = ("    std::vector<uint16_t> got((size_t)(M * dim)), want((size_t)dim);\n"
@@ -851,6 +852,18 @@ GATED_CASES_BLOCK = ('            if (const char* uh_g = std::getenv("UH_GATED_C
                      '                }\n')
 
 
+# The IQR case pins the int8 reference row's K split to the IQR row's, so the two sum their partials in one order. In an
+# overlay run the int8 row comes from the base plugin, so the pin must reach the base too (else the reference sums in its
+# own order and differs from the IQR row by rounding at M 17 to 64, while the IQR output itself is unchanged).
+PIN_ANCHOR = ("    if (M <= 64 && pl.pin_split_waves) pl.pin_split_waves(512);\n"
+              "    const int rr = launch(ri, ti, gp);\n"
+              "    if (M <= 64 && pl.pin_split_waves) pl.pin_split_waves(0);\n")
+PIN_NEW = ("    const Plugin* uh_pin = uh_base() ? uh_base() : &pl;\n"
+           "    if (M <= 64 && uh_pin->pin_split_waves) uh_pin->pin_split_waves(512);\n"
+           "    const int rr = launch(ri, ti, gp);\n"
+           "    if (M <= 64 && uh_pin->pin_split_waves) uh_pin->pin_split_waves(0);\n")
+
+
 def inject_selftest(text: str) -> str:
     if text.count(DEVICE_ANCHOR)!=1:
         raise HarnessError("selftest main anchor missing or ambiguous")
@@ -905,6 +918,9 @@ def inject_selftest(text: str) -> str:
         if text.count(anchor) != 1:
             raise HarnessError(f"the selftest changed: the harness's edit anchor is not found exactly once ({anchor.splitlines()[0].strip()!r})")
     text = text.replace(FIND_ANCHOR, FIND_NEW, 1)
+    if text.count(PIN_ANCHOR) != 1:
+        raise HarnessError("the selftest changed: the int8 reference split pin is not found exactly once")
+    text = text.replace(PIN_ANCHOR, PIN_NEW, 1)
     text = text.replace(EMBED_ANCHOR, EMBED_ANCHOR + EMBED_PRINT, 1)
     text = text.replace(EMBED_CASES_ANCHOR, EMBED_CASES_ANCHOR + EMBED_CASES_BLOCK, 1)
     text = text.replace(VOCAB_ANCHOR, VOCAB_ANCHOR + VOCAB_PRINT, 1)
