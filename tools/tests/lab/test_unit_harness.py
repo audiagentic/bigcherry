@@ -45,8 +45,14 @@ class HarnessTests(unittest.TestCase):
     def test_selftest_edit_needs_both_anchors_once(self):
         text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR + uh.I8A8_CASES_ANCHOR + uh.I8A8_HASH_ANCHOR + uh.MOE_LARGE_PASSES
                 + uh.MOE_FUNCTION + ") {\n" + uh.MOE_HASH_ANCHOR + "}\nstatic void other() {}\n"
-                + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
+                + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR
+                + uh.OWNED_GEMM_ANCHOR + uh.OWNED_GATED_ANCHOR + uh.GATED_HASH_ANCHOR + uh.GATED_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
+        # the owned-form selection sits after each row's own selection, the gated hash before its verdict
+        self.assertIn(uh.OWNED_GEMM_ANCHOR.splitlines(keepends=True)[0] + uh.OWNED_GEMM_SKIP, edited)
+        self.assertIn(uh.OWNED_GATED_ANCHOR.splitlines(keepends=True)[0] + uh.OWNED_GATED_SKIP, edited)
+        self.assertIn(uh.GATED_HASH_PRINT + uh.GATED_HASH_ANCHOR.splitlines(keepends=True)[1], edited)
+        self.assertIn(uh.GATED_CASES_ANCHOR + uh.GATED_CASES_BLOCK, edited)
         self.assertIn("uh_extra[uh_i]", edited)
         self.assertIn("sub=%d top_k", edited)                       # the MoE case's per-form output hash                      # the IQ8R case's extra shapes and output hash
         self.assertIn("UNITHASH", edited)
@@ -66,6 +72,9 @@ class HarnessTests(unittest.TestCase):
             self.assertTrue(fam["units"], name)
             self.assertIn("hash", fam)
             self.assertIn("rows", fam)
+        owned = uh.overlays()["iqr_gemm_m64"]
+        self.assertTrue({"r4d_fused_quant", "r4d_quant_act_fp8"} <= set(owned["base-units"]))   # the gated chain's quantiser
+        self.assertIn("13312:5120:64", uh.hash_cases(owned["hash"]).split(","))
         cases = uh.hash_cases(uh.families()["iqr"]["hash"]).split(",")
         self.assertIn("5376:2560:129", cases)
         self.assertEqual(len(cases), len(set(cases)))
