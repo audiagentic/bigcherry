@@ -10,7 +10,11 @@ models:
     tp-wire: "exact"
     max-model-len: 8192
     max-num-seqs: 1
-    max-num-batched-tokens: 2048
+    # VTP59 (2026-11-28, 2030.0.0, docs/evidence/2026-11-28-vtp59-post-bump-concurrency): a 4096-token step with the pipelined
+    # prefill below ends the four-stream inversion: 4x4K/128 58.2 against 43.4 t/s, TTFT max 7.6 against 10.7 s, p95 event
+    # gap 29.4 against 34.7 ms; 2/6 streams, 4K/512 and 512/128 better or level; KL mean 0.00197 against 0.00198. Interleave and
+    # the mixed target stay at their defaults: interleave 0 with a 75 ms target held throughput but at a 133 ms p95 gap.
+    max-num-batched-tokens: 4096
     checkpoint-interval: 4096
     placement: expert_tiered
     kv-cache-dtype: fp8
@@ -19,8 +23,12 @@ models:
     prefix-resume: nearest
     rope-scaling: none
     p2p: "off"
+    # VTP59: on, as in the three-card layout; the narrowest pipelined step.
+    pipelined-prefill: "on"
+    pipelined-prefill-min-rows: 256
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Qwen3.8-27B IQ8R, two RDNA3 engine ranks with host-memory wht6 all-reduce"
   ranks:
     - {arch: "gfx1100", count: 2}

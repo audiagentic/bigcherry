@@ -230,7 +230,7 @@
         p.memory["host-kv-mib"] = 0;
         p.sets.push_back("service.max_context=8192");
         p.sets.push_back("service.max_sessions=6");
-        p.sets.push_back("engine.max_num_batched_tokens=2048");
+        p.sets.push_back("engine.max_num_batched_tokens=4096");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
@@ -239,6 +239,8 @@
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
         p.sets.push_back("tuning.p2p=\"off\"");
+        p.sets.push_back("tuning.pipelined_prefill=\"on\"");
+        p.sets.push_back("tuning.pipelined_prefill_min_rows=256");
         return p;
     }
     if (name == "qwen27b-tp3-capacity") {
@@ -423,7 +425,7 @@
         p.memory["host-kv-mib"] = 0;
         p.sets.push_back("service.max_context=8192");
         p.sets.push_back("service.max_sessions=8");
-        p.sets.push_back("engine.max_num_batched_tokens=2048");
+        p.sets.push_back("engine.max_num_batched_tokens=4096");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");

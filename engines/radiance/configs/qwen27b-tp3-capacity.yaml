@@ -33,7 +33,7 @@ x-bigcherry:
   power: {profile: efficient}
   description: "qwen27b-tp3 for resident context: 262,144 tokens a session"
   variant-of: "qwen27b-tp3"
-  differs: ["models.qwen27b.max-model-len"]
+  differs: ["models.qwen27b.max-model-len", "models.qwen27b.max-num-batched-tokens"]
   ranks:
     - {arch: "gfx1100", count: 2}
     - {arch: "gfx1201", count: 1}
