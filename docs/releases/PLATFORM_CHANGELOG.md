@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.86.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.85.0...bc-platform-1.86.0) (2026-11-28)
+
+
+### New and changed
+
+* **unit-harness:** scope changed paths by compiler dependency records (--deps-build) ([#1761](https://github.com/audiagentic/bigcherry/issues/1761)) ([f09a6be](https://github.com/audiagentic/bigcherry/commit/f09a6be4aa4bb9f405638d6e043ae94a66cbba01))
+
 ## [1.85.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.84.1...bc-platform-1.85.0) (2026-11-28)
 
 
