@@ -42,10 +42,12 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([uh.classify(r, 0.04) for r in (0.5, 1.0, 1.1)], ["win", "same", "regress"])
 
     def test_selftest_edit_needs_both_anchors_once(self):
-        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR + uh.I8A8_CASES_ANCHOR + uh.I8A8_HASH_ANCHOR
+        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR + uh.I8A8_CASES_ANCHOR + uh.I8A8_HASH_ANCHOR + uh.MOE_LARGE_PASSES
+                + uh.MOE_FUNCTION + ") {\n" + uh.MOE_HASH_ANCHOR + "}\nstatic void other() {}\n"
                 + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
-        self.assertIn("uh_extra[uh_i]", edited)                      # the IQ8R case's extra shapes and output hash
+        self.assertIn("uh_extra[uh_i]", edited)
+        self.assertIn("sub=%d top_k", edited)                       # the MoE case's per-form output hash                      # the IQ8R case's extra shapes and output hash
         self.assertIn("UNITHASH", edited)
         self.assertIn("UH_HASH_CASES", edited)
         self.assertIn("UH_TOLERATE_ABSENT", edited)
@@ -123,6 +125,12 @@ class HarnessTests(unittest.TestCase):
                 "replay_configured": False, "required_replay": [], "replay": []}
         self.assertEqual(uh.configured_measurement_outcome({**base, "code_changed": []})[0], "checks_passed")
         self.assertEqual(uh.configured_measurement_outcome({**base, "code_changed": ["k"]})[0], "inconclusive")
+
+    def test_only_named_skips_are_expected(self):
+        _, fails = uh.parse_hashes("  skip  x -- no run map past 512 experts, so no aligned launch\n  skip  y -- other\n")
+        expected = [re.compile("no run map past 512 experts")]
+        left = [l for l in fails if not (re.match(r"^\s*skip\b", l) and any(p.search(l) for p in expected))]
+        self.assertEqual(left, ["  skip  y -- other"])
 
     def test_identical_family_code_needs_no_replay(self):
         same = {"hash": uh.compare_hashes({"a": "1"}, {"a": "1"}), "selftest_failures": {"ref": 0, "cand": 0},

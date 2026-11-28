@@ -576,3 +576,15 @@ path = "tools/lab/radiance/unit_harness.py"
 anchor = "i8a8_numeric(pl, \"gemm_i8a8_tiled\", 2048, 512, 2560);"
 category = "B"
 reason = "lab harness: the selftest text its int8 trunk edit anchors on, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_families.toml"
+anchor = "cases = [\"1280:2560:1280:2560:2:16:0:8\""
+category = "B"
+reason = "lab harness input: the Flash-Next expert gate/up geometry the moe_w4a8i8 family is hashed at, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_families.toml"
+anchor = "\"2560:640:2560:640:1:16:1:8\""
+category = "B"
+reason = "lab harness input: the Flash-Next expert down geometry the moe_w4a8i8 family is hashed at, not an execution path of the product"

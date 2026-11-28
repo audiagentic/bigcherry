@@ -592,6 +592,50 @@ I8A8_HASH_PRINT = ('    {\n'
                    '    }\n')
 
 
+# The grouped int8-activation MoE GEMM (moe_w4_gemm): extra expert shapes from UH_HASH_CASES as
+# "N0:K0:N1:K1:parts:experts:sorted:tokens" (the family's own `cases`), each run at the 64-group codebook forms the
+# selftest runs (sub 2 and 4) at top 10, and a hash of every form's output. The output anchor also occurs in
+# moe_q4_gemm, so the edit is made inside moe_w4_gemm's body only.
+MOE_FUNCTION = "static void moe_w4_gemm("
+MOE_CASES_BLOCK = ('        if (const char* uh_cases = std::getenv("UH_HASH_CASES"); uh_cases && w4)\n'
+                   '            for (const char* s = uh_cases; *s;) {\n'
+                   '                long long n0 = 0, k0 = 0, n1 = 0, k1 = 0, parts = 0, ne = 0, sorted = 0, tok = 0; int used = 0;\n'
+                   '                if (std::sscanf(s, "%lld:%lld:%lld:%lld:%lld:%lld:%lld:%lld%n", &n0, &k0, &n1, &k1, &parts, &ne,\n'
+                   '                                &sorted, &tok, &used) < 8) break;\n'
+                   '                static std::vector<std::string> uh_names;   /* MoeW4Shape keeps the name pointer */\n'
+                   '                uh_names.push_back(std::to_string(n0) + "x" + std::to_string(k0) + ":" + std::to_string(n1) + "x" +\n'
+                   '                                   std::to_string(k1) + " parts=" + std::to_string(parts) + " experts=" + std::to_string(ne));\n'
+                   '                const MoeW4Shape uh_sh{ uh_names.back().c_str(), n0, k0, n1, k1, parts, ne, sorted != 0 };\n'
+                   '                for (const int uh_sub : { 2, 4 })\n'
+                   '                    moe_w4_gemm(pl, tok * 10, uh_sh, uh_sub, false, false, 10, 1, 128);   /* rows: tokens x top 10 */\n'
+                   '                s += used;\n'
+                   "                if (*s == ',') ++s;\n"
+                   '            }\n')
+MOE_LARGE_PASSES = "            moe_down_mt_case(pl, 4096);\n            moe_down_mt_case(pl, 8192);\n"
+MOE_HASH_ANCHOR = ("        std::vector<uint16_t> got((size_t)(Tr * N));\n"
+                   "        st_memcpy(got.data(), d_y, got.size() * 2, hipMemcpyDeviceToHost);\n"
+                   "        double worst = 0.0;\n")
+MOE_HASH_PRINT = ('        {\n'
+                  '            uint64_t uh = 1469598103934665603ull;\n'
+                  '            for (uint16_t hv : got) { uh ^= hv; uh *= 1099511628211ull; }\n'
+                  '            std::printf("UNITHASH %s sub=%d top_k=%lld %016llx\\n", label.c_str(), sub, (long long)top_k,\n'
+                  '                        (unsigned long long)uh);\n'
+                  '        }\n')
+
+
+def _edit_function(text: str, function: str, anchor: str, replacement: str) -> str:
+    """Replace ``anchor`` once inside the body of ``function`` (up to the next top-level static function)."""
+    start = text.find(function)
+    if start < 0 or text.count(function) != 1:
+        raise HarnessError(f"the selftest changed: {function.strip()!r} is not found exactly once")
+    end = text.find("\nstatic ", start + len(function))
+    body = text[start:end if end >= 0 else len(text)]
+    if body.count(anchor) != 1:
+        raise HarnessError(f"the selftest changed: the harness's edit anchor in {function.strip()!r} is not found exactly once "
+                           f"({anchor.splitlines()[0].strip()!r})")
+    return text[:start] + body.replace(anchor, replacement, 1) + text[start + len(body):]
+
+
 # A plugin that carries only some units has no entry point for the rest: the loader notes the absence and goes on
 # (the rows without a kernel then return "unsupported", like libr3's own stubbed rows).
 SYM_ANCHOR = '    if (e || !p) { std::printf("  FAIL  dlsym(%s): %s\\n", n, e ? e : "null"); ++g_fail; return false; }\n'
@@ -742,6 +786,12 @@ def inject_selftest(text: str) -> str:
             raise HarnessError("the selftest changed: the harness's IQ8R edit anchor is not found exactly once "
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(IQ8R_SHAPES_ANCHOR, IQ8R_SHAPES_NEW, 1)
+    # the family's expert shapes run after the case's own large down passes, inside its w4 block
+    if text.count(MOE_LARGE_PASSES) != 1:
+        raise HarnessError("the selftest changed: the MoE large down passes are not found exactly once")
+    text = text.replace(MOE_LARGE_PASSES, MOE_LARGE_PASSES + MOE_CASES_BLOCK, 1)
+    moe = MOE_HASH_ANCHOR.splitlines(keepends=True)
+    text = _edit_function(text, MOE_FUNCTION, MOE_HASH_ANCHOR, moe[0] + moe[1] + MOE_HASH_PRINT + moe[2])
     for anchor in (I8A8_CASES_ANCHOR, I8A8_HASH_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError("the selftest changed: the harness's int8 trunk edit anchor is not found exactly once "
@@ -982,6 +1032,8 @@ def resource_summary(diff: dict, cand: dict) -> str:
 # ------------------------------------------------------------------------------------------------------------ hash
 
 def hash_cases(spec: dict) -> str:
+    if "cases" in spec:                                   # a family whose case takes its own case format
+        return ",".join(spec["cases"])
     cases = [f"{n}:{k}:{m}" for n, k in spec["shapes"] for m in spec["rows"]]
     n, k = spec["tail_shape"]
     cases += [f"{n}:{k}:{m}" for m in spec["tail_rows"]]
@@ -1195,6 +1247,16 @@ def stage_measure(out: Path, *, bdf: str, replay_iters: int = 15, tol: float = 0
         print(f"selftest {arm}: {time.monotonic() - started:.0f} s")
     ref_hashes, ref_fail = parse_hashes(texts.get("ref", ""))
     cand_hashes, cand_fail = parse_hashes(texts.get("cand", ""))
+    # a skip the family names (the case's own refusal of a form outside the kernel's contract) is expected, not a failure
+    expected = [re.compile(p) for p in fam.get("expected_skips", [])]
+    def unexpected(lines):
+        left = [l for l in lines if not (re.match(r"^\s*skip\b", l) and any(p.search(l) for p in expected))]
+        skipped = any(re.match(r"^\s*skip\b", l) for l in lines)
+        # the selftest exits 2 when its only findings are skips; with every skip expected that exit is clean
+        if skipped and not any(re.match(r"^\s*skip\b", l) for l in left):
+            left = [l for l in left if not l.startswith("FAIL selftest process exit 2:")]
+        return left
+    ref_fail, cand_fail = unexpected(ref_fail), unexpected(cand_fail)
     result["hash"] = compare_hashes(ref_hashes, cand_hashes)
     result["selftest_failures"] = {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}
     print(f"hash: {result['hash']['compared']} compared, {len(result['hash']['differ'])} differ, "
