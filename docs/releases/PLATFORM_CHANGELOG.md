@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.87.0...bc-platform-1.87.1) (2026-11-28)
+
+
+### Fixes
+
+* **lab:** Flash-Next parity sess8 covariate counts mixed steps on 2.3 ([#1773](https://github.com/audiagentic/bigcherry/issues/1773)) ([1b4b421](https://github.com/audiagentic/bigcherry/commit/1b4b4211262f8d4aee56a13caa611ead49f3fdcc))
+
 ## [1.87.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.86.0...bc-platform-1.87.0) (2026-11-28)
 
 
