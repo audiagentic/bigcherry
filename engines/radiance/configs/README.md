@@ -50,13 +50,17 @@ x-bigcherry:                        # what BigCherry owns and Radiance has no op
 ### Power profile
 
 All shipped model configurations select `efficient` from the canonical
-`engines/radiance/power-profiles.yaml`. A normal start is observe-only:
-physical application still requires explicit `--allow-power-apply`,
-verified lease, exact-device qualification and the shared transaction owner.
-Do not use qualification mode as a production bypass. Stock remains available
-by selecting `x-bigcherry.power.profile: stock` in a separate config or lab arm;
-stock baseline and parity arms explicitly select it. No model weights, context
-limits, kernel choices or memory controls change.
+`engines/radiance/power-profiles.yaml`, whose `default_mode: apply` makes a
+start apply it to the cards the model runs on; the stop restores the originals.
+Every write still needs the gpu lease held by an ancestor of the owner,
+`--work-root` equal to `BC_WORK_ROOT`, the shared transaction owner and a
+qualifying receipt for each card's settings on that board and driver. A card
+without one refuses the start, naming the missing receipt; one supervised lab
+start with `--allow-power-apply --qualify-power` under the same work root
+writes it. Do not use qualification mode as a production bypass. Stock remains
+available by selecting `x-bigcherry.power.profile: stock` in a separate config
+or lab arm; stock baseline and parity arms explicitly select it. No model
+weights, context limits, kernel choices or memory controls change.
 
 
 ### Managed tuning enhancements (RSC19)

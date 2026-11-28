@@ -22,6 +22,7 @@ struct S10PowerRule {
 struct S10PowerProfile {
   std::string name;
   std::vector<S10PowerRule> rules; // authoritative named profile, no BDF literals
+  bool apply_by_default = false;   // default_mode: apply: a start applies the rules without --allow-power-apply
 };
 struct S10ControlProbe {
   int64_t minimum = 0;

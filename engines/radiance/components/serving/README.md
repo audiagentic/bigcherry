@@ -66,10 +66,11 @@ process groups before calling `SessionPower::finish()`; every returned power
 or receipt error surfaces as a failed session, never a clean stop.
 
 The power profile is the config's `x-bigcherry.power.profile` (a profile of `engines/radiance/power-profiles.yaml`, compiled
-into bc-serve and read through the engine's YAML parser; `stock` when absent) and is observational. Hardware-changing
-power profiles that change hardware require **both** a qualification and the opt-in
-`--allow-power-apply`, plus an unexpired, ancestor-and-instance-bound
-GPU lease. With no opt-in the owner rejects apply before a hardware write.
+into bc-serve and read through the engine's YAML parser; `stock` when absent). A profile whose `default_mode` is `apply`
+is applied at start; one that observes applies only with the opt-in `--allow-power-apply`; `stock` never writes. The
+S10 plan makes that decision once. Every write requires a qualification plus an ancestor-and-instance-bound GPU lease (an
+overrun lease, expired but with its holder alive, is still held: agent-lease frees only a lease whose holder is gone, so a
+model that outlives its ttl still restores at stop).
 The qualification is the controller's own durable receipt (`<work-root>/power/receipts`): a setting is accepted for a
 BDF when an earlier apply of exactly that setting on the same kernel, amdgpu version and board (the receipt's plain
 `identity` string, compared by equality) read back exactly and restored exactly; the receipt's workload is evidence only.

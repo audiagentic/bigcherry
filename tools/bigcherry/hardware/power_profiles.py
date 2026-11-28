@@ -1,9 +1,10 @@
 """PWR08: card-free named power profile data, with canonical content digests.
 
-A named profile is operator *intent*, not authority to write sysfs. Rules are
-architecture and role filters, never PCI locators; calibration is keyed by
-live inventory BDF and must be separately qualified before explicit apply.
-All built-in profiles default to observe; a profile load never probes a GPU.
+A named profile is operator intent. Rules are architecture and role filters,
+never PCI locators. A profile whose default_mode is apply is applied by the
+native owner at model start (stock always observes); the write still needs a
+qualifying per-BDF receipt, the lease and the shared transaction owner. A
+profile load never probes a GPU.
 
 The v2 wire digest is over the JCS-compatible, integer-only resolved
 {"name": name, "roles": ...} shape AFTER device calibration and BEFORE intent
@@ -130,8 +131,8 @@ def load_profiles(path: Path) -> dict[str, Profile]:
         if extra := set(raw) - {"default_mode", "rules"}:
             raise ProfileError(f"{name}: unknown keys {sorted(extra)}")
         mode = raw.get("default_mode", "observe")
-        if mode != "observe":
-            raise ProfileError(f"{name}: built-in profile cannot auto-apply power")
+        if mode not in ("observe", "apply"):
+            raise ProfileError(f"{name}: default_mode must be observe or apply")
         entries = raw.get("rules", [])
         if not isinstance(entries, list):
             raise ProfileError(f"{name}: rules must be a list")
@@ -175,8 +176,8 @@ def load_profiles(path: Path) -> dict[str, Profile]:
             ],
         }
         result[name] = Profile(name, mode, tuple(rules), _digest(projection))
-    if "stock" not in result or result["stock"].rules:
-        raise ProfileError("stock must exist and have no settings rules")
+    if "stock" not in result or result["stock"].rules or result["stock"].default_mode != "observe":
+        raise ProfileError("stock must exist, observe and have no settings rules")
     return result
 
 

@@ -16,7 +16,7 @@ from bigcherry.hardware.power_profiles import (
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def test_builtin_profiles_observe_and_are_portable():
+def test_builtin_profiles_are_portable_and_only_efficient_applies():
     profiles = load_profiles(ROOT / "engines/radiance/power-profiles.yaml")
     assert {
         "stock",
@@ -26,14 +26,14 @@ def test_builtin_profiles_observe_and_are_portable():
         "xtx-soak-candidate",
         "xtx-sclk2700-uv125",
     } <= profiles.keys()
-    assert all(profile.default_mode == "observe" for profile in profiles.values())
+    assert {n for n, p in profiles.items() if p.default_mode == "apply"} == {"efficient"}
     for name in ("stock", "quiet", "performance"):
         assert profiles[name].settings_for("engine", "gfx1201") == {}
         assert profiles[name].settings_for("helper0", "gfx1100") == {}
         assert profiles[name].settings_for("helper1", "gfx1030") == {}
 
 
-def test_efficient_intent_is_frozen_but_observe_only():
+def test_efficient_intent_is_frozen_and_applies_by_default():
     p = load_profiles(ROOT / "engines/radiance/power-profiles.yaml")["efficient"]
     for role in ("engine", "helper0", "helper1", "helper2"):
         assert p.settings_for(role, "gfx1100") == {
@@ -43,7 +43,7 @@ def test_efficient_intent_is_frozen_but_observe_only():
             "sclk_offset_mhz": -300, "vddgfx_offset_mv": -125, "power_cap_w": 210,
         }
         assert p.settings_for(role, "gfx1030") == {}
-    assert p.default_mode == "observe"
+    assert p.default_mode == "apply"
 
 
 def test_soak_candidate_is_not_a_portable_default():
@@ -105,11 +105,17 @@ def test_unknown_profile_refused():
         )
 
 
-def test_non_observe_and_unknown_keys_rejected(tmp_path):
+def test_default_mode_and_unknown_keys(tmp_path):
     path = tmp_path / "bad.yaml"
     path.write_text("schema: 1\nprofiles:\n  stock: {default_mode: apply}\n")
-    with pytest.raises(ProfileError, match="auto-apply"):
+    with pytest.raises(ProfileError, match="stock must exist, observe"):
         load_profiles(path)
+    path.write_text("schema: 1\nprofiles:\n  stock: {}\n  cap: {default_mode: always}\n")
+    with pytest.raises(ProfileError, match="observe or apply"):
+        load_profiles(path)
+    rule = "{role: engine, arch: gfx1201, evidence: docs/x.md, settings: {power_cap_w: 210}}"
+    path.write_text(f"schema: 1\nprofiles:\n  stock: {{}}\n  cap: {{default_mode: apply, rules: [{rule}]}}\n")
+    assert load_profiles(path)["cap"].default_mode == "apply"
     path.write_text("schema: 1\nprofiles:\n  stock: {not_a_key: 1}\n")
     with pytest.raises(ProfileError, match="unknown keys"):
         load_profiles(path)

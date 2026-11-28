@@ -1,16 +1,18 @@
 # PWR08: named intent, never a command to write power controls. The one profile file: bc-serve compiles it in (like
 # archs.toml) and reads it through the engine's YAML parser; tools/bigcherry/hardware/power_profiles.py reads the same file.
 # A serving config selects a profile with x-bigcherry.power.profile (stock when absent).
-# All profiles default to observe. Explicit operator apply plus per-device qualification is required by the resolver and
-# the PowerTransaction. No physical BDF or host-specific calibration may be committed here.
+# default_mode: apply means a model start applies the profile's rules to the cards it runs on and its stop restores the
+# originals; observe (the default) writes nothing unless the operator passes --allow-power-apply. stock always observes.
+# Every write still needs a qualifying per-card receipt (a lab --allow-power-apply --qualify-power start), the gpu lease
+# and the shared PowerTransaction owner. No physical BDF or host-specific calibration may be committed here.
 schema: 1
 profiles:
   stock:
     default_mode: observe
-  # Selected efficient intent; exact-device evidence and explicit apply remain mandatory.
-  # Final native serving qualification is still outstanding. No memory-clock rules.
+  # Owner decision 2026-11-28: efficient applies by default at model start. Per-card qualifying receipts remain mandatory.
+  # No memory-clock rules.
   efficient:
-    default_mode: observe
+    default_mode: apply
     rules:
       - role: engine
         arch: gfx1100

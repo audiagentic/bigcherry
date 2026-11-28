@@ -1699,21 +1699,23 @@ void native_only_planning_refusals() {
 
 // PWR08/PWR10: the YAML's x-bigcherry.power.profile, the work root's power-site file and --allow-power-apply reach the
 // power plan the owner admits: apply with per-BDF settings from the site, observe without the authorization, a refusal that
-// names the missing receipt for an unqualified setting, and the lab-only qualifying apply accepted without one.
+// names the missing receipt for an unqualified setting, and the lab-only qualifying apply accepted without one. A profile
+// whose default_mode is apply applies without the authorization, under the same receipt rule.
 void power_apply_reaches_the_admitted_plan() {
     namespace v2 = bc::serving::v2;
     struct Outcome {
         std::string refusal;
         std::optional<v2::Manifest> admitted;
     };
-    const auto plan_with = [&](const std::string& label, bool allow_apply, bool receipt, bool qualify) {
+    const auto plan_with = [&](const std::string& label, bool allow_apply, bool receipt, bool qualify,
+                               const std::string& default_mode = "observe") {
         auto native = bc::test::native_session_inputs(g_host, g_root / ("power-apply-" + label), bc::test::free_port());
         auto& env = native.inputs.native_admission->runtime_overrides;
         Json x = Json::parse(env.at("TEST_NATIVE_INSPECT_XBIGCHERRY"));
         x["power"] = {{"profile", "capped"}};
         env["TEST_NATIVE_INSPECT_XBIGCHERRY"] = x.dump();
         env["TEST_NATIVE_INSPECT_POWER_PROFILES"] =
-            Json{{"schema", 1}, {"profiles", {{"stock", {{"default_mode", "observe"}}}, {"capped", {{"default_mode", "observe"}}}}}}
+            Json{{"schema", 1}, {"profiles", {{"stock", {{"default_mode", "observe"}}}, {"capped", {{"default_mode", default_mode}}}}}}
                 .dump();
         Json devices = Json::object();
         for (const Json& bdf : native.resolved_values.at("layout").at("engine_cards"))
@@ -1765,6 +1767,17 @@ void power_apply_reaches_the_admitted_plan() {
     }
     {   // authorized but no receipt qualifies the setting: refused naming what is missing, before any power admission
         const Outcome refused = plan_with("unqualified", true, false, false);
+        assert(!refused.admitted &&
+               refused.refusal.find("no verified apply, readback and restore receipt") != std::string::npos);
+    }
+    {   // default_mode apply: applies without the authorization when a receipt qualifies the setting
+        const Outcome by_default = plan_with("default-apply", false, true, false, "apply");
+        assert(by_default.refusal.empty() && by_default.admitted &&
+               by_default.admitted->spec.plan.power.mode == v2::PowerMode::kApply);
+        for (const auto& device : by_default.admitted->spec.plan.power.devices) assert(device.settings.power_cap_w == 272);
+    }
+    {   // ... and is refused, naming the missing receipt, when none does
+        const Outcome refused = plan_with("default-unqualified", false, false, false, "apply");
         assert(!refused.admitted &&
                refused.refusal.find("no verified apply, readback and restore receipt") != std::string::npos);
     }

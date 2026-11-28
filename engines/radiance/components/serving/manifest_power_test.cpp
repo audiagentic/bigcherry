@@ -122,7 +122,7 @@ int main() {
         Cards hardware;
         Telemetry sensor;
         ps::DiskRecords records(t.root / "journals", t.root / "receipts");
-        ss::ManifestPower bridge(hardware, records, sensor, [] { return false; }, false);
+        ss::ManifestPower bridge(hardware, records, sensor, [] { return false; });
         const fs::path original = fs::path(BC_CONTRACT_V2_DOCS_DIR) / "example.flashnext-4gpu.json";
         const auto admission = bridge.begin(typed(original), v2::PlanUse::serving);
         expect(!admission, "valid strict-v2 manifest with stock observe must admit without a GPU lease");
@@ -136,7 +136,7 @@ int main() {
         expect(hardware.writes == 0, "no write path can be reached by an observe manifest");
         // RED P0-2: a second owner execution of the same original bytes
         // must not overwrite the first execution's durable power receipt.
-        ss::ManifestPower replay(hardware, records, sensor, [] { return false; }, false);
+        ss::ManifestPower replay(hardware, records, sensor, [] { return false; });
         expect(!replay.begin(typed(original), v2::PlanUse::serving),
                "second owner must admit identical immutable bytes");
         expect(!replay.verify_serving(original), "second owner has the same authenticated power policy");
@@ -173,7 +173,7 @@ int main() {
                                      v2::render_human("apply", parsed_apply.error()));
         std::string first_apply_id;
         {
-            ss::ManifestPower apply(hardware, records, sensor, [] { return true; }, true);
+            ss::ManifestPower apply(hardware, records, sensor, [] { return true; });
             const auto status = apply.begin(typed(apply_path), v2::PlanUse::serving);
             if (status)
                 throw std::runtime_error("injected real apply refused: " + v2::render_human("apply", *status));
@@ -191,14 +191,14 @@ int main() {
         const auto unresolved = records.unresolved_journals();
         expect(unresolved && unresolved.value().size() == 1,
                "real apply crash must leave exactly one recoverable journal");
-        ss::ManifestPower blocked(hardware, records, sensor, [] { return true; }, true);
+        ss::ManifestPower blocked(hardware, records, sensor, [] { return true; });
         expect(blocked.begin(typed(apply_path), v2::PlanUse::serving).has_value(),
                "fresh owner must refuse while earlier apply journal is unresolved");
         expect(!ps::recover(
                    unresolved.value().at(0), hardware, records, [] { return true; }, [] { return true; }),
                "real typed crash recovery must restore the prior controls");
         expect(hardware.board_cap == 100000000, "crashed apply's original board cap must be restored");
-        ss::ManifestPower apply_replay(hardware, records, sensor, [] { return true; }, true);
+        ss::ManifestPower apply_replay(hardware, records, sensor, [] { return true; });
         const auto again = apply_replay.begin(typed(apply_path), v2::PlanUse::serving);
         if (again)
             throw std::runtime_error("second apply after recovery refused: " +
@@ -244,6 +244,14 @@ int main() {
         fake_lease["expires"] = "2099-01-01T00:00:00.125Z";
         write_lease(fake_lease);
         expect(ss::owner_has_gpu_lease(lease_dir), "fractional RFC3339 UTC timestamp is valid");
+        fake_lease["expires"] = "2020-01-01T00:00:00Z";
+        write_lease(fake_lease);
+        expect(ss::owner_has_gpu_lease(lease_dir),
+               "an overrun lease (expired, holder alive) is still held, so a long-running model can restore");
+        fake_lease["pids"] = Json::array({999999999});
+        write_lease(fake_lease);
+        expect(!ss::owner_has_gpu_lease(lease_dir), "a lease whose holder is gone authorizes nothing");
+        fake_lease["pids"] = Json::array({::getpid()});
         fake_lease["instance"] = "another-instance";
         write_lease(fake_lease);
         expect(!ss::owner_has_gpu_lease(lease_dir), "another lease holder cannot authorize power");
