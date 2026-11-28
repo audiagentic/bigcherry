@@ -67,8 +67,12 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 
 2026-11-26: Extended existing unit harness with exact rows and saved Radiance /graph model-band selection; provider, geometry, rank and gaps retained. Require leased physical BDF and actual selftest device identity, artifact digests and observed controls; strict duplicate/missing/skipped hash and per-round timing/layout checks, cold/warm replay. 280 focused tests passed, one skipped. Real configured inventory and explicit IQR row plan resolved embed/tiled, M64/gated/unknown row remain uncovered. Graph importer fixture-tested; no new live graph or revised physical replay due to active GPU cohort. Remaining native oracles and matching reference/leased build validation.
 
+
+2026-11-28 on the 2.3.0 pin (bc-radiance-2030.0.0): the harness's selftest did not build (libr3's selftest rewrite still added --pin-mw/--pin-nt, whose plugin hooks upstream removed in 2.3.0; release gates do not build the selftest). Retired those rewrite blocks and re-anchored the three that chained on them; all libr3 rules apply. All nine existing IQR/embed/vocab selftest edit anchors still match 2.3.0 once. Added family iq8r (unit r4d_gemm_i8a8 with r4d_quant_act_fp8, r4d_fused_quant, r4d_model_bf16, r4d_keyed; case gemm_iq8r_tiled), the Qwen 27B IQ8R trunk rows, with two selftest edits: extra 27B trunk shapes from UH_HASH_CASES (16-token row to 64 rows, tiled above; host fold skipped for extra shapes, the hash against the shipped library is their oracle) and an output hash per shape. Result on gfx1100: 580 kernels resource-unchanged, 75 shapes hashed and equal, selftest failures 0/0, checks_passed. Replay finding: against the shipped library the slim plugin timed -14% to +65% on byte-identical tiled code (same compiler), so release-vs-harness replay is not a code comparison. The build now digests each family kernel's instructions and replays only when the family's code differs; identical code needs no replay. Still uncovered in gemm_quant: the int8 head (r4d_logits_gemm_i8), MXFP4/w4a8 Flash-Next rows and the other 18 units; next is the head row.
+
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent
 - 2026-11-26T01:37:56.167096+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-26T05:07:03.703862+00:00 (updated-by): Updated: section:notes
+- 2026-11-28T06:21:30.682022+00:00 (updated-by): Updated: section:notes

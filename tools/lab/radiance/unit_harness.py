@@ -518,6 +518,36 @@ CASES_BLOCK = ('                if (const char* uh_cases = std::getenv("UH_HASH_
                '                    }\n')
 
 
+# The IQ8R case (iq8r_numeric) gets the same two edits: extra "N:K:M" shapes from UH_HASH_CASES (the 16-token row up to 64
+# rows, the tiled row above) and a hash of every GEMM output. An extra shape is checked by its hash against the shipped
+# library alone: the case's double-precision host fold is O(M*N*K) and would take hours at the trunk shapes.
+IQ8R_SHAPES_ANCHOR = ("    for (const Shape& sh : shapes) {\n"
+                      "        const int64_t M = sh.M, N = sh.N, K = sh.K, nkb = K / G;\n")
+IQ8R_SHAPES_NEW = ("    std::vector<Shape> uh_all(std::begin(shapes), std::end(shapes));\n"
+                   "    std::vector<bool> uh_extra(uh_all.size(), false);\n"
+                   "    if (const char* uh_cases = std::getenv(\"UH_HASH_CASES\"))\n"
+                   "        for (const char* s = uh_cases; *s;) {\n"
+                   "            long long un = 0, uk = 0, um = 0; int used = 0;\n"
+                   "            if (std::sscanf(s, \"%lld:%lld:%lld%n\", &un, &uk, &um, &used) < 3) break;\n"
+                   "            uh_all.push_back({ um <= 64 ? gn : gt, um, un, uk });\n"
+                   "            uh_extra.push_back(true);\n"
+                   "            s += used;\n"
+                   "            if (*s == ',') ++s;\n"
+                   "        }\n"
+                   "    for (size_t uh_i = 0; uh_i < uh_all.size(); ++uh_i) {\n"
+                   "        const Shape& sh = uh_all[uh_i];\n"
+                   "        const int64_t M = sh.M, N = sh.N, K = sh.K, nkb = K / G;\n")
+IQ8R_HASH_ANCHOR = ("        std::vector<uint16_t> got((size_t)(M * N));\n"
+                    "        st_memcpy(got.data(), d_y, got.size() * 2, hipMemcpyDeviceToHost);\n"
+                    "        /* The exact fold of the device's codes, and the f32 product the planes stand for. */\n")
+IQ8R_HASH_PRINT = ('        {\n'
+                   '            uint64_t uh = 1469598103934665603ull;\n'
+                   '            for (uint16_t hv : got) { uh ^= hv; uh *= 1099511628211ull; }\n'
+                   '            std::printf("UNITHASH %s %016llx\\n", nm, (unsigned long long)uh);\n'
+                   '        }\n'
+                   '        if (uh_extra[uh_i]) continue;\n')
+
+
 # A plugin that carries only some units has no entry point for the rest: the loader notes the absence and goes on
 # (the rows without a kernel then return "unsupported", like libr3's own stubbed rows).
 SYM_ANCHOR = '    if (e || !p) { std::printf("  FAIL  dlsym(%s): %s\\n", n, e ? e : "null"); ++g_fail; return false; }\n'
@@ -663,6 +693,13 @@ def inject_selftest(text: str) -> str:
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(HASH_ANCHOR, HASH_ANCHOR.splitlines(keepends=True)[0] + HASH_PRINT + HASH_ANCHOR.splitlines(keepends=True)[1], 1)
     text = text.replace(CASES_ANCHOR, CASES_ANCHOR + CASES_BLOCK, 1)
+    for anchor in (IQ8R_SHAPES_ANCHOR, IQ8R_HASH_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError("the selftest changed: the harness's IQ8R edit anchor is not found exactly once "
+                               f"({anchor.splitlines()[0].strip()!r})")
+    text = text.replace(IQ8R_SHAPES_ANCHOR, IQ8R_SHAPES_NEW, 1)
+    lines = IQ8R_HASH_ANCHOR.splitlines(keepends=True)
+    text = text.replace(IQ8R_HASH_ANCHOR, lines[0] + lines[1] + IQ8R_HASH_PRINT + lines[2], 1)
     for anchor in (FIND_ANCHOR, EMBED_ANCHOR, EMBED_CASES_ANCHOR, VOCAB_ANCHOR, VOCAB_CASES_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError(f"the selftest changed: the harness's edit anchor is not found exactly once ({anchor.splitlines()[0].strip()!r})")
@@ -809,6 +846,30 @@ def parse_notes(notes: str) -> dict[str, dict[str, int]]:
             values[key] = int(hit.group(1))
         kernels[name.group(1)] = values
     return kernels
+
+
+def kernel_code(plugin: Path, arch: str) -> dict[str, list[str]]:
+    """Per kernel name, a digest of the instructions of every code object that carries it, addresses and comments taken
+    out. Equal digests mean the same code: a row whose kernels are all unchanged needs no replay, however its timing
+    against another library build moves (the 2.3.0 IQ8R tiled row measured -14% to +65% against byte-identical code)."""
+    code: dict[str, list[str]] = {}
+    objdump = rocm_tool("llvm-objdump")
+    with tempfile.TemporaryDirectory(prefix="uh-code-", dir=str(work_root() / "unit-harness")) as scratch:
+        for index, blob in enumerate(embedded_objects(plugin, arch)):
+            path = Path(scratch) / f"{index}.co"
+            path.write_bytes(blob)
+            text = subprocess.run([objdump, "-d", "--no-show-raw-insn", "--no-leading-addr", str(path)],
+                                  capture_output=True, text=True, check=True).stdout
+            for match in re.finditer(r"\n<?([^\s<>]+)>?:\n(.*?)(?=\n<?[^\s<>]+>?:\n|\Z)", text, re.S):
+                body = re.sub(r"0x[0-9a-f]+|<[^>]*>", "", re.sub(r"//.*", "", match.group(2)))
+                code.setdefault(match.group(1), []).append(hashlib.sha256(body.encode()).hexdigest())
+    return {name: sorted(digests) for name, digests in code.items()}
+
+
+def code_changed(ref: dict[str, list[str]], cand: dict[str, list[str]], pattern: re.Pattern | None) -> list[str]:
+    """The candidate's kernels (of the family, when it names a pattern) whose code differs from the reference or is new."""
+    return sorted(name for name, digests in cand.items()
+                  if (pattern is None or pattern.search(name)) and ref.get(name) != digests)
 
 
 def kernel_records(plugin: Path, arch: str) -> dict[str, list[dict[str, int]]]:
@@ -1041,13 +1102,15 @@ def stage_build(args) -> Path:
     cand = kernel_records(plugin, args.arch)
     pattern = re.compile(fam["kernels"]) if fam else None
     diff = diff_records(ref, cand, pattern)
+    changed_code = code_changed(kernel_code(ref_plugin, args.arch), kernel_code(plugin, args.arch), pattern)
     state = {"family": args.family, "units": units, "arch": args.arch, "plugin": str(plugin), "selftest": str(binary),
              "release": ref_plugin.parts[-4] if not args.reference else "reference plugin " + str(ref_plugin), "reference_plugin": str(ref_plugin), "resources": diff,
-             "build_seconds": round(built, 1)}
+             "code_changed": changed_code, "build_seconds": round(built, 1)}
     state["artifact_sha256"] = artifact_identity(state)
     (out / "build.json").write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
     print(f"built {', '.join(units)} for {args.arch} in {built:.0f} s (selftest {'cached' if built < 5 else 'ready'}): {plugin}")
     print(resource_summary(diff, cand))
+    print(f"code: {len(changed_code)} family kernel(s) differ from the reference" + ("" if changed_code else "; replay not needed"))
     return out
 
 
@@ -1079,7 +1142,9 @@ def stage_measure(out: Path, *, bdf: str, replay_iters: int = 15, tol: float = 0
     result["selftest_failures"] = {"ref": len(ref_fail), "cand": len(cand_fail), "cand_lines": cand_fail[:10]}
     print(f"hash: {result['hash']['compared']} compared, {len(result['hash']['differ'])} differ, "
           f"{len(result['hash']['missing_in_candidate'])} missing in the candidate; selftest failures: ref {len(ref_fail)}, candidate {len(cand_fail)}")
-    changed_rows = list(fam["replay"]["rows"])
+    # Replay times changed code: when no kernel of the family differs from the reference, there is nothing to time.
+    result["code_changed"] = state.get("code_changed")
+    changed_rows = list(fam["replay"]["rows"]) if state.get("code_changed") != [] else []
     result["required_replay"] = [{"row": row, **point} for row in changed_rows for point in replay_points(fam["replay"])]
     result["replay"] = []
     if changed_rows and not skip_replay:
@@ -1093,6 +1158,8 @@ def stage_measure(out: Path, *, bdf: str, replay_iters: int = 15, tol: float = 0
                 print(f"replay {row} {point['mode']} N={point['N']} K={point['K']} M={point['M']} B={point['B']}: "
                       f"{got['ref_us']} -> {got['cand_us']} us ({got['ratio']}) {got['verdict']}"
                       f"{'' if got['converged'] else ' UNCONVERGED'}", flush=True)
+    elif state.get("code_changed") == []:
+        print("replay: not needed, the family's kernel code is identical to the reference")
     elif not changed_rows:
         print("replay: no rows configured")
     result["observed_start"]=before
@@ -1119,7 +1186,8 @@ def configured_measurement_outcome(measure: dict) -> tuple[str, list[str]]:
         return tuple(point[k] for k in ("row", "N", "K", "M", "B", "mode"))
     required = measure.get("required_replay", [])
     actual = measure["replay"]
-    if not required or len({key(p) for p in required}) != len(required) or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
+    code_identical = measure.get("code_changed") == [] and not required and not actual
+    if (not required and not code_identical) or len({key(p) for p in required}) != len(required) or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
         incomplete.append("configured replay coverage incomplete")
     if any(p.get("mode") not in REPLAY_MODES or type(p.get("converged")) is not bool or p.get("verdict") not in ("win","same","regress") for p in actual):
         incomplete.append("invalid replay verdict")

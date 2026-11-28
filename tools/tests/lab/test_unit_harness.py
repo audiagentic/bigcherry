@@ -1,5 +1,6 @@
 """Unit harness: the card-free parts (resource diff, hash comparison, replay estimator, selftest edit, stub generator)."""
 import importlib.util
+import re
 import sys
 import unittest
 import tempfile
@@ -41,8 +42,10 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([uh.classify(r, 0.04) for r in (0.5, 1.0, 1.1)], ["win", "same", "regress"])
 
     def test_selftest_edit_needs_both_anchors_once(self):
-        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
+        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR
+                + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
+        self.assertIn("uh_extra[uh_i]", edited)                      # the IQ8R case's extra shapes and output hash
         self.assertIn("UNITHASH", edited)
         self.assertIn("UH_HASH_CASES", edited)
         self.assertIn("UH_TOLERATE_ABSENT", edited)
@@ -50,6 +53,8 @@ class HarnessTests(unittest.TestCase):
         self.assertIn("UH_TIME_ITERS", edited)
         with self.assertRaises(uh.HarnessError):
             uh.inject_selftest(text + uh.CASES_ANCHOR)
+        with self.assertRaises(uh.HarnessError):
+            uh.inject_selftest(text.replace(uh.IQ8R_HASH_ANCHOR, ""))
         with self.assertRaises(uh.HarnessError):
             uh.inject_selftest("nothing")
 
@@ -61,6 +66,12 @@ class HarnessTests(unittest.TestCase):
         cases = uh.hash_cases(uh.families()["iqr"]["hash"]).split(",")
         self.assertIn("5376:2560:129", cases)
         self.assertEqual(len(cases), len(set(cases)))
+        iq8r = uh.hash_cases(uh.families()["iq8r"]["hash"]).split(",")
+        self.assertEqual(len(iq8r), len(set(iq8r)))
+        for case in iq8r:                                            # the IQ8R rows' shape rules: K by 256, N by 16 / 128
+            n, k, m = (int(x) for x in case.split(":"))
+            self.assertEqual(k % 256, 0, case)
+            self.assertEqual(n % (16 if m <= 64 else 128), 0, case)
 
     def test_group_manifest_is_complete_and_unique(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -106,6 +117,20 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(uh.configured_measurement_outcome({**base, **changes})[0], "inconclusive")
         self.assertEqual(uh.configured_measurement_outcome({**base, "hash": uh.compare_hashes({"a": "1"}, {"a": "2"})})[0], "rejected")
         self.assertEqual(uh.configured_measurement_outcome({**base, "replay": [{**point, "converged": True, "verdict": "regress"}]})[0], "rejected")
+
+    def test_identical_family_code_needs_no_replay(self):
+        same = {"hash": uh.compare_hashes({"a": "1"}, {"a": "1"}), "selftest_failures": {"ref": 0, "cand": 0},
+                "code_changed": [], "required_replay": [], "replay": []}
+        self.assertEqual(uh.configured_measurement_outcome(same)[0], "checks_passed")
+        # unknown code identity (an older build record) or changed code still needs the configured replay
+        self.assertEqual(uh.configured_measurement_outcome({**same, "code_changed": None})[0], "inconclusive")
+        self.assertEqual(uh.configured_measurement_outcome({**same, "code_changed": ["k"]})[0], "inconclusive")
+
+    def test_code_changed_names_new_and_different_family_kernels(self):
+        ref = {"fam_a": ["1"], "fam_b": ["2"], "other": ["3"]}
+        cand = {"fam_a": ["1"], "fam_b": ["9"], "fam_c": ["4"], "other": ["8"]}
+        self.assertEqual(uh.code_changed(ref, cand, re.compile("fam_")), ["fam_b", "fam_c"])
+        self.assertEqual(uh.code_changed(ref, ref, re.compile("fam_")), [])
 
     def test_all_overlay_rounds_must_match(self):
         line = "UNITHASH case 0123456789abcdef\n"
