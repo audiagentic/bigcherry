@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.83.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.82.2...bc-platform-1.83.0) (2026-11-28)
+
+
+### New and changed
+
+* **unit-harness:** IQ8R trunk family on the 2.3.0 pin; replay only changed kernel code ([#1743](https://github.com/audiagentic/bigcherry/issues/1743)) ([04cffc8](https://github.com/audiagentic/bigcherry/commit/04cffc8681dd1e6f3600e8a2cddef72a790473a5))
+
 ## [1.82.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.82.1...bc-platform-1.82.2) (2026-11-28)
 
 
