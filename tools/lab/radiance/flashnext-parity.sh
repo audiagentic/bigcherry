@@ -56,6 +56,7 @@ WARMUP_MAX_TOKENS=8           # completion tokens of a warmup request
 WARMUP_SEED0=900              # warmup request k uses seed WARMUP_SEED0+k
 RECORD_PERIOD=1               # the launcher's heat recording period in seconds, so the policy sees fresh heat
 REQUEST_TIMEOUT_S=600         # client timeout of one request (stream-bench's own default)
+SESS8_COVARIATE=decode-tokens-per-decoding-step   # the sess8 step-time covariate (flashnext_parity.py SESS8_COVARIATE)
 
 usage() {
   sed -n '6,9p' "$0" | sed 's/^# \{0,1\}//' >&2
@@ -152,7 +153,7 @@ PYTHONPATH=tools python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "
   --set SESS_REPS=$SESS_REPS --set SESS_SEED=$SESS_SEED --set "LONG_SEEDS=$LONG_SEEDS" --set LONG_SEEDS_COUNT=$LONG_COUNT \
   --set LONG_PROMPT_TOKENS=$LONG_PROMPT_TOKENS --set LONG_MAX_TOKENS=$LONG_MAX_TOKENS --set LONG_REPS=$LONG_REPS \
   --set WARMUP_PROMPT_TOKENS=$WARMUP_PROMPT_TOKENS --set WARMUP_MAX_TOKENS=$WARMUP_MAX_TOKENS \
-  --set WARMUP_SEED0=$WARMUP_SEED0 --set RECORD_PERIOD=$RECORD_PERIOD || exit
+  --set WARMUP_SEED0=$WARMUP_SEED0 --set RECORD_PERIOD=$RECORD_PERIOD --set SESS8_COVARIATE=$SESS8_COVARIATE || exit
 
 LAUNCHED=0
 NATIVE_PID=
