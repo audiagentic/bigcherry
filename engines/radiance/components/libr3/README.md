@@ -44,7 +44,7 @@ and a `radiance_home/kernels/libr3.so` an engine can load first through `--radia
 - `--perfpaged Q CTX [iters]`: paged prefill attention, bf16 and int8 KV, Q query rows at the end of CTX keys;
   `--perfpaged-kv N` sets the KV heads (default 2, a TP2 rank; 1 is a native TP3 rank).
 - `--perfw8 N K M [iters]`: the 8-bit trunk GEMMs at one shape; `--cold MIB` reads MIB through the caches before every
-  timed launch (256 empties the card's L2 and last-level cache: weights arrive cold, as in decode); `--pin-mw N` / `--pin-nt N` pin the narrow GEMM's wave and token-tile counts for a sweep.
+  timed launch (256 empties the card's L2 and last-level cache: weights arrive cold, as in decode).
 - Register pressure and spill per instantiation: compile one unit with
   `--offload-device-only -Rpass-analysis=kernel-resource-usage` (VGPRs, `ScratchSize`, occupancy per template).
 
