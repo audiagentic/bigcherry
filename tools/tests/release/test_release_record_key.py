@@ -96,3 +96,29 @@ class PullFetchesPinnedTagTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class NotesRecordKeyTests(unittest.TestCase):
+    """pin-release and release-notes read the record of a recipe that pins a tagged commit by its hash."""
+
+    def test_a_hash_pin_finds_the_record_keyed_by_its_tag(self):
+        from types import SimpleNamespace
+
+        from bigcherry.release import notes
+
+        sha = "3b13fd32663ef52252a7f0be255523480aa22ffe"
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            _git(root, "init", "-q")
+            (root / "releases").mkdir()
+            (root / "releases" / "v2.3.0.json").write_text("{}", encoding="utf-8")
+            (root / "releases" / "index.json").write_text(json.dumps(
+                {"releases": [{"revision": sha, "slug": "v2.3.0"}, {"revision": "b" * 40, "slug": "bbbbbbbbbbbb"}]}),
+                encoding="utf-8")
+            (root / "releases" / "b11552.json").write_text("{}", encoding="utf-8")
+            _git(root, "add", "-A")
+            _git(root, "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "records")
+            config = SimpleNamespace(release_records="releases")
+            self.assertEqual(notes.record_key(root, config, sha), "v2.3.0")
+            self.assertEqual(notes.record_key(root, config, "b11552"), "b11552")       # a record under the pin itself
+            self.assertEqual(notes.record_key(root, config, "c" * 40), "c" * 40)      # unknown: the pin, and the reader says so

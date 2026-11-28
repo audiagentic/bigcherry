@@ -180,6 +180,8 @@ class RequiredChecksTests(unittest.TestCase):
                 package="engines/llamacpp",
                 engine="llamacpp",
                 llama_tag="b11552",
+                record_key="b11552",
+                record_path=root / "releases" / "b11552.json",
                 release_tag="bc-llamacpp-11552.2.1",
                 version="11552.2.1",
                 branch="fix/release",
@@ -302,7 +304,8 @@ class ReleasePrChecksTests(unittest.TestCase):
 
 
 def _release_plan():
-    return SimpleNamespace(repo_root=Path("/repo"), llama_tag="b1", release_tag="bc-1.0.0", version="1.0.0",
+    return SimpleNamespace(repo_root=Path("/repo"), llama_tag="b1", record_key="b1", record_path=Path("/repo/releases/b1.json"),
+                           release_tag="bc-1.0.0", version="1.0.0",
                            branch="work", main="main", engine="radiance", package="engines/radiance")
 
 
@@ -342,7 +345,9 @@ class RunConfirmationTests(unittest.TestCase):
             def phase(name):
                 return lambda *a, **k: order.append(name) or True
 
-            with mock.patch.object(_pr, "make_plan", return_value=_release_plan()), \
+            plan = _release_plan()
+            plan.record_path = repo / "releases" / "b1.json"
+            with mock.patch.object(_pr, "make_plan", return_value=plan), \
                     mock.patch.object(_pr, "_tag_exists", return_value=tagged), \
                     mock.patch.object(_pr, "phase_record", side_effect=phase("record")), \
                     mock.patch.object(_pr, "phase_notes", side_effect=phase("notes")), \

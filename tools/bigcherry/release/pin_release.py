@@ -74,6 +74,11 @@ class Plan:
     branch: str          # the work branch (current)
     main: str = "main"
     remote: str = "origin"
+    record_key: str = ""  # releases/<record_key>.json: the pin, or the tag a hash pin's record is keyed by
+
+    @property
+    def record_path(self) -> Path:
+        return self.repo_root / "releases" / f"{self.record_key or self.llama_tag}.json"
 
 
 def _run(root: Path, *cmd: str, check: bool = True, timeout: int = 600) -> subprocess.CompletedProcess:
@@ -155,7 +160,7 @@ def make_plan(repo_root: Path, engine: str, llama_tag: str, main: str = "main", 
     except _notes.ReleaseNotesError as exc:
         raise PinReleaseError("gate", str(exc)) from exc
     return Plan(repo_root, engine, package, layout.upstream_name, llama_tag, build, f"{config.tag_prefix}{version}",
-                version, branch, main, remote)
+                version, branch, main, remote, _notes.record_key(repo_root, config, llama_tag))
 
 
 def _require_clean(plan: Plan, phase: str) -> None:
@@ -321,7 +326,7 @@ def _prepare_runtime_asset(plan: Plan, record: dict) -> None:
 def phase_record(plan: Plan, gate_output: str, evidence: str, public_summary: str = "") -> bool:
     """Completion into the release record, transition marker removed. Returns False when already done."""
     root = plan.repo_root
-    record_path = root / "releases" / f"{plan.llama_tag}.json"
+    record_path = plan.record_path
     marker = pin_transition.marker_path(plan.engine, root)
     if not record_path.is_file():
         raise PinReleaseError("record", f"{record_path} does not exist: was `--engine {plan.engine} pin-bump {plan.llama_tag}` run in this tree?")
@@ -773,7 +778,7 @@ def _verify_release_pr_files(plan: Plan, pr: dict) -> None:
 def _publish_runtime_asset(plan: Plan) -> None:
     if plan.engine != engines.RADIANCE:
         return
-    record_path = plan.repo_root / "releases" / f"{plan.llama_tag}.json"
+    record_path = plan.record_path
     record = json.loads(record_path.read_text())
     if plan.release_tag not in record.get("runtime_assets", {}):
         raise PinReleaseError("release", "Radiance release has no recorded runtime bundle; complete the lane build and record phase first")
@@ -904,7 +909,7 @@ def _manifest_versions(plan: Plan, *, release_pending: bool = True) -> dict[str,
 
 def _dry_run(plan: Plan, stop: int, log=print, yes: bool = False) -> None:
     tagged = _tag_exists(plan)
-    record_path = plan.repo_root / "releases" / f"{plan.llama_tag}.json"
+    record_path = plan.record_path
     recorded = record_path.is_file() and f"release {plan.version}" in (
         json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
     config_value = _release_as_value((plan.repo_root / _RELEASE_CONFIG).read_text(encoding="utf-8"), plan.package, "notes")
@@ -918,7 +923,7 @@ def _dry_run(plan: Plan, stop: int, log=print, yes: bool = False) -> None:
                 f"  gate     would run: python -m bigcherry --engine {plan.engine} pin-status --complete --all-remotes")
         elif name == "record":
             log("  record   already done" if recorded else
-                f"  record   would update releases/{plan.llama_tag}.json and clear "
+                f"  record   would update releases/{plan.record_key or plan.llama_tag}.json and clear "
                 f"{pin_transition.marker_path(plan.engine, plan.repo_root).relative_to(plan.repo_root).as_posix()}")
         elif name == "notes":
             if notes_done and (config_value == plan.version or (config_value is None and tagged)):
@@ -996,7 +1001,7 @@ def run(repo_root: Path, engine: str, llama_tag: str, evidence: str, through: st
     if dry_run:
         _dry_run(plan, stop, log, yes)
         return 0
-    record_path = repo_root / "releases" / f"{plan.llama_tag}.json"
+    record_path = plan.record_path
     recorded = record_path.is_file() and f"release {plan.version}" in (
         json.loads(record_path.read_text(encoding="utf-8")).get("notes") or "")
     if recorded:

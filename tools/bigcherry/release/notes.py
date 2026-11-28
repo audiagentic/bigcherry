@@ -309,11 +309,26 @@ def render_radiance_release(release_tag: str, pin: str, record: dict) -> str:
             f"{summary}\n")
 
 
+def record_key(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HEAD") -> str:
+    """The key of the release record for ``pin`` (the pinned ref as the recipes write it). Records are keyed by the tag the
+    upstream checkout sits on (records.release_key), so a recipe that pins a tagged commit by its hash finds its record
+    through the index entry whose revision is that hash; any other pin is its own key."""
+    if _show(repo_root, ref, f"{config.release_records}/{pin}.json") is not None:
+        return pin
+    index_text = _show(repo_root, ref, f"{config.release_records}/index.json")
+    if index_text is not None:
+        for entry in json.loads(index_text).get("releases", []):
+            if entry.get("revision") == pin and entry.get("slug"):
+                return str(entry["slug"])
+    return pin
+
+
 def render(repo_root: Path, config: ReleaseConfig, llama_tag: str, ref: str = "HEAD", version: str | None = None) -> str:
     release_tag = config.tag_prefix + release_version(pin_version(repo_root, config, llama_tag, ref), version)
-    record_text = _show(repo_root, ref, f"{config.release_records}/{llama_tag}.json")
+    key = record_key(repo_root, config, llama_tag, ref)
+    record_text = _show(repo_root, ref, f"{config.release_records}/{key}.json")
     if record_text is None:
-        raise ReleaseNotesError(f"no release record {config.release_records}/{llama_tag}.json at {ref}")
+        raise ReleaseNotesError(f"no release record {config.release_records}/{key}.json at {ref}")
     record = json.loads(record_text)
     if config.engine == engines.RADIANCE:
         return render_radiance_release(release_tag, llama_tag, record)
