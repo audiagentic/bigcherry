@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "engine": "radiance",
-  "upstream_pin": "b6b8751cccb0e834a13ae9e5afca824ee9a487aa",
-  "upstream_version": "2.2.0",
+  "upstream_pin": "3b13fd32663ef52252a7f0be255523480aa22ffe",
+  "upstream_version": "2.3.0",
   "method": "Lexical FilePatch/Edit definitions for the union of exact declared source compositions. Anchors count non-create Edit entries; anchor_sites sum expect_matches (potential matches, not probed). anchor_bytes count raw regex UTF-8 bytes, inserted_bytes count Edit.text UTF-8 bytes (replacement body, not net diff). Created-file edits have no upstream anchor; non-create edits on patch-created files remain anchors, but not upstream anchors. Does not prove anchor applicability or semantics at the pin.",
   "compositions": {
     "radiance": [
@@ -159,15 +159,15 @@
   },
   "totals": {
     "composed_patches": 40,
-    "edits": 681,
-    "anchors": 649,
-    "upstream_anchors": 614,
+    "edits": 686,
+    "anchors": 654,
+    "upstream_anchors": 619,
     "created_target_anchors": 35,
-    "anchor_sites": 672,
-    "anchor_bytes": 80388,
-    "inserted_bytes": 595345,
+    "anchor_sites": 677,
+    "anchor_bytes": 81773,
+    "inserted_bytes": 604008,
     "created_edits": 32,
-    "upstream_files": 82
+    "upstream_files": 84
   },
   "patches": [
     {
@@ -233,7 +233,7 @@
         "radiance-vtp44-evidence"
       ],
       "files_touched": [
-        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
         "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
         "libr4d/bc_b16_decode_impl.h",
         "libr4d/bc_b16_prefill_impl.h",
@@ -250,7 +250,7 @@
         "tests/arch_test.cpp"
       ],
       "upstream_files": [
-        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
         "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
         "libr4d/r4d_attn_decode_h256_gqa6.hip",
         "libr4d/r4d_attn_paged_gqa8.hip",
@@ -267,13 +267,13 @@
         "libr4d/bc_b16_prefill_impl.h",
         "libr4d/r4d_b16_kv.h"
       ],
-      "edits": 47,
-      "anchors": 44,
-      "upstream_anchors": 41,
+      "edits": 48,
+      "anchors": 45,
+      "upstream_anchors": 42,
       "created_target_anchors": 3,
-      "anchor_sites": 51,
-      "anchor_bytes": 3112,
-      "inserted_bytes": 86822,
+      "anchor_sites": 52,
+      "anchor_bytes": 3478,
+      "inserted_bytes": 86984,
       "created_edits": 3
     },
     {
@@ -289,7 +289,7 @@
         "arch/common/bc_moe_remote_block.h",
         "arch/common/rad_arch.h",
         "arch/common/rad_block_hc.h",
-        "arch/common/rad_block_moe_fp8.h",
+        "arch/common/rad_block_moe_q.h",
         "core/engine.cpp",
         "core/engine.h",
         "core/engine_bringup.cpp",
@@ -304,7 +304,7 @@
       "upstream_files": [
         "arch/common/rad_arch.h",
         "arch/common/rad_block_hc.h",
-        "arch/common/rad_block_moe_fp8.h",
+        "arch/common/rad_block_moe_q.h",
         "core/engine.cpp",
         "core/engine.h",
         "core/engine_bringup.cpp",
@@ -320,13 +320,13 @@
         "core/place/bc_moe_remote_engine.h",
         "core/place/bc_moe_remote_place.h"
       ],
-      "edits": 46,
-      "anchors": 41,
-      "upstream_anchors": 41,
+      "edits": 45,
+      "anchors": 40,
+      "upstream_anchors": 40,
       "created_target_anchors": 0,
-      "anchor_sites": 41,
-      "anchor_bytes": 2309,
-      "inserted_bytes": 52904,
+      "anchor_sites": 40,
+      "anchor_bytes": 2279,
+      "inserted_bytes": 52854,
       "created_edits": 5
     },
     {
@@ -380,8 +380,8 @@
       "upstream_anchors": 38,
       "created_target_anchors": 0,
       "anchor_sites": 38,
-      "anchor_bytes": 5730,
-      "inserted_bytes": 52269,
+      "anchor_bytes": 5760,
+      "inserted_bytes": 52292,
       "created_edits": 5
     },
     {
@@ -391,7 +391,7 @@
       ],
       "files_touched": [
         "abi/rad_runtime.h",
-        "arch/common/rad_block_moe_fp8.h",
+        "arch/common/rad_block_moe_q.h",
         "core/config.cpp",
         "core/engine.cpp",
         "core/engine_bringup.cpp",
@@ -408,7 +408,7 @@
       ],
       "upstream_files": [
         "abi/rad_runtime.h",
-        "arch/common/rad_block_moe_fp8.h",
+        "arch/common/rad_block_moe_q.h",
         "core/config.cpp",
         "core/engine.cpp",
         "core/engine_bringup.cpp",
@@ -476,8 +476,8 @@
       "upstream_anchors": 29,
       "created_target_anchors": 0,
       "anchor_sites": 29,
-      "anchor_bytes": 7396,
-      "inserted_bytes": 37516,
+      "anchor_bytes": 8060,
+      "inserted_bytes": 38014,
       "created_edits": 1
     },
     {
@@ -550,7 +550,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 28,
       "anchor_bytes": 1669,
-      "inserted_bytes": 8863,
+      "inserted_bytes": 8948,
       "created_edits": 1
     },
     {
@@ -563,7 +563,7 @@
       ],
       "files_touched": [
         "arch/common/rad_arch.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "core/config.cpp",
         "core/engine_bringup.cpp",
@@ -577,7 +577,7 @@
       ],
       "upstream_files": [
         "arch/common/rad_arch.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "core/config.cpp",
         "core/engine_bringup.cpp",
@@ -628,13 +628,13 @@
         "tests/arch_test.cpp"
       ],
       "created_files": [],
-      "edits": 22,
-      "anchors": 22,
-      "upstream_anchors": 19,
+      "edits": 23,
+      "anchors": 23,
+      "upstream_anchors": 20,
       "created_target_anchors": 3,
       "anchor_sites": 23,
-      "anchor_bytes": 1725,
-      "inserted_bytes": 21014,
+      "anchor_bytes": 1824,
+      "inserted_bytes": 21134,
       "created_edits": 0
     },
     {
@@ -647,18 +647,18 @@
       ],
       "files_touched": [
         "abi/rad_runtime.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_gdn_fp8.h",
-        "arch/common/rad_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
+        "arch/common/rad_block_gdn_q.h",
+        "arch/common/rad_linear.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "core/runtime/ctx.cpp",
         "core/sched/batch.cpp"
       ],
       "upstream_files": [
         "abi/rad_runtime.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_gdn_fp8.h",
-        "arch/common/rad_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
+        "arch/common/rad_block_gdn_q.h",
+        "arch/common/rad_linear.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "core/runtime/ctx.cpp",
         "core/sched/batch.cpp"
@@ -733,7 +733,7 @@
       "anchors": 20,
       "upstream_anchors": 20,
       "created_target_anchors": 0,
-      "anchor_sites": 22,
+      "anchor_sites": 23,
       "anchor_bytes": 2698,
       "inserted_bytes": 10853,
       "created_edits": 1
@@ -767,8 +767,8 @@
       "upstream_anchors": 16,
       "created_target_anchors": 2,
       "anchor_sites": 18,
-      "anchor_bytes": 3292,
-      "inserted_bytes": 12008,
+      "anchor_bytes": 3361,
+      "inserted_bytes": 12065,
       "created_edits": 0
     },
     {
@@ -843,8 +843,8 @@
       "upstream_anchors": 17,
       "created_target_anchors": 0,
       "anchor_sites": 17,
-      "anchor_bytes": 2130,
-      "inserted_bytes": 14973,
+      "anchor_bytes": 1518,
+      "inserted_bytes": 14514,
       "created_edits": 0
     },
     {
@@ -884,8 +884,8 @@
       "upstream_anchors": 16,
       "created_target_anchors": 0,
       "anchor_sites": 16,
-      "anchor_bytes": 2615,
-      "inserted_bytes": 12783,
+      "anchor_bytes": 2787,
+      "inserted_bytes": 13000,
       "created_edits": 2
     },
     {
@@ -931,18 +931,18 @@
       ],
       "files_touched": [
         "arch/common/rad_arch.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
         "arch/common/rad_block_dflash2.h",
-        "arch/common/rad_block_mlp_fp8.h",
-        "arch/common/rad_fp8.h",
+        "arch/common/rad_block_mlp_q.h",
+        "arch/common/rad_linear.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp"
       ],
       "upstream_files": [
         "arch/common/rad_arch.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
         "arch/common/rad_block_dflash2.h",
-        "arch/common/rad_block_mlp_fp8.h",
-        "arch/common/rad_fp8.h",
+        "arch/common/rad_block_mlp_q.h",
+        "arch/common/rad_linear.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp"
       ],
       "created_files": [],
@@ -951,8 +951,8 @@
       "upstream_anchors": 15,
       "created_target_anchors": 0,
       "anchor_sites": 15,
-      "anchor_bytes": 3519,
-      "inserted_bytes": 11237,
+      "anchor_bytes": 3555,
+      "inserted_bytes": 11204,
       "created_edits": 0
     },
     {
@@ -1030,14 +1030,14 @@
         "radiance-vtp44-evidence"
       ],
       "files_touched": [
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_gdn_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
+        "arch/common/rad_block_gdn_q.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "tests/arch_test.cpp"
       ],
       "upstream_files": [
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_gdn_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
+        "arch/common/rad_block_gdn_q.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "tests/arch_test.cpp"
       ],
@@ -1081,13 +1081,13 @@
       "created_files": [
         "libr4d/r4d_moe_block_fp8_geometry.h"
       ],
-      "edits": 12,
-      "anchors": 11,
-      "upstream_anchors": 11,
+      "edits": 13,
+      "anchors": 12,
+      "upstream_anchors": 12,
       "created_target_anchors": 0,
-      "anchor_sites": 11,
-      "anchor_bytes": 553,
-      "inserted_bytes": 3854,
+      "anchor_sites": 12,
+      "anchor_bytes": 605,
+      "inserted_bytes": 4271,
       "created_edits": 1
     },
     {
@@ -1099,14 +1099,14 @@
         "radiance-vtp44-evidence"
       ],
       "files_touched": [
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_gdn_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
+        "arch/common/rad_block_gdn_q.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "core/runtime/ctx.cpp"
       ],
       "upstream_files": [
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_gdn_fp8.h",
+        "arch/common/rad_block_attn_gated_q.h",
+        "arch/common/rad_block_gdn_q.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "core/runtime/ctx.cpp"
       ],
@@ -1208,7 +1208,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 7,
       "anchor_bytes": 909,
-      "inserted_bytes": 42219,
+      "inserted_bytes": 49227,
       "created_edits": 5
     },
     {
@@ -1235,8 +1235,8 @@
       "upstream_anchors": 7,
       "created_target_anchors": 0,
       "anchor_sites": 7,
-      "anchor_bytes": 702,
-      "inserted_bytes": 2382,
+      "anchor_bytes": 694,
+      "inserted_bytes": 2570,
       "created_edits": 0
     },
     {
@@ -1351,8 +1351,8 @@
       "upstream_anchors": 3,
       "created_target_anchors": 3,
       "anchor_sites": 6,
-      "anchor_bytes": 1630,
-      "inserted_bytes": 3196,
+      "anchor_bytes": 1703,
+      "inserted_bytes": 3253,
       "created_edits": 0
     },
     {
@@ -1364,13 +1364,13 @@
         "radiance-vtp44-evidence"
       ],
       "files_touched": [
-        "arch/common/rad_block_mlp_fp8.h",
-        "arch/common/rad_fp8.h",
+        "arch/common/rad_block_mlp_q.h",
+        "arch/common/rad_linear.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp"
       ],
       "upstream_files": [
-        "arch/common/rad_block_mlp_fp8.h",
-        "arch/common/rad_fp8.h",
+        "arch/common/rad_block_mlp_q.h",
+        "arch/common/rad_linear.h",
         "arch/qwen35_fp8/qwen35_fp8.cpp"
       ],
       "created_files": [],
@@ -1379,8 +1379,36 @@
       "upstream_anchors": 6,
       "created_target_anchors": 0,
       "anchor_sites": 6,
-      "anchor_bytes": 953,
-      "inserted_bytes": 1416,
+      "anchor_bytes": 959,
+      "inserted_bytes": 1418,
+      "created_edits": 0
+    },
+    {
+      "patch": "rad0029_rank_own_split",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "core/engine_bringup.cpp",
+        "core/mem/vram_budget.cpp",
+        "core/mem/vram_budget.h"
+      ],
+      "upstream_files": [
+        "core/engine_bringup.cpp",
+        "core/mem/vram_budget.cpp",
+        "core/mem/vram_budget.h"
+      ],
+      "created_files": [],
+      "edits": 4,
+      "anchors": 4,
+      "upstream_anchors": 4,
+      "created_target_anchors": 0,
+      "anchor_sites": 4,
+      "anchor_bytes": 779,
+      "inserted_bytes": 4409,
       "created_edits": 0
     },
     {
@@ -1390,10 +1418,10 @@
       ],
       "files_touched": [
         "arch/common/bc_moe_remote_diag.h",
-        "arch/common/rad_block_moe_fp8.h"
+        "arch/common/rad_block_moe_q.h"
       ],
       "upstream_files": [
-        "arch/common/rad_block_moe_fp8.h"
+        "arch/common/rad_block_moe_q.h"
       ],
       "created_files": [
         "arch/common/bc_moe_remote_diag.h"
@@ -1404,7 +1432,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 4,
       "anchor_bytes": 222,
-      "inserted_bytes": 5777,
+      "inserted_bytes": 5779,
       "created_edits": 1
     },
     {
@@ -1509,30 +1537,6 @@
       "created_edits": 0
     },
     {
-      "patch": "rad0029_rank_own_split",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "core/engine_bringup.cpp"
-      ],
-      "upstream_files": [
-        "core/engine_bringup.cpp"
-      ],
-      "created_files": [],
-      "edits": 1,
-      "anchors": 1,
-      "upstream_anchors": 1,
-      "created_target_anchors": 0,
-      "anchor_sites": 1,
-      "anchor_bytes": 311,
-      "inserted_bytes": 4040,
-      "created_edits": 0
-    },
-    {
       "patch": "rad0043_expert_stats_protected",
       "sources": [
         "radiance-vtp44-evidence"
@@ -1574,8 +1578,8 @@
       ],
       "anchors": 33,
       "anchor_sites": 33,
-      "anchor_bytes": 2479,
-      "inserted_bytes": 21390,
+      "anchor_bytes": 2532,
+      "inserted_bytes": 21366,
       "patch_count": 13
     },
     {
@@ -1595,8 +1599,8 @@
       ],
       "anchors": 43,
       "anchor_sites": 43,
-      "anchor_bytes": 5582,
-      "inserted_bytes": 14436,
+      "anchor_bytes": 5574,
+      "inserted_bytes": 14624,
       "patch_count": 11
     },
     {
@@ -1615,8 +1619,8 @@
       ],
       "anchors": 34,
       "anchor_sites": 34,
-      "anchor_bytes": 4011,
-      "inserted_bytes": 10746,
+      "anchor_bytes": 4183,
+      "inserted_bytes": 10963,
       "patch_count": 10
     },
     {
@@ -1684,10 +1688,10 @@
         "rad0049_qwen4exp_e4m3_kv",
         "rad0054_attn_prefill_fp8"
       ],
-      "anchors": 20,
-      "anchor_sites": 20,
-      "anchor_bytes": 1377,
-      "inserted_bytes": 13054,
+      "anchors": 21,
+      "anchor_sites": 21,
+      "anchor_bytes": 1429,
+      "inserted_bytes": 13263,
       "patch_count": 7
     },
     {
@@ -1721,7 +1725,7 @@
       "anchors": 8,
       "anchor_sites": 8,
       "anchor_bytes": 459,
-      "inserted_bytes": 7211,
+      "inserted_bytes": 7335,
       "patch_count": 7
     },
     {
@@ -1741,7 +1745,7 @@
       "patch_count": 6
     },
     {
-      "path": "arch/common/rad_block_attn_gated_fp8.h",
+      "path": "arch/common/rad_block_attn_gated_q.h",
       "patch_ids": [
         "rad0019_vtp14_n2_tp_ownership_fp8",
         "rad0025_multiseq_pipelined_prefill",
@@ -1767,8 +1771,8 @@
       ],
       "anchors": 8,
       "anchor_sites": 8,
-      "anchor_bytes": 2637,
-      "inserted_bytes": 4685,
+      "anchor_bytes": 2775,
+      "inserted_bytes": 4799,
       "patch_count": 5
     },
     {
@@ -1837,8 +1841,8 @@
       ],
       "anchors": 9,
       "anchor_sites": 9,
-      "anchor_bytes": 1560,
-      "inserted_bytes": 12595,
+      "anchor_bytes": 1618,
+      "inserted_bytes": 12628,
       "patch_count": 4
     },
     {
@@ -1883,20 +1887,20 @@
       "patch_count": 3
     },
     {
-      "path": "arch/common/rad_block_moe_fp8.h",
+      "path": "arch/common/rad_block_moe_q.h",
       "patch_ids": [
         "rad0002_moe_remote_handoff",
         "rad0004_moe_remote_diagnostics",
         "rad0045_expert_route_replay"
       ],
-      "anchors": 17,
-      "anchor_sites": 17,
-      "anchor_bytes": 1347,
-      "inserted_bytes": 3506,
+      "anchors": 16,
+      "anchor_sites": 16,
+      "anchor_bytes": 1314,
+      "inserted_bytes": 3449,
       "patch_count": 3
     },
     {
-      "path": "arch/common/rad_block_gdn_fp8.h",
+      "path": "arch/common/rad_block_gdn_q.h",
       "patch_ids": [
         "rad0025_multiseq_pipelined_prefill",
         "rad0026_mixed_pipelined_prefill",
@@ -1906,6 +1910,19 @@
       "anchor_sites": 11,
       "anchor_bytes": 4245,
       "inserted_bytes": 9236,
+      "patch_count": 3
+    },
+    {
+      "path": "libr4d/r4d_attn_paged_h256_gqa6.hip",
+      "patch_ids": [
+        "rad0052_b16_kv_geometries",
+        "rad0053_v4_kv_layouts",
+        "rad0054_attn_prefill_fp8"
+      ],
+      "anchors": 10,
+      "anchor_sites": 10,
+      "anchor_bytes": 471,
+      "inserted_bytes": 5339,
       "patch_count": 3
     },
     {
@@ -1922,19 +1939,6 @@
       "patch_count": 3
     },
     {
-      "path": "libr4d/r4d_attn_paged_h256_gqa6.hip",
-      "patch_ids": [
-        "rad0052_b16_kv_geometries",
-        "rad0053_v4_kv_layouts",
-        "rad0054_attn_prefill_fp8"
-      ],
-      "anchors": 9,
-      "anchor_sites": 10,
-      "anchor_bytes": 372,
-      "inserted_bytes": 5219,
-      "patch_count": 3
-    },
-    {
       "path": "abi/rad_builder.h",
       "patch_ids": [
         "rad0018_vtp14_n2_tp_ownership",
@@ -1943,8 +1947,8 @@
       ],
       "anchors": 7,
       "anchor_sites": 7,
-      "anchor_bytes": 540,
-      "inserted_bytes": 3972,
+      "anchor_bytes": 537,
+      "inserted_bytes": 3969,
       "patch_count": 3
     },
     {
@@ -1956,12 +1960,12 @@
       ],
       "anchors": 6,
       "anchor_sites": 6,
-      "anchor_bytes": 256,
-      "inserted_bytes": 546,
+      "anchor_bytes": 253,
+      "inserted_bytes": 543,
       "patch_count": 3
     },
     {
-      "path": "arch/common/rad_fp8.h",
+      "path": "arch/common/rad_linear.h",
       "patch_ids": [
         "rad0019_vtp14_n2_tp_ownership_fp8",
         "rad0025_multiseq_pipelined_prefill",
@@ -1969,8 +1973,8 @@
       ],
       "anchors": 6,
       "anchor_sites": 6,
-      "anchor_bytes": 831,
-      "inserted_bytes": 2994,
+      "anchor_bytes": 811,
+      "inserted_bytes": 2930,
       "patch_count": 3
     },
     {
@@ -2006,7 +2010,7 @@
         "rad0049_qwen4exp_e4m3_kv"
       ],
       "anchors": 23,
-      "anchor_sites": 25,
+      "anchor_sites": 26,
       "anchor_bytes": 3037,
       "inserted_bytes": 9484,
       "patch_count": 2
@@ -2060,14 +2064,14 @@
       "patch_count": 2
     },
     {
-      "path": "arch/common/rad_block_mlp_fp8.h",
+      "path": "arch/common/rad_block_mlp_q.h",
       "patch_ids": [
         "rad0019_vtp14_n2_tp_ownership_fp8",
         "rad0030_int8_pipelined_prefill"
       ],
       "anchors": 4,
       "anchor_sites": 4,
-      "anchor_bytes": 614,
+      "anchor_bytes": 618,
       "inserted_bytes": 818,
       "patch_count": 2
     },
@@ -2115,7 +2119,7 @@
       "anchors": 9,
       "anchor_sites": 9,
       "anchor_bytes": 375,
-      "inserted_bytes": 673,
+      "inserted_bytes": 758,
       "patch_count": 1
     },
     {
@@ -2147,8 +2151,8 @@
       ],
       "anchors": 7,
       "anchor_sites": 7,
-      "anchor_bytes": 1823,
-      "inserted_bytes": 5277,
+      "anchor_bytes": 2487,
+      "inserted_bytes": 5775,
       "patch_count": 1
     },
     {
@@ -2240,6 +2244,17 @@
       "patch_count": 1
     },
     {
+      "path": "libref/ref_attn.cpp",
+      "patch_ids": [
+        "rad0051_b16_kv_kernels"
+      ],
+      "anchors": 4,
+      "anchor_sites": 4,
+      "anchor_bytes": 518,
+      "inserted_bytes": 543,
+      "patch_count": 1
+    },
+    {
       "path": "arch/qwen35_bf16/qwen35_bf16.cpp",
       "patch_ids": [
         "rad0018_vtp14_n2_tp_ownership"
@@ -2257,19 +2272,8 @@
       ],
       "anchors": 3,
       "anchor_sites": 3,
-      "anchor_bytes": 570,
-      "inserted_bytes": 1268,
-      "patch_count": 1
-    },
-    {
-      "path": "libref/ref_attn.cpp",
-      "patch_ids": [
-        "rad0051_b16_kv_kernels"
-      ],
-      "anchors": 3,
-      "anchor_sites": 3,
-      "anchor_bytes": 152,
-      "inserted_bytes": 381,
+      "anchor_bytes": 600,
+      "inserted_bytes": 1291,
       "patch_count": 1
     },
     {
@@ -2279,7 +2283,7 @@
       ],
       "anchors": 2,
       "anchor_sites": 2,
-      "anchor_bytes": 96,
+      "anchor_bytes": 99,
       "inserted_bytes": 167,
       "patch_count": 1
     },
@@ -2292,6 +2296,17 @@
       "anchor_sites": 2,
       "anchor_bytes": 84,
       "inserted_bytes": 87,
+      "patch_count": 1
+    },
+    {
+      "path": "core/mem/vram_budget.cpp",
+      "patch_ids": [
+        "rad0029_rank_own_split"
+      ],
+      "anchors": 2,
+      "anchor_sites": 2,
+      "anchor_bytes": 226,
+      "inserted_bytes": 227,
       "patch_count": 1
     },
     {
@@ -2378,8 +2393,8 @@
       ],
       "anchors": 1,
       "anchor_sites": 1,
-      "anchor_bytes": 223,
-      "inserted_bytes": 756,
+      "anchor_bytes": 25,
+      "inserted_bytes": 606,
       "patch_count": 1
     },
     {
@@ -2389,8 +2404,8 @@
       ],
       "anchors": 1,
       "anchor_sites": 1,
-      "anchor_bytes": 239,
-      "inserted_bytes": 1414,
+      "anchor_bytes": 27,
+      "inserted_bytes": 1259,
       "patch_count": 1
     },
     {
@@ -2400,8 +2415,8 @@
       ],
       "anchors": 1,
       "anchor_sites": 1,
-      "anchor_bytes": 229,
-      "inserted_bytes": 485,
+      "anchor_bytes": 33,
+      "inserted_bytes": 337,
       "patch_count": 1
     },
     {
@@ -2435,6 +2450,17 @@
       "anchor_sites": 1,
       "anchor_bytes": 64,
       "inserted_bytes": 297,
+      "patch_count": 1
+    },
+    {
+      "path": "core/mem/vram_budget.h",
+      "patch_ids": [
+        "rad0029_rank_own_split"
+      ],
+      "anchors": 1,
+      "anchor_sites": 1,
+      "anchor_bytes": 189,
+      "inserted_bytes": 166,
       "patch_count": 1
     },
     {
@@ -2533,7 +2559,7 @@
       "anchors": 1,
       "anchor_sites": 1,
       "anchor_bytes": 47,
-      "inserted_bytes": 785,
+      "inserted_bytes": 869,
       "patch_count": 1
     },
     {
