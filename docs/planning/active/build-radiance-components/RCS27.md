@@ -79,6 +79,9 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 
 2026-11-28 Flash-Next experts: added family moe_w4a8i8 (r4d_moe; case moe_gemm_w4a8i8) with Flash-Next's expert geometry from its /graph (gate/up 1280 x 2560 in two parts, down 2560 x 640 over sorted rows, w4nl64a8i8h, top 10, 16 experts to keep the host decode affordable) at 8, 64 and 600 tokens. Families may now pass their own case format (`cases`) and name skips that are the case's contract (`expected_skips`; here the 640-expert shapes' 'no run map past 512 experts'); any other skip still fails. gfx1201 on bc-radiance-2030.2.0: 197 kernels unchanged, 399 outputs hash-equal (including the selftest's 4096/8192-token down passes), selftest 0/0, checks_passed. A SIGSEGV seen while writing the family was the injected case's own bug (routed rows passed as tokens at top 10); buffered selftest output made it look like upstream's large pass, which passes in every environment tried.
 
+
+2026-11-28 bc-iqr M64/gated rows (qwen27b selects bc_gemm_iqr_nt_m64 and bc_gemm_iqr_gated): tried running the iqr_gemm overlay through the selftest's broader `gemm_iqr` case on gfx1100 against a harness-built base IQR reference (bc-radiance-2030.4.0 tree). Not shippable as is: (1) the gated check needs gated_had_quant_i8g, so r4d_fused_quant must be in both the base reference and the overlay's base stage (every gated case reported rows absent); (2) `gemm_iqr` runs every upstream IQR form (about 1000 hashed outputs on the reference), while the owned rows serve only the production forms, so the overlay hashed 21 and the rest read as missing. Tiled replay over the run was level (0.996 to 1.007), and no compared hash differed. Next: a selection restricted to the owned forms (V4 trellis-mad B=6/7) for the M64 and gated checks, plus r4d_fused_quant in the overlay base; the code change was not merged.
+
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent
@@ -88,3 +91,4 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 - 2026-11-28T07:25:59.101118+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T08:33:47.490967+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T09:24:04.635107+00:00 (updated-by): Updated: section:notes
+- 2026-11-28T10:32:11.511099+00:00 (updated-by): Updated: section:notes
