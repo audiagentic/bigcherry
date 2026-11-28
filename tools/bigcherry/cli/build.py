@@ -196,10 +196,15 @@ def _cmd_build_new(args: Namespace, logs) -> int:
     if advisory_text:
         print(advisory_text, file=sys.stderr, end="")
 
+    from ..campaign.runtime_bundle import LaneStageComplete
+
     failed = 0
     for lid in sorted(results):
         result = results[lid]
-        if isinstance(result, Exception):
+        if isinstance(result, LaneStageComplete):
+            # a staged CI build (BC_LANE_STAGE) only fills the compiler cache; it records no build
+            print(f"{lid}: {result}")
+        elif isinstance(result, Exception):
             log_paths = ", ".join([str(logs.root / "build.log"), *logs.failure_paths(lid)])
             print(f"{lid}: FAILED -- {result}; logs: {log_paths}", file=sys.stderr)
             failed += 1
