@@ -677,6 +677,55 @@ MOE_HASH_PRINT = ('        {\n'
                   '        }\n')
 
 
+# The IQR case's trellis forms run 256-row runs only; Qwen 27B IQR-V4 stores its ffn_gate_up with 512-row runs (the
+# computed trellis at 6 and 7 bits under one f32 scale a row, rotated). The case gains a run length (256 by default, so
+# every existing form and its hash name is unchanged), its table and host decode window follow it, and the form list
+# gains the two 512-row forms. A trellis weight is whole runs (the layout and the rows refuse anything else with
+# RAD_E_SHAPE), so a 512-row form skips a shape whose N is not a multiple of 512; its hash name carries "run=512".
+RUN_STRUCT_ANCHOR = "struct IqrCase { int kind, B, V, L, rb; bool two, rot; bool rowf = false; };\n"
+RUN_STRUCT_NEW = "struct IqrCase { int kind, B, V, L, rb; bool two, rot; bool rowf = false; int run = 256; };\n"
+RUN_FUNCTION = "static void iqr_gemm_case("
+RUN_NAME_ANCHOR = ("    const RadKernelInfo* r = find(pl, row);\n"
+                   "    const RadKernelInfo* ri = find(pl, ref);\n")
+RUN_NAME = ("    if (f.run != 256) {\n"
+            "        const size_t uh_l = std::strlen(nm);\n"
+            "        std::snprintf(nm + uh_l, sizeof nm - uh_l, \" run=%d\", f.run);\n"
+            "        if (N % f.run) return;   /* a trellis weight is whole runs: the layout and the rows refuse a part */\n"
+            "    }\n")
+RUN_TABLE_ANCHOR = "        p.enc.plane[t].block[0] = 256;\n"
+RUN_TABLE_NEW = "        p.enc.plane[t].block[0] = f.run;\n"
+RUN_WINDOW_ANCHOR = "                const int64_t rr = n / 256 * 256 + (n % 256 - q + 256) % 256;\n"
+RUN_WINDOW_NEW = "                const int64_t rr = n / f.run * f.run + (n % f.run - q + f.run) % f.run;\n"
+RUN_FORMS_ANCHOR = "                { 6, 2, 0, 15, 1, false, true, true },\n"
+RUN_FORMS_NEW = (RUN_FORMS_ANCHOR +
+                 "                { 6, 6, 0, 16, 1, false, true, true, 512 }, { 6, 7, 0, 16, 1, false, true, true, 512 },\n")
+
+# The gated row (gemm_iqr_gated: the gate_up GEMM with its gated activation folded in) is checked byte for byte against
+# its chain on planes from iqr_v4_planes, which also builds the --perfiqr timing planes; both had 256-row runs only.
+# iqr_v4_planes takes a run (0: UH_IQR_RUN, else 256, so --perfiqr can time 512-row runs), the gated case passes its own,
+# and the case gains the 27B gate_up per XTX rank (n 6656, so N 13312 = 26 runs of 512, K 5120) at 512-row runs, B 6
+# and 7, decode, draft and verify row counts.
+V4_PLANES_FUNCTION = "static Planes iqr_v4_planes("
+V4_PLANES_SIG = "static Planes iqr_v4_planes(int64_t N, int64_t K, int B, uint64_t z, bool bf16s = false) {\n"
+V4_PLANES_SIG_NEW = ("static Planes iqr_v4_planes(int64_t N, int64_t K, int B, uint64_t z, bool bf16s = false, int run = 0) {\n"
+                     "    if (run <= 0) run = std::getenv(\"UH_IQR_RUN\") ? std::atoi(std::getenv(\"UH_IQR_RUN\")) : 256;\n")
+V4_PLANES_RUN_ANCHOR = "    p.enc.plane[t].block[0] = 256;\n"
+V4_PLANES_RUN_NEW = "    p.enc.plane[t].block[0] = run;\n"
+GATED_SIG = "static void iqr_gated_case(const Plugin& pl, int B, int64_t M, int64_t n, int64_t K) {\n"
+GATED_SIG_NEW = "static void iqr_gated_case(const Plugin& pl, int B, int64_t M, int64_t n, int64_t K, int run = 256) {\n"
+GATED_NAME_ANCHOR = ('    std::snprintf(nm, sizeof nm, "gemm_iqr_gated trellis-mad B=%d row-f32 M=%lld n=%lld K=%lld", B,\n'
+                     '                  (long long)M, (long long)n, (long long)K);\n')
+GATED_NAME_RUN = ("    if (run != 256) {\n"
+                  "        const size_t uh_l = std::strlen(nm);\n"
+                  "        std::snprintf(nm + uh_l, sizeof nm - uh_l, \" run=%d\", run);\n"
+                  "        if (N % run) return;   /* a trellis weight is whole runs */\n"
+                  "    }\n")
+GATED_PLANES_ANCHOR = "    Planes p = iqr_v4_planes(N, K, B, 0x6A7ED00Du + (uint64_t)(B * 97 + M));\n"
+GATED_PLANES_NEW = "    Planes p = iqr_v4_planes(N, K, B, 0x6A7ED00Du + (uint64_t)(B * 97 + M), false, run);\n"
+RUN_GATED_CASES = ("            for (const int uh_b : { 6, 7 })\n"
+                   "                for (const int64_t uh_m : { (int64_t)1, (int64_t)4, (int64_t)16 })\n"
+                   "                    iqr_gated_case(pl, uh_b, uh_m, 6656, 5120, 512);\n")
+
 # The DFlash2/MTP draft head (gemm_w2a8_nt): the shipped selftest only runs it on unset operands (gemm_case). The family
 # adds a numeric case: U2 codes with an f16 scale and a u8 zero per 128 of K through the row's own layout, an exact int8
 # activation in quant_act_i8's fragment order with its group sums, a double-precision oracle over sampled columns, a
@@ -947,6 +996,27 @@ def inject_selftest(text: str) -> str:
     text = text.replace(HEAD_HASH_ANCHOR, head[0] + head[1] + HEAD_HASH_PRINT + head[2], 1)
     lines = IQ8R_HASH_ANCHOR.splitlines(keepends=True)
     text = text.replace(IQ8R_HASH_ANCHOR, lines[0] + lines[1] + IQ8R_HASH_PRINT + lines[2], 1)
+    for anchor in (RUN_STRUCT_ANCHOR, RUN_FORMS_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError("the selftest changed: the harness's IQR run-length edit anchor is not found exactly once "
+                               f"({anchor.splitlines()[0].strip()!r})")
+    text = text.replace(RUN_STRUCT_ANCHOR, RUN_STRUCT_NEW, 1)
+    text = text.replace(RUN_FORMS_ANCHOR, RUN_FORMS_NEW, 1)
+    text = _edit_function(text, RUN_FUNCTION, RUN_NAME_ANCHOR, RUN_NAME + RUN_NAME_ANCHOR)
+    text = _edit_function(text, RUN_FUNCTION, RUN_TABLE_ANCHOR, RUN_TABLE_NEW)
+    text = _edit_function(text, RUN_FUNCTION, RUN_WINDOW_ANCHOR, RUN_WINDOW_NEW)
+    for anchor in (V4_PLANES_SIG, GATED_SIG, GATED_NAME_ANCHOR, GATED_PLANES_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError("the selftest changed: the harness's gated run-length edit anchor is not found exactly once "
+                               f"({anchor.splitlines()[0].strip()!r})")
+    text = text.replace(V4_PLANES_SIG, V4_PLANES_SIG_NEW, 1)
+    text = _edit_function(text, V4_PLANES_FUNCTION, V4_PLANES_RUN_ANCHOR, V4_PLANES_RUN_NEW)
+    text = text.replace(GATED_SIG, GATED_SIG_NEW, 1)
+    text = text.replace(GATED_NAME_ANCHOR, GATED_NAME_ANCHOR + GATED_NAME_RUN, 1)
+    text = text.replace(GATED_PLANES_ANCHOR, GATED_PLANES_NEW, 1)
+    if text.count(GATED_CASES_ANCHOR + GATED_CASES_BLOCK) != 1:
+        raise HarnessError("the gated cases block is not in place for the run-length cases")
+    text = text.replace(GATED_CASES_ANCHOR + GATED_CASES_BLOCK, GATED_CASES_ANCHOR + GATED_CASES_BLOCK + RUN_GATED_CASES, 1)
     for anchor in (W2A8_FUNC_ANCHOR, W2A8_CASES_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError("the selftest changed: the harness's draft head edit anchor is not found exactly once "
