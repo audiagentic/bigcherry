@@ -703,7 +703,13 @@ FIND_ANCHOR = ("static const RadKernelInfo* find(const Plugin& pl, const char* n
                "        if (!std::strcmp(pl.kernel_at(k)->name, name)) return pl.kernel_at(k);\n"
                "    return nullptr;\n"
                "}\n")
-FIND_NEW = ("static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
+FIND_NEW = ("/* an overlay run: the base plugin the overlay's absent rows (the int8 reference rows) come from */\n"
+            "static const Plugin* uh_base() {\n"
+            "    static Plugin uh_pl; static bool uh_tried = false, uh_ok = false;\n"
+            "    if (!uh_tried) { uh_tried = true; if (const char* b = std::getenv(\"UH_BASE_PLUGIN\")) uh_ok = load(&uh_pl, b); }\n"
+            "    return uh_ok ? &uh_pl : nullptr;\n"
+            "}\n"
+            "static const RadKernelInfo* find(const Plugin& pl, const char* name) {\n"
             "    if (const char* uh_pre = std::getenv(\"UH_ROW_PREFIX\")) {\n"
             "        const std::string uh_name = std::string(uh_pre) + name;\n"
             "        for (int k = 0; k < pl.kernel_count(); ++k)\n"
@@ -711,14 +717,9 @@ FIND_NEW = ("static const RadKernelInfo* find(const Plugin& pl, const char* name
             "    }\n"
             "    for (int k = 0; k < pl.kernel_count(); ++k)\n"
             "        if (!std::strcmp(pl.kernel_at(k)->name, name)) return pl.kernel_at(k);\n"
-            "    /* an overlay run: the rows the overlay does not carry (the int8 reference rows) come from the base plugin */\n"
-            "    if (const char* uh_base = std::getenv(\"UH_BASE_PLUGIN\")) {\n"
-            "        static Plugin uh_pl; static bool uh_tried = false, uh_ok = false;\n"
-            "        if (!uh_tried) { uh_tried = true; uh_ok = load(&uh_pl, uh_base); }\n"
-            "        if (uh_ok)\n"
-            "            for (int k = 0; k < uh_pl.kernel_count(); ++k)\n"
-            "                if (!std::strcmp(uh_pl.kernel_at(k)->name, name)) return uh_pl.kernel_at(k);\n"
-            "    }\n"
+            "    if (const Plugin* uh_pl = uh_base())\n"
+            "        for (int k = 0; k < uh_pl->kernel_count(); ++k)\n"
+            "            if (!std::strcmp(uh_pl->kernel_at(k)->name, name)) return uh_pl->kernel_at(k);\n"
             "    return nullptr;\n"
             "}\n")
 EMBED_ANCHOR = ("    std::vector<uint16_t> got((size_t)(M * dim)), want((size_t)dim);\n"
@@ -822,6 +823,52 @@ DEVICE_CHECK = r"""#ifdef RAD_HAVE_HIP
 """
 
 
+# The owned IQR forms (bc-iqr serves the V4 trunk: the computed trellis, 6 and 7-bit codes). With UH_IQR_OWNED set the
+# selftest's `gemm_iqr` case runs only those forms through its GEMM rows and its gated row, so an overlay that owns them is
+# compared on what it serves rather than reported missing on every other form; the gated row hashes its three outputs and
+# takes extra "M:n:K" cases from UH_GATED_CASES (each at both owned widths).
+OWNED_GEMM_ANCHOR = ('    if (!sel(row) && !sel("gemm_iqr")) return;\n'
+                     '    static const char* kKind[] = { "", "signed", "zero", "table", "grid", "trellis", "trellis-mad" };\n')
+OWNED_GEMM_SKIP = '    if (std::getenv("UH_IQR_OWNED") && !(f.kind == 6 && (f.B == 6 || f.B == 7))) return;\n'
+OWNED_GATED_ANCHOR = ('    if (!sel("gemm_iqr_gated") && !sel("gemm_iqr")) return;\n'
+                      '    const int64_t N = 2 * n, nkb = K / 128;\n')
+OWNED_GATED_SKIP = '    if (std::getenv("UH_IQR_OWNED") && B != 6 && B != 7) return;\n'
+GATED_HASH_ANCHOR = ('    std::snprintf(d, sizeof d, "%zu codes, %zu scales, %zu products differ", dq, ds, dy);\n'
+                     '    ok(nm, dq == 0 && ds == 0 && dy == 0, d);\n')
+GATED_HASH_PRINT = ('    {\n'
+                    '        uint64_t uh = 1469598103934665603ull;\n'
+                    '        for (const std::vector<uint8_t>* v : { &q, &sc, &yb })\n'
+                    '            for (uint8_t c : *v) { uh ^= c; uh *= 1099511628211ull; }\n'
+                    '        std::printf("UNITHASH %s %016llx\\n", nm, (unsigned long long)uh);\n'
+                    '        {   /* a plain bf16 table is not an IQR weight: the gated row must refuse it as the base does */\n'
+                    '            Planes pp; pp.enc = rad_enc_plain(RAD_BF16); pp.size(256, 256);\n'
+                    '            std::vector<uint8_t> po; RadLayout pl2{};\n'
+                    '            std::printf("UNITLAYOUT plain_bf16 rc=%d\\n", stored(rg, lp, 2, pp, { "codes" }, &po, &pl2));\n'
+                    '        }\n'
+                    '    }\n')
+GATED_CASES_ANCHOR = "            iqr_gated_case(pl, 4, 9, 17408, 5120);\n"
+GATED_CASES_BLOCK = ('            if (const char* uh_g = std::getenv("UH_GATED_CASES"))\n'
+                     '                for (const char* s = uh_g; *s;) {\n'
+                     '                    long long um = 0, un = 0, uk = 0; int used = 0;\n'
+                     '                    if (std::sscanf(s, "%lld:%lld:%lld%n", &um, &un, &uk, &used) < 3) break;\n'
+                     '                    for (const int b : { 6, 7 }) iqr_gated_case(pl, b, um, un, uk);\n'
+                     '                    s += used;\n'
+                     '                    if (*s == \',\') ++s;\n'
+                     '                }\n')
+
+
+# The IQR case pins the int8 reference row's K split to the IQR row's, so the two sum their partials in one order. In an
+# overlay run the int8 row comes from the base plugin, so the pin must reach the base too (else the reference sums in its
+# own order and differs from the IQR row by rounding at M 17 to 64, while the IQR output itself is unchanged).
+PIN_ANCHOR = ("    if (M <= 64 && pl.pin_split_waves) pl.pin_split_waves(512);\n"
+              "    const int rr = launch(ri, ti, gp);\n"
+              "    if (M <= 64 && pl.pin_split_waves) pl.pin_split_waves(0);\n")
+PIN_NEW = ("    const Plugin* uh_pin = uh_base() ? uh_base() : &pl;\n"
+           "    if (M <= 64 && uh_pin->pin_split_waves) uh_pin->pin_split_waves(512);\n"
+           "    const int rr = launch(ri, ti, gp);\n"
+           "    if (M <= 64 && uh_pin->pin_split_waves) uh_pin->pin_split_waves(0);\n")
+
+
 def inject_selftest(text: str) -> str:
     if text.count(DEVICE_ANCHOR)!=1:
         raise HarnessError("selftest main anchor missing or ambiguous")
@@ -835,6 +882,17 @@ def inject_selftest(text: str) -> str:
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(HASH_ANCHOR, HASH_ANCHOR.splitlines(keepends=True)[0] + HASH_PRINT + HASH_ANCHOR.splitlines(keepends=True)[1], 1)
     text = text.replace(CASES_ANCHOR, CASES_ANCHOR + CASES_BLOCK, 1)
+    for anchor in (OWNED_GEMM_ANCHOR, OWNED_GATED_ANCHOR, GATED_HASH_ANCHOR, GATED_CASES_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError("the selftest changed: the harness's owned-IQR edit anchor is not found exactly once "
+                               f"({anchor.splitlines()[0].strip()!r})")
+    first = OWNED_GEMM_ANCHOR.splitlines(keepends=True)
+    text = text.replace(OWNED_GEMM_ANCHOR, first[0] + OWNED_GEMM_SKIP + first[1], 1)
+    first = OWNED_GATED_ANCHOR.splitlines(keepends=True)
+    text = text.replace(OWNED_GATED_ANCHOR, first[0] + OWNED_GATED_SKIP + first[1], 1)
+    last = GATED_HASH_ANCHOR.splitlines(keepends=True)
+    text = text.replace(GATED_HASH_ANCHOR, last[0] + GATED_HASH_PRINT + last[1], 1)
+    text = text.replace(GATED_CASES_ANCHOR, GATED_CASES_ANCHOR + GATED_CASES_BLOCK, 1)
     for anchor in (IQ8R_SHAPES_ANCHOR, IQ8R_HASH_ANCHOR):
         if text.count(anchor) != 1:
             raise HarnessError("the selftest changed: the harness's IQ8R edit anchor is not found exactly once "
@@ -865,6 +923,9 @@ def inject_selftest(text: str) -> str:
         if text.count(anchor) != 1:
             raise HarnessError(f"the selftest changed: the harness's edit anchor is not found exactly once ({anchor.splitlines()[0].strip()!r})")
     text = text.replace(FIND_ANCHOR, FIND_NEW, 1)
+    if text.count(PIN_ANCHOR) != 1:
+        raise HarnessError("the selftest changed: the int8 reference split pin is not found exactly once")
+    text = text.replace(PIN_ANCHOR, PIN_NEW, 1)
     text = text.replace(EMBED_ANCHOR, EMBED_ANCHOR + EMBED_PRINT, 1)
     text = text.replace(EMBED_CASES_ANCHOR, EMBED_CASES_ANCHOR + EMBED_CASES_BLOCK, 1)
     text = text.replace(VOCAB_ANCHOR, VOCAB_ANCHOR + VOCAB_PRINT, 1)
@@ -1562,6 +1623,9 @@ def stage_overlay_measure(out: Path, rounds: int | None = None, replay_only: boo
         env_base[ov.get("cases-env", "UH_EMBED_CASES")] = ov["cases"]
     if "hash-family" in ov:
         env_base["UH_HASH_CASES"] = hash_cases(families()[ov["hash-family"]]["hash"])
+    if "hash" in ov:                                      # the overlay's own extra shapes
+        env_base["UH_HASH_CASES"] = hash_cases(ov["hash"])
+    env_base.update(ov.get("env", {}))                    # selections both arms run under (UH_IQR_OWNED, UH_GATED_CASES)
     cand_env = {"UH_ROW_PREFIX": ov["row-prefix"], "UH_BASE_PLUGIN": state["base_stage"]}
     arms = {"ref": (ref_plugin, {}), "cand": (cand_plugin, cand_env)}
     texts: dict[str, list[str]] = {"ref": [], "cand": []}

@@ -92,3 +92,8 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 - 2026-11-28T08:33:47.490967+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T09:24:04.635107+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T10:32:11.511099+00:00 (updated-by): Updated: section:notes
+
+## Notes Append
+
+2026-11-28 bc-iqr M64/gated rows covered: overlay iqr_gemm_m64 runs the selftest's `gemm_iqr` case restricted to the owned forms (UH_IQR_OWNED: V4 computed trellis at 6 and 7 bits) through gemm_iqr_nt_m64 and gemm_iqr_gated. The gated row now hashes its codes, scales and product, probes the plain-bf16 refusal, and takes Qwen 27B's gate_up shape (n 17408, K 5120) at 1, 2, 5 and 16 tokens. The trunk shapes run at the GEMV, 16-token tile and narrow-tile row counts. The base carries r4d_fused_quant and r4d_quant_act_fp8 (the gated chain's quantiser and its group); the reference is a harness build of the iqr family, since the release library carries no IQR rows (bc-iqr owns them). Harness fix found on the way: the int8 reference row's K split pin went to the overlay plugin while the row came from the base, so the reference summed in another order (rounding-sized differences at M 17 to 64 on rb=32 forms, IQR output unchanged); overlay runs now pin the base. gfx1100: 396 outputs hash-equal, selftest failures 0/0, layout refusal agrees, no coverage gaps.
+- 2026-11-28T12:14:14.104359+00:00 (updated-by): Updated: section:notes_append
