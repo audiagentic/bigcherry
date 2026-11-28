@@ -49,7 +49,11 @@ METRICS = {
     # launches and compare reads each measured launch at the baseline's mean count. The 1- and 6-stream and
     # long-context rows have a fixed number of streams and are gated as they are.
     "sess8_ms_per_step": ("lower", True),
+    # The covariate: decode tokens over every step of the round that decoded, mixed steps included (SESS8_COVARIATE).
+    # Since the 2.3 bump the cold round has mixed steps (a session's prefill beside the others' decode), and stream-bench
+    # reports its pure-decode tokens per step only when there are none.
     "sess8_tokens_per_step": ("higher", False),
+    "sess8_mixed_steps": ("lower", False),
     "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
@@ -65,6 +69,9 @@ METRICS = {
     "policy_transactions": ("higher", False),
 }
 COVARIATES = {"sess8_ms_per_step": "sess8_tokens_per_step"}
+# The definition of the sess8 covariate, part of the workload (flashnext-parity.sh), so compare refuses a baseline that
+# used another one; there is no reader for the old pure-decode definition.
+SESS8_COVARIATE = "decode-tokens-per-decoding-step"
 # The long-context seeds (flashnext-parity.sh LONG_SEEDS): each seed is its own prompt, so its own metrics.
 LONG_SEEDS = (7, 8)
 class ParityError(RuntimeError):
@@ -404,7 +411,8 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
         acc = [_engine(r, "draft_acceptance", launch / file) for r in rounds]
         value[f"{name}_ms_per_step"], repeats[f"{name}_ms_per_step"] = statistics.fmean(steps), [steps]
         value[f"{name}_acceptance"], repeats[f"{name}_acceptance"] = statistics.fmean(acc), [acc]
-        detail[f"{name}_tokens_per_step"] = [_engine(r, "decode_tokens_per_step", launch / file) for r in rounds]
+        # pure-decode tokens per step: detail, present only for a round without mixed steps
+        detail[f"{name}_tokens_per_step"] = [(r.get("engine") or {}).get("decode_tokens_per_step") for r in rounds]
         detail[f"{name}_ttft_s"] = [r["aggregate"]["ttft_ms_max"] / 1000.0 for r in rounds]
 
     rounds = _rounds(launch / "sess8.json")
@@ -417,7 +425,15 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
     # sessions decode together in each step (all 8 on a full hit: longer steps, several times the throughput); their
     # ms/step is informational, never comparable across rounds or builds.
     value["sess8_ms_per_step"] = _engine(cold[0], "decode_ms_per_step", launch / "sess8.json")
-    value["sess8_tokens_per_step"] = _engine(cold[0], "decode_tokens_per_step", launch / "sess8.json")
+    if workload.get("SESS8_COVARIATE") != SESS8_COVARIATE:
+        raise ParityError(f"{launch}: workload SESS8_COVARIATE is {workload.get('SESS8_COVARIATE')!r}, this tool reads "
+                          f"only {SESS8_COVARIATE!r}")
+    decode_steps = (_engine(cold[0], "engine_steps_decode_total", launch / "sess8.json") +
+                    _engine(cold[0], "engine_steps_mixed_total", launch / "sess8.json"))
+    if decode_steps <= 0:
+        raise ParityError(f"{launch}/sess8.json: the cold round has no decoding step")
+    value["sess8_tokens_per_step"] = _engine(cold[0], "decode_tokens_total", launch / "sess8.json") / decode_steps
+    value["sess8_mixed_steps"] = _engine(cold[0], "engine_steps_mixed_total", launch / "sess8.json")
     warm = [_engine(r, "decode_ms_per_step", launch / "sess8.json") for r in rounds if r.get("rep") != 0]
     if warm:
         value["sess8_warm_ms_per_step"] = statistics.fmean(warm)
