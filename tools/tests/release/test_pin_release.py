@@ -162,10 +162,9 @@ class PinReleaseTests(unittest.TestCase):
                 _pr.phase_record(plan, "VERDICT consistent", "Hardware gate PASS")
             self.assertEqual(_git(root, "status", "--porcelain"), "")
             summary = "## Changes\n\n- Remote experts and serving config."
-            with mock.patch.object(_pr, "_prepare_runtime_asset") as package:
-                self.assertTrue(_pr.phase_record(plan, "VERDICT consistent", "Hardware gate PASS", summary))
-                package.assert_called_once()
+            self.assertTrue(_pr.phase_record(plan, "VERDICT consistent", "Hardware gate PASS", summary))
             record = json.loads((root / "releases/b11474.json").read_text(encoding="utf-8"))
+            self.assertNotIn("runtime_assets", record)          # the runtime bundle is CI's, attached to the tag
             self.assertEqual(record["public_summary"], summary)
             self.assertIn("Hardware gate PASS", record["notes"])
             self.assertIn("VERDICT consistent", record["notes"])
