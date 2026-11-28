@@ -83,3 +83,8 @@ RV4754: full new-mode admission/metrics follows RSC17 after baseline. In bump pr
 - 2026-11-27T07:29:29.417425+00:00 (updated-by): Updated: section:notes, section:validation
 - 2026-11-27T07:30:36.115403+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:12:50.065161+00:00 (updated-by): Updated: section:notes
+
+## Notes Append
+
+2026-11-28 narrowed after the 2.3 re-evaluation (see RSC16): test-first verification of the existing KVManager and Scheduler (blocks_still_needed, refill_cap, ensure_admission, can_grow): mixed lengths, shared prefix/COW, window recycling, exhaustion, failure and retry, cancellation, bounded progress. Change code only where a test fails; the one known suspect is the running ensure_from path treating a non-capacity allocation failure as RAD_E_FULL. The prefill room gate (default off) is the one performance exception: enabling it in shared mode needs a targeted throughput/TTFT/concurrency comparison; otherwise no serving A/B. Closes without code if the existing runtime passes.
+- 2026-11-28T12:55:32.616312+00:00 (updated-by): Updated: section:notes_append

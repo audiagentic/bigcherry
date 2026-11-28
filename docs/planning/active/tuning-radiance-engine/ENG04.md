@@ -62,3 +62,8 @@ RV4754: qualify existing approved FP8/BF16/BF16-I8 formats and capacity boundari
 
 - 2026-11-10T13:12:01.542345+00:00 (created-by): Created by agent
 - 2026-11-27T15:13:58.181503+00:00 (updated-by): Updated: section:notes
+
+## Notes Append
+
+2026-11-28: narrowed to the cache-format quality and speed decisions (fp8, fp8_v4, k6_v4 against bf16/bf16_i8), retained-session behaviour and supported context limits; capacity and speed numbers come from ENG09's 2.3 baseline instead of a separate matrix. A 1M single session is not a qualified capability of the 262,144-context Qwen checkpoint. Shared capacity stays RSC16-18; XDP02 stays separate (it changes which device owns attention layers).
+- 2026-11-28T12:55:37.692832+00:00 (updated-by): Updated: section:notes_append
