@@ -115,7 +115,7 @@ int main(void) {
     const RadKVGroupDecl group = {0};
     const RadArchProbe probe = {0};
     const int64_t hd = 256;
-    CHECK(RAD_ABI_VERSION == 44u);
+    CHECK(RAD_ABI_VERSION == 45u);
     CHECK(!ctx.tp_ownership && ctx.pipelined_prefill == 0 && ctx.pipelined_prefill_min_rows == 0);
     CHECK(ctx.kv_layout == RAD_KVQ_NONE && ctx.attn_prefill_fp8 == 0);
     CHECK(group.kv_layout == RAD_KVQ_NONE && probe.kv_layout_ok == 0);
@@ -165,22 +165,22 @@ _GROUP_END = "     * rad_kv_block_size() after declaring the attention op that c
 _PROBE_END = "    int32_t ckpt_snap_ok;\n} RadArchProbe;"
 
 
-_ABI44_LOADER_TESTS = r"""/* ABI44 migration gates: a real ABI43 plugin and an ABI44 plugin without the
+_ABI44_LOADER_TESTS = r"""/* ABI45 migration gates: a real ABI44 plugin and an ABI45 plugin without the
  * required layout export must both be refused by the loader. */
-TEST(an_abi43_plugin_is_refused_by_the_abi44_engine) {
-    const char* path = std::getenv("RADTEST_ABI43_PLUGIN");
-    if (!path || !*path) return; /* the dedicated migration gate supplies a retained ABI43 DSO */
+TEST(an_abi44_plugin_is_refused_by_the_abi45_engine) {
+    const char* path = std::getenv("RADTEST_ABI44_PLUGIN");
+    if (!path || !*path) return; /* the dedicated migration gate supplies a retained ABI44 DSO */
     Registry r;
     const int st = r.load_plugin(path, 0);
     CHECK_EQ(st, RAD_E_ABI);
     CHECK_EQ(r.plugins().size(), (size_t)0);
     const std::string e = errs(r);
     CHECK(has(e, path));
-    CHECK(has(e, "ABI version 43"));
-    CHECK(has(e, "this engine is version 44"));
+    CHECK(has(e, "ABI version 44"));
+    CHECK(has(e, "this engine is version 45"));
 }
 
-TEST(an_abi44_plugin_without_layout_export_is_refused) {
+TEST(an_abi45_plugin_without_layout_export_is_refused) {
     Registry r;
     const std::string path = bad_dir() + "/radtest_nolayout.so";
     const int st = r.load_plugin(path, 0);
@@ -225,50 +225,52 @@ PATCHES = (
         _replace("abi44-layout-probe", "ABI_FIELD(RadArchProbe, ckpt_snap_ok)\n",
                  "ABI_FIELD(RadArchProbe, ckpt_snap_ok)\n"
                  "ABI_FIELD(RadArchProbe, kv_layout_ok)\n", "ABI_FIELD(RadArchProbe, kv_layout_ok)"),
-        _replace("abi44-layout-batch", "ABI_FIELD(RadBatch, ckpt_cu)\n",
-                 "ABI_FIELD(RadBatch, ckpt_cu)\n"
+        _replace("abi44-layout-batch", "ABI_FIELD(RadBatch, vl_mask)\n",
+                 "ABI_FIELD(RadBatch, vl_mask)\n"
                  "ABI_FIELD(RadBatch, cu_seqlens_h)\n", "ABI_FIELD(RadBatch, cu_seqlens_h)"),
     )),
-    FilePatch(path="tests/abi_layout_test.cpp", language="none", description="Check the complete ABI44 layout", edits=(
+    FilePatch(path="tests/abi_layout_test.cpp", language="none", description="Check ABI45 layout", edits=(
         _replace("abi44-test-doc", "taken at RAD_ABI_VERSION 38 and RAD_FORMAT_VER 2",
-                 "taken at RAD_ABI_VERSION 44 and RAD_FORMAT_VER 2",
-                 "taken at RAD_ABI_VERSION 44 and RAD_FORMAT_VER 2"),
-        _replace("abi44-test-version", "/* The layout at RAD_ABI_VERSION 43 / RAD_FORMAT_VER 2 (see the file header). */\n"
-                 "constexpr uint32_t kTableAbi = 43, kTableFormat = 2;",
-                 "/* The layout at RAD_ABI_VERSION 44 / RAD_FORMAT_VER 2 (see the file header). */\n"
-                 "constexpr uint32_t kTableAbi = 44, kTableFormat = 2;", "constexpr uint32_t kTableAbi = 44,"),
-        _replace("abi44-test-context-size", "CHECK_EQ(sizeof(RadBuildCtx), (size_t)208);",
-                 "CHECK_EQ(sizeof(RadBuildCtx), (size_t)240);", "CHECK_EQ(sizeof(RadBuildCtx), (size_t)240);"),
+                 "taken at RAD_ABI_VERSION 45 and RAD_FORMAT_VER 2",
+                 "taken at RAD_ABI_VERSION 45 and RAD_FORMAT_VER 2"),
+        _replace("abi44-test-version", "/* The layout at RAD_ABI_VERSION 44 / RAD_FORMAT_VER 2 (see the file header). */\n"
+                 "constexpr uint32_t kTableAbi = 44, kTableFormat = 2;",
+                 "/* The layout at RAD_ABI_VERSION 45 / RAD_FORMAT_VER 2 (see the file header). */\n"
+                 "constexpr uint32_t kTableAbi = 45, kTableFormat = 2;", "constexpr uint32_t kTableAbi = 45,"),
+        _replace("abi44-test-context-size", "CHECK_EQ(sizeof(RadBuildCtx), (size_t)224);",
+                 "CHECK_EQ(sizeof(RadBuildCtx), (size_t)256);", "CHECK_EQ(sizeof(RadBuildCtx), (size_t)256);"),
         _replace("abi44-test-probe-size", "CHECK_EQ(sizeof(RadArchProbe), (size_t)128);",
                  "CHECK_EQ(sizeof(RadArchProbe), (size_t)136);", "CHECK_EQ(sizeof(RadArchProbe), (size_t)136);"),
-        _replace("abi44-test-batch-size", "CHECK_EQ(sizeof(RadBatch), (size_t)496);",
-                 "CHECK_EQ(sizeof(RadBatch), (size_t)504);", "CHECK_EQ(sizeof(RadBatch), (size_t)504);"),
+        _replace("abi44-test-batch-size", "CHECK_EQ(sizeof(RadBatch), (size_t)504);",
+                 "CHECK_EQ(sizeof(RadBatch), (size_t)512);", "CHECK_EQ(sizeof(RadBatch), (size_t)512);"),
     )),
-    FilePatch(path="tests/abi_layout_table.h", language="none", description="Pin the complete ABI44 layout", edits=(
-        _replace("abi44-table-doc", "at RAD_ABI_VERSION 43 and", "at RAD_ABI_VERSION 44 and",
-                 "at RAD_ABI_VERSION 44 and"),
+    FilePatch(path="tests/abi_layout_table.h", language="none", description="Pin ABI45 layout extensions", edits=(
+        _replace("abi44-table-doc", "at RAD_ABI_VERSION 43 and", "at RAD_ABI_VERSION 45 and",
+                 "at RAD_ABI_VERSION 45 and"),
         _replace("abi44-table-probe-size", '{ "RadArchProbe", "", 0, 128 },',
                  '{ "RadArchProbe", "", 0, 136 },', '{ "RadArchProbe", "", 0, 136 },'),
         _replace("abi44-table-probe", '{ "RadArchProbe", "ckpt_snap_ok", 124, 4 },\n',
                  '{ "RadArchProbe", "ckpt_snap_ok", 124, 4 },\n'
                  '{ "RadArchProbe", "kv_layout_ok", 128, 4 },\n',
                  '{ "RadArchProbe", "kv_layout_ok", 128, 4 },'),
-        _replace("abi44-table-batch-size", '{ "RadBatch", "", 0, 496 },',
-                 '{ "RadBatch", "", 0, 504 },', '{ "RadBatch", "", 0, 504 },'),
-        _replace("abi44-table-batch", '{ "RadBatch", "ckpt_cu", 488, 8 },\n',
-                 '{ "RadBatch", "ckpt_cu", 488, 8 },\n'
-                 '{ "RadBatch", "cu_seqlens_h", 496, 8 },\n',
-                 '{ "RadBatch", "cu_seqlens_h", 496, 8 },'),
+        _replace("abi44-table-batch-size", '{ "RadBatch", "", 0, 504 },',
+                 '{ "RadBatch", "", 0, 512 },', '{ "RadBatch", "", 0, 512 },'),
+        _replace("abi44-table-batch", '{ "RadBatch", "vl_mask", 496, 8 },\n',
+                 '{ "RadBatch", "vl_mask", 496, 8 },\n'
+                 '{ "RadBatch", "cu_seqlens_h", 504, 8 },\n',
+                 '{ "RadBatch", "cu_seqlens_h", 504, 8 },'),
         _replace("abi44-table-context-size", '{ "RadBuildCtx", "", 0, 208 },',
-                 '{ "RadBuildCtx", "", 0, 240 },', '{ "RadBuildCtx", "", 0, 240 },'),
-        _replace("abi44-table-context", '{ "RadBuildCtx", "span_pass_step", 200, 4 },\n',
-                 '{ "RadBuildCtx", "span_pass_step", 200, 4 },\n'
-                 '{ "RadBuildCtx", "tp_ownership", 208, 8 },\n'
-                 '{ "RadBuildCtx", "pipelined_prefill", 216, 4 },\n'
-                 '{ "RadBuildCtx", "pipelined_prefill_min_rows", 224, 8 },\n'
-                 '{ "RadBuildCtx", "kv_layout", 232, 4 },\n'
-                 '{ "RadBuildCtx", "attn_prefill_fp8", 236, 4 },\n',
-                 '{ "RadBuildCtx", "attn_prefill_fp8", 236, 4 },'),
+                 '{ "RadBuildCtx", "", 0, 256 },', '{ "RadBuildCtx", "", 0, 256 },'),
+        _replace("abi44-table-context", '{ "RadBuildCtx", "draft_head_off", 204, 4 },\n',
+                 '{ "RadBuildCtx", "draft_head_off", 204, 4 },\n'
+                 '{ "RadBuildCtx", "expert_split", 208, 8 },\n'
+                 '{ "RadBuildCtx", "dspark_walk", 216, 4 },\n'
+                 '{ "RadBuildCtx", "tp_ownership", 224, 8 },\n'
+                 '{ "RadBuildCtx", "pipelined_prefill", 232, 4 },\n'
+                 '{ "RadBuildCtx", "pipelined_prefill_min_rows", 240, 8 },\n'
+                 '{ "RadBuildCtx", "kv_layout", 248, 4 },\n'
+                 '{ "RadBuildCtx", "attn_prefill_fp8", 252, 4 },\n',
+                 '{ "RadBuildCtx", "attn_prefill_fp8", 252, 4 },'),
         _replace("abi44-table-group-size", '{ "RadKVGroupDecl", "", 0, 56 },',
                  '{ "RadKVGroupDecl", "", 0, 64 },', '{ "RadKVGroupDecl", "", 0, 64 },'),
         _replace("abi44-table-group", '{ "RadKVGroupDecl", "conv_width", 48, 8 },\n',
@@ -276,9 +278,9 @@ PATCHES = (
                  '{ "RadKVGroupDecl", "kv_layout", 56, 4 },\n',
                  '{ "RadKVGroupDecl", "kv_layout", 56, 4 },'),
     )),
-    FilePatch(path="abi/rad_abi.h", language="none", description="Advance the local plugin ABI from 43 to 44", edits=(
-        _replace("abi44-version", "#define RAD_ABI_VERSION 43u\n", "#define RAD_ABI_VERSION 44u\n",
-                 "#define RAD_ABI_VERSION 44u\n"),
+    FilePatch(path="abi/rad_abi.h", language="none", description="Advance composed ABI from native 44 to 45", edits=(
+        _replace("abi44-version", "#define RAD_ABI_VERSION 44u\n", "#define RAD_ABI_VERSION 45u\n",
+                 "#define RAD_ABI_VERSION 45u\n"),
     )),
     FilePatch(path="tests/bc_kv_layout_contract_test.c", language="none", create=True,
               description="Always-on ABI44 descriptor and row byte fixture", edits=(
@@ -310,7 +312,7 @@ set_tests_properties(bc_kv_layout_contract_test PROPERTIES LABELS "unit;fast")
         Edit(id="abi44-loader-migration-cases",
              anchor=re.escape("TEST(a_foreign_layout_under_the_right_version_is_refused) {"),
              mode="insert_before", expect_matches=1, text=_ABI44_LOADER_TESTS,
-             guard=re.escape("TEST(an_abi44_plugin_without_layout_export_is_refused)"),
+             guard=re.escape("TEST(an_abi45_plugin_without_layout_export_is_refused)"),
              max_span_lines=2,
              rationale="Prove ABI43 mismatch and missing ABI44 fingerprint refusal"),
     )),

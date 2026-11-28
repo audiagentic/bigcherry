@@ -159,6 +159,8 @@ The host-reduced all-reduce (CPU sums and pushes, no card pulls) is VTP38, inclu
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 4: after current critical path, derive pieces from fixed hop cost and bytes/link rate first; use existing native exact path, then evaluate 3-rank AR+residual+norm+int8 only if exposed, VTP37 order/quality gate. Shipped K-parallel near streaming ceiling; VTP52 launch and VTP32 capacity-aware per-kind split ahead of exhaustive GEMM work. Do not repeat rejected 64x256 VTP58 tile or already-shipped IQR overlay. Performance gates match actual installed config, step ms and tokens/step, TTFT and KV capacity.
 
+Exact candidate TP3 IQ8R collective geometry ABBA 4x256/2x256/2x256/4x256: same FP8, exact wire, tune pieces4/fuse1/once1/duplex1, pipe min256, batch2048, target75, no prefix, stock observe. Four fresh managed starts and 16 successful matched-prompt rounds, pre/post receipts, 8 portable exports, 0 preemptions, clean stops. Pooled 512/192 medians 4 groups 344.5355 t/s, TTFT2.001s, P95 gap40.154ms; 2 groups341.3955,2.054s,40.001ms. 4K/256 106.884 vs104.746 t/s, TTFT15.810 vs16.199s, P95 gap213.366 vs218.498ms. No compelling gain: retain4 groups, no production change. Historic360.8315 short throughput still above provisional target; investigate actual per-rank small-batch replay vs old binary, not more grid/pipeline sweeps. Evidence tp3-collective-recovery.json. No numerical quality claim for experimental geometry; no formal acceptance. DFlash tree not active at chain depth3; do not enable wider on TP3 until rank agreement over token AND parent arrays qualified.
+
 ## Results (2026-11-13): the all-reduce
 
 Worktree `perf/vtp36-tp3-performance`. Builds (all `radiance:stock:linux-radiance`, rad0016-rad0030 plus the patches
@@ -487,3 +489,4 @@ link, to the extent the card overlaps directions: the fused loop gets about a th
 - 2026-11-23T23:11:30.985833+00:00 (updated-by): Updated: section:notes
 - 2026-11-23T23:22:02.105504+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T18:52:10.416087+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T22:32:01.990969+00:00 (updated-by): Updated: section:notes

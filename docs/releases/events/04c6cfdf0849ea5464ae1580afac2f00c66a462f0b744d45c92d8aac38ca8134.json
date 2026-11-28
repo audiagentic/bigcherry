@@ -1,0 +1,12 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261127_082742_streaming-benchmarks-can-save_1073",
+  "files": [
+    "tools/bigcherry/bench/stream_bench.py",
+    "tools/bigcherry/bench/workloads.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add opt-in stream benchmark publication through the native serving manifest record producer.",
+  "timestamp-utc": "2026-11-27T08:27:42.559058Z",
+  "user-summary-candidate": "Streaming benchmarks can save their detailed report to the shared run store."
+}

@@ -1,0 +1,6 @@
+upstream revision: 3b13fd32663ef52252a7f0be255523480aa22ffe
+  previous:        b6b8751cccb0e834a13ae9e5afca824ee9a487aa
+
+PATCH                                         STATUS
+
+summary: 0 total, 0 clean, 0 not-applicable, 0 failed, 0 blocked, 0 quarantined

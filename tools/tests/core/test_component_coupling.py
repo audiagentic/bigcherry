@@ -40,7 +40,8 @@ class ComponentCouplingTests(unittest.TestCase):
             component, upstream_paths={"abi/rad_abi.h"},
             upstream_abi=40)
         self.assertTrue(any("upstream file no longer exists: abi/rad_abi_layout.h" in x for x in result), result)
-        self.assertTrue(any("plugin ABI 43 differs from upstream 40" in x for x in result), result)
+        declared = component.coupling["abi-version"]
+        self.assertTrue(any(f"plugin ABI {declared} differs from upstream 40" in x for x in result), result)
 
     def test_manifest_option_registry_is_the_single_native_mapping(self):
         serving = components.load_all(ROOT, engines.RADIANCE)["serving"]

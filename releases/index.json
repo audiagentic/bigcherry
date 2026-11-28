@@ -1,7 +1,16 @@
 {
   "artifact_version": 1,
-  "generated_at": "2026-11-20T11:51:10.150348+00:00",
+  "generated_at": "2026-11-27T23:41:20.938770+00:00",
   "releases": [
+    {
+      "audit_passed": true,
+      "manifest_hash": "",
+      "release_tag": "v2.3.0",
+      "revision": "3b13fd32663ef52252a7f0be255523480aa22ffe",
+      "slug": "v2.3.0",
+      "stage": "broken",
+      "updated_at": "2026-11-27T23:41:20.922864+00:00"
+    },
     {
       "audit_passed": false,
       "manifest_hash": "",

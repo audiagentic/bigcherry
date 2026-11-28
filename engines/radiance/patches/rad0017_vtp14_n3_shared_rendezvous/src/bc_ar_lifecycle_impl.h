@@ -75,6 +75,59 @@ bool ar8_own_link(R4DArLink* l) {
     return r4d_ar_link_bottleneck("", bdf, l);
 }
 
+/* Card-to-card traffic of the collectives. Ctx::ar_bytes is each rank's own
+ * payload; what a card receives depends on the route libr4d picks for the message, which only this
+ * file knows. Each entry below adds, for its rank, the bytes it sends to every other rank, so
+ * g_ar_sent[r][p] is what went from card r to card p and a column's sum is what arrived at a card.
+ * By construction, not by measuring the wire:
+ *   one-shot    the whole message to every peer.
+ *   two-shot    to peer p, this rank's part of p's shard (the push) and then this rank's own reduced
+ *               shard (the assemble): shard_p + shard_r bytes. Even shards make that half a message
+ *               a peer at four ranks; a rank that owns no shard sends only its parts of the others'.
+ *   coded       the two-shot with both pushes coded at about 12.2 bits a bf16 value; the bytes are
+ *               the data's, so this is an estimate at 12.2 / 16 of the plain two-shot's.
+ *   lossy       the tiered-int8 two-shot at 38 bytes a 32-value group, the two-rank wht6 at 6 bits
+ *               a value.
+ *   gather      this rank's piece to every peer.
+ * The fused collectives (the quantising reductions, hc_write) are not followed: they are counted as
+ * calls in g_ar_uncounted, so a reader can tell whether the table is the whole of the traffic.
+ * These entries run when a pass is issued in full. A pass the engine plays back from a tape does not
+ * come through here, so the engine takes the difference a recording made to its rank's counts
+ * (r4d_ar_traffic_rank before and after) and adds it again for every play (Ctx::record_pass).
+ * Relaxed atomics: a rank's thread is the only writer of its row. */
+enum { kTrOneShot = 0, kTrTwoShot, kTrCoded, kTrLossy, kTrGather, kTrRoutes };
+std::atomic<long long> g_ar_sent[R4D_MAX_RANKS][R4D_MAX_RANKS];
+std::atomic<long long> g_ar_route_calls[R4D_MAX_RANKS][kTrRoutes], g_ar_route_bytes[R4D_MAX_RANKS][kTrRoutes];
+std::atomic<long long> g_ar_uncounted[R4D_MAX_RANKS];
+
+void traffic_route(int rank, int route, long long payload) {
+    g_ar_route_calls[rank][route].fetch_add(1, std::memory_order_relaxed);
+    g_ar_route_bytes[rank][route].fetch_add(payload, std::memory_order_relaxed);
+}
+/* The whole message, or a rank's piece, to every peer; `num` / `den` scales a coded wire. */
+void traffic_all(const ArInst* in, long numel, int route, long num = 1, long den = 1) {
+    if (!in || in->rank < 0 || in->rank >= R4D_MAX_RANKS || in->world > R4D_MAX_RANKS) return;
+    const long long b = (long long)numel * in->esize;
+    for (int p = 0; p < in->world; ++p)
+        if (p != in->rank) g_ar_sent[in->rank][p].fetch_add(b * num / den, std::memory_order_relaxed);
+    traffic_route(in->rank, route, b);
+}
+void traffic_twoshot(const ArInst* in, long numel, const int* weights, int route, long num = 1, long den = 1) {
+    if (!in || in->rank < 0 || in->rank >= R4D_MAX_RANKS || in->world > R4D_MAX_RANKS) return;
+    long off[R4D_MAX_RANKS + 1];
+    r4d_ar_shard_table((long)numel * in->esize / 16, in->world, weights, off);
+    const long long mine = (long long)(off[in->rank + 1] - off[in->rank]) * 16;
+    for (int p = 0; p < in->world; ++p) {
+        if (p == in->rank) continue;
+        const long long theirs = (long long)(off[p + 1] - off[p]) * 16;
+        g_ar_sent[in->rank][p].fetch_add((theirs + mine) * num / den, std::memory_order_relaxed);
+    }
+    traffic_route(in->rank, route, (long long)numel * in->esize);
+}
+/* The fused entries have their instance under other names, so they are counted against rank 0's
+ * row: the count says whether there were any, not whose. */
+void traffic_uncounted_rank() { g_ar_uncounted[0].fetch_add(1, std::memory_order_relaxed); }
+
 /* The eight-rank two-shot's choice for one message, a function of its size and the instance
  * alone: a recorded launch keeps the table and piece count it was recorded with, and replays of
  * the same size agree with it. */
@@ -148,6 +201,54 @@ int ar8_settle(ArInst* in, int rank, int world) {
     }
     in->shard_weighted = 1;
     std::memcpy(in->shard_w, w, sizeof(in->shard_w));
+    return RAD_OK;
+}
+
+/* The four-rank exact two-shot's shard weights, fixed before anything is sized: each rank publishes its
+ * own card's slowest PCIe hop, and after one barrier every rank derives the same weights from the same
+ * four entries by the duplex model (r4d_ar_weights_duplex, r4d_ar_links.h). On equal links that is the
+ * even split. With two cards at half the others' rate (x8 and x4 slots, x8, x4, x8, x4) it
+ * gives the slow pair no shard, 1,0,1,0 in effect: each message then reaches them once instead of 1.5
+ * times, the fast pair takes what they give up (1 + 2 * share of the message each), and every link's
+ * time is the same where the even split waits on the slow pair; on such a board that table is faster than
+ * the even split. A link sysfs does not describe leaves the shards even. Weights apply from the first
+ * element: the one-shot below `ts_min` carries the small messages, so only two-shot messages see them.
+ * The table changes which link a word crosses, never its fold, so the result has the same bits
+ * (r4d_ar_shards.h). Only the plain exact two-shot takes it: the coded lane form, the tiered-int8 wire
+ * and the one-shot keep their own layouts. */
+int ar4_settle(ArInst* in, int rank, int world) {
+    Rendezvous& rv = rv_for(in->group);
+    static std::once_flag said;
+    R4DArLink own;
+    if (!ar8_own_link(&own)) own = R4DArLink();
+    {
+        std::lock_guard<std::mutex> lk(rv.m);
+        rv.ar8_link[rank] = own;
+    }
+    const int rc = rv_barrier(rv, world);
+    if (rc != RAD_OK) return rc;
+    double gbs[R4D_MAX_RANKS] = { 0 };
+    for (int r = 0; r < world; ++r) gbs[r] = r4d_ar_link_gbs(rv.ar8_link[r]);
+    int w[R4D_MAX_RANKS] = { 0 };
+    if (!r4d_ar_weights_duplex(gbs, world, w)) return RAD_OK;   /* a rate unknown: even */
+    bool same = true;
+    for (int r = 1; r < world; ++r) same = same && w[r] == w[0];
+    if (same) return RAD_OK;                                        /* equal links: even */
+    const R4DArLink* all = rv.ar8_link;
+    std::call_once(said, [all, world, &w] {
+        std::string l;
+        for (int r = 0; r < world; ++r) {
+            char one[96];
+            std::snprintf(one, sizeof one, "%s r%d %.1f GT/s x%d %.1f GB/s w%d", r ? "," : "", r,
+                          all[r].gts, all[r].width, r4d_ar_link_gbs(all[r]), w[r]);
+            l += one;
+        }
+        std::fprintf(stderr, "[r4d] four-rank exact two-shot shard weights from the slowest PCIe hop of "
+                     "each card:%s\n", l.c_str());
+    });
+    in->shard_weighted = 1;
+    std::memcpy(in->shard_w, w, sizeof(in->shard_w));
+    in->weights_min = 0;
     return RAD_OK;
 }
 
@@ -236,10 +337,13 @@ int build(ArInst* in, long long group, int rank, int world, long long max_numel,
     if (world == 8) {
         const int rc8 = ar8_settle(in, rank, world);
         if (rc8 != RAD_OK) return rc8;
+    } else if (world == 4) {
+        const int rc4 = ar4_settle(in, rank, world);
+        if (rc4 != RAD_OK) return rc4;
     }
     if (in->shard_weighted) {
         const long need16 =
-            2 * r4d_ar_shard_max_bound((long)max_numel * in->esize / 16, 8, in->shard_w);
+            2 * r4d_ar_shard_max_bound((long)max_numel * in->esize / 16, world, in->shard_w);
         /* Sized only if some message this instance carries is weighted. */
         if (max_numel >= in->weights_min && need16 > in->slot16) {
             in->slot16 = need16;
@@ -460,6 +564,21 @@ int acquire(const CacheKey& k, ArInst** out) {
     }
     *out = in;
     return RAD_OK;
+}
+
+int acquire_at_least(const CacheKey& k, ArInst** out) {
+    {
+        std::lock_guard<std::mutex> lk(g_cache_mu);
+        for (CacheSlot& s : g_cache)
+            if (s.key.group == k.group && s.key.rank == k.rank &&
+                s.key.world == k.world && s.key.dtype == k.dtype &&
+                s.key.host == k.host && s.key.numel >= k.numel && s.in) {
+                ++s.refs;
+                *out = s.in;
+                return RAD_OK;
+            }
+    }
+    return acquire(k, out);
 }
 
 void release(ArInst* in) {

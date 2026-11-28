@@ -1,0 +1,19 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261127_110622_screen-scheduler-tuning-polici_1958",
+  "files": [
+    "tools/lab/radiance/scheduler_sim.py",
+    "tools/lab/radiance/scheduler_screen.py",
+    "tools/lab/radiance/scheduler_burst.py",
+    "tools/tests/lab/test_scheduler_screen.py",
+    "tools/lab/radiance/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP60",
+    "VTP59"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Extend native Radiance burst simulation for reproducible policy screens with mixed-step observations, completion and trace guards, and diagnostic Pareto ranking.",
+  "timestamp-utc": "2026-11-27T11:06:22.231283Z",
+  "user-summary-candidate": "Screen scheduler tuning policies deterministically before GPU validation."
+}

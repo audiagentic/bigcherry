@@ -433,3 +433,155 @@ def test_bundle_cannot_trust_observed_claim_without_process_evidence(tmp_path):
                 "validity": {"state": "valid", "reason_codes": ["ATTESTATION_MISSING"]},
             }
         )
+
+
+
+
+@pytest.mark.parametrize("mutation", ["missing", "duplicate", "wrong", "failed", "unsupported"])
+def test_tuning_diagnostics_fail_closed(mutation):
+    from bigcherry.bench.radiance_lab_records import reconcile_tuning_diagnostics
+    row = {"option": "--mixed-step-target-ms", "value": "100", "source": "models.qwen27b.mixed-step-target-ms"}
+    doc = {"startup_failed": False, "unsupported_configuration": False, "configuration": [row]}
+    if mutation == "missing":
+        doc["configuration"] = []
+    elif mutation == "duplicate":
+        doc["configuration"].append(dict(row))
+    elif mutation == "wrong":
+        row["value"] = "50"
+    elif mutation == "failed":
+        doc["startup_failed"] = True
+    else:
+        doc["unsupported_configuration"] = True
+    with pytest.raises(run_records.RecordError):
+        reconcile_tuning_diagnostics(doc, {"--mixed-step-target-ms": "100"})
+
+
+def test_tuning_diagnostics_only_performance_rows():
+    from bigcherry.bench.radiance_lab_records import reconcile_tuning_diagnostics
+    row = {"option": "--prefill-interleave", "value": "auto:1", "source": "default", "why": "resolved"}
+    doc = {"startup_failed": False, "unsupported_configuration": False,
+           "configuration": [row, {"option": "--api-key", "value": "secret", "source": "env"}],
+           "environment": {"SECRET": "secret"}}
+    assert reconcile_tuning_diagnostics(doc, {"--prefill-interleave": "auto:1"}) == {
+        "--prefill-interleave": {"value": "auto:1", "source": "default"}}
+
+
+def test_tuning_receipt_pair_bound_to_manifest(tmp_path):
+    from bigcherry.bench import radiance_lab_records as lab
+    import hashlib
+    path, _, _ = _manifest(tmp_path)
+    context = lab._session_context(tmp_path)
+    receipt = {
+        "schema_version": 1, "run_id": context["run_id"],
+        "manifest_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "identity": context["identity"], "recorded_at": "2026-11-27T00:00:00Z",
+        "expected": {"--mixed-step-target-ms": "100"},
+        "observed": {"--mixed-step-target-ms": {"value": "100", "source": "models.qwen27b.mixed-step-target-ms"}},
+    }
+    assert lab._tuning_receipt_inputs(context) == {}
+    start, end = [tmp_path / name for name in lab.TUNING_RECEIPT_FILES]
+    start.write_text(json.dumps(receipt))
+    with pytest.raises(run_records.RecordError):
+        lab._tuning_receipt_inputs(context)
+    end.write_text(json.dumps(receipt))
+    assert lab._tuning_receipt_inputs(context) == {"native_tuning_start": start, "native_tuning_end": end}
+    end.write_text(json.dumps(dict(receipt, manifest_sha256="0" * 64)))
+    with pytest.raises(run_records.RecordError, match="identity mismatch"):
+        lab._tuning_receipt_inputs(context)
+
+
+def test_capture_tuning_receipt_refuses_manifest_conflict(tmp_path, monkeypatch):
+    from bigcherry.bench import radiance_lab_records as lab
+    path, _, _ = _manifest(tmp_path)
+    doc = json.loads(path.read_text())
+    doc["spec"]["processes"]["engine"]["scheduler"] = {"tp": 3}
+    path.write_text(json.dumps(doc))
+    session = tmp_path / "session.json"
+    s = json.loads(session.read_text())
+    s["port"] = 9000
+    session.write_text(json.dumps(s))
+    def unexpected(*args, **kwargs):
+        pytest.fail("conflicting intent must be refused before HTTP")
+    monkeypatch.setattr(lab.urllib.request, "urlopen", unexpected)
+    with pytest.raises(run_records.RecordError, match="contradicts manifest"):
+        lab.capture_tuning_receipt(tmp_path, "http://127.0.0.1:9000", {"--tp": "2"})
+
+
+@pytest.mark.parametrize("authored,steps,share,expected", [
+    (False, 0, None, None), (True, 0, None, "off"), (True, 2, None, "2"),
+    (True, -1, "0.25", "auto:0.250000"), (True, -1, "1.0", "auto:1.000000"),
+])
+def test_scheduler_expectations_from_sealed_owner(authored, steps, share, expected):
+    from bigcherry.bench.radiance_lab_records import _context_tuning_expectations
+    parsed = {"interleave_authored": authored, "interleave_steps": steps, "interleave_share": share,
+              "mixed_step_target_ms": 75, "mixed_step_target_authored": True,
+              "room_gate": False, "room_gate_authored": False, "long_prefill_token_threshold": 0,
+              "long_prefill_authored": False, "preempt_wait_ms": 5000, "preempt_wait_authored": False}
+    ctx = {"manifest": {"spec": {"native_config": {"sha256": "a"*64}, "intent": {},
+                                "processes": {"engine": {}}}},
+           "session": {"selection": {"native_scheduler": {"snapshot_sha256": "a"*64, "parsed": parsed}}}}
+    observed = _context_tuning_expectations(ctx)
+    assert observed["--mixed-step-target-ms"] == "75"
+    assert observed["--prefill-room-gate"] == "off"
+    assert observed.get("--prefill-interleave") == expected
+    ctx["session"]["selection"]["native_scheduler"]["snapshot_sha256"] = "b"*64
+    with pytest.raises(run_records.RecordError, match="bind native YAML"):
+        _context_tuning_expectations(ctx)
+
+
+def test_candidate_identity_resolves_materialized_source(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from bigcherry.campaign import workers
+    _, meta, binary = _manifest(tmp_path)
+    root = binary.parent.parent
+    meta.pop("source_commit")
+    source = tmp_path / "source"
+    (root / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={source}\n")
+    with pytest.raises(ValueError, match="materialization metadata missing"):
+        workloads._release_identity(root, meta, None)
+    (tmp_path / "source.metadata.json").write_text("{}")
+    monkeypatch.setattr(workers, "_source_attestation",
+                        lambda *a, **kw: SimpleNamespace(upstream_revision="a"*40))
+    verified = []
+    monkeypatch.setattr(workers, "_verify_source", lambda *a: verified.append(a))
+    identity, inputs = workloads._release_identity(root, meta, None)
+    assert verified and identity["source_commit"] == "a"*40
+    assert inputs["source_attestation"] == b"{}"
+
+
+def test_release_record_identity_binds_shipped_binary_and_source(tmp_path, monkeypatch):
+    import hashlib
+    from bigcherry.release import runtime_assets
+
+    path, meta, binary = _manifest(tmp_path)
+    root = binary.parent.parent
+    shipped = hashlib.sha256(b"stripped bytes").hexdigest()
+    binary.write_bytes(b"stripped bytes")
+    bundle = {"plan_id": meta["build_plan_id"], "source_slice_id": meta["source_slice_id"],
+              "source_binary_sha256": meta["binary_hash"], "binary_sha256": shipped,
+              "built_from": {"pinned": "f" * 40}}
+    raw = json.dumps(bundle).encode()
+    (root / "bundle.json").write_bytes(raw)
+    receipt = tmp_path / "receipt.json"
+    receipt.write_text(json.dumps({"manifest_sha256": hashlib.sha256(raw).hexdigest()}))
+    checked = []
+    monkeypatch.setattr(runtime_assets, "verify_runtime_tree",
+                        lambda *a, **k: checked.append((a, k)))
+    actual, inputs = workloads._release_identity(root, meta, receipt)
+    assert checked and actual["binary_hash"] == shipped
+    assert actual["source_commit"] == "f" * 40
+    assert inputs["release_manifest"] == raw
+    assert meta["binary_hash"] != shipped
+    # Native lab receipts must resolve the same installed runtime identity.
+    (root / "install.json").write_text(json.dumps({"record": json.loads(receipt.read_text())}))
+    from bigcherry.bench import radiance_lab_records as lab
+    context = lab._session_context(tmp_path)
+    assert context["identity"]["binary_sha256"] == shipped
+    assert context["identity"]["source_revision"] == "f" * 40
+    assert context["inputs"]["release_manifest"] == raw
+    (root / "install.json").unlink()
+    with pytest.raises(ValueError, match="requires its tagged receipt"):
+        workloads._release_identity(root, meta, None)
+    (root / "bundle.json").write_bytes(raw + b" ")
+    with pytest.raises(ValueError, match="manifest digest"):
+        workloads._release_identity(root, meta, receipt)

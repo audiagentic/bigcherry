@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_132228_make-automatic-scheduler-confi_6295",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC19"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Preserve automatic interleave share in strict JSON as round-trip decimal text; expose scheduler parse in explain; validate with native and owner CTest gates.",
+  "timestamp-utc": "2026-11-27T13:22:28.161034Z",
+  "user-summary-candidate": "Make automatic scheduler configuration inspectable without breaking managed admission."
+}

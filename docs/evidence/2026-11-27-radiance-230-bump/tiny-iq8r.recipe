@@ -1,0 +1,5 @@
+blk.*.attn_qkv.weight rtn codes=i8 group=256 scale=u8 scale2=bf16 block2=1x* transform=fwht128 clamp=sym rule=search
+blk.*.attn_output.weight rtn codes=i8 group=256 scale=u8 scale2=bf16 block2=1x* transform=fwht128 clamp=sym rule=search
+blk.*.ffn_gate_up.weight rtn codes=i8 group=256 scale=u8 scale2=bf16 block2=1x* transform=fwht128 clamp=sym rule=search
+blk.*.ffn_down.weight rtn codes=i8 group=256 scale=u8 scale2=bf16 block2=1x* transform=fwht128 clamp=sym rule=search
+output.weight rtn codes=i8 group=128 scale=bf16 clamp=sym rule=search

@@ -45,7 +45,7 @@ class RankConsistentDraftTests(unittest.TestCase):
         self.assertIn('RAD_INT("numel", w.tok_rows * cfg.steps())', edits["rcd-decl"])
         self.assertIn("RAD_ISSUE(c, op_tgather, RAD_B(w.tokens), RAD_B(w.tokg))", edits["rcd-issue"])
         self.assertIn("while (rcd && (tok_rows * dc.steps()) % 4) ++tok_rows;", edits["rcd-buf"])
-        self.assertIn("drf.proposal       = dw.tokg ? dw.tokg : dw.tokens;", edits["rcd-prop"])
+        self.assertIn("drf.proposal       = !m.tree && dw.tokg ? dw.tokg : dw.tokens;", edits["rcd-prop"])
 
     def test_guards_are_not_prefixes(self):
         assert_focal_guards_unique(self, PKG.name)

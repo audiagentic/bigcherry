@@ -1,7 +1,7 @@
 # Radiance
 
 The released **bc-radiance 2020.x** line (see the release list for the current one) incorporates upstream Radiance
-**v2.2.0**. Older v1.17.0 measurements remain historical comparison evidence. The custom build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
+**v2.3.0**. Older v2.2.0 and v1.17.0 measurements remain historical comparison evidence. The custom build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
 expert placement adapted to differing GPU memory and bandwidth.
 
 ## Patches and extensions at a glance

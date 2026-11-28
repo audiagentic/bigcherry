@@ -66,7 +66,7 @@ class MixedPipeTests(unittest.TestCase):
                 text = (root / f.path).read_text()
                 for e in f.edits:
                     self.assertIn(e.text, text, e.id)
-            gdn = (root / "arch/common/rad_block_gdn_fp8.h").read_text()
+            gdn = (root / "arch/common/rad_block_gdn_q.h").read_text()
             self.assertEqual(gdn.count("BC_VTP31_MXP_GDN_SEQS"), 1)
             again = apply_all(load(PKG), root)
             self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))

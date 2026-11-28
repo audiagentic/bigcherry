@@ -1,0 +1,159 @@
+{
+  "profile": "qwen27b-tp3-iq6r.yaml",
+  "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+  "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+  "owner_sha256": "cec301e004ff956fcee6c2595a77276c63447237eeb300aaa6ca450ad1050faf",
+  "requests": [
+    {
+      "prompt": "The capital of France is",
+      "response": {
+        "id": "cmpl-63471e5c259aa287c6cc0600",
+        "object": "text_completion",
+        "created": 1795770276,
+        "model": "qwen27b",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": " Paris.\nThe capital of Germany is Berlin.\nThe capital of Italy is Rome.\nThe capital of Spain is Madrid.\nThe capital of Portugal is",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 32,
+          "total_tokens": 37,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 5,
+          "prompt_ms": 32.745052,
+          "prompt_per_token_ms": 6.5490104,
+          "prompt_per_second": 152.69482546553903,
+          "predicted_n": 32,
+          "predicted_ms": 252.206394,
+          "predicted_per_token_ms": 8.135690129032257,
+          "predicted_per_second": 122.91520253844159,
+          "ttft_ms": 32.835620999999996,
+          "total_ms": 285.042015,
+          "draft_n": 33,
+          "draft_n_accepted": 21
+        }
+      }
+    },
+    {
+      "prompt": "The capital of France is",
+      "response": {
+        "id": "cmpl-a082e21c845985c458507634",
+        "object": "text_completion",
+        "created": 1795770276,
+        "model": "qwen27b",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": " Paris.\nThe capital of Germany is Berlin.\nThe capital of Italy is Rome.\nThe capital of Spain is Madrid.\nThe capital of Portugal is",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 5,
+          "completion_tokens": 32,
+          "total_tokens": 37,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 5,
+          "prompt_ms": 25.841638,
+          "prompt_per_token_ms": 5.1683276,
+          "prompt_per_second": 193.48618690502514,
+          "predicted_n": 32,
+          "predicted_ms": 252.50915899999998,
+          "predicted_per_token_ms": 8.145456741935483,
+          "predicted_per_second": 122.76782403762235,
+          "ttft_ms": 26.197809,
+          "total_ms": 278.70696799999996,
+          "draft_n": 33,
+          "draft_n_accepted": 21
+        }
+      }
+    },
+    {
+      "prompt": "Explain why the sky looks blue.",
+      "response": {
+        "id": "cmpl-3bc97a8568a5c012319677c5",
+        "object": "text_completion",
+        "created": 1795770276,
+        "model": "qwen27b",
+        "system_fingerprint": "radiance-2.3.0",
+        "choices": [
+          {
+            "text": "\n\nThe sky looks blue due to a phenomenon called Rayleigh scattering. When sunlight enters the Earth's atmosphere, it encounters gas molecules and small particles. Sunlight",
+            "index": 0,
+            "logprobs": null,
+            "finish_reason": "length"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 8,
+          "completion_tokens": 32,
+          "total_tokens": 40,
+          "prompt_tokens_details": {
+            "cached_tokens": 0
+          }
+        },
+        "timings": {
+          "cache_n": 0,
+          "prompt_n": 8,
+          "prompt_ms": 34.424847,
+          "prompt_per_token_ms": 4.303105875,
+          "prompt_per_second": 232.39028484280556,
+          "predicted_n": 32,
+          "predicted_ms": 321.570925,
+          "predicted_per_token_ms": 10.37325564516129,
+          "predicted_per_second": 96.40175025151916,
+          "ttft_ms": 35.552699,
+          "total_ms": 357.123624,
+          "draft_n": 42,
+          "draft_n_accepted": 19
+        }
+      }
+    }
+  ],
+  "ok": true,
+  "startup_s": 20.690505794016644,
+  "stop_exit": 0,
+  "owner_exit": 0,
+  "raw_result_sha256": "44107fa84990ba6cb664a30cf88950d3c14565fcea9e8aa6c9bb2c7cabf79fc8",
+  "managed_selection": {
+    "config": "qwen27b-tp3-iq6r",
+    "engine_cards": [
+      "0000:03:00.0",
+      "0000:06:00.0",
+      "0000:09:00.0"
+    ],
+    "helper_cards": [],
+    "manifest_digest": "sha256:6e3606504b57304c13a14406ed8cdf300c80ad81a4e4a9ca5a8631a27f869fc3",
+    "model": "qwen3.8-27b-iq6r-v4-df2-w3.rad",
+    "manifest_sha256": "d8a35086e8f44ce43e781dd644bcbfa1c7f95aad9339a63b9b770ba52191e06e",
+    "state": "running",
+    "roles": [
+      "native config inspector",
+      "native config inspector",
+      "native v3 measuring engine",
+      "native v3 measuring engine",
+      "engine"
+    ],
+    "feature_states": "See raw session receipt"
+  },
+  "final_session_state": "stopped",
+  "session_sha256": "fce873be1ba4d8e1bfb4e596bf4d43fc7faac37a54fc1dd449031ac4498f9199"
+}

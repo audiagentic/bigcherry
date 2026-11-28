@@ -49,7 +49,7 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
     ),
     _edit(
         "ts3w-size",
-        "            2 * r4d_ar_shard_max_bound((long)max_numel * in->esize / 16, 8, in->shard_w);\n",
+        "            2 * r4d_ar_shard_max_bound((long)max_numel * in->esize / 16, world, in->shard_w);\n",
         "            2 * r4d_ar_shard_max_bound((long)max_numel * in->esize / 16, world, in->shard_w); /* BC_VTP14_TS3W_SIZE */\n",
         guard="BC_VTP14_TS3W_SIZE",
     ),
@@ -62,6 +62,7 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
         "    const long sh_max = (words16 + c.in->world - 1) / c.in->world;\n"
         "    if (2 * sh_max * 16 > c.in->slot_bytes) return RAD_E_SCRATCH;\n"
         "    const ArInst* in = c.in;\n"
+        "    traffic_twoshot(c.in, c.numel, nullptr, kTrTwoShot);\n"
         "    R4D_TRY(\"ar_twoshot_3rank_exact\",\n"
         "        r4d_ar_twoshot_3rank_exact(in->peer_scratch[0], in->peer_scratch[1],\n",
         "    if (c.in->world != 3) return RAD_E_SHAPE;\n"
@@ -74,6 +75,7 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
         "    const long sh_max = r4d_ar_shard_table(words16, c.in->world, weights, off);\n"
         "    if (2 * sh_max * 16 > c.in->slot_bytes) return RAD_E_SCRATCH;\n"
         "    const ArInst* in = c.in;\n"
+        "    traffic_twoshot(c.in, c.numel, weights, kTrTwoShot);\n"
         "    R4D_TRY(\"ar_twoshot_3rank_exact\",\n"
         "        r4d_ar_twoshot_3rank_exact_w(weights, in->peer_scratch[0], in->peer_scratch[1],\n",
         guard="BC_VTP14_TS3W_LAUNCH",

@@ -2,6 +2,7 @@
 #include "power_transaction.h"
 
 #include "config_loader.h"
+#include "native_tuning_fields.h"
 #include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
@@ -508,11 +509,11 @@ bool starts_with(const std::string& s, const char* prefix) {
 
 // Variables that carry bigcherry configuration or choose devices: a child never inherits them.
 bool stripped(const std::string& name) {
-    for (const char* p : {"R3_", "RAD_", "BC_", "BIGCHERRY_"})
+    for (const char* p : {"R3_", "RAD_", "BC_", "BIGCHERRY_", "RADIANCE_"})
         if (starts_with(name, p))
             return true;
     return name == "ROCR_VISIBLE_DEVICES" || name == "HIP_VISIBLE_DEVICES" || name == "CUDA_VISIBLE_DEVICES" ||
-           name == "GPU_DEVICE_ORDINAL" || name == "RADIANCE_HOME";
+           name == "GPU_DEVICE_ORDINAL";
 }
 
 // The control socket's address. sun_path holds at most 107 bytes; a longer run directory is reached through a
@@ -1610,6 +1611,9 @@ class Owner {
     std::vector<int> stop_clients_;
     std::vector<Child> children_;
     EngineStart plan_;
+    // The quality engine verifies the parent's retained sealed admission after exec.
+    // Keep it alive through the finite run and child cleanup, just like plan_.admission.
+    std::optional<EngineInputs> quality_inputs_;
     Json record_;
 
     // A record that cannot be written is reported, never a reason to skip stopping a child (but no process is
@@ -2027,7 +2031,8 @@ class Owner {
             run.reference = quality->reference.string();
             run.corpus = quality->corpus.string();
             run.output = quality->output.string();
-            inputs = engine_inputs(manifest.value(), false, std::move(run));
+            quality_inputs_.emplace(engine_inputs(manifest.value(), false, std::move(run)));
+            inputs = *quality_inputs_;
             argv = engine_argv(argv.front(), inputs);
         } else if (manifest && manifest.value().spec.handoff &&
                    manifest.value().spec.handoff->telemetry.histogram_file) {
@@ -2424,7 +2429,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         return object.contains(key) && object.at(key).is_number_integer();
     };
     if (!exact_keys(doc, {"protocol", "snapshot", "engine"}) || !string_field(doc, "protocol") ||
-        doc.at("protocol") != "bigcherry.native-fleet-inspect/v2" ||
+        doc.at("protocol") != "bigcherry.native-fleet-inspect/v3" ||
         !exact_keys(doc.value("snapshot", Json::object()), {"sha256", "resolution_root"}) ||
         !string_field(doc.at("snapshot"), "sha256") || doc.at("snapshot").at("sha256") != snapshot.sha256() ||
         !string_field(doc.at("snapshot"), "resolution_root") ||
@@ -2435,7 +2440,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "kernels",
                                     "listener", "tp", "tp_wire", "cards", "rank_devices",
-                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "power_profiles", "power_site", "settings"}) ||
+                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "power_profiles", "power_site", "scheduler", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
@@ -2518,16 +2523,17 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     settings.max_sequences = static_cast<uint32_t>(sequences);
     {
         const Json& tuning = engine_report.at("tuning");
-        if (!tuning.is_object() ||
-            !exact_keys(tuning, {"p2p", "pipelined_prefill", "pipelined_prefill_min_rows", "prefill_governor",
-                                 "tp_ownership", "tune_pin"}))
+        if (!tuning.is_object() || tuning.size() != std::size(kNativeTuningFields))
             throw PlanFailed("native config inspector: report omitted the tuning settings");
-        for (const auto& [name, value] : tuning.items()) {
+        for (const auto& field : kNativeTuningFields) {
+            if (!tuning.contains(field.name))
+                throw PlanFailed(std::string("native config inspector: missing tuning ") + field.name);
+            const auto& value = tuning.at(field.name);
             if (value.is_null()) continue;
-            const bool rows = name == "pipelined_prefill_min_rows";
-            if (rows ? !value.is_number_integer() : (!value.is_string() || value.get_ref<const std::string&>().empty()))
-                throw PlanFailed("native config inspector: ill-typed tuning " + name);
-            out.settings.tuning.emplace(name, value);
+            if (field.integer ? (!value.is_number_integer() || value < 0)
+                              : (!value.is_string() || value.get_ref<const std::string&>().empty()))
+                throw PlanFailed(std::string("native config inspector: ill-typed tuning ") + field.name);
+            out.settings.tuning.emplace(field.name, value);
         }
     }
     const Json& runtime = engine_report.at("settings");
@@ -2566,6 +2572,38 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     settings.prefix_cache = runtime.at("prefix_cache").get<bool>();
     if (!runtime.at("prefill_interleave").is_null())
         settings.prefill_interleave = bounded("prefill_interleave", 0);
+    const Json& scheduler = engine_report.at("scheduler");
+    if (!exact_keys(scheduler, {"interleave_authored", "interleave_steps", "interleave_share",
+                                "mixed_step_target_ms", "mixed_step_target_authored",
+                                "room_gate", "room_gate_authored", "long_prefill_token_threshold",
+                                "long_prefill_authored", "preempt_wait_ms", "preempt_wait_authored"}))
+        throw PlanFailed("native config inspector: incomplete scheduler projection");
+    for (const char* key : {"interleave_authored", "mixed_step_target_authored", "room_gate",
+                            "room_gate_authored", "long_prefill_authored", "preempt_wait_authored"})
+        if (!scheduler.at(key).is_boolean())
+            throw PlanFailed(std::string("native config inspector: invalid scheduler ") + key);
+    for (const char* key : {"mixed_step_target_ms", "long_prefill_token_threshold", "preempt_wait_ms"})
+        if (!scheduler.at(key).is_number_integer() || scheduler.at(key) < 0 ||
+            scheduler.at(key) > std::numeric_limits<int64_t>::max())
+            throw PlanFailed(std::string("native config inspector: invalid scheduler ") + key);
+    const auto& steps = scheduler.at("interleave_steps");
+    const auto& share = scheduler.at("interleave_share");
+    bool valid_share = share.is_null();
+    if (steps == -1 && share.is_string()) {
+        const auto& decimal = share.get_ref<const std::string&>();
+        double value = 0;
+        const auto parsed = std::from_chars(decimal.data(), decimal.data() + decimal.size(), value);
+        valid_share = parsed.ec == std::errc{} && parsed.ptr == decimal.data() + decimal.size() &&
+                      value > 0 && value <= 4;
+    } else if (steps == -1) {
+        valid_share = false;
+    }
+    if (!steps.is_number_integer() || steps < -1 || steps > 64 ||
+        scheduler.at("mixed_step_target_ms") > 60000 || !valid_share)
+        throw PlanFailed("native config inspector: invalid scheduler interleave or mixed-step target");
+    const Json fixed = scheduler.at("interleave_authored") == true && steps >= 0 ? steps : Json(nullptr);
+    if (fixed != runtime.at("prefill_interleave"))
+        throw PlanFailed("native config inspector: inconsistent scheduler interleave projection");
     out.receipt = doc;
     return out;
 }
@@ -3050,10 +3088,9 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
 static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
     const fs::path& resolution_root, const fs::path& runtime_home, const Env& selected, Env overrides,
     const fs::path& sys_root) {
-    for (const char* key : {"RADIANCE_HOME", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
-                            "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL"})
-        if (overrides.count(key))
-            throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
+    for (const auto& [key, value] : overrides)
+        if (stripped(key))
+            throw PlanFailed("native config admission: runtime override cannot select " + key);
     for (const auto& [key, value] : selected)
         overrides[key] = value;
     overrides["RADIANCE_HOME"] = runtime_home.string();
@@ -3081,6 +3118,13 @@ static bool native_settings_match(const NativeEngineSettings& native, const v2::
     const auto& execution = engine.execution;
     const auto& service = spec.intent.service;
     const auto prefill = engine.tuning ? engine.tuning->prefill_interleave : std::nullopt;
+    const Json manifest_tuning = engine.tuning ? v2::encode(*engine.tuning) : Json::object();
+    for (const auto& field : kNativeTuningFields) {
+        const auto authored = native.tuning.find(field.name);
+        if ((authored != native.tuning.end()) != manifest_tuning.contains(field.name) ||
+            (authored != native.tuning.end() && authored->second != manifest_tuning.at(field.name)))
+            return false;
+    }
     return native.port == engine.server.port &&
            native.max_context == service.max_context_tokens && native.max_sequences == service.max_sessions &&
            native.kernels == engine.runtime.kernels &&
@@ -3342,6 +3386,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     if (engine_identity(engine, frozen_runtime_home) != matched_engine_identity)
         throw PlanFailed("native v3 engine or runtime changed during YAML inspection");
     lap("runtime_identity");
+    out.summary["native_scheduler"] = {{"snapshot_sha256", native_inspection.snapshot_sha256},
+                                       {"parsed", native_inspection.receipt.at("engine").at("scheduler")}};
     const auto& settings = native_inspection.settings;
     const Resolved native_resolved = resolve(in.options, facts, &settings);
     // A lab experiment measures afresh and leaves the named store alone: its manifest is a lab one, which neither
@@ -4090,6 +4136,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                    {"helper_cards", source.at("spec").at("processes").at("helpers")},
                    {"manifest_digest", accepted.metadata.content_digest},
                    {"replay", true}};
+    out.summary["native_scheduler"] = {{"snapshot_sha256", report.snapshot_sha256},
+                                       {"parsed", report.receipt.at("engine").at("scheduler")}};
     out.summary["plan_measurement_attempt"] = bound->native_measurement->attempt_id;
     // Replay starts no writer or measuring child. The owner admits power
     // durably before the serving engine can be forked.

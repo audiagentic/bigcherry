@@ -1,0 +1,23 @@
+{
+  "mode": "offline explain with staged approved heat seeds and explicit explain-only histogram off for helper profiles",
+  "exit_codes": {
+    "flashnext-2xtx-combine": 0,
+    "flashnext-2xtx-rdna2-head": 0,
+    "flashnext-2xtx-rdna2-tail-combine": 0,
+    "flashnext-2xtx-rdna2-tail": 0,
+    "flashnext-2xtx": 0,
+    "flashnext-4gpu-bf16i8": 0,
+    "flashnext-4gpu": 0,
+    "flashnext-r9700": 0,
+    "flashnext-tp2xtx-r9700": 0,
+    "flashnext-tp2xtx": 0,
+    "qwen27b-2xtx": 0,
+    "qwen27b-tp3-capacity": 0,
+    "qwen27b-tp3-iq6r": 0,
+    "qwen27b-tp3-long-bf16": 0,
+    "qwen27b-tp3-long-bf16i8": 0,
+    "qwen27b-tp3-long-iq6r": 0,
+    "qwen27b-tp3-long": 0,
+    "qwen27b-tp3": 0
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "source": "3b13fd32663ef52252a7f0be255523480aa22ffe",
+  "controller": "e6598253c",
+  "architecture": "gfx1201",
+  "plugin": "libr4d.so",
+  "plugin_sha256": "f3cba1b4bc47ddac0467f7b50120c04b4242bfd6e75b9c74f80024c2b9db2c59",
+  "selftest_sha256": "01b192f21892351ca7d3b67b2a358a8685de3f93e63ff0b39ac0836af8186e8a",
+  "cases": [
+    {
+      "case": "gemm_iqr_tiled",
+      "exit_code": 0,
+      "ok_lines": 129,
+      "output_sha256": "f233ad3fcc73719eeea7e0240bd895efad9670112ed64dcf233e27dc11126a47"
+    },
+    {
+      "case": "gemm_i8a8_nt_m16",
+      "exit_code": 0,
+      "ok_lines": 13,
+      "output_sha256": "b2b420630b60116801e501df54c425c46e68d3f7e288312280c1f3895ad5527f"
+    },
+    {
+      "case": "logits_gemm_i8",
+      "exit_code": 0,
+      "ok_lines": 28,
+      "output_sha256": "39b8086c24c5d84c63ad60fa8d9bc2411d95a937b6f0ed363679ca9ef1094847"
+    },
+    {
+      "case": "gemm_iq8r_nt_m16",
+      "exit_code": 0,
+      "ok_lines": 35,
+      "output_sha256": "76437922faabce94cdbafc546ce284e2d13effb938c6f52647196361bb9be824"
+    },
+    {
+      "case": "gemm_iq8r_tiled",
+      "exit_code": 0,
+      "ok_lines": 35,
+      "output_sha256": "76437922faabce94cdbafc546ce284e2d13effb938c6f52647196361bb9be824"
+    }
+  ]
+}

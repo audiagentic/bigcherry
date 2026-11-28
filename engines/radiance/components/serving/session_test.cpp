@@ -314,6 +314,9 @@ void serve_status_stop() {
     c.behaviour["health_delay_ms"] = 200;
     // inherited configuration and device choices must not reach the engine
     ::setenv("R3_MOE_FP16", "1", 1);
+    ::setenv("RADIANCE_TUNE", "all_reduce:nblocks=1", 1);
+    ::setenv("RADIANCE_KERNELS", "unmanaged", 1);
+    ::setenv("RADIANCE_OP_ORACLE", "unmanaged", 1);
     ::setenv("BC_MODEL_ROOT", "/elsewhere", 1);
     ::setenv("BIGCHERRY_CONFIGS", "/elsewhere", 1);
     ::setenv("HIP_VISIBLE_DEVICES", "2,3", 1);
@@ -338,7 +341,10 @@ void serve_status_stop() {
     assert(status->at("owner_pid") == owner);
     const std::string env = text(c.run / "engine.env");
     assert(env.find("R3_MOE_FP16") == std::string::npos && env.find("BC_MODEL_ROOT") == std::string::npos &&
-           env.find("BIGCHERRY_CONFIGS") == std::string::npos);
+           env.find("BIGCHERRY_CONFIGS") == std::string::npos &&
+           env.find("RADIANCE_TUNE") == std::string::npos &&
+           env.find("RADIANCE_KERNELS") == std::string::npos &&
+           env.find("RADIANCE_OP_ORACLE") == std::string::npos);
     // the admitted plan's own device visibility replaces the inherited choice; the runtime home is the build's
     assert(env.find("HIP_VISIBLE_DEVICES=0,1,2\n") != std::string::npos &&
            env.find("HIP_VISIBLE_DEVICES=2,3") == std::string::npos);
@@ -347,7 +353,8 @@ void serve_status_stop() {
            env.find("\nRADIANCE_HOME=/") != std::string::npos);
     assert(env.find("RSC02_TEST_KEEP=yes\n") != std::string::npos); // the runtime's own environment stays
     for (const char* v :
-         {"R3_MOE_FP16", "BC_MODEL_ROOT", "BIGCHERRY_CONFIGS", "HIP_VISIBLE_DEVICES", "RSC02_TEST_KEEP"})
+         {"R3_MOE_FP16", "BC_MODEL_ROOT", "BIGCHERRY_CONFIGS", "HIP_VISIBLE_DEVICES", "RSC02_TEST_KEEP",
+          "RADIANCE_TUNE", "RADIANCE_KERNELS", "RADIANCE_OP_ORACLE"})
         ::unsetenv(v);
     // the engine runs in its own process group (stop signals the group, never the owner's)
     const int engine = c.engine_pid();
@@ -781,9 +788,12 @@ void spawn_and_environment() {
     }
     assert(stopped && verified.size() == 3U + extra_verified && gone(std::stoi(text(child_pid))));
     char a[] = "PATH=/bin", b[] = "RAD_X=1", c[] = "BC_Y=2", d[] = "ROCR_VISIBLE_DEVICES=1", e[] = "HOME=/h";
-    char* inherited[] = {a, b, c, d, e, nullptr};
-    const auto env = ss::child_environment(inherited, {{"ROCR_VISIBLE_DEVICES", "4"}});
-    assert(env == (ss::Env{{"PATH", "/bin"}, {"HOME", "/h"}, {"ROCR_VISIBLE_DEVICES", "4"}}));
+    char f[] = "RADIANCE_TUNE=unmanaged", g[] = "RADIANCE_KERNELS=unmanaged";
+    char h[] = "RADIANCE_HOME=/unmanaged", i[] = "RADIANCE_OP_ORACLE=unmanaged";
+    char* inherited[] = {a, b, c, d, e, f, g, h, i, nullptr};
+    const auto env = ss::child_environment(inherited, {{"ROCR_VISIBLE_DEVICES", "4"}, {"RADIANCE_HOME", "/managed"}});
+    assert(env == (ss::Env{{"PATH", "/bin"}, {"HOME", "/h"}, {"ROCR_VISIBLE_DEVICES", "4"},
+                           {"RADIANCE_HOME", "/managed"}}));
 }
 
 void start_detached_runs_and_stops() {

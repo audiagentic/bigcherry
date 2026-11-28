@@ -146,12 +146,80 @@ def analyze(bench: Path, trace_dir: Path) -> dict:
                        "rather than zero.")}
 
 
+def interval_union_ns(spans):
+    """Host elapsed time across concurrent ranks, not a sum of device events."""
+    total = 0
+    end = -1
+    for lo, hi in sorted(spans):
+        if hi > max(lo, end):
+            total += hi - max(lo, end)
+        end = max(end, hi)
+    return total
+
+
+def analyze_prefill(bench: Path, trace_dir: Path, expected_ranks: int) -> dict:
+    """Single-request first-token attribution, including draft and residual."""
+    ranks = read_steps(trace_dir)
+    if len(ranks) != expected_ranks:
+        raise ValueError("rank count differs from expected topology")
+    output = []
+    for rnd in json.loads(bench.read_text())["rounds"]:
+        if not rnd["ok"] or rnd["streams"] != 1:
+            raise ValueError("first-token attribution requires a successful single request")
+        req = rnd["per_stream"][0]
+        start, first = req["start_wall_ns"], req["first_wall_ns"]
+        if not rnd["wall_start_ns"] <= start < first <= rnd["wall_end_ns"]:
+            raise ValueError("invalid first-token clock window")
+        ttft = (first-start)/1e6
+        if abs(ttft-req["ttft_ms"]) > 10:
+            raise ValueError("wall clock and monotonic TTFT differ")
+        model, draft, details = [], [], {}
+        keys = None
+        for rank, steps in ranks.items():
+            rows = [r for r in steps if start <= r["wall_start_ns"] and r["wall_end_ns"] <= first]
+            if not rows:
+                raise ValueError("no trace in first-token window")
+            if any(r["wall_start_ns"] < first and r["wall_end_ns"] > start
+                   and r not in rows for r in steps):
+                raise ValueError("pass crosses first-token window")
+            model_keys = {r["step"] for r in rows if r["draft_pass"] == 0 and r["phase"] == 0}
+            if not model_keys or any(r["step"] not in model_keys for r in rows):
+                raise ValueError("not a pure prefill request")
+            if keys is None:
+                keys = model_keys
+            elif keys != model_keys:
+                raise ValueError("ranks disagree on prefill steps")
+            count = (rnd.get("engine") or {}).get("engine_steps_prefill_total")
+            if count is None or count != len(model_keys):
+                raise ValueError("prefill step counter mismatch")
+            ops = {}
+            for r in rows:
+                span = (r["wall_start_ns"], r["wall_end_ns"])
+                (model if r["draft_pass"] == 0 else draft).append(span)
+                for seg in r.get("tape_segments", []):
+                    ms = seg["ms"]
+                    if not isinstance(ms, (float,int)) or not math.isfinite(ms) or ms < 0:
+                        raise ValueError("invalid device interval")
+                    op = seg["op"]
+                    ops[op] = ops.get(op, 0.0) + ms
+            details[str(rank)] = {"passes": len(rows), "device_op_ms": ops}
+        m, d = interval_union_ns(model), interval_union_ns(draft)
+        u = interval_union_ns(model+draft)
+        output.append({"client_ttft_ms":ttft, "model_pass_union_ms":m/1e6,
+                       "draft_pass_union_ms":d/1e6, "overlap_ms":(m+d-u)/1e6,
+                       "unattributed_ms":(first-start-u)/1e6, "ranks":details})
+    return {"schema_version":2, "benchmark":bench.name, "rounds":output,
+            "caveat":"Host pass unions include trace overhead. Device intervals can overlap; unclassified is not compute-only. Residual is not measured HTTP or admission time."}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("benchmark", type=Path)
     parser.add_argument("trace_dir", type=Path)
+    parser.add_argument("--prefill-ranks", type=int, help="single-request first-token attribution")
     args = parser.parse_args()
-    print(json.dumps(analyze(args.benchmark, args.trace_dir), indent=2, sort_keys=True))
+    report = analyze_prefill(args.benchmark, args.trace_dir, args.prefill_ranks) if args.prefill_ranks is not None else analyze(args.benchmark, args.trace_dir)
+    print(json.dumps(report, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

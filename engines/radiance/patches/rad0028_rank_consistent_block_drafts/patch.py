@@ -95,18 +95,20 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
                    edits=(
     _edit(
         "rcd-buf",
-        """    dw.tokens  = decl_b(b, nm.f("dflash_tokens"), RAD_I32, {dg.max_seqs, dc.steps()});
+        """    dw.tokens  = decl_b(b, nm.f("dflash_tokens"), RAD_I32, {dg.max_seqs, nodes});
 """,
         """    /* BC_VTP31_RCD_BUF (rad0028): with ranks to agree, the tokens buffer holds whole 16-byte
-     * words for the gather, and every rank's copy lands in `dflash_tokens_ranks`. */
-    const bool rcd = dg.world > 1 && !dc.tree;
+     * words for the gather, and every rank's copy lands in `dflash_tokens_ranks`.
+     * Preserve native proposal width; a resolved tree does not issue or read the gather.
+     * A tree request that falls back to an equal-width chain still needs the gather. */
+    const bool rcd = dg.world > 1 && nodes == dc.steps();
     int64_t tok_rows = dg.max_seqs;
     while (rcd && (tok_rows * dc.steps()) % 4) ++tok_rows;
-    dw.tokens  = decl_b(b, nm.f("dflash_tokens"), RAD_I32, {tok_rows, dc.steps()});
+    dw.tokens  = decl_b(b, nm.f("dflash_tokens"), RAD_I32, {tok_rows, nodes});
     if (rcd) {
         dw.tok_rows = tok_rows;
         dw.tokg = decl_b(b, nm.f("dflash_tokens_ranks"), RAD_I32,
-                         {(int64_t)dg.world * tok_rows, dc.steps()});
+                         {(int64_t)dg.world * tok_rows, nodes});
         if (!dw.tokg) return RAD_E_INVAL;
     }
 """,
@@ -116,7 +118,7 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
         "rcd-prop",
         """    drf.proposal       = dw.tokens;
 """,
-        """    drf.proposal       = dw.tokg ? dw.tokg : dw.tokens; /* BC_VTP31_RCD_PROP (rad0028): rank 0's */
+        """    drf.proposal       = !m.tree && dw.tokg ? dw.tokg : dw.tokens; /* BC_VTP31_RCD_PROP (rad0028): rank 0's */
 """,
         guard="BC_VTP31_RCD_PROP",
     ),

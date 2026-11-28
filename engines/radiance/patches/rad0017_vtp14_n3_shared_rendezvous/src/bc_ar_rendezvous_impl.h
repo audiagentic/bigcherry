@@ -2,10 +2,12 @@
 #pragma once
 
 #include "r4d_ar_links.h"
+#include "r4d_chain.h"
 
 #include <dlfcn.h> /* BC_VTP14_N3_INCLUDE: the engine's shared-slot service */
 #include <new>
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>

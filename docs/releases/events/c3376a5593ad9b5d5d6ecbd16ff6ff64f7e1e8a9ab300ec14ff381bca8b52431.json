@@ -1,0 +1,24 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_074111_fix-shared-kernel-source-copyi_8214",
+  "files": [
+    "docs/evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md",
+    "engines/radiance/components/libr2/CMakeLists.txt",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr3/KERNEL_GROUPS.md",
+    "engines/radiance/components/libr3/r3_groups.cmake",
+    "engines/radiance/components/libr3/r3_groups_test.py",
+    "engines/radiance/components/libr3/r3_rewrite.py",
+    "tools/bigcherry/engine_adapters/radiance_bump.py",
+    "tools/bigcherry/patch/compose_check.py",
+    "tools/tests/release/test_native_rewrite_drift.py"
+  ],
+  "plan-item-ids": [
+    "MEN24",
+    "RCS26"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Materialize shared registry include fragments, validate local include copying and both rewrite rule sets, reuse unit parser and classify new 2.3 kernel units. 22 regression tests and both registry/shape object compiles passed.",
+  "timestamp-utc": "2026-11-27T07:41:11.726434Z",
+  "user-summary-candidate": "Fix shared kernel source-copying and update existing kernel families for Radiance 2.3."
+}

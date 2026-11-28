@@ -55,6 +55,7 @@ int bc_serving_managed_bind(rad::fleet::FleetConfig* fleet) {
         return refuse("memory.card-headroom-mib is not honoured by a single-model managed start on this runtime; remove it");
     rad::fleet::ModelEntry& model = fleet->models.front();
     rad::Config& cfg = model.cfg;
+    if (cfg.proceed_incompatible) return refuse("managed native fleet YAML cannot waive engine capability checks");
     if (!a.quality && (cfg.kld() || cfg.calib() || cfg.diagnose_mode() || cfg.debug_graph))
         return refuse("the file selects an offline or debug mode; a managed start serves");
     if (cfg.host != "127.0.0.1") return refuse("only the managed loopback listener is supported (server.host is " + cfg.host + ")");

@@ -10,7 +10,7 @@ Both stayed unused: after a load, about 8 GiB of the R9700 sat free.
 When every rank's model is dense (no expert plane), its weights all fit the common weights pool and no card limit was
 given (--gpu-memory-mib) on a discrete card (under any --placement; in a dense world it replaces the cheaper-rank
 re-split, which there only shrinks a KV pool and frees nothing), each rank's weights pool becomes its own weights. Its KV pool takes the
-common pool, plus what its weights pool gave back, plus the free memory it measured above the smallest card's. The
+common pool, plus what its weights pool gave back, plus the room above the least rank after its own reserves. The
 common token count is then the least any rank pages in its own pool, and every rank's KV pool is cut to the least whole
 MiB that pages that count. When that count is no larger than the common split's, nothing changes.
 Source-pinned to radiance v1.17.0 (19d4e8fe), after rad0028.
@@ -21,31 +21,31 @@ import re
 
 from bigcherry.patcher import Edit, FilePatch
 
-_ANCHOR = """                         ? fmt(", and %lld MiB stay unclaimed", (long long)rs.unusable_mib).c_str()
-                         : "");
+_ANCHOR = """                RAD_INFO("card %d uses %lld MiB of room above its own headroom for resident experts",
+                         ranks_[i]->device, (long long)add);
+            }
         }
     }
 
     for (size_t ri = 0; ri < ranks_.size(); ++ri) {
 """
 
-_TEXT = """                         ? fmt(", and %lld MiB stay unclaimed", (long long)rs.unusable_mib).c_str()
-                         : "");
+_TEXT = """                RAD_INFO("card %d uses %lld MiB of room above its own headroom for resident experts",
+                         ranks_[i]->device, (long long)add);
+            }
         }
 
         /* BC_VTP33_OWN_SPLIT (rad0029): an uneven dense world gives every rank its own split. It
          * replaces the cheaper-rank re-split above, which in a dense world only shrinks a cheaper
          * rank's KV pool (its weights pool cannot grow past its weights) and frees nothing. Each weights pool holds its own rank's weights; each KV
-         * pool takes the common pool, what its weights pool gave back and the free memory it
-         * measured above the smallest card's. The common token count is the least any rank pages
+         * pool takes the common pool, what its weights pool gave back and the room above the least rank after its own reserves. The common token count is the least any rank pages
          * in its own pool, and each KV pool is cut to the least whole MiB that pages it. */
         {
             bool own = ranks_.size() > 1 && facts.size() == ranks_.size() &&
-                       cfg_.gpu_memory_mib <= 0;
-            int64_t free_min = -1, statics_max = 0;
+                       !broker_ && cfg_.vram_claim <= 0 && cfg_.gpu_memory_mib <= 0;
+            int64_t statics_max = 0;
             for (const VramFacts& f : facts) {
                 own = own && f.experts == 0 && !f.unified;
-                if (free_min < 0 || f.free < free_min) free_min = f.free;
                 statics_max = std::max(statics_max, f.statics);
             }
             own = own && (statics_max + kMiB - 1) / kMiB <= cfg_.vram_weights_mib;
@@ -56,7 +56,7 @@ _TEXT = """                         ? fmt(", and %lld MiB stay unclaimed", (long
             for (size_t i = 0; own && i < ranks_.size(); ++i) {
                 own_w[i] = std::max<int64_t>((facts[i].statics + kMiB - 1) / kMiB, 1);
                 own_pool[i] = cfg_.vram_kv_mib + (cfg_.vram_weights_mib - own_w[i]) +
-                              std::max<int64_t>(facts[i].free - free_min, 0) / kMiB;
+                              vram_budget_rank_spare_mib(cfg_, facts, i, false);
                 own_kv[i] = std::make_unique<KVManager>();
                 own_kv[i]->set_drafter_window_snapshot(drafter_window_snap(ranks_[i]->program));
                 if (declare_ring_windows(*own_kv[i], ranks_[i]->program) != RAD_OK ||
@@ -109,4 +109,25 @@ BRINGUP = FilePatch(path="core/engine_bringup.cpp", language="none", description
     ),
 ))
 
-PATCHES = (BRINGUP,)
+# Reuse the native room/reserve arithmetic. Keep the native named-only default for
+# the expert path; the dense path deliberately also uses unnamed card spare room.
+_SPARE_SIG = """int64_t vram_budget_rank_spare_mib(const Config& cfg, const std::vector<VramFacts>& per_rank,
+                                   size_t rank)"""
+def _edit(id, old, new, guard):
+    return Edit(id=id, anchor=re.escape(old), mode="replace", text=new,
+                guard=re.escape(guard), expect_matches=1, max_span_lines=old.count("\n")+1,
+                rationale="VTP33 reuse native per-card reserve accounting")
+
+BUDGET_HEADER = FilePatch(path="core/mem/vram_budget.h", language="none", description="Dense rank spare", edits=(
+    _edit("own-spare-decl", _SPARE_SIG + ";",
+          _SPARE_SIG.replace("size_t rank)", "size_t rank, bool named_only = true)") + ";",
+          "bool named_only = true)"),
+))
+BUDGET = FilePatch(path="core/mem/vram_budget.cpp", language="none", description="Dense rank spare", edits=(
+    _edit("own-spare-def", _SPARE_SIG + " {",
+          _SPARE_SIG.replace("size_t rank)", "size_t rank, bool named_only)") + " {",
+          "size_t rank, bool named_only)"),
+    _edit("own-spare-filter", "    if (!named) return 0;",
+          "    if (named_only && !named) return 0; /* BC_VTP33_SPARE_FILTER */", "BC_VTP33_SPARE_FILTER"),
+))
+PATCHES = (BUDGET_HEADER, BUDGET, BRINGUP)

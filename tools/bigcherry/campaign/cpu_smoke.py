@@ -159,7 +159,7 @@ def run(spec: CpuSmokeSpec, out_dir: Path, shutdown_method: str | None) -> dict[
         _drive(spec, log_path, result, failures, shutdown_method)
     except CpuSmokeError as exc:
         failures.extend(exc.failures)
-    except (ServerError, OSError) as exc:
+    except (ServerError, OSError, ValueError) as exc:
         failures.append(f"server: {exc}")
     return _finish(result, out_dir, started)
 
@@ -169,10 +169,17 @@ def _drive(spec: CpuSmokeSpec, log_path: Path, result: dict[str, Any], failures:
     unset = tuple(sorted(
         name for name in os.environ if name.startswith(spec.env_unset_prefixes) and name not in spec.env_overrides
     )) if spec.env_unset_prefixes else ()
+    def native_args(host: str, port: int) -> tuple[str, ...]:
+        assert spec.argument_builder is not None
+        argv = spec.argument_builder(log_path.parent, host, port)
+        result["launch_args"] = list(argv)
+        return argv
+
     runner = ServerRunner(
         serve=spec.serve, binary=spec.binary, model=spec.model, port=spec.port, extra_args=spec.args,
         env_overrides=spec.env_overrides, env_unset=unset, log_path=log_path, command_prefix=spec.command_prefix,
         shutdown_method=shutdown_method,
+        argument_builder=native_args if spec.argument_builder else None,
     )
     result["port"] = runner.port
     launched = time.monotonic()

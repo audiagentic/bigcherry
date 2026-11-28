@@ -159,13 +159,14 @@ class ComponentGateTests(unittest.TestCase):
         real[component] = dataclasses.replace(real[component], test_targets=targets)
         return patch.object(runtime_bundle.components, "load_all", return_value=real)
 
-    def checks(self, abi: int = 7, layouts: dict[str, int | None] | None = None):
+    def checks(self, abi: int = 7, layouts: dict[str, int | None] | None = None, canonical_build=None):
         """`layouts` overrides the layout fingerprint a named plugin reports (None: no export); the rest report LAYOUT."""
         layouts = layouts or {}
         with patch.dict(os.environ, FAKE_HOST):
             return {c.id: c for c in radiance_bump.compile_checks(
                 self.context, self.source, self.work, platform_name=PLATFORM, runner=self.runner,
-                abi_reader=lambda so: (abi, layouts.get(so.name, LAYOUT)), lister=self.lister)
+                abi_reader=lambda so: (abi, layouts.get(so.name, LAYOUT)), lister=self.lister,
+                canonical_build=canonical_build)
                     if not c.id.startswith("composition-")}   # those two have their own fixtures (patch/test_bump_composition_gates.py)
 
     def run_phase(self, checks):
@@ -193,6 +194,33 @@ class ComponentGateTests(unittest.TestCase):
         self.assertIn(["ctest", "--test-dir"], [call[:2] for call in self.calls])
         self.assertTrue(any("--target" in call and "r3_moe_shm_test" in call for call in self.calls))
         self.assertEqual(self.run_phase(checks.values()), "oid")
+
+    def test_canonical_runtime_is_checked_without_a_second_build(self):
+        # Build once with the existing fake runner, then make that runtime the canonical artifact.
+        self.assertEqual(self.checks()["components-build"].run(), [])
+        canonical = self.work / "radiance-build"
+        self.calls.clear()
+        requests = []
+        def provide():
+            requests.append(canonical)
+            return canonical
+        checks = self.checks(canonical_build=provide)
+        self.assertEqual(requests, [])
+        self.assertEqual(checks["components-build"].run(), [])
+        self.assertEqual(checks["component-plugin-abi"].run(), [])
+        self.assertEqual(checks["component-tests"].run(), [])
+        self.assertEqual(requests, [canonical])
+        self.assertFalse(any(c[:2] == ["cmake", "-S"] for c in self.calls))
+        self.assertTrue(all("--target" in c for c in self.calls if c[:2] == ["cmake", "--build"]))
+        self.assertTrue(all(str(canonical) in " ".join(c) for c in self.calls))
+        bad = self.checks(abi=6, canonical_build=provide)
+        self.assertEqual(bad["components-build"].run(), [])
+        self.assertTrue(bad["component-plugin-abi"].run())
+
+    def test_missing_canonical_runtime_fails_the_build_gate(self):
+        checks = self.checks(canonical_build=lambda: self.tmp / "absent")
+        self.assertIn("no runtime home", checks["components-build"].run()[0])
+        self.assertEqual(self.calls, [])
 
     def test_configure_uses_the_build_platforms_compilers_options_and_targets(self):
         checks = self.checks()
@@ -444,6 +472,26 @@ class RadianceAuditTests(unittest.TestCase):
         ctx = self.ctx()
         radiance_bump.check_patch_state(ctx)
         self.assertEqual((ctx.results[0].id, ctx.results[0].ok), ("patches.application_state", False))
+
+    def test_edits_to_a_file_another_patch_creates_are_unapplied_on_an_unpatched_tree(self):
+        from types import SimpleNamespace
+
+        from bigcherry.patch import registry as patch_registry
+
+        maker, editor = SimpleNamespace(patch_id="p_make"), SimpleNamespace(patch_id="p_edit")
+        files = {"p_make": [SimpleNamespace(path="libx/bc_made.h", create=True, edits=[])],
+                 "p_edit": [SimpleNamespace(path="libx/bc_made.h", create=False, edits=[])]}
+        with patch.object(patch_registry, "load_registry", return_value=SimpleNamespace(descriptors=[maker, editor])), \
+                patch.object(patch_registry, "load_implementation", side_effect=lambda e, d, root: files[d.patch_id]):
+            ctx = self.ctx()
+            radiance_bump.check_patch_state(ctx)
+        self.assertTrue(ctx.results[0].ok, ctx.results[0])
+        files["p_edit"][0].path = "libx/upstream_gone.h"
+        with patch.object(patch_registry, "load_registry", return_value=SimpleNamespace(descriptors=[maker, editor])), \
+                patch.object(patch_registry, "load_implementation", side_effect=lambda e, d, root: files[d.patch_id]):
+            ctx = self.ctx()
+            radiance_bump.check_patch_state(ctx)
+        self.assertFalse(ctx.results[0].ok)
 
     def test_audit_dispatches_through_the_adapter(self):
         report = source_audit.audit(self.root, engine="radiance")

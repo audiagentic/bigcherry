@@ -61,10 +61,10 @@ class MultiseqPipeTests(unittest.TestCase):
             # no piece size is recomputed from T once the cut is chosen
             self.assertEqual(plugin.count("pipe_rows(h.T)"), 0)
             self.assertNotIn("R = pipe_rows(T);\n    ArPieces", plugin)
-            gdn = (root / "arch/common/rad_block_gdn_fp8.h").read_text()
+            gdn = (root / "arch/common/rad_block_gdn_q.h").read_text()
             self.assertEqual(gdn.count("BC_VTP31_MSP_GDN_CLOSE"), 1)
             ctx = (root / "core/runtime/ctx.cpp").read_text()
-            self.assertIn("sizeof(RadBatch) == 504", ctx)
+            self.assertIn("sizeof(RadBatch) == 512", ctx)
             self.assertIn("mix(cu_key);", ctx)
             self.assertIn("uint64_t cu_key = 0;", ctx)
             again = apply_all(load(PKG), root)

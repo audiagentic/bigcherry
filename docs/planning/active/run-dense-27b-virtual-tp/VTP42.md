@@ -64,6 +64,10 @@ L. Interface refactor of admission/walk order is the risky part (identity test g
 
 **2026-11-16 owner decision:** -long default switched to `kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000` (acceptance criterion 3: budget beats the VTP41 defaults on the 100k mean with mid-size waits unchanged).
 
+RV4754: preserve deployed governor and existing long-profile admission in baseline. Test budget/cap/arrival and prefix-aware starvation/progress; only fix actual regressions. New policy-factor search and simulator/backfill extension after baseline unless required by VTP59.
+
+Focused TP3 governor screen on exact candidate 927a24bf85c2ac29d3dbe0b779063323: 8 streams, 4096/512 then 512/128, 2 reps each, FP8 KV exact wire, pipeline min256, batch2048, interleave off, target75. Three verified fresh-start policies arrival; budget factor1.0/remaining/512 exemption/120000ms; cap2/remaining/512/120000ms. All 12 rounds complete, prompt hashes and actual counts match, paired tuning receipts, six portable exports, zero preemptions, clean stops. Long throughput / max TTFT / p95 event gap: arrival180.3305/15.596s/154.171ms; budget125.088/27.277s/162.6465ms; cap114.489/30.842s/158.798ms. Short throughput281.9865/278.9115/275.8155. End mixed-target misses/steps142/144,347/351,440/444, learned cap64 across all (one geometry quantum); source busy_cap raises effective allowance for participant fairness and backfill, so target is soft and reducing numeric target alone is unlikely to fix latency. Restricted admission worsens 8K-context burst performance; reject these arms, preserve long-profile governor and existing defaults. Evidence tp3-governor-screen.json. No new engine patch or qualified production setting. Next isolate per-mixed-step row/participant floor vs decode cost using native metrics/host scheduler simulation; only change scheduler if a latency-safe fair policy can be proven. Baseline release gate remains open; avoid repeating already covered screens.
+
 ## Change Log
 
 - 2026-11-15T13:01:55.739115+00:00 (created-by): Created by agent
@@ -71,3 +75,5 @@ L. Interface refactor of admission/walk order is the risky part (identity test g
 - 2026-11-15T15:16:17.767179+00:00 (updated-by): Updated: section:notes
 - 2026-11-15T15:16:25.831934+00:00 (state-transition): State: pending → in_progress
 - 2026-11-15T21:14:43.227715+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:13:42.568082+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T20:37:55.186640+00:00 (updated-by): Updated: section:notes

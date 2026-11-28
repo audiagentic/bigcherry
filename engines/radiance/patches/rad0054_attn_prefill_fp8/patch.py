@@ -292,7 +292,7 @@ PATCHES = (
         _replace("prefill-mode-geometry", '    const char* kv_dtype = "bf16";',
                  '    const char* kv_dtype = "bf16";\n    uint32_t attn_prefill_fp8 = 0;'),
     )),
-    FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none", edits=(
+    FilePatch(path="arch/common/rad_block_attn_gated_q.h", language="none", edits=(
         _replace("prefill-mode-op-params", '    op_attn = rad_decl_op(b, "attn_paged",\n                     RAD_PARAMS(',
                  "    const RadParam attn_params[] = {"),
         _replace("prefill-mode-op-key",

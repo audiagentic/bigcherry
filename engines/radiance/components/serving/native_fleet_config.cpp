@@ -146,6 +146,8 @@ NativeFleetConfig::NativeFleetConfig(NativeConfigSnapshot snapshot, const std::s
     // Managed manifests construct one Engine from the model Config. These
     // settings have no effect without the upstream Fleet lifecycle.
     const auto& model = fleet_.models.front();
+    if (model.cfg.proceed_incompatible)
+        throw std::invalid_argument("managed native fleet YAML cannot waive engine capability checks");
     const rad::fleet::FleetConfig defaults;
     const std::pair<bool, const char*> fleet_only[] = {
         {fleet_.host_mib != defaults.host_mib, "memory.host-mib"},
@@ -220,7 +222,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
         };
 
         const nlohmann::json report = {
-            {"protocol", "bigcherry.native-fleet-inspect/v2"},
+            {"protocol", "bigcherry.native-fleet-inspect/v3"},
             {"snapshot", {{"sha256", managed.snapshot().sha256()},
                            {"resolution_root", managed.snapshot().resolution_root()}}},
             {"engine", {{"abi_version", RAD_ABI_VERSION},
@@ -248,7 +250,30 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                                            ? nlohmann::json(cfg.pipelined_prefill_min_rows) : nlohmann::json(nullptr)},
                                       {"prefill_governor", stated("--prefill-governor", cfg.prefill_governor)},
                                       {"tp_ownership", stated("--tp-ownership", cfg.tp_ownership)},
-                                      {"tune_pin", stated("--tune-pin", cfg.tune_pin)}}},
+                                      {"tune_pin", stated("--tune-pin", cfg.tune_pin)},
+                                      {"attn_prefill_fp8", stated("--attn-prefill-fp8",
+                                          cfg.attn_prefill_fp8 == RAD_ATTN_FP8_QK ? "qk" :
+                                          cfg.attn_prefill_fp8 == RAD_ATTN_FP8_PV ? "pv" :
+                                          cfg.attn_prefill_fp8 == (RAD_ATTN_FP8_QK | RAD_ATTN_FP8_PV) ? "both" : "off")},
+                                      {"busy_prefill_chunk", stated("--busy-prefill-chunk",
+                                          cfg.busy_prefill_chunk < 0 ? "auto" : cfg.busy_prefill_chunk == 0 ? "off" :
+                                          std::to_string(cfg.busy_prefill_chunk))},
+                                      {"state_cache_dtype", stated("--state-cache-dtype", cfg.state_cache_dtype)},
+                                      {"tp_wire_min_kb", cfg.given.contains("--tp-wire-min-kb")
+                                          ? nlohmann::json(cfg.tp_wire_min_kb) : nlohmann::json(nullptr)}}},
+                         // Parser values, not the effective engine bring-up policy.
+                         {"scheduler", {{"interleave_authored", cfg.prefill_interleave_set},
+                                        {"interleave_steps", cfg.prefill_interleave},
+                                        {"interleave_share", cfg.prefill_interleave < 0
+                                            ? nlohmann::json(nlohmann::json(cfg.prefill_interleave_share).dump()) : nlohmann::json(nullptr)},
+                                        {"mixed_step_target_ms", cfg.mixed_step_target_ms},
+                                        {"mixed_step_target_authored", cfg.given.contains("--mixed-step-target-ms")},
+                                        {"room_gate", cfg.prefill_room_gate},
+                                        {"room_gate_authored", cfg.given.contains("--prefill-room-gate")},
+                                        {"long_prefill_token_threshold", cfg.long_prefill_token_threshold},
+                                        {"long_prefill_authored", cfg.given.contains("--long-prefill-token-threshold")},
+                                        {"preempt_wait_ms", cfg.preempt_wait_ms},
+                                        {"preempt_wait_authored", cfg.given.contains("--preempt-wait-ms")}}},
                          {"settings", {{"max_batched_tokens", cfg.max_tok},
                                        {"checkpoint_interval", cfg.checkpoint_interval},
                                        {"placement", cfg.placement},

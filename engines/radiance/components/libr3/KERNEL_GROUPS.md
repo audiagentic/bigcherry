@@ -33,6 +33,17 @@ to their expected families in a full build. Intentionally partial `R3_ONLY`
 configurations omit that coverage test. A new upstream unit defaults to `core` until it
 is classified explicitly; review the manifest at every pin bump.
 
+For Radiance 2.3.0 the inventory grows from 115 to 130 upstream units.
+Keep the same eight families: GGML GEMMs and int8 logits belong to
+`gemm_quant`, BF16x12 to `gemm_dense`, DS41 sparse ops to `attention`,
+DSpark walk to `speculation`, position-table resampling to `multimodal`,
+and SiTU expert activation to `moe`. DS41 elementwise and Inkling
+control fusions remain shared `core` units. The eight new registry/shape
+`.inc` fragments are copied and tracked by the shared rewriter; they
+are include dependencies, not additional compilation owners.
+libr2 uses the same upstream unit parser (including mixed-case names),
+but retains its explicitly qualified RDNA2 unit allowlist.
+
 Models and engine rows **do not define compilation boundaries**: a model
 may use several families, and one family can support many models. For
 example, DFlash2 invokes shared IQR GEMMs from `gemm_quant` and its own

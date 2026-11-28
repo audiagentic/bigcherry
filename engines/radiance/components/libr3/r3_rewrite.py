@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -93,7 +94,7 @@ def rewrite(source: Path, rule_file: Path, native: Path | None) -> tuple[dict[st
     texts: dict[str, str] = {}
     report: list[str] = []
     for path in sorted(source.iterdir()):
-        if path.is_dir() or path.suffix not in (".hip", ".h", ".cpp"):
+        if path.is_dir() or path.suffix not in (".hip", ".h", ".cpp", ".inc"):
             continue
         text = path.read_text(encoding="utf-8")
         for find, replace in todo:
@@ -128,6 +129,16 @@ def rewrite(source: Path, rule_file: Path, native: Path | None) -> tuple[dict[st
         if path.name in native_rules:
             report.append(f"r3_rewrite: native form of {path.name}: {len(native_rules[path.name])} block(s)")
         texts[path.name] = text
+    # A quoted include that belongs to the upstream source directory must
+    # survive materialization. Do not try to resolve external SDK headers here.
+    for name, text in texts.items():
+        for include in re.findall(r'^\s*#\s*include\s+"([^"]+)"', text, re.M):
+            target = source / include
+            if target.is_file() and target.resolve().is_relative_to(source.resolve()):
+                if include not in texts:
+                    failures.setdefault(name, []).append(f"local include not copied: {include}")
+            elif include.startswith("r4d_") and target.suffix == ".inc":
+                failures.setdefault(name, []).append(f"missing local include: {include}")
     for find, count in hits.items():
         report.append(f"r3_rewrite: {count} x {find!r}")
         if count == 0:

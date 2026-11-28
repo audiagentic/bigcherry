@@ -21,7 +21,7 @@ reason = "edits are to disjoint regions of the unit; composition is proven by ga
 layers = ["patch:rad0051_b16_kv_kernels", "rewrite:libr3"]
 reason = "edits are to disjoint regions of the unit; composition is proven by gate 1 and the compile gates"
 
-[unit.r4d_gemm_fp8a8]
+[unit.r4d_gemm_i8a8]
 layers = ["patch:rad0061_iq8r_f32_scale", "rewrite:libr3"]
 reason = "edits are to disjoint regions of the unit; composition is proven by gate 1 and the compile gates"
 

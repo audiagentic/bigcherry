@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import urllib.parse
+import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -81,6 +82,11 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
             raise run_records.RecordError(f"native build metadata lacks {key}")
     if not _SHA.fullmatch(metadata["binary_hash"]):
         raise run_records.RecordError("native build binary hash is not SHA-256")
+    from .workloads import _release_identity
+    try:
+        metadata, release_inputs = _release_identity(build, metadata, None, allow_slice_only=True)
+    except (OSError, ValueError, KeyError) as exc:
+        raise run_records.RecordError(f"invalid native release identity: {exc}") from exc
     binary = build / "bin/radiance"
     if binary.is_file() and _digest(binary.read_bytes()) != metadata["binary_hash"]:
         raise run_records.RecordError(
@@ -117,6 +123,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         "native_session": session_file,
         "native_feature_states": native_states,
         "native_build_metadata": metadata_file,
+        **release_inputs,
     }
     for p in session.get("processes", []):
         if not isinstance(p, dict) or not isinstance(p.get("log"), str):
@@ -195,7 +202,10 @@ def verify_live_target(run_dir: Path, url: str) -> None:
     Binding the endpoint prevents attributing a healthy response from one
     server to a different run's strict manifest.
     """
-    context = _session_context(run_dir)
+    _verify_live_context(_session_context(run_dir), url)
+
+
+def _verify_live_context(context: dict, url: str) -> None:
     if context["session"]["state"] not in ("running", "healthy"):
         raise run_records.RecordError(
             "probe target is not a running native serving owner"
@@ -227,6 +237,188 @@ def verify_live_target(run_dir: Path, url: str) -> None:
         raise run_records.RecordError(
             "probe HTTP port differs from the admitted native owner"
         )
+
+
+# Capture only performance configuration, never the diagnostic environment or host.
+TUNING_DIAGNOSTIC_OPTIONS = frozenset({
+    "--tp", "--tp-wire", "--tp-wire-min-kb", "--tp-ownership", "--tune-pin",
+    "--pipelined-prefill", "--pipelined-prefill-min-rows", "--prefill-interleave",
+    "--mixed-step-target-ms", "--max-num-batched-tokens", "--max-num-seqs",
+    "--kv-cache-dtype", "--state-cache-dtype", "--attn-prefill-fp8",
+    "--busy-prefill-chunk", "--prefill-governor", "--prefill-room-gate",
+    "--long-prefill-token-threshold", "--preempt-wait-ms", "--no-prefix-cache",
+})
+
+
+def reconcile_tuning_diagnostics(document: dict, expected: dict[str, str]) -> dict:
+    """Compare native diagnostic spellings, not a second interpretation of YAML."""
+    if not expected or not set(expected) <= TUNING_DIAGNOSTIC_OPTIONS:
+        raise run_records.RecordError("missing or unsupported tuning expectation")
+    if not all(isinstance(v, str) and v for v in expected.values()):
+        raise run_records.RecordError("invalid expected tuning value")
+    if not isinstance(document, dict) or document.get("startup_failed") is not False or document.get("unsupported_configuration") is not False:
+        raise run_records.RecordError("native diagnostics do not prove a supported startup")
+    rows = document.get("configuration")
+    if not isinstance(rows, list):
+        raise run_records.RecordError("native diagnostics configuration is missing")
+    observed = {}
+    for row in rows:
+        if not isinstance(row, dict) or not isinstance(row.get("option"), str):
+            raise run_records.RecordError("malformed native diagnostics row")
+        flag = row["option"]
+        if flag not in TUNING_DIAGNOSTIC_OPTIONS:
+            continue
+        if flag in observed or not all(isinstance(row.get(k), str) and row[k] for k in ("value", "source")):
+            raise run_records.RecordError(f"duplicate or malformed native tuning row: {flag}")
+        observed[flag] = {k: row[k] for k in ("value", "source")}
+    for flag, value in expected.items():
+        if observed.get(flag, {}).get("value") != value:
+            raise run_records.RecordError(f"effective tuning differs or is missing: {flag}")
+    return observed
+
+def _manifest_tuning_expectations(manifest: dict) -> dict[str, str]:
+    """Direct fields with stable native diagnostic spellings (not dynamic defaults)."""
+    spec = manifest["spec"]
+    engine = spec["processes"]["engine"]
+    expected = {}
+    for section, keys in (
+        ("scheduler", ("tp", "max_num_batched_tokens")),
+        ("execution", ("kv_cache_dtype", "tp_wire")),
+        ("tuning", ("tp_ownership", "tune_pin", "tp_wire_min_kb",
+                    "pipelined_prefill", "pipelined_prefill_min_rows")),
+    ):
+        for key in keys:
+            value = engine.get(section, {}).get(key)
+            if value is not None and value != "auto" and value != "":
+                if key == "pipelined_prefill_min_rows" and value == 0:
+                    continue
+                expected["--" + key.replace("_", "-")] = str(value)
+    interleave = engine.get("tuning", {}).get("prefill_interleave")
+    if interleave is not None:
+        expected["--prefill-interleave"] = "off" if interleave == 0 else str(interleave)
+    sessions = spec["intent"].get("service", {}).get("max_sessions")
+    if sessions is not None:
+        expected["--max-num-seqs"] = str(sessions)
+    if engine.get("execution", {}).get("no_prefix_cache") == "on":
+        expected["--no-prefix-cache"] = "prefix caching off"
+    return expected
+
+
+def _context_tuning_expectations(context: dict) -> dict[str, str]:
+    """Use the matched owner's parsed scheduler, bound to the sealed native YAML."""
+    expected = _manifest_tuning_expectations(context["manifest"])
+    selection = context["session"].get("selection", {})
+    if "native_scheduler" not in selection:
+        return expected  # older owner; explicit arm expectations remain necessary
+    receipt = selection["native_scheduler"]
+    native = context["manifest"]["spec"].get("native_config", {})
+    if (not isinstance(receipt, dict) or set(receipt) != {"snapshot_sha256", "parsed"}
+            or not native.get("sha256") or receipt["snapshot_sha256"] != native["sha256"]):
+        raise run_records.RecordError("parsed scheduler does not bind native YAML")
+    parsed = receipt["parsed"]
+    if not isinstance(parsed, dict):
+        raise run_records.RecordError("malformed parsed scheduler")
+    for key in ("interleave_authored", "mixed_step_target_authored", "room_gate",
+                "room_gate_authored", "long_prefill_authored", "preempt_wait_authored"):
+        if type(parsed.get(key)) is not bool:
+            raise run_records.RecordError(f"malformed parsed scheduler: {key}")
+    for key, lo, hi in (("interleave_steps", -1, 64), ("mixed_step_target_ms", 0, 60000),
+                        ("long_prefill_token_threshold", 0, 2**63-1), ("preempt_wait_ms", 0, 2**63-1)):
+        if type(parsed.get(key)) is not int or not lo <= parsed[key] <= hi:
+            raise run_records.RecordError(f"malformed parsed scheduler: {key}")
+    # Interleave omission is resolved by engine bring-up, not assumed off.
+    steps = parsed["interleave_steps"]
+    share = parsed.get("interleave_share")
+    if steps == -1:
+        try:
+            if not isinstance(share, str) or not 0 < float(share) <= 4:
+                raise ValueError()
+        except ValueError as exc:
+            raise run_records.RecordError("malformed parsed interleave share") from exc
+    elif share is not None:
+        raise run_records.RecordError("unexpected parsed interleave share")
+    scheduler = {
+        "--mixed-step-target-ms": str(parsed["mixed_step_target_ms"] or "off"),
+        "--prefill-room-gate": "on" if parsed["room_gate"] else "off",
+        "--long-prefill-token-threshold": str(parsed["long_prefill_token_threshold"] or "0 (off)"),
+        "--preempt-wait-ms": str(parsed["preempt_wait_ms"]),
+    }
+    if parsed["interleave_authored"]:
+        scheduler["--prefill-interleave"] = (
+            f"auto:{float(share):.6f}" if steps == -1 else str(steps or "off")
+        )
+    elif steps != 0 or "--prefill-interleave" in expected:
+        raise run_records.RecordError("omitted interleave contradicts parsed/manifest values")
+    for flag, value in scheduler.items():
+        if flag in expected and expected[flag] != value:
+            raise run_records.RecordError(f"parsed scheduler contradicts manifest: {flag}")
+    expected.update(scheduler)
+    return expected
+
+
+def capture_tuning_receipt(run_dir: Path, url: str, expected: dict[str, str]) -> dict:
+    """Bind live native diagnostics to the admitted build/session and exact manifest."""
+    context = _session_context(run_dir)
+    _verify_live_context(context, url)
+    manifest_expected = _context_tuning_expectations(context)
+    if not expected and "native_scheduler" not in context["session"].get("selection", {}):
+        raise run_records.RecordError("older native owner requires explicit tuning expectations")
+    for flag, value in expected.items():
+        if flag in manifest_expected and manifest_expected[flag] != value:
+            raise run_records.RecordError(f"tuning expectation contradicts manifest: {flag}")
+    expected = {**manifest_expected, **expected}
+    endpoint = urllib.parse.urlsplit(url)
+    if endpoint.path not in ("", "/") or endpoint.query or endpoint.fragment:
+        raise run_records.RecordError("tuning receipt requires a bare owner endpoint")
+    with urllib.request.urlopen(url.rstrip("/") + "/diagnostics", timeout=10) as response:
+        data = json.load(response)
+    observed = reconcile_tuning_diagnostics(data, expected)
+    after = _session_context(run_dir)
+    _verify_live_context(after, url)
+    if (after["run_id"], after["manifest_bytes"], after["identity"]) != (
+        context["run_id"], context["manifest_bytes"], context["identity"]
+    ) or _context_tuning_expectations(after) != manifest_expected:
+        raise run_records.RecordError("native owner changed during tuning receipt capture")
+    return {
+        "schema_version": 1, "run_id": context["run_id"],
+        "manifest_sha256": _digest(context["manifest_bytes"]),
+        "identity": context["identity"], "expected": expected,
+        "observed": observed, "recorded_at": _now(),
+    }
+
+
+TUNING_RECEIPT_FILES = ("native-tuning-receipt.v1.json", "native-tuning-receipt-end.v1.json")
+
+
+def _tuning_receipt_inputs(context: dict) -> dict:
+    paths = [context["run_dir"] / name for name in TUNING_RECEIPT_FILES]
+    if not any(p.exists() or p.is_symlink() for p in paths):
+        return {}
+    receipts = [_read_json(p) for p in paths]
+    for receipt in receipts:
+        if (set(receipt) != {"schema_version", "run_id", "manifest_sha256", "identity",
+                            "expected", "observed", "recorded_at"}
+                or receipt["schema_version"] != 1 or receipt["run_id"] != context["run_id"]
+                or receipt["manifest_sha256"] != _digest(context["manifest_bytes"])
+                or receipt["identity"] != context["identity"]):
+            raise run_records.RecordError("native tuning receipt identity mismatch")
+        expected, observed = receipt["expected"], receipt["observed"]
+        if not isinstance(expected, dict) or not isinstance(observed, dict):
+            raise run_records.RecordError("malformed tuning receipt")
+        if not all(flag in expected and expected[flag] == value for flag, value in
+                   _context_tuning_expectations(context).items()):
+            raise run_records.RecordError("tuning receipt does not reconcile the manifest")
+        if not set(observed) <= TUNING_DIAGNOSTIC_OPTIONS or not all(
+                isinstance(row, dict) and set(row) == {"value", "source"} for row in observed.values()):
+            raise run_records.RecordError("unexpected native tuning receipt fields")
+        reconcile_tuning_diagnostics({
+            "startup_failed": False, "unsupported_configuration": False,
+            "configuration": [{"option": flag, **row} for flag, row in observed.items()],
+        }, expected)
+    if any(receipts[0][key] != receipts[1][key] for key in
+           ("run_id", "manifest_sha256", "identity", "expected", "observed")):
+        raise run_records.RecordError("native tuning configuration changed during measurement")
+    return {"native_tuning_start": paths[0], "native_tuning_end": paths[1]}
 
 
 def publish_probe(
@@ -455,7 +647,7 @@ def publish_native_lab(run_dir: Path, sidecar: Path, *,
         effective_config=c["manifest_bytes"], argv=_native_argv(c["session"]),
         environment=_native_environment(c["session"]),
         power_settings=c["manifest"]["spec"].get("power", {}),
-        inputs={**c["inputs"], "native_lab_measurement": path},
+        inputs={**c["inputs"], "native_lab_measurement": path, **_tuning_receipt_inputs(c)},
         host_facts=_host(host_snapshot), feature_states=c["feature_states"],
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],

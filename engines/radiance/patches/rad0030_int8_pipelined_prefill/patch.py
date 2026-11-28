@@ -40,14 +40,14 @@ def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
     )
 
 
-NORM = FilePatch(path="arch/common/rad_fp8.h", language="none", description="VTP37 plain norm writes the fed pair", edits=(
+NORM = FilePatch(path="arch/common/rad_linear.h", language="none", description="VTP37 plain norm writes the fed pair", edits=(
     _edit(
         "plain-norm-fed-pair",
         "                brow_slice(a.q, r0, rows, n),\n"
-        "                brow_slice(a.s, r0, rows, n / RAD_FP8_BLOCK),\n",
+        "                brow_slice(a.s, r0, rows, n / RAD_SCALE_GROUP),\n",
         "                /* BC_VTP37_PLAIN_FED (rad0030): the pair step() writes, int8 on a rotated-int8 trunk */\n"
         "                brow_slice(hi8 ? a.q8 : a.q, r0, rows, n),\n"
-        "                brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / (hi8 ? a.g8 : (int64_t)RAD_FP8_BLOCK)),\n",
+        "                brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / (hi8 ? a.g8 : (int64_t)RAD_SCALE_GROUP)),\n",
         guard="BC_VTP37_PLAIN_FED",
     ),
 ))
@@ -84,16 +84,16 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
     ),
 ))
 
-MLP = FilePatch(path="arch/common/rad_block_mlp_fp8.h", language="none", description="RUM06 code-pair scales use their declared group", edits=(
+MLP = FilePatch(path="arch/common/rad_block_mlp_q.h", language="none", description="RUM06 code-pair scales use their declared group", edits=(
     _edit(
         "iq8r-mlp-fold-input-scale",
-        "                    brow_slice(w.h.cs(), r0, rows, g.n_embd / RAD_FP8_BLOCK), RAD_W(gate_up.w),\n",
+        "                    brow_slice(w.h.cs(), r0, rows, g.n_embd / RAD_SCALE_GROUP), RAD_W(gate_up.w),\n",
         "                    brow_slice(w.h.cs(), r0, rows, g.n_embd / w.h.cg()), RAD_W(gate_up.w), /* BC_RUM06_MLP_H_SCALE */\n",
         guard="BC_RUM06_MLP_H_SCALE",
     ),
     _edit(
         "iq8r-mlp-fold-output-scale",
-        "                    brow_slice(w.ffn.cs(), r0, rows, g.n_ff / RAD_FP8_BLOCK),\n",
+        "                    brow_slice(w.ffn.cs(), r0, rows, g.n_ff / RAD_SCALE_GROUP),\n",
         "                    brow_slice(w.ffn.cs(), r0, rows, g.n_ff / w.ffn.cg()), /* BC_RUM06_MLP_FFN_SCALE */\n",
         guard="BC_RUM06_MLP_FFN_SCALE",
     ),

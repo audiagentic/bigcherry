@@ -680,6 +680,7 @@ const std::string cache_note = work_root.empty()
             const Json& report = plan.native_preflight_receipt;
             if (json) {
                 std::cout << Json{{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values},
+                                  {"parsed_scheduler", report.at("engine").at("scheduler")},
                                   {"model_identity_cache", cache_note}}.dump(2) << '\n';
                 return 0;
             }
@@ -687,7 +688,7 @@ const std::string cache_note = work_root.empty()
                       << "\n  snapshot " << report.at("snapshot").at("sha256").get<std::string>() << "\n  model "
                       << report.at("engine").at("model").get<std::string>() << "\n  tp "
                       << report.at("engine").at("tp").get<int>() << ", cards " << report.at("engine").at("cards").dump()
-                      << ", port " << plan.port << '\n';
+                      << ", port " << plan.port << "\n  parsed scheduler " << report.at("engine").at("scheduler").dump() << '\n';
             return 0;
         } catch (const ss::PlanFailed& error) {
             std::cout << "native admission preflight: REFUSED\n  config " << name << "\n  " << error.what() << '\n';

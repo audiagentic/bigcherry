@@ -1,0 +1,28 @@
+{
+  "schema_version": 2,
+  "benchmark": "stream-4096-1.json",
+  "rounds": [
+    {
+      "client_ttft_ms": 1495.006506,
+      "model_pass_union_ms": 1470.676011,
+      "draft_pass_union_ms": 21.294446,
+      "overlap_ms": 0.0,
+      "unattributed_ms": 3.036049,
+      "ranks": {
+        "0": {
+          "passes": 3,
+          "device_op_ms": {
+            "unclassified": 1490.807237
+          }
+        },
+        "1": {
+          "passes": 3,
+          "device_op_ms": {
+            "unclassified": 1490.6122119999998
+          }
+        }
+      }
+    }
+  ],
+  "caveat": "Host pass unions include trace overhead. Device intervals can overlap; unclassified is not compute-only. Residual is not measured HTTP or admission time."
+}

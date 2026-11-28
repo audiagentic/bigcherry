@@ -24,6 +24,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from ..core import paths
@@ -86,6 +87,7 @@ class ServerRunner:
         env_unset: tuple[str, ...] = (),
         log_path: Path | None = None, command_prefix: tuple[str, ...] = (),
         shutdown_method: str | None = None, health_timeout_s: int = 180,
+        argument_builder: Callable[[str, int], tuple[str, ...]] | None = None,
     ):
         # None takes the engine's declared method; "sigint" is also how a build without the engine's shutdown route
         # (a stock upstream llama-server) is stopped.
@@ -112,6 +114,7 @@ class ServerRunner:
         # remembering to pass a port.
         self.port = port if port is not None else _free_port(host)
         self.extra_args = extra_args
+        self.argument_builder = argument_builder
         self.env_overrides = dict(env_overrides or {})
         # HI143 (gpt review, 2026-08-29): the launched process otherwise
         # inherits the FULL ambient environment -- a caller's leftover
@@ -157,6 +160,8 @@ class ServerRunner:
         env.update(self.env_overrides)
         served = [self.serve.model_flag, str(self.model), self.serve.port_flag, str(self.port),
                   self.serve.host_flag, self.host, *self.extra_args]
+        if self.argument_builder is not None:
+            served = list(self.argument_builder(self.host, self.port))
         args = [*self.command_prefix, str(self.binary), *served]
         if self.log_path is not None:
             with self.log_path.open("w", encoding="utf-8") as log_file:

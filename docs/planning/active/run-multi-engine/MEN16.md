@@ -63,6 +63,8 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN22. MEN22 is a failure mode in MEN1
 
 2026-11-26 next execution roadmap (docs/planning/NEXT_EXECUTION_ROADMAP.md; main 725bd8951). Assumes native YAML serving cutover and initial min-cap qualification accepted; does not claim they are done. Stage 0 bounded closure: #1574 merged cf10a2415; #1584 composition and #1606 origin-drift gates delivered. Reconcile actual ComponentGate.build duplication with canonical lane and MEN15 smoke; early affected check only where it proves a distinct failure, one full lane, test actual candidate artifacts. Do not reopen delivered RCS19/20/22/23/24/25 or cold build unless real issue.
 
+RV4754 baseline-first: canonical reuse implementation and prior build evidence already available; rederive candidate identity after integrated owner changes. Use exact matching lane/build/source/runtime hashes and formal phase receipts, do not reuse a prior binary for a changed owner. No repeated full builds per plan.
+
 ## Change Log
 
 - 2026-10-17T09:09:28.078742+00:00 (created-by): Created by agent
@@ -77,3 +79,4 @@ CONSOLIDATION 2026-11-22 PHASE-5: receive MEN22. MEN22 is a failure mode in MEN1
 - 2026-11-25T02:50:16.295764+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:33:08.838898+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T18:51:18.751683+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:12:20.796289+00:00 (updated-by): Updated: section:notes

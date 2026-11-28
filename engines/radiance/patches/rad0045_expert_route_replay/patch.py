@@ -16,7 +16,7 @@ choices (FLASHNEXT-ROUTING.md); replay makes the measured run take the reference
   (an architecture without the hook fails the pass instead of selecting its own experts). Anything else, a run that does
   not consume the whole record, or documents whose token digests differ from the recorded ones, fails the run. Recorded
   passes (the step tape) are off while replaying.
-- block (arch/common/rad_block_moe_fp8.h): declares `router_topk_replay` and a persistent step-tall forced-ids buffer when a
+- block (arch/common/rad_block_moe_q.h): declares `router_topk_replay` and a persistent step-tall forced-ids buffer when a
   plugin offers the op; on a replayed pass it loads the pass's rows, skips the fused routers and issues the replay op. With
   no such op the core fails the step.
 """
@@ -641,7 +641,7 @@ ENGINE = FilePatch(path="core/engine.cpp", language="none", description="VTP44 r
     ),
 ))
 
-BLOCK = FilePatch(path="arch/common/rad_block_moe_fp8.h", language="none", description="VTP44 route replay in the MoE block", edits=(
+BLOCK = FilePatch(path="arch/common/rad_block_moe_q.h", language="none", description="VTP44 route replay in the MoE block", edits=(
     _after(
         "rp-members", "    rad_op op_router = 0, op_topk = 0, op_scatter = 0;",
         "    /* BC_VTP44_ROUTE_REPLAY_MEMBERS (rad0045): router_topk with the experts given, and its step-tall buffer of them. */\n"

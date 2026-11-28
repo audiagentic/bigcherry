@@ -297,6 +297,22 @@ class DeclarationTests(unittest.TestCase):
                 with self.assertRaises(engines.EngineError):
                     repo.layout()
 
+    def test_radiance_release_acceptance_refuses_legacy_diagnostic_entries(self):
+        layout = engines.load(paths.REPO_ROOT, "radiance")
+        with tempfile.TemporaryDirectory() as d:
+            output = Path(d) / "accept"
+            with mock.patch("bigcherry.campaign.benchmark.run_server_comparison_capture") as capture:
+                with self.assertRaisesRegex(acc.AcceptanceError, "candidate-recorded quality reference"):
+                    acc.accept(paths.REPO_ROOT, layout, None, output)
+                capture.assert_not_called()
+            self.assertFalse(output.exists())
+
+    def test_radiance_speed_only_diagnostic_is_also_refused(self):
+        layout = engines.load(paths.REPO_ROOT, "radiance")
+        prepared = acc.prepare(paths.REPO_ROOT, layout, ["helper-ab"])
+        with self.assertRaisesRegex(acc.AcceptanceError, "diagnostic or unverified"):
+            acc.validate_qualified_entries(layout, prepared)
+
     def test_declared_engines_resolve_against_the_repository(self):
         """Every engine's [[acceptance]] entries point at real configs and baseline files that parse."""
         for name, layout in engines.load_all(paths.REPO_ROOT).items():
@@ -306,6 +322,41 @@ class DeclarationTests(unittest.TestCase):
                     self.assertTrue(prepared[0][2])
         radiance = engines.load(paths.REPO_ROOT, "radiance")
         self.assertEqual({e.name for e in radiance.acceptance}, {"helper-ab", "helper-kld"})
+
+
+class CandidateRuntimeTests(unittest.TestCase):
+    def test_unadmitted_capture_cannot_pass_even_with_good_metrics(self):
+        repo = FakeRepo()
+        self.addCleanup(repo.close)
+        entry, config, sets = acc.prepare(repo.root, repo.layout(), None)[0]
+        with mock.patch("bigcherry.campaign.benchmark.run_server_comparison_capture",
+                        fake_capture([("a", 100.0), ("a", 100.0)])):
+            result = acc.run_entry(entry, config, sets, repo.root / "out", require_admitted=True)
+        self.assertFalse(result.passed)
+        self.assertIn("not admitted", result.error)
+
+
+    def test_candidate_plan_hash_and_source_binding(self):
+        import hashlib
+        layout = engines.load(paths.REPO_ROOT, "radiance")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            binary = root / layout.serve.binary
+            binary.parent.mkdir()
+            binary.write_bytes(b"candidate")
+            digest = hashlib.sha256(b"candidate").hexdigest()
+            (root / "bigcherry-build-metadata-radiance.json").write_text(json.dumps(
+                {"build_plan_id": "plan", "binary_hash": digest, "source_slice_id": "slice"}))
+            (root / "CMakeCache.txt").write_text(f"CMAKE_HOME_DIRECTORY:INTERNAL={root}/source\n")
+            c = acc.CandidateRuntime(root, "plan", digest, "rev")
+            with mock.patch("bigcherry.campaign.workers._source_attestation", return_value=object()) as source, mock.patch("bigcherry.campaign.workers._verify_source"):
+                self.assertEqual(c.verify(layout), binary)
+                source.assert_called_once_with(root / "source", upstream_revision="rev", source_slice_id="slice")
+                with self.assertRaisesRegex(acc.AcceptanceError, "plan ID mismatch"):
+                    acc.CandidateRuntime(root, "wrong", digest, "rev").verify(layout)
+                binary.write_bytes(b"changed")
+                with self.assertRaisesRegex(acc.AcceptanceError, "binary SHA-256 mismatch"):
+                    c.verify(layout)
 
 
 class CliTests(unittest.TestCase):

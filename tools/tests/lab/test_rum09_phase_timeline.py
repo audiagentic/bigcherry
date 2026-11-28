@@ -138,3 +138,40 @@ def test_benchmark_decode_step_counter_must_match(tmp_path):
     bench.write_text(json.dumps(obj))
     with pytest.raises(ValueError, match="decode-step count"):
         trace.analyze(bench, traces)
+
+
+def test_prefill_rank_union_and_draft(tmp_path):
+    bench = tmp_path / "prefill.json"
+    trace_dir = tmp_path / "trace"
+    trace_dir.mkdir()
+    bench.write_text(json.dumps({"rounds": [{
+        "ok": True, "streams": 1, "wall_start_ns": 0,
+        "wall_end_ns": 11000000, "engine": {"engine_steps_prefill_total": 1},
+        "per_stream": [{"start_wall_ns": 1000000, "first_wall_ns": 10000000,
+                        "ttft_ms": 9.0}]
+    }]}))
+    for rank in (0, 1):
+        rows = [_step(rank, 2000000, 8000000, 5, 0, phase=0, step=1),
+                _step(rank, 8000000, 9000000, 1, 0, phase=1, step=1)]
+        rows[0]["tape_segments"] = [{"op": "gemm", "ms": 3.0},
+                                   {"op": "unclassified", "ms": 1.0}]
+        rows[1]["draft_pass"] = 1
+        (trace_dir / f"engine-rank-{rank}.jsonl").write_text(
+            "\n".join(json.dumps(row) for row in rows) + "\n")
+    item = trace.analyze_prefill(bench, trace_dir, 2)["rounds"][0]
+    assert item["model_pass_union_ms"] == 6
+    assert item["draft_pass_union_ms"] == 1
+    assert item["unattributed_ms"] == 2
+    assert item["overlap_ms"] == 0
+    assert item["ranks"]["0"]["device_op_ms"]["unclassified"] == 1
+    with pytest.raises(ValueError, match="rank count"):
+        trace.analyze_prefill(bench, trace_dir, 3)
+    data = json.loads(bench.read_text())
+    data["rounds"][0]["engine"]["engine_steps_prefill_total"] = 2
+    bench.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="prefill step counter"):
+        trace.analyze_prefill(bench, trace_dir, 2)
+
+
+def test_interval_union_never_adds_concurrent_ranks():
+    assert trace.interval_union_ns([(0, 10), (2, 7), (8, 20), (30, 40)]) == 30

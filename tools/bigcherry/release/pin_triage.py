@@ -197,40 +197,6 @@ def _suggestions(engine: str, root: Path, file: str, problem: str) -> tuple[str 
     return None, []
 
 
-_NO_SOURCE = re.compile(r"^(?P<tree>[^\s]+) has no source (?P<name>\S+)$")
-
-
-def _patch_owned_failures(
-    engine: str, context: ProjectContext, root: Path, failures: dict[str, list[str]],
-) -> tuple[dict[str, list[str]], list[str]]:
-    """Split off rules whose target source does not exist upstream but is created by a registered managed patch.
-
-    A rule file for such a source cannot be judged against pristine upstream: it applies to the patched tree, which
-    `pin-bump` checks after the patches are rebased. Reporting it here as drift would fail every triage at the pin
-    itself. Only a missing source that some registered patch declares is split off; any other missing source stays drift.
-    """
-    registry = patch_registry.load_registry(engine, context.patches_root)
-    declared = {
-        Path(patch.path).as_posix()
-        for descriptor in registry.descriptors
-        for patch in patch_registry.load_implementation(engine, descriptor, root=context.patches_root)
-    }
-    kept: dict[str, list[str]] = {}
-    owned: set[str] = set()
-    for file, problems in failures.items():
-        remaining = []
-        for problem in problems:
-            match = _NO_SOURCE.match(problem)
-            path = f"{match['tree']}/{match['name']}" if match else ""
-            if match and path in declared and not (root / path).exists():
-                owned.add(file)
-            else:
-                remaining.append(problem)
-        if remaining:
-            kept[file] = remaining
-    return kept, sorted(owned)
-
-
 def _drift(
     engine: str, context: ProjectContext, mirror: Path, target_sha: str,
 ) -> tuple[dict[str, list[str]], list[dict[str, Any]], list[str]]:
@@ -260,7 +226,7 @@ def _drift(
                     continue
                 for file, problems in check.run().items():
                     failures.setdefault(file, []).extend(problems)
-            failures, patch_owned = _patch_owned_failures(engine, context, root, failures)
+            failures, patch_owned = adapter(engine).split_patch_created(context, root, failures)
         except Exception as exc:
             raise PinTriageError(f"source drift check could not run: {exc}") from exc
         findings = []

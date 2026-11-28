@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_201002_support-verified-baseline-diag_8003",
+  "files": [
+    "tools/bigcherry/bench/radiance_lab_records.py",
+    "tools/tests/bench/test_mrc06_producers.py"
+  ],
+  "plan-item-ids": [
+    "MRC08",
+    "MEN17"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reuse release identity verification for native lab session receipts and retain installed bundle provenance.",
+  "timestamp-utc": "2026-11-27T20:10:02.070918Z",
+  "user-summary-candidate": "Support verified baseline diagnostics on stripped installed Radiance bundles."
+}

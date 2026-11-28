@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_131450_distinguish-explicit-and-defau_7007",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/configs/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC19"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Project native parser scheduler values and authorship in matched inspector v3; reject malformed or inconsistent scheduler receipts.",
+  "timestamp-utc": "2026-11-27T13:14:50.630661Z",
+  "user-summary-candidate": "Distinguish explicit and default scheduler configuration in managed inspection."
+}

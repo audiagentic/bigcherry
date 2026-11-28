@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_065338_remove-duplicate-radiance-runt_5499",
+  "files": [
+    "docs/evidence/2026-11-27-radiance-230-bump/CANONICAL-LANE.md",
+    "docs/evidence/2026-11-27-radiance-230-bump/production-syntax.json",
+    "tools/bigcherry/engine_adapters/base.py",
+    "tools/bigcherry/engine_adapters/llamacpp.py",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/engine_adapters/radiance_bump.py",
+    "tools/bigcherry/release/pin_bump.py",
+    "tools/tests/release/test_bump_gates.py",
+    "tools/tests/release/test_pin_bump.py"
+  ],
+  "plan-item-ids": [
+    "MEN24",
+    "MEN16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reuse the canonical build for component ABI and offline checks and CPU smoke; bind reused launcher hash; full production syntax 504/504 on ROCm 7.2.4; 130 workflow regression tests passed.",
+  "timestamp-utc": "2026-11-27T06:53:38.199824Z",
+  "user-summary-candidate": "Remove duplicate Radiance runtime build from bump workflow without dropping compile or component gates."
+}

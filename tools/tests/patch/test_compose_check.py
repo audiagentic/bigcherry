@@ -5,9 +5,12 @@ with its diagnostic; they need the pinned radiance checkout and the ROCm compile
 """
 from __future__ import annotations
 
+import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
 from pathlib import Path
 
 from bigcherry.core import engines, paths
@@ -36,6 +39,18 @@ class UnitSelectionTests(unittest.TestCase):
             self.assertEqual(cc.affected_units(tree, ["libr4d/r4d_b.hip"]), ["r4d_b"])
             self.assertEqual(cc.affected_units(tree, ["engines/other.cpp"]), [])
 
+    def test_compiler_uses_recipe_sdk_not_path_clang(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            sdk = Path(tmp) / "sdk"
+            clang = sdk / "lib/llvm/bin/clang++"
+            clang.parent.mkdir(parents=True)
+            clang.touch()
+            recipes = SimpleNamespace(platforms={"p": SimpleNamespace(sdk_root=str(sdk))})
+            with patch.dict(os.environ, {"ROCM_PATH": ""}), patch("bigcherry.core.config.load", return_value=recipes):
+                self.assertEqual(cc.compiler(ENGINE), clang)
+            with patch.dict(os.environ, {"ROCM_PATH": str(sdk / "missing")}), patch("shutil.which", return_value="/usr/bin/clang++"):
+                self.assertIsNone(cc.compiler(ENGINE))
+
     def test_render_names_each_gate(self):
         report = cc.Report(gate1={"libr3/r4d_x.h.rw": ["block 3 expected 1 time(s) occurs 0 time(s)"]})
         self.assertIn("NATIVE_REWRITE_DRIFT: libr3/r4d_x.h.rw", cc.render(report))
@@ -51,7 +66,7 @@ def _have_toolchain() -> bool:
         pinned_source.pinned_checkout(ENGINE)
     except Exception:
         return False
-    return cc.compiler() is not None
+    return cc.compiler(ENGINE) is not None
 
 
 @unittest.skipUnless(_have_toolchain(), "needs the pinned radiance checkout and the ROCm compiler")

@@ -1484,7 +1484,7 @@ void session_engine_plan(Fixture& t) {
                 std::string refusal;
                 try {
                     const ss::EngineStart plan = ss::plan_engine_only(pre, pre_run, hooks);
-                    assert(plan.native_preflight_receipt.at("protocol") == "bigcherry.native-fleet-inspect/v2");
+                    assert(plan.native_preflight_receipt.at("protocol") == "bigcherry.native-fleet-inspect/v3");
                     assert(plan.argv.empty() && plan.helpers.empty());   // nothing was prepared to start
                 } catch (const ss::PlanFailed& error) {
                     refusal = error.what();
@@ -1506,7 +1506,9 @@ void session_engine_plan(Fixture& t) {
                 pre.native_preflight = true;
                 pre.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_TUNING"] =
                     Json{{"tp_ownership", "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"},
-                         {"tune_pin", "all_reduce:nblocks=4"}, {"p2p", "off"}, {"pipelined_prefill_min_rows", 256}}
+                         {"tune_pin", "all_reduce:nblocks=4"}, {"p2p", "off"}, {"pipelined_prefill_min_rows", 256},
+                         {"attn_prefill_fp8", "off"}, {"busy_prefill_chunk", "512"},
+                         {"state_cache_dtype", "f32"}, {"tp_wire_min_kb", 128}}
                         .dump();
                 const fs::path tuned_run = run / "native-preflight-tuning";
                 fs::create_directories(tuned_run);
@@ -1515,6 +1517,8 @@ void session_engine_plan(Fixture& t) {
                 assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
                 assert(tuning.at("tune_pin") == "all_reduce:nblocks=4" && tuning.at("p2p") == "off");
                 assert(tuning.at("pipelined_prefill_min_rows") == 256 && !tuning.contains("prefill_governor"));
+                assert(tuning.at("attn_prefill_fp8") == "off" && tuning.at("busy_prefill_chunk") == "512");
+                assert(tuning.at("state_cache_dtype") == "f32" && tuning.at("tp_wire_min_kb") == 128);
             }
             {   // The BigCherry-owned section: one pass with every table, then one refusal per rule.
                 const auto section = [](Json section) {
@@ -1551,6 +1555,23 @@ void session_engine_plan(Fixture& t) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tune_pin", ""}}.dump(); });
             refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
+            // Strict JSON safe-integer bound is also INT64_MAX / 1024, the native wire-byte limit.
+            refused_for("report failed strict protocol", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tp_wire_min_kb", INT64_MAX}}.dump(); });
+            for (const auto& share : {"0.25", "1.0", "0.12345678901234568"}) {
+                const std::string pass = preflight([&](ss::Env& e) {
+                    e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"prefill_interleave", nullptr}}.dump();
+                    e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_authored", true},
+                        {"interleave_steps", -1}, {"interleave_share", share}}.dump();
+                });
+                if (!pass.empty()) throw std::runtime_error("preflight: valid automatic interleave refused: " + pass);
+            }
+            refused_for("invalid scheduler room_gate", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"room_gate", "on"}}.dump(); });
+            refused_for("invalid scheduler interleave", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", -1}, {"interleave_share", "5.0"}}.dump(); });
+            refused_for("inconsistent scheduler interleave", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SCHEDULER"] = Json{{"interleave_steps", 2}}.dump(); });
             refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });
             // Radiance's measured auto n-gram placement is admitted as an intent (the engine decides, the owner seals it).
             if (const std::string pass = preflight([](ss::Env& e) {
@@ -2103,6 +2124,18 @@ void session_engine_plan(Fixture& t) {
                                std::string_view::npos;
         }
         assert(selector_refused && power_admit_calls == power_calls_before_invalid_override);
+        reserved_override.native_admission->runtime_overrides.erase("CUDA_VISIBLE_DEVICES");
+        for (const char* key : {"RADIANCE_TUNE", "RADIANCE_KERNELS", "RADIANCE_OP_ORACLE"}) {
+            reserved_override.native_admission->runtime_overrides[key] = "unmanaged";
+            bool refused = false;
+            try { (void)ss::plan_engine_only(reserved_override, gated_run, admission_hooks); }
+            catch (const ss::PlanFailed& error) {
+                refused = std::string_view(error.what()).find(std::string("runtime override cannot select ") + key)
+                          != std::string_view::npos;
+            }
+            assert(refused && power_admit_calls == power_calls_before_invalid_override);
+            reserved_override.native_admission->runtime_overrides.erase(key);
+        }
     }
 }
 
@@ -2267,6 +2300,8 @@ void helper_vram_owner_graph(Fixture& t) {
     const auto measured_samples = samples;
     const auto stored = fs::path(fresh.at("manifest").get<std::string>());
     const auto attempt = fresh.at("selection").at("plan_measurement_attempt");
+    const auto scheduler = fresh.at("selection").at("native_scheduler");
+    assert(scheduler.at("parsed").is_object());
     size_t attempts = 0;
     for (const auto& dir : fs::directory_iterator(owner.run_dir / "measurement-attempts")) {
         ++attempts;
@@ -2282,6 +2317,7 @@ void helper_vram_owner_graph(Fixture& t) {
                                                 "helper1", "engine"};
     const auto check_replay = [&](const Json& replayed) {
         assert(replayed.at("selection").at("replay") == true);
+        assert(replayed.at("selection").at("native_scheduler") == scheduler);
         assert(replayed.at("manifest") == stored.string());
         assert(replayed.at("handoff_shm") == fresh.at("handoff_shm"));
         assert(replayed.at("selection").at("plan_measurement_attempt") == attempt);

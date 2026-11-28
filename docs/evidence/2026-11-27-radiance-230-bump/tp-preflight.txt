@@ -1,0 +1,24 @@
+rad0016 apply edits 43 bad []
+rad0016 reapply edits 43 bad []
+rad0017 apply edits 12 bad []
+rad0017 reapply edits 12 bad []
+rad0018 apply edits 17 bad []
+rad0018 reapply edits 17 bad []
+BF16 Qwen translation-unit syntax 0
+
+rad0019 arch/qwen35_fp8/qwen35_fp8.cpp n2f-optin matches 1 expected 1
+rad0019 arch/qwen35_fp8/qwen35_fp8.cpp n2f-gdn-heads matches 1 expected 1
+rad0019 arch/qwen35_fp8/qwen35_fp8.cpp n2f-iq8r-group-ownership matches 1 expected 1
+rad0019 arch/qwen35_fp8/qwen35_fp8.cpp n2f-vocab matches 1 expected 1
+rad0019 arch/common/rad_block_attn_gated_q.h n2f-attn-spans matches 1 expected 1
+rad0019 arch/common/rad_block_mlp_q.h n2f-mlp-gate-up matches 1 expected 1
+rad0019 arch/common/rad_block_mlp_q.h n2f-mlp-down matches 1 expected 1
+rad0019 arch/common/rad_linear.h n2f-dense-span matches 1 expected 1
+rad0019 arch/common/rad_linear.h n2f-dense-scale-view-field matches 0 expected 1
+rad0019 arch/common/rad_linear.h n2f-dense-scale-view-probe matches 0 expected 1
+rad0019 arch/common/rad_linear.h n2f-span-parts-wref matches 1 expected 1
+rad0019 arch/common/rad_arch.h n2f-vocab-head-sharded matches 1 expected 1
+rad0019 arch/common/rad_arch.h n2f-drafter-geom matches 0 expected 1
+rad0019 arch/common/rad_block_dflash2.h n2f-dflash-head-span matches 1 expected 1
+rad0019 arch/common/rad_block_dflash2.h n2f-dflash-spans matches 1 expected 1
+rad0019 anchor audit {'exact': 12, 'drift': 3} (no application or semantic pass claimed)

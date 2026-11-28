@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_152406_prevent-unverified-or-wrong-bu_4626",
+  "files": [
+    "tools/bigcherry/campaign/acceptance.py",
+    "tools/bigcherry/cli/accept.py",
+    "tools/bigcherry/cli/main.py",
+    "tools/bigcherry/release/pin_bump.py",
+    "tools/tests/campaign/test_acceptance.py"
+  ],
+  "plan-item-ids": [
+    "MEN17",
+    "MEN24"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Bind acceptance to exact lane and source; refuse legacy diagnostic and self-recorded quality claims.",
+  "timestamp-utc": "2026-11-27T15:24:06.401356Z",
+  "user-summary-candidate": "Prevent unverified or wrong-build benchmark results from qualifying Radiance releases."
+}

@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import random
 import statistics
 import sys
@@ -51,6 +52,9 @@ class StreamResult:
     t_first: float = 0.0
     t_last: float = 0.0              # last text event
     t_end: float = 0.0               # response end (the stream closed)
+    start_wall_ns: int = 0          # system clock for native trace correlation only
+    first_wall_ns: int = 0
+    end_wall_ns: int = 0
     tokens: int = 0                  # completion tokens: server usage, or an event-count estimate if allowed
     usage_source: str = ""           # "server" | "event_count_estimate"
     finish_reason: str = ""
@@ -126,6 +130,7 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
     text, chunks, last, raw_head, done = [], 0, None, [], False
     usage_tokens = 0
     res.t_start = time.perf_counter()
+    res.start_wall_ns = time.time_ns()
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             for raw in resp:
@@ -152,12 +157,14 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
                         now = time.perf_counter()
                         if not chunks:
                             res.t_first = now
+                            res.first_wall_ns = time.time_ns()
                         else:
                             res.gaps_ms.append((now - last) * 1000.0)
                         last = res.t_last = now
                         chunks += 1
                         text.append(piece)
         res.t_end = time.perf_counter()
+        res.end_wall_ns = time.time_ns()
         if not chunks:
             raise StreamBenchError("the stream produced no content; first events: " + " | ".join(raw_head))
         if not done and not res.finish_reason:
@@ -176,11 +183,13 @@ def one_stream(url: str, model: str, stream: int, prompt: str, max_tokens: int, 
         res.ok = True
     except (urllib.error.URLError, OSError, ValueError, StreamBenchError) as exc:
         res.t_end = time.perf_counter()
+        res.end_wall_ns = time.time_ns()
         res.error = f"{type(exc).__name__}: {exc}"
     return res
 
 
-_COUNTERS = ("radiance:engine_steps_decode_total", "radiance:engine_step_seconds_decode_total",
+_COUNTERS = ("radiance:engine_steps_total", "radiance:engine_steps_mixed_total",
+             "radiance:engine_step_seconds_total", "radiance:engine_steps_decode_total", "radiance:engine_step_seconds_decode_total",
              "radiance:decode_tokens_total", "radiance:draft_tokens_total", "radiance:draft_accepted_total",
              "radiance:engine_steps_prefill_total", "radiance:prefill_tokens_total", "vllm:num_preemptions_total")
 _GAUGES = ("vllm:num_requests_running", "vllm:num_requests_waiting")
@@ -214,16 +223,27 @@ def engine_delta(before, after, running):
     does not expose them. Steps are decode steps; acceptance is accepted/drafted tokens over the round."""
     if not before or not after:
         return None
-    d = {k: after.get(k, 0.0) - before.get(k, 0.0) for k in _COUNTERS if k in after}
+    # Never assume a missing counter or a reset means zero work.
+    d = {k: after[k] - before[k] for k in _COUNTERS if k in before and k in after
+         and math.isfinite(before[k]) and math.isfinite(after[k]) and after[k] >= before[k]}
     steps = d.get("radiance:engine_steps_decode_total", 0.0)
     out = {k.split(":", 1)[1]: round(v, 6) for k, v in d.items()}
-    if steps > 0:
-        out["decode_ms_per_step"] = round(d.get("radiance:engine_step_seconds_decode_total", 0.0) / steps * 1000.0, 4)
-        out["decode_tokens_per_step"] = round(d.get("radiance:decode_tokens_total", 0.0) / steps, 4)
-        seconds = d.get("radiance:engine_step_seconds_decode_total", 0.0)
-        if seconds > 0:
-            # throughput of the decode phase alone: the client-side aggregate also carries every prefill and the ramp
-            out["decode_tps_engine"] = round(d.get("radiance:decode_tokens_total", 0.0) / seconds, 3)
+    seconds = d.get("radiance:engine_step_seconds_decode_total")
+    tokens = d.get("radiance:decode_tokens_total")
+    mixed = d.get("radiance:engine_steps_mixed_total")
+    out["phase_rate_definition"] = "v2: pure decode ratios require observed zero mixed steps"
+    if steps > 0 and seconds is not None and seconds > 0:
+        out["decode_ms_per_step"] = round(seconds / steps * 1000.0, 4)
+        if mixed == 0 and tokens is not None:
+            out["decode_tokens_per_step"] = round(tokens / steps, 4)
+            out["decode_tps_engine"] = round(tokens / seconds, 3)
+    out["decode_rate_status"] = ("zero_mixed_observed" if "decode_tps_engine" in out else
+                                 "mixed_steps_present" if mixed is not None and mixed > 0 else
+                                 "insufficient_counters")
+    all_seconds = d.get("radiance:engine_step_seconds_total")
+    prompt = d.get("radiance:prefill_tokens_total")
+    if all_seconds is not None and all_seconds > 0 and tokens is not None and prompt is not None:
+        out["input_output_tps_engine_all_steps"] = round((tokens + prompt) / all_seconds, 3)
     drafted = d.get("radiance:draft_tokens_total", 0.0)
     if drafted > 0:
         out["draft_acceptance"] = round(d.get("radiance:draft_accepted_total", 0.0) / drafted, 4)
@@ -291,7 +311,9 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
               "release_to_first_start_ms": round((min(r.t_start for r in results) - release) * 1000.0, 3),
               "per_stream": [{"stream": r.stream, "ok": r.ok, "error": r.error, "tokens": r.tokens,
                               "usage_source": r.usage_source, "finish_reason": r.finish_reason, "events": r.events,
-                              "prompt_tokens": r.prompt_tokens, "ttft_ms": round(r.ttft_ms(), 2),
+                              "prompt_tokens": r.prompt_tokens, "start_wall_ns": r.start_wall_ns,
+                              "first_wall_ns": r.first_wall_ns, "end_wall_ns": r.end_wall_ns,
+                              "ttft_ms": round(r.ttft_ms(), 2),
                               "decode_tps_est": round(r.decode_tps_est(), 3),
                               "response_tail_ms": round((r.t_end - r.t_last) * 1000.0, 2) if r.ok else None,
                               "text_sha256": r.text_sha256, "text_head": r.text_head} for r in results]}
@@ -302,6 +324,10 @@ def run_round(url: str, model: str, streams: int, prompt_tokens: int, max_tokens
         per = [r.decode_tps_est() for r in results if r.tokens > 1]
         record["aggregate"] = {
             "tokens": total, "aggregate_tps": round(total / wall, 3),
+            "input_tokens": sum(r.prompt_tokens for r in results) if all(
+                r.usage_source == "server" and r.prompt_tokens > 0 for r in results) else None,
+            "input_output_tps_wall": round((total + sum(r.prompt_tokens for r in results)) / wall, 3)
+                if all(r.usage_source == "server" and r.prompt_tokens > 0 for r in results) else None,
             "mean_stream_decode_tps_est": round(statistics.fmean(per), 3) if per else None,
             "ttft_ms_p50": round(pct([r.ttft_ms() for r in results], 0.50), 2),
             "ttft_ms_p95": round(pct([r.ttft_ms() for r in results], 0.95), 2),
@@ -340,7 +366,7 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
             eng = [r["engine"] for r in rounds if r["streams"] == n and r["ok"] and r.get("engine")]
             for key in ("decode_ms_per_step", "decode_tokens_per_step", "decode_tps_engine", "draft_acceptance", "requests_running_mean"):
                 vals = [e[key] for e in eng if key in e]
-                if vals:
+                if vals and (key not in ("decode_tokens_per_step", "decode_tps_engine") or len(vals) == len(good)):
                     summary[str(n)][key + "_median"] = statistics.median(vals)
     return {"schema": SCHEMA,
             "config": {"url": url, "model": model, "streams": stream_counts, "prompt_tokens": prompt_tokens,
@@ -349,7 +375,8 @@ def run(url: str, model: str, stream_counts: list, prompt_tokens: int, max_token
                        "prompt_sha256": prompt_digests(max(stream_counts), prompt_tokens, seed, shared_prefix),
                        "max_tokens": max_tokens, "reps": reps, "temperature": temperature, "seed": seed,
                        "shared_prefix": shared_prefix, "allow_estimate": allow_estimate,
-                       "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)"},
+                       "throughput_definition": "finite-batch makespan: generated tokens / (first request start to last response end)",
+                       "phase_rate_revision": 2},
             "ok": all(r["ok"] for r in rounds), "rounds": rounds, "summary": summary}
 
 
@@ -372,7 +399,7 @@ def flat_metrics(record: dict) -> dict:
         eng = [r["engine"] for r in record["rounds"] if r["streams"] == n and r["ok"] and r.get("engine")]
         for key in ("decode_ms_per_step", "decode_tokens_per_step", "decode_tps_engine", "draft_acceptance", "requests_running_mean"):
             vals = [e[key] for e in eng if key in e]
-            if vals:
+            if vals and (key not in ("decode_tokens_per_step", "decode_tps_engine") or len(vals) == len(good)):
                 out[f"s{n}_{key}"] = statistics.median(vals)
     return out
 
@@ -394,28 +421,148 @@ def build_parser(add_help: bool = True) -> argparse.ArgumentParser:
     ap.add_argument("--shared-prefix", action="store_true", help="give every stream the same prompt (prefix-cache probe)")
     ap.add_argument("--allow-estimate", action="store_true",
                     help="count one token per text event when the server sends no usage block (marked as an estimate)")
+    ap.add_argument("--record", action="store_true", help="publish the benchmark to the shared run store")
+    ap.add_argument("--manifest", type=Path, help="live serving manifest for --record")
+    ap.add_argument("--release-receipt", type=Path, help="tagged runtime receipt for extracted release recording")
+    ap.add_argument("--work-root", type=Path, help="override work root for --record")
+    ap.add_argument("--export-dir", type=Path, help="write a portable summary here after --record")
     ap.add_argument("--output", help="write the JSON record here (default: stdout)")
     return ap
 
 
+def _record_target(args):
+    from ..core.context import resolve_work_root
+    from . import workloads
+
+    info = workloads.live_info(args.url, resolve_work_root(args.work_root), args.manifest)
+    if not info.get("manifest"):
+        raise StreamBenchError("recording requires the live serving manifest")
+    manifest = Path(info["manifest"])
+    session = json.loads((manifest.parent / "session.json").read_bytes())
+    if session.get("state") not in ("running", "healthy") or Path(session.get("manifest", "")).resolve() != manifest.resolve():
+        raise StreamBenchError("recording requires a live native owner")
+    snapshot = workloads.host_facts.read_owner_start(manifest.parent)
+    root = Path(info["build_path"])
+    meta = json.loads((root / "bigcherry-build-metadata-radiance.json").read_bytes())
+    meta, release_inputs = workloads._release_identity(root, meta, args.release_receipt)
+    return info, manifest.read_bytes(), snapshot, session["owner_pid"], session["started_at"], meta, release_inputs
+
+
+def _export_summary(directory, run_id, config, report, build_id, recorded_at, identity=None):
+    """Export only fields with controlled values or numeric measurements."""
+    from ..core import engines
+
+    from tempfile import NamedTemporaryFile
+    import re
+
+    if not re.fullmatch(r"stream-bench-[a-f0-9]{32}", run_id):
+        raise StreamBenchError("invalid stream benchmark run ID")
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{run_id}.json"
+    settings = {key: config[key] for key in (
+        "streams", "prompt_tokens_target", "prompt_words", "max_tokens",
+        "reps", "temperature", "seed", "shared_prefix", "max_context_tokens",
+    )}
+    if config["kv_cache_dtype"] in (
+        "fp8", "fp16", "f16", "bf16", "bf16_fp8", "bf16_i8", "fp8_v4", "k6_v4",
+    ):
+        settings["kv_cache_dtype"] = config["kv_cache_dtype"]
+    rounds = [
+        {
+            "streams": row["streams"], "rep": row["rep"], "ok": row["ok"],
+            "requests": [
+                {key: stream[key] for key in ("prompt_tokens", "tokens", "ttft_ms", "ok")}
+                for stream in row["per_stream"]
+            ],
+        }
+        for row in report["rounds"]
+    ]
+    raw = (json.dumps({
+        "schema_version": 1, "run_id": run_id, "settings": settings,
+        "engine": engines.RADIANCE, "recorded_at": recorded_at,
+        "build_id": build_id if re.fullmatch(r"[a-f0-9]{16,64}", build_id) else None,
+        "ok": report["ok"], "summary": report["summary"], "rounds": rounds,
+        "identity": identity or {},
+    }, indent=2, sort_keys=True, allow_nan=False) + "\n").encode()
+    with NamedTemporaryFile(dir=directory) as tmp:
+        tmp.write(raw)
+        tmp.flush()
+        try:
+            path.hardlink_to(tmp.name)
+        except FileExistsError:
+            if path.is_symlink() or path.read_bytes() != raw:
+                raise StreamBenchError(f"benchmark export already exists: {path}")
+
+
+def _publish_benchmark(args, report, target):
+    from uuid import uuid4
+
+    from . import workloads
+
+    if _record_target(args) != target:
+        raise StreamBenchError("serving session changed during benchmark")
+    info, manifest, snapshot, _, _, meta, _ = target
+    spec = json.loads(manifest)["spec"]
+    config = {
+        **report["config"],
+        "max_context_tokens": spec["intent"]["service"]["max_context_tokens"],
+        "kv_cache_dtype": spec["processes"]["engine"]["execution"]["kv_cache_dtype"],
+    }
+    import re
+    def hex_id(value):
+        return value if isinstance(value, str) and re.fullmatch(r"[a-f0-9]{16,64}", value) else None
+    identity = {key: hex_id(meta.get(key)) for key in ("source_commit", "source_slice_id", "build_plan_id", "binary_hash", "runtime_bundle_hash")}
+    identity["model_table_identity"] = hex_id(spec.get("plan", {}).get("engine_memory", {}).get("model_identity"))
+    config["portable_identity"] = identity
+    metrics = {}
+    if report["ok"] and len(config["streams"]) == 1 and report["summary"]:
+        summary = next(iter(report["summary"].values()))
+        metrics["decode_aggregate_tps"] = {"median": summary["aggregate_tps_median"]}
+    row = {
+        **info,
+        "row_id": f"stream-bench-{uuid4().hex}",
+        "timestamp": workloads.timestamp(),
+        "workload_id": "stream-bench",
+        "workload_version": 1,
+        "metrics": metrics,
+        "details": {"workload_config": config, "benchmark": report},
+    }
+    digest = workloads.publish_record(
+        row, manifest_bytes=manifest, work_root=args.work_root,
+        argv=list(sys.argv), host_snapshot=snapshot, release_receipt=args.release_receipt,
+    )
+    if args.export_dir:
+        print(f"local run-record v1: {digest}", file=sys.stderr)
+        _export_summary(
+            args.export_dir, row["row_id"], config, report, info["build_id"], row["timestamp"], identity,
+        )
+    return digest
+
+
 def run_from_namespace(args) -> int:
     try:
+        if args.export_dir and not args.record:
+            raise StreamBenchError("--export-dir requires --record")
+        target = _record_target(args) if args.record else None
         counts = [int(x) for x in str(args.streams).split(",") if x.strip()]
         record = run(args.url, args.model or served_model(args.url), counts, args.prompt_tokens, args.max_tokens, args.reps, args.temperature,
                      args.timeout, args.seed, args.shared_prefix, args.allow_estimate, not args.no_calibrate)
-    except (StreamBenchError, ValueError) as exc:
+        if args.output:
+            Path(args.output).write_text(json.dumps(record, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+        if target is not None:
+            digest = _publish_benchmark(args, record, target)
+            print(f"run-record v1: {digest}", file=sys.stderr)
+    except (StreamBenchError, ValueError, OSError, KeyError, RuntimeError) as exc:
         print(f"stream-bench: ERROR: {exc}", file=sys.stderr)
         return 2
     rendered = json.dumps(record, indent=1, sort_keys=True)
-    if args.output:
-        Path(args.output).write_text(rendered + "\n", encoding="utf-8")
-    else:
+    if not args.output:
         print(rendered)
     for n, s in record["summary"].items():
         print(f"stream-bench: {n:>2} streams  {s['aggregate_tps_median']:9.2f} tok/s aggregate  "
               f"ttft max {s['ttft_ms_max_median']:8.1f} ms  event gap p95 {s['event_gap_ms_p95_median']:7.2f} ms"
               + (f"  step {s['decode_ms_per_step_median']:6.2f} ms  {s['decode_tokens_per_step_median']:5.2f} tok/step"
-                 if "decode_ms_per_step_median" in s else ""), file=sys.stderr)
+                 if "decode_tokens_per_step_median" in s and "decode_ms_per_step_median" in s else ""), file=sys.stderr)
     if not record["ok"]:
         print("stream-bench: FAIL: at least one stream failed (see per_stream errors)", file=sys.stderr)
         return 1

@@ -35,20 +35,19 @@ endif()
 # Regenerate the copied sources when any rewriter input changes, including added or removed files.
 file(GLOB native_rules CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/native/*.rw)
 file(GLOB r4d_inputs CONFIGURE_DEPENDS ${RADIANCE_SRC}/libr4d/*.hip ${RADIANCE_SRC}/libr4d/*.h ${RADIANCE_SRC}/libr4d/*.cpp
-     ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
+     ${RADIANCE_SRC}/libr4d/*.inc ${RADIANCE_SRC}/libr4d/CMakeLists.txt)
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   ${LIBR3}/r3_rewrite.py ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${CMAKE_CURRENT_SOURCE_DIR}/units.txt
   ${native_rules} ${r4d_inputs})
 
 # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`. libr2 builds the units in units.txt.
-file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[a-z0-9_]+\\|")
+include(${LIBR3}/r3_groups.cmake)
+r3_read_unit_lines("${RADIANCE_SRC}" unit_lines)
 file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/units.txt wanted REGEX "^r4d_")
 set(device "")
 set(built "")
 foreach(line ${unit_lines})
-  string(REGEX MATCH "\"(r4d_[a-z0-9_]+)\\|([^\"]*)\"" _ "${line}")
-  set(unit ${CMAKE_MATCH_1})
-  set(flags "${CMAKE_MATCH_2}")
+  r3_unit_fields("${line}" unit flags)
   if(NOT unit IN_LIST wanted)
     continue()
   endif()

@@ -200,7 +200,34 @@ void test_published(int group, int owner_a, int owner_b, int owner_c, int bad) {
     assert(live_count() == 0);
 }
 
+// Capacity reuse must not borrow another engine group's scratch, even when it fits.
+void test_capacity_reuse() {
+    assert(g_cache.empty());
+    ArInst foreign{}, small{}, matching{};
+    g_cache.push_back(CacheSlot{CacheKey{101, 0, 2, 0, 256, 0}, &foreign, 1});
+    g_cache.push_back(CacheSlot{CacheKey{102, 0, 2, 0, 64, 0}, &small, 1});
+    g_cache.push_back(CacheSlot{CacheKey{102, 0, 2, 0, 256, 0}, &matching, 1});
+    ArInst* out = nullptr;
+    assert(acquire_at_least(CacheKey{102, 0, 2, 0, 128, 0}, &out) == RAD_OK);
+    assert(out == &matching && g_cache[0].refs == 1 && g_cache[1].refs == 1 && g_cache[2].refs == 2);
+    g_cache.clear();
+}
+
+void test_native_traffic() {
+    ArInst in{};
+    in.rank = 1;
+    in.world = 3;
+    in.esize = 2;
+    traffic_all(&in, 32, kTrOneShot);
+    assert(g_ar_sent[1][0].load() == 64 && g_ar_sent[1][2].load() == 64);
+    assert(g_ar_sent[1][1].load() == 0);
+    assert(g_ar_route_calls[1][kTrOneShot].load() == 1);
+    assert(g_ar_route_bytes[1][kTrOneShot].load() == 64);
+}
+
 int main() {
+    test_capacity_reuse();
+    test_native_traffic();
     test_unpublished();
     test_published(55, 91, 92, 93, 0);   // the first rank fails, the second holds its published addresses
     test_published(56, 94, 95, 96, 1);   // the second rank fails after the first published

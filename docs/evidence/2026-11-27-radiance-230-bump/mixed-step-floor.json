@@ -1,0 +1,519 @@
+{
+  "kind": "host-only-diagnostic-not-release-qualified",
+  "source_sha256": "7cf391010975841a2095768e01a481e0ad8fc8026c03fd16bf7fe6e02e4939ab",
+  "notes": [
+    "Native scheduler scratch copy only, restored. Strict aggregate learned cap experiment retains arrival priority, not a rotating scheduler. Existing fairness tests reject it. Two cost hypotheses, not calibrated hardware prediction. Prior instrumented trace measures model-pass wall, not end-to-end scheduler time."
+  ],
+  "cost_hypotheses": {
+    "trace-informed": {
+      "SIM_DEC0": 0.018,
+      "SIM_DECR": 0.0035,
+      "SIM_PF0": 0.055,
+      "SIM_PFB": 0.00032
+    },
+    "optimistic": {
+      "SIM_DEC0": 0.018,
+      "SIM_DECR": 0.0024,
+      "SIM_PF0": 0.01,
+      "SIM_PFB": 0.0003
+    }
+  },
+  "native_sim": {
+    "baseline": [
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          8,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "f02abf576d5fae37c657eaefd17e6b19998f1d42bb734926f01d5666d5757dda",
+          "wall_s": 21.71172,
+          "ttft_max_s": 14.04522,
+          "gap_p95_s": 0.046,
+          "gap_max_s": 0.24162,
+          "steps": 218,
+          "decode_steps": 210,
+          "decode_rows": 1368,
+          "mixed_steps": 39,
+          "output_tps_simulated": 188.65386989146876,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 39,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          8,
+          4096,
+          128
+        ],
+        "result": {
+          "schedule_sha256": "5761e8b086e947e7aba7370ef53657f4dfca37558b860ebc74424377e0b7f63a",
+          "wall_s": 15.82372,
+          "ttft_max_s": 14.04522,
+          "gap_p95_s": 0.22114,
+          "gap_max_s": 0.24162,
+          "steps": 90,
+          "decode_steps": 82,
+          "decode_rows": 344,
+          "mixed_steps": 39,
+          "output_tps_simulated": 64.71297520431352,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 39,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          8,
+          512,
+          192
+        ],
+        "result": {
+          "schedule_sha256": "89a75089f538ad46166997ba5b6919a4011ec6153d51544b6c6095ae89df09bd",
+          "wall_s": 4.85528,
+          "ttft_max_s": 2.00578,
+          "gap_p95_s": 0.12694,
+          "gap_max_s": 0.25118,
+          "steps": 72,
+          "decode_steps": 71,
+          "decode_rows": 512,
+          "mixed_steps": 7,
+          "output_tps_simulated": 316.356626188397,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 5,
+            "target_misses_simulated": 7,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          4,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "31dec9708a79ee8b97c1dbec322d157cb3f11b8f87fc0c03f043fb402883dcba",
+          "wall_s": 14.82184,
+          "ttft_max_s": 9.54934,
+          "gap_p95_s": 0.13922,
+          "gap_max_s": 0.24162,
+          "steps": 227,
+          "decode_steps": 224,
+          "decode_rows": 684,
+          "mixed_steps": 53,
+          "output_tps_simulated": 138.17447766269234,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 3,
+            "target_misses_simulated": 53,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          8,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "a4125297ef3c1fc3223b9f9743de978df091b7e5eec5e66e9ea42dd3583fa0bd",
+          "wall_s": 17.432,
+          "ttft_max_s": 11.2076,
+          "gap_p95_s": 0.0372,
+          "gap_max_s": 0.1852,
+          "steps": 218,
+          "decode_steps": 210,
+          "decode_rows": 1368,
+          "mixed_steps": 39,
+          "output_tps_simulated": 234.9701698026618,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 39,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          8,
+          4096,
+          128
+        ],
+        "result": {
+          "schedule_sha256": "a3fd052f66b4d35bdcc03bebcb755680a18b0e6f540cb40a1ea53f483ae9aa2a",
+          "wall_s": 12.6704,
+          "ttft_max_s": 11.2076,
+          "gap_p95_s": 0.166,
+          "gap_max_s": 0.1852,
+          "steps": 90,
+          "decode_steps": 82,
+          "decode_rows": 344,
+          "mixed_steps": 39,
+          "output_tps_simulated": 80.81828513701224,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 39,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          8,
+          512,
+          192
+        ],
+        "result": {
+          "schedule_sha256": "3388b05839e901cf8a171be44685959b9e344bba0b3a068dcac8e1a3fbf8fab0",
+          "wall_s": 3.848,
+          "ttft_max_s": 1.532,
+          "gap_p95_s": 0.0724,
+          "gap_max_s": 0.1924,
+          "steps": 72,
+          "decode_steps": 71,
+          "decode_rows": 512,
+          "mixed_steps": 7,
+          "output_tps_simulated": 399.16839916839916,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 5,
+            "target_misses_simulated": 6,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          4,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "2bb8505a27138a02b4331792b944acc2249acb3ee72834132e07f3800f31cde7",
+          "wall_s": 11.2172,
+          "ttft_max_s": 6.6344,
+          "gap_p95_s": 0.0892,
+          "gap_max_s": 0.1852,
+          "steps": 227,
+          "decode_steps": 224,
+          "decode_rows": 684,
+          "mixed_steps": 53,
+          "output_tps_simulated": 182.5767571229897,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 3,
+            "target_misses_simulated": 50,
+            "target_ms": 75.0
+          }
+        }
+      }
+    ],
+    "strict": [
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          8,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "9b8df7a55e0339a9a62f41552bdf33f6077aea708237d83f0b51609e9959ed7c",
+          "wall_s": 38.02344,
+          "ttft_max_s": 33.24094,
+          "gap_p95_s": 0.11738,
+          "gap_max_s": 0.24162,
+          "steps": 427,
+          "decode_steps": 419,
+          "decode_rows": 1368,
+          "mixed_steps": 248,
+          "output_tps_simulated": 107.72302558632254,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 248,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          8,
+          4096,
+          128
+        ],
+        "result": {
+          "schedule_sha256": "a3dbdb347357c52e18834af035e732a5fc305a9ebbc492b57dca7f1db1badfda",
+          "wall_s": 31.38408,
+          "ttft_max_s": 30.43508,
+          "gap_p95_s": 0.10304,
+          "gap_max_s": 0.24162,
+          "steps": 299,
+          "decode_steps": 291,
+          "decode_rows": 344,
+          "mixed_steps": 248,
+          "output_tps_simulated": 32.62800757581551,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 248,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          8,
+          512,
+          192
+        ],
+        "result": {
+          "schedule_sha256": "7b17b2c9d13a8a253cc3a843c26588f2c8a97dd4b50baee8c1fbf3406d0550dc",
+          "wall_s": 6.21788,
+          "ttft_max_s": 3.70088,
+          "gap_p95_s": 0.12694,
+          "gap_max_s": 0.25118,
+          "steps": 89,
+          "decode_steps": 88,
+          "decode_rows": 512,
+          "mixed_steps": 24,
+          "output_tps_simulated": 247.0295341820685,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 5,
+            "target_misses_simulated": 24,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "trace-informed",
+        "scenario": [
+          4,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "974ea6658b1914c5c2a565523adf2fa8d8fd40e93a78b12b0c0f31767480411b",
+          "wall_s": 22.36628,
+          "ttft_max_s": 17.96178,
+          "gap_p95_s": 0.10782,
+          "gap_max_s": 0.24162,
+          "steps": 326,
+          "decode_steps": 323,
+          "decode_rows": 684,
+          "mixed_steps": 152,
+          "output_tps_simulated": 91.56641158028961,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 3,
+            "target_misses_simulated": 152,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          8,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "914a574cf38f61499759391e74d70a09cc75261c5666803d420eaf90159a5035",
+          "wall_s": 22.1252,
+          "ttft_max_s": 17.5592,
+          "gap_p95_s": 0.0844,
+          "gap_max_s": 0.1852,
+          "steps": 356,
+          "decode_steps": 348,
+          "decode_rows": 1368,
+          "mixed_steps": 177,
+          "output_tps_simulated": 185.1282700269376,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 39,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          8,
+          4096,
+          128
+        ],
+        "result": {
+          "schedule_sha256": "23f75747f90a855ad17d14f74954b96fa2debbc0893e73a7703c5153ddded8c4",
+          "wall_s": 15.5108,
+          "ttft_max_s": 14.5208,
+          "gap_p95_s": 0.0772,
+          "gap_max_s": 0.1852,
+          "steps": 183,
+          "decode_steps": 175,
+          "decode_rows": 344,
+          "mixed_steps": 132,
+          "output_tps_simulated": 66.01851613069603,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 7,
+            "target_misses_simulated": 18,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          8,
+          512,
+          192
+        ],
+        "result": {
+          "schedule_sha256": "09d08064944e8a83e585276342bff9feb2d8f171f6e570bee4cd44b1d7520cf1",
+          "wall_s": 4.3008,
+          "ttft_max_s": 2.1624,
+          "gap_p95_s": 0.0724,
+          "gap_max_s": 0.1924,
+          "steps": 85,
+          "decode_steps": 84,
+          "decode_rows": 512,
+          "mixed_steps": 20,
+          "output_tps_simulated": 357.14285714285717,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 5,
+            "target_misses_simulated": 5,
+            "target_ms": 75.0
+          }
+        }
+      },
+      {
+        "cost": "optimistic",
+        "scenario": [
+          4,
+          4096,
+          512
+        ],
+        "result": {
+          "schedule_sha256": "c85218268025428fea760890c971f63957e325abc27c3da6c6c7210aa8c19021",
+          "wall_s": 12.1008,
+          "ttft_max_s": 7.7172,
+          "gap_p95_s": 0.0772,
+          "gap_max_s": 0.1852,
+          "steps": 255,
+          "decode_steps": 252,
+          "decode_rows": 684,
+          "mixed_steps": 81,
+          "output_tps_simulated": 169.2450085944731,
+          "mixed_geometry": {
+            "max_prefill_rows": 512,
+            "max_prefill_participants": 3,
+            "target_misses_simulated": 21,
+            "target_ms": 75.0
+          }
+        }
+      }
+    ],
+    "diff": "--- baseline/scheduler.cpp\n+++ experiment/scheduler.cpp\n@@ -1689,10 +1689,10 @@\n          * one quantum apiece, the effective allowance grows just enough to make progress; this\n          * may miss an impossible target, but it cannot silently starve a queued prompt. */\n         const int64_t floor = mixed_target_prefill_planned_ + (mixed_target_shares + 1) * Q;\n-        const int64_t allowance = std::max(mixed_target_.cap(), floor);\n+        const int64_t allowance = mixed_target_.cap();\n         const int64_t left = std::max<int64_t>(0, allowance - mixed_target_prefill_planned_);\n         const int64_t participants = mixed_target_shares + 1;\n-        const int64_t fair = left / participants / Q * Q;\n+        const int64_t fair = left >= Q ? std::max<int64_t>(Q, left / participants / Q * Q) : 0;\n         if (fair < Q || cap < Q) return 0;\n         cap = std::min(cap, fair);\n     }\n",
+    "baseline_tests_passed": 8,
+    "strict_test_failed": true
+  },
+  "prior_trace": {
+    "workload": "4096/512 8 streams",
+    "rank": 0,
+    "trace_summary": {
+      "prefill": {
+        "count": 4,
+        "buckets_model_rows": {
+          "1025-2048": {
+            "count": 4,
+            "min_ms": 796.746291,
+            "median_ms": 809.8566450000001,
+            "max_ms": 1068.140554
+          }
+        }
+      },
+      "decode": {
+        "count": 190,
+        "buckets_model_rows": {
+          "0-64": {
+            "count": 190,
+            "min_ms": 18.541428,
+            "median_ms": 46.093293,
+            "max_ms": 48.341493
+          }
+        }
+      },
+      "mixed": {
+        "count": 59,
+        "buckets_model_rows": {
+          "65-128": {
+            "count": 1,
+            "min_ms": 108.989587,
+            "median_ms": 108.989587,
+            "max_ms": 108.989587
+          },
+          "129-256": {
+            "count": 4,
+            "min_ms": 146.032003,
+            "median_ms": 159.9346835,
+            "max_ms": 186.248994
+          },
+          "257-512": {
+            "count": 53,
+            "min_ms": 208.614288,
+            "median_ms": 221.947626,
+            "max_ms": 227.60322
+          },
+          "513-1024": {
+            "count": 1,
+            "min_ms": 249.34559,
+            "median_ms": 249.34559,
+            "max_ms": 249.34559
+          }
+        }
+      }
+    },
+    "report_sha256": "8c7b34ad2781a71df2d70ff02e03316cb360619b18a975a5af210c241d3fe1b5"
+  },
+  "python_tests_passed": 33,
+  "evidence_sha256": {
+    "mixed-floor-geometry.py": "8c04d1877c1490f1925cc46f5cad6235086d36d2d2faeeaab9552c37c8575507",
+    "restored-build.log": "4c16b2548e20de1f030710123323e2ac572f577dff918befd7dd6a8a0f958f64",
+    "mixed-floor-direct.py": "a329665d7c4d0e8f25fc438c9a63cb0fe4537382b40cc088f8b2f5c46beeeef5",
+    "strict-cap-experiment.diff": "e40cb455f39971588748aa9dd4e78ff623d0b363d4c515415b26e126f7a9ad86",
+    "strict-build.log": "45721c4ed8526b94286c8d64690f628ce15bffe3fc44c642e8d9b0d5fd5c516f",
+    "strict.json": "fd20de0e7df9df01b8f840ae7a6a4a376b20b2fc2747525a82efb276d62ad6d6",
+    "strict-direct.log": "6a79e5bfe464e5e2cb5bcca2183f1109ae9cc091028e46768dc671730c451fd9",
+    "archive-mixed-floor.py": "c7468a4b11a773c621338d969e2a35429619dcf876df58cb9a451764d099e68b",
+    "restored-upstream.log": "780e4e2d0d164865e72d8a05e72fa0ac0d5768fbc1c05a17f2c5a794a0b223cd",
+    "baseline.json": "11f947d50adc929e631b198659af9e6002ff37665c38e35f8b8adc7b11a4f3e2",
+    "mixed-floor-host.py": "fa395d4725505a26f34441bb2313a8f31be5e370cad924e02abd0d1649eacc70",
+    "strict-upstream.log": "810e36a26e055a64bfb155ecfc87d2615f49913281ebef60e7219d9fc01cd550"
+  }
+}

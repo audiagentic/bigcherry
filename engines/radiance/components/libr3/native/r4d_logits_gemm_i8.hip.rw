@@ -1,0 +1,67 @@
+# Logits Form A, gfx1100. Only the MT2/FKB2 int8/TB0/MH1 pair
+# passes the resource gate. All other specializations retain the stock shim,
+# so the matvec and E4M3/IQR heads stay unchanged.
+# The selected chain and standalone paths use the same body.
+
+@@ find 1
+                f8v part[MT];
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t) part[t] = (f8v)(0.0f);
+@@ replace
+                constexpr bool kNativeAcc = MT == 2 && FKB == 2 && MH == 1 && TB == 0;
+                f8v part[MT];
+                r3_v8f part11[MT];
+                const r3_v8f zero11 = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t) {
+                    if constexpr (kNativeAcc) part11[t] = zero11;
+                    else part[t] = (f8v)(0.0f);
+                }
+@@ end
+
+@@ find 1
+                    const lm_s8v bf =
+                        codes8_to_bf16((uint32_t)raw[0], (uint32_t)raw[1]);
+@@ replace
+                    const lm_s8v bf =
+                        codes8_to_bf16((uint32_t)raw[0], (uint32_t)raw[1]);
+                    r3_v16bf b11;
+                    if constexpr (kNativeAcc) b11 = __builtin_bit_cast(
+                        r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, bf), lane));
+@@ end
+
+@@ find 1
+                        part[t] =
+                            __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12(af, bf, part[t]);
+@@ replace
+                        if constexpr (kNativeAcc) {
+                            const r3_v16bf a11 = __builtin_bit_cast(
+                                r3_v16bf, r3_frag_12_to_11(__builtin_bit_cast(r3_u4, af), lane));
+                            // Identical f32 sum order: zero-C WMMA then elementwise add.
+                            part11[t] = part11[t] + r3_wmma_bf16_native(a11, b11, zero11);
+                        } else {
+                            part[t] =
+                                __builtin_amdgcn_wmma_f32_16x16x16_bf16_w32_gfx12(af, bf, part[t]);
+                        }
+@@ end
+
+@@ find 1
+                const float sc = bscale(sraw[sb]);
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t)
+#pragma unroll
+                    for (int j = 0; j < 8; ++j) acc[t][j] = fmaf(part[t][j], sc, acc[t][j]);
+@@ replace
+                const float sc = bscale(sraw[sb]);
+#pragma unroll
+                for (uint32_t t = 0; t < MT; ++t) {
+                    if constexpr (kNativeAcc) {
+                        const f8v partial = __builtin_bit_cast(f8v, r3_acc_native_to_gfx12(part11[t]));
+#pragma unroll
+                        for (int j = 0; j < 8; ++j) acc[t][j] = fmaf(partial[j], sc, acc[t][j]);
+                    } else {
+#pragma unroll
+                        for (int j = 0; j < 8; ++j) acc[t][j] = fmaf(part[t][j], sc, acc[t][j]);
+                    }
+                }
+@@ end

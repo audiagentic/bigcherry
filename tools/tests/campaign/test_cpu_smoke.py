@@ -86,11 +86,24 @@ class AdapterSpecTests(unittest.TestCase):
         self.assertEqual(args[args.index("-ngl") + 1], "0")
         self.assertEqual(args[args.index("--device") + 1], "none")
 
-    def test_radiance_uses_cpu_kernels_on_one_rank(self):
-        args = self._spec("radiance").args
-        self.assertEqual(args[args.index("--kernels") + 1], "libavx,libref")
-        self.assertEqual(args[args.index("--tp") + 1], "1")
-        self.assertEqual(self._spec("radiance").completion.models_path, "/v1/models")
+    def test_radiance_smoke_does_not_use_legacy_args(self):
+        spec = self._spec("radiance")
+        self.assertEqual(spec.args, ())
+        self.assertEqual(spec.completion.models_path, "/v1/models")
+
+    def test_radiance_smoke_uses_native_yaml_with_runner_port(self):
+        spec = self._spec("radiance")
+        with tempfile.TemporaryDirectory() as td:
+            args = spec.argument_builder(Path(td), "127.0.0.1", 32123)
+            self.assertEqual(args[0], "--config")
+            config = Path(args[1]).read_text()
+            self.assertIn("port: 32123", config)
+            self.assertIn('kernels: "libavx,libref"', config)
+            self.assertIn(f'model: "{spec.model}"', config)
+            self.assertIn("max-model-len: 512", config)
+            self.assertIn("tp: 1", config)
+            self.assertIn("max-num-seqs: 1", config)
+            self.assertNotIn("gpu", config)
 
     def test_repository_models_are_pinned_and_a_missing_file_is_refused(self):
         for engine in engines.names(paths.REPO_ROOT):

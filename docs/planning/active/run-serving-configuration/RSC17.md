@@ -71,6 +71,8 @@ Fourth review (RSC16 guide J): exact target production source identity mandatory
 
 Readiness review guide L1-L3/L5: explicit fixed-backed discrete dense text scope (ordinary bounded windows and linear/conv state included; runtime reference-ring, generators, streaming, expert/fleet/lending/unified/explicit cap unsupported initially). Native config/inspector and owner reader migrate together. Shared auto bounded by existing service ceiling; numeric packed minimum >= L; legacy untouched. Per-rank receipt currently omits queue scratch/prefetch and uses raw free, not usable room; reuse native ledger and distinguish limiting margin. Version actual shared EnginePlan/managed producer-consumer chain, keep historical readers. Proposal/live gate before first pool, allocated and carved receipts and front readiness distinct. See guide L for exact code anchors and tests.
 
+RV4754: do not start full shared-mode allocation/retention schema migration until exact baseline 2.3 accepted. During bump preserve existing measured rank-local geometry, actual carve/ready, reserve and refit failure evidence; if legacy regression proven, implement minimal shared native extraction compatible with current contract and retain it for this plan.
+
 ## Change Log
 
 - 2026-11-27T03:42:00.914197+00:00 (created-by): Created by agent
@@ -82,3 +84,4 @@ Readiness review guide L1-L3/L5: explicit fixed-backed discrete dense text scope
 - 2026-11-27T07:13:13.774456+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-27T07:29:21.650576+00:00 (updated-by): Updated: section:notes, section:validation
 - 2026-11-27T07:30:28.167324+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:12:42.204283+00:00 (updated-by): Updated: section:notes

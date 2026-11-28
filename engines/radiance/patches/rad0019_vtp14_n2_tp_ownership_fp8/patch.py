@@ -2,7 +2,7 @@
 
 rad0018 adds the split spec, the Geom fields and the BF16 plugin. The fp8 plugin serves the block-fp8, MXFP4, w8a8 and
 other quantised containers. Its blocks already take per-rank spans: attention spans q|gate, k/v and the output by head
-(rad_block_attn_gated_fp8.h), the delta net takes uneven heads through Config::k_first / v_first (rad_block_gdn_fp8.h),
+(rad_block_attn_gated_q.h), the delta net takes uneven heads through Config::k_first / v_first (rad_block_gdn_q.h),
 and LinearFP8 takes a row or column span (an int8 or block-fp8 linear refuses a span that cuts its scale groups).
 
 - qwen35_fp8: opts in (Geom::tp_owned_ok); delta-net heads checked by bc_own_linear_heads and first heads from the
@@ -11,7 +11,7 @@ and LinearFP8 takes a row or column span (an int8 or block-fp8 linear refuses a 
 - The DFlash2 drafter follows its target's split: KV heads and feed-forward rows in the target's proportions
   (Geom::own_kv_split / own_ff_split), query heads whole groups of its KV heads; a drafter that does not scale to
   whole heads and rows is refused. Its draft head is sharded like the target's vocabulary.
-- rad_block_attn_gated_fp8.h / rad_block_mlp_fp8.h / rad_fp8.h / rad_block_dflash2.h: the spans under
+- rad_block_attn_gated_q.h / rad_block_mlp_q.h / rad_linear.h / rad_block_dflash2.h: the spans under
   Geom::tp_owned only. The blocks are shared by several plugins; only one that opted in can set tp_owned.
 
 Source-pinned to radiance v1.17.0 (19d4e8fe), applied after rad0018.
@@ -118,7 +118,7 @@ QWEN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descrip
     ),
 ))
 
-ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none", description="VTP14 N2 fp8 attention spans", edits=(
+ATTN = FilePatch(path="arch/common/rad_block_attn_gated_q.h", language="none", description="VTP14 N2 fp8 attention spans", edits=(
     _edit(
         "n2f-attn-spans",
         "    const bool    a_spanned  = g.attn_world != g.world;\n"
@@ -144,7 +144,7 @@ ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none",
     ),
 ))
 
-MLP = FilePatch(path="arch/common/rad_block_mlp_fp8.h", language="none", description="VTP14 N2 fp8 feed-forward spans", edits=(
+MLP = FilePatch(path="arch/common/rad_block_mlp_q.h", language="none", description="VTP14 N2 fp8 feed-forward spans", edits=(
     _edit(
         "n2f-mlp-gate-up",
         "                                 { src.gate, src.up }, w.h, w.gate_up, 0, { g.n_ff, g.n_ff }));\n",
@@ -167,7 +167,7 @@ MLP = FilePatch(path="arch/common/rad_block_mlp_fp8.h", language="none", descrip
     ),
 ))
 
-LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="VTP14 N2 span_parts covers MXFP4 wref", edits=(
+LINEAR = FilePatch(path="arch/common/rad_linear.h", language="none", description="VTP14 N2 span_parts covers MXFP4 wref", edits=(
     _edit(
         "n2f-dense-span",
         "    /* Rows [lo, hi) of the stored block-fp8 weight `src_wn` (codes and scale plane; mapped by\n",
@@ -176,9 +176,10 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
         "     * blocks are 128 each way; MXFP4's scale and reference planes keep the rows and take K in 32s.\n"
         "     * Call after declare(). */\n"
         "    int span(RadBuilder* b, int shard, int64_t lo, int64_t hi) const {\n"
+        "        if (shard != RAD_SHARD_ROW && shard != RAD_SHARD_COL) return RAD_E_INVAL;\n"
         "        const bool rows = shard == RAD_SHARD_ROW;\n"
-        "        const int64_t div = w8h ? (rows ? 1 : g8) : (mx || m2x) ? (rows ? 1 : RAD_MX_GROUP) : RAD_FP8_BLOCK;\n"
-        "        if (lo < 0 || hi <= lo || lo % div || hi % div || ((mx || m2x || w8h) && rows && (lo % 16 || hi % 16))) {\n"
+        "        const int64_t div = w8h ? (rows ? 1 : g8) : mx ? (rows ? 1 : RAD_MX_GROUP) : RAD_SCALE_GROUP;\n"
+        "        if (div <= 0 || lo < 0 || hi <= lo || lo % div || hi % div || ((mx || w8h) && rows && (lo % 16 || hi % 16))) {\n"
         "            fprintf(stderr, \"radiance: a span [%lld, %lld) cuts this weight's scale blocks\\n\",\n"
         "                    (long long)lo, (long long)hi);\n"
         "            return RAD_E_INVAL;\n"
@@ -197,20 +198,20 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
     ),
     _edit(
         "n2f-dense-scale-view-field",
-        "    int64_t    g8 = RAD_FP8_BLOCK;\n"
+        "    int64_t    g8 = RAD_SCALE_GROUP;\n"
         "    int64_t    w_rb = 0;\n",
-        "    int64_t    g8 = RAD_FP8_BLOCK;\n"
+        "    int64_t    g8 = RAD_SCALE_GROUP;\n"
         "    bool       w8h_s_full = false; /* BC_RUM06_DENSE_SCALE_VIEW: two-level [N,K] scale view. */\n"
         "    int64_t    w_rb = 0;\n",
         guard="BC_RUM06_DENSE_SCALE_VIEW",
     ),
     _edit(
         "n2f-dense-scale-view-probe",
-        "            const bool iq8r = linear_is_iq8r(enc);\n"
-        "            w = decl_view(b, wn, nullptr, cv, enc.plane[0].dtype, { N, K }, access, shard, grp,\n",
-        "            const bool iq8r = linear_is_iq8r(enc);\n"
-        "            w8h_s_full = linear_w8h_rowf(enc) || linear_w8h_scale2(enc) || iq8r; /* BC_RUM06_DENSE_SCALE_PROBE */\n"
-        "            w = decl_view(b, wn, nullptr, cv, enc.plane[0].dtype, { N, K }, access, shard, grp,\n",
+        "    const bool iq8r = linear_is_iq8r(enc);\n"
+        "    w = decl_view(b, wn, nullptr, cv, enc.plane[0].dtype, { N, K }, access, shard, grp, rp.w,\n",
+        "    const bool iq8r = linear_is_iq8r(enc);\n"
+        "    w8h_s_full = linear_w8h_rowf(enc) || linear_w8h_scale2(enc) || iq8r; /* BC_RUM06_DENSE_SCALE_PROBE */\n"
+        "    w = decl_view(b, wn, nullptr, cv, enc.plane[0].dtype, { N, K }, access, shard, grp, rp.w,\n",
         guard="BC_RUM06_DENSE_SCALE_PROBE",
     ),
     _edit(
@@ -218,17 +219,17 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
         "        RAD_ARCH_TRY(rad_weight_shard_span_parts(b, w, lo, hi, total, n));\n"
         "        if (!ws) return RAD_OK;\n",
         "        RAD_ARCH_TRY(rad_weight_shard_span_parts(b, w, lo, hi, total, n));\n"
-        "        /* BC_VTP14_N2F_SPAN_PARTS_WREF: an MXFP4 linear's reference scale plane has the weight's rows\n"
-        "         * (as declare()'s single span already treats it); without its span an uneven head split\n"
-        "         * (the delta net's k_first) leaves it on the even shard and the load refuses it. */\n"
-        "        if (wref) RAD_ARCH_TRY(rad_weight_shard_span_parts(b, wref, lo, hi, total, n));\n"
+        "        /* BC_VTP14_N2F_SPAN_PARTS_WREF: 2.3 LinearQ refuses MXFP4 before declaring a weight;\n"
+        "         * it no longer has a reference plane. DenseQ retains the supported MXFP4 drafter\n"
+        "         * reference view and the explicit span overload above. */\n"
         "        if (!ws) return RAD_OK;\n",
         guard="BC_VTP14_N2F_SPAN_PARTS_WREF",
         max_span=3,
     ),
 ))
 
-_EVEN_DRAFT_GEOMETRY = """    RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, "draft num_attention_heads", &dg.n_head));
+_EVEN_DRAFT_GEOMETRY = """    RAD_ARCH_TRY(divide_or_fail(dg.n_head_all, dg.world, "draft num_attention_heads",
+                                &dg.n_head));
     /* The target's kv_off is the target's; the drafter's is set here or zero. */
     dg.kv_off = 0;
     if (kv_repl_ok && dg.world > dg.n_head_kv_all && dg.world % dg.n_head_kv_all == 0) {

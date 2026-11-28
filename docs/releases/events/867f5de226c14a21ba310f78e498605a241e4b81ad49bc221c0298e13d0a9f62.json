@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_125925_make-native-yaml-tuning-author_8773",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_tuning_fields.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/configs/README.md"
+  ],
+  "plan-item-ids": [
+    "RSC19"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Project four existing native tuning fields and reconcile projected settings using the existing typed serving contract; isolate managed child environments from ambient Radiance overrides.",
+  "timestamp-utc": "2026-11-27T12:59:25.736772Z",
+  "user-summary-candidate": "Make native YAML tuning authoritative in the managed serving component."
+}

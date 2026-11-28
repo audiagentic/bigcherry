@@ -298,6 +298,8 @@ Owner scope correction 2026-11-25: docs/design/radiance-native-yaml-launch.md se
 
 PR #1574 first hosted integrated build reached ngram-helper packaging then rejected its intentional root-level library plus POST_BUILD runtime copy. Corrected the helper CMake target to emit directly under RAD_PLUGIN_OUT/helpers and select only the existing runtime-home or explicit component-relative output locations, not recursive basenames; duplicate declared destinations and two valid candidate locations still refuse. 75 offline tests passed including updated bump-gate fixtures and an old helper basename fixture. Actual ROCm CMake configuration generated direct helper and host plugin link targets. Full corrected CI required before merge.
 
+RV4754: only qualified baseline release after exact candidate, required acceptance, install/rollback and source audit. No broader fleet/shared capacity/power changes as implicit promotion requirements.
+
 ## Change Log
 
 - 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
@@ -335,3 +337,4 @@ PR #1574 first hosted integrated build reached ngram-helper packaging then rejec
 - 2026-11-25T05:21:19.232802+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T05:33:01.183505+00:00 (updated-by): Updated: section:notes
 - 2026-11-25T08:40:51.708103+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T15:14:40.634706+00:00 (updated-by): Updated: section:notes

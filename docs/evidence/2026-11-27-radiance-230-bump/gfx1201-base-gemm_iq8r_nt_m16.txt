@@ -1,0 +1,51 @@
+  ok    had_quant_act_i8g group 256 vs the host rule, M=1 K=1024
+        rel_l2 vs the exact fold 1.77e-03 (worst 3.43e-03), vs f32 0.0116
+  ok    gemm_iq8r_nt_m16 M=1 N=256 K=1024
+  ok    had_quant_act_i8g group 256 vs the host rule, M=5 K=5120
+        rel_l2 vs the exact fold 1.72e-03 (worst 3.66e-03), vs f32 0.0162
+  ok    gemm_iq8r_nt_m16 M=5 N=512 K=5120
+  ok    had_quant_act_i8g group 256 vs the host rule, M=16 K=17408
+        rel_l2 vs the exact fold 1.62e-03 (worst 3.79e-03), vs f32 0.0185
+  ok    gemm_iq8r_nt_m16 M=16 N=128 K=17408
+  ok    had_quant_act_i8g group 256 vs the host rule, M=64 K=2048
+        rel_l2 vs the exact fold 1.64e-03 (worst 3.75e-03), vs f32 0.0110
+  ok    gemm_iq8r_nt_m16 M=64 N=1024 K=2048
+  ok    had_quant_act_i8g group 256 vs the host rule, M=200 K=1024
+        rel_l2 vs the exact fold 1.68e-03 (worst 3.80e-03), vs f32 0.0098
+  ok    gemm_iq8r_tiled M=200 N=256 K=1024
+  ok    had_quant_act_i8g group 256 vs the host rule, M=300 K=5120
+        rel_l2 vs the exact fold 1.60e-03 (worst 3.75e-03), vs f32 0.0153
+  ok    gemm_iq8r_tiled M=300 N=384 K=5120
+  ok    had_quant_act_i8g group 256 vs the host rule, M=1 K=2048
+        rel_l2 vs the exact fold 1.59e-03 (worst 3.37e-03), vs f32 0.0137
+  ok    gemm_iq8r_nt_m16 M=1 N=128 K=2048
+  ok    had_quant_act_i8g group 256 vs the host rule, M=7 K=2048
+        rel_l2 vs the exact fold 1.70e-03 (worst 3.58e-03), vs f32 0.0110
+  ok    gemm_iq8r_nt_m16 M=7 N=128 K=2048
+  ok    had_quant_act_i8g group 256 vs the host rule, M=58 K=2048
+        rel_l2 vs the exact fold 1.64e-03 (worst 3.75e-03), vs f32 0.0112
+  ok    gemm_iq8r_nt_m16 M=58 N=128 K=2048
+  ok    had_quant_act_i8g group 256 vs the host rule, M=7 K=1024
+        rel_l2 vs the exact fold 1.70e-03 (worst 3.72e-03), vs f32 0.0106
+  ok    gemm_iq8r_nt_m16 M=7 N=2048 K=1024
+  ok    had_quant_act_i8g group 256 vs the host rule, M=28 K=1024
+        rel_l2 vs the exact fold 1.71e-03 (worst 3.80e-03), vs f32 0.0098
+  ok    gemm_iq8r_nt_m16 M=28 N=2048 K=1024
+  ok    had_quant_act_i8g group 256 vs the host rule, M=7 K=3072
+        rel_l2 vs the exact fold 1.63e-03 (worst 3.62e-03), vs f32 0.0141
+  ok    gemm_iq8r_nt_m16 M=7 N=2048 K=3072
+  ok    had_quant_act_i8g group 256 vs the host rule, M=7 K=2048
+        rel_l2 vs the exact fold 1.70e-03 (worst 3.58e-03), vs f32 0.0109
+  ok    gemm_iq8r_nt_m16 M=7 N=1024 K=2048
+  ok    had_quant_act_i8g group 256 vs the host rule, M=7 K=2048
+        rel_l2 vs the exact fold 1.70e-03 (worst 3.58e-03), vs f32 0.0109
+  ok    gemm_iq8r_nt_m16 M=7 N=6144 K=2048
+  ok    had_quant_act_i8g group 256 vs the host rule, M=1 K=10240
+        rel_l2 vs the exact fold 1.34e-03 (worst 3.54e-03), vs f32 0.0250
+  ok    gemm_iq8r_nt_m16 M=1 N=2048 K=10240
+  ok    had_quant_act_i8g group 256 vs the host rule, M=58 K=10240
+        rel_l2 vs the exact fold 1.73e-03 (worst 3.77e-03), vs f32 0.0173
+  ok    gemm_iq8r_nt_m16 M=58 N=2048 K=10240
+  ok    rmsnorm_had_quant_i8g group 256 is byte-identical to rmsnorm + had_quant_act_i8g
+  ok    gated_had_quant_i8g group 256 is byte-identical to silu_mul + had_quant_act_i8g
+  ok    gate_had_quant_i8g group 256 is byte-identical to sigmoid + mul + had_quant_act_i8g

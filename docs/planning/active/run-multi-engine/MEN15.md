@@ -57,6 +57,8 @@ Sequence: after MEN11 leftovers, before the bumps (MEN10 step f uses it as the f
 
 2026-11-25 second integration review: docs/design/radiance-integration-review-20261125.md is the exact-source review and controls conflicting earlier wording. Shipping pin remains b6b8751 (2.2.0), upstream observed main 1c104de4 is a development candidate, 119 commits and 327 changed files; no automatic repin or backport. No new compatibility layer, launch manifest, bump driver or identity machinery. Native --check is parser-only; actual native CPU --config launch with pinned tiny artifact and candidate library must serve deterministic output. Separate fake owner test, no GPU visible, no flag-to-YAML legacy adapter. Candidate new native config keys tested only when supported; no duplicate parser.
 
+2026-11-27 real 2.3.0 base-runtime CPU smoke: checked-in native YAML fixture with only port/model substitutions; legacy flags removed. Old tiny.rad refused retired block FP8, same source converted to independently named pinned IQ8R tiny fixture. Three actual passes, final six nonempty completions in three identical pairs, clean exit, no GPU; 32 offline tests pass. Evidence docs/evidence/2026-11-27-radiance-230-bump/FIRST-RUNTIME-TESTS.md. Complete candidate bundle repeat and llama.cpp actual smoke/remaining acceptance still required.
+
 ## Change Log
 
 - 2026-10-17T02:58:13.549094+00:00 (created-by): Created by agent
@@ -67,3 +69,4 @@ Sequence: after MEN11 leftovers, before the bumps (MEN10 step f uses it as the f
 - 2026-11-25T02:09:58.080009+00:00 (updated-by): Updated: section:notes, section:steps, section:acceptance_criteria
 - RV4650
 - 2026-11-25T02:49:39.074949+00:00 (updated-by): Updated: section:notes
+- 2026-11-27T08:00:41.998472+00:00 (updated-by): Updated: section:notes

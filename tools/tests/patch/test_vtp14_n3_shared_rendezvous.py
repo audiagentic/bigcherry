@@ -78,8 +78,8 @@ class SharedRendezvousTests(unittest.TestCase):
             self.assertIn("BC_VTP14_N3_UNPUBLISHED", life)
             self.assertIn("BC_VTP14_N3_FAILED_RANK", life)
             self.assertNotRegex(entry, r"(?m)^Rendezvous g_rv;$")
-            # Include expansion preserves the exact frozen rad0017 ownership,
-            # poisoning, failed-rank teardown, and peer publication sequence.
+            # Freeze the reviewed 2.3 composition (native traffic/weighted-four-rank
+            # additions and local ownership/poison/teardown). See bump evidence.
             expanded = entry
             for name, text in (("bc_ar_rendezvous_impl.h", rv),
                                ("bc_ar_lifecycle_impl.h", life)):
@@ -88,24 +88,24 @@ class SharedRendezvousTests(unittest.TestCase):
                     text.split("#pragma once\n\n", 1)[1], 1)
             self.assertEqual(
                 hashlib.sha256(expanded.encode()).hexdigest(),
-                "51ceafd0029005b289b7cb7ba0817440e49711e32a209f574889c1d3c67e2943",
+                "2ee24606598d3fbb874a364bc78cd9bf083638939a0d8b6c75138a03726248b1",
             )
             # The native <condition_variable>/<cstdio> pair is in the owned
             # rendezvous header; its gfx11 rewrite must migrate with it.
             self.assertIn("#include <condition_variable>\n#include <cstdio>\n", rv)
-            # A rad0017-only fixture predates rad0051's created header; its
-            # native rewrite rule is checked by the full production source
-            # composition, not against a file this fixture never creates.
+            # This fixture only composes through rad0017. Check its three owned
+            # native units; full-tree rewrite coverage remains the production
+            # composition gate after all patches and renamed units are reconciled.
             native = root / "native-rules"
             native.mkdir()
-            for rule in (LIBR3 / "native").glob("*.rw"):
-                source = root / "libr4d" / rule.name.removesuffix(".rw")
-                if not source.is_file():
-                    self.assertEqual(rule.name, "bc_b16_prefill_impl.h.rw")
-                    continue
+            for name in ("r4d_ar_entry.hip", "bc_ar_rendezvous_impl.h", "bc_ar_lifecycle_impl.h"):
+                self.assertTrue((root / "libr4d" / name).is_file())
+                rule = LIBR3 / "native" / (name + ".rw")
                 shutil.copyfile(rule, native / rule.name)
+            rules = root / "focal-rewrites.txt"
+            rules.write_text("")
             r = subprocess.run([sys.executable, str(LIBR3 / "r3_rewrite.py"), "--source", str(root / "libr4d"),
-                                "--rules", str(LIBR3 / "rewrites.txt"), "--native", str(native),
+                                "--rules", str(rules), "--native", str(native),
                                 "--check"], capture_output=True, text=True, check=False)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertNotRegex(r.stdout, r'"failures": \{\s*"')

@@ -22,6 +22,7 @@ class OriginDriftBumpTests(unittest.TestCase):
                 mock.patch.object(radiance_bump.subprocess, "run", return_value=mock.Mock(stdout="0" * 40 + "\n")), \
                 mock.patch("bigcherry.release.pin_bump.adapter") as adapters:
             adapters.return_value.source_drift_checks.return_value = tuple(ours)
+            adapters.return_value.split_patch_created.side_effect = lambda context, source, failures: (failures, [])
             pin_bump.run_phase_drift(engine="radiance", vendor_root=Path("/src"), target_ref="v9")
 
     def test_a_clean_origin_passes(self):

@@ -140,7 +140,25 @@ class TpOwnershipTests(unittest.TestCase):
             fp8 = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
             self.assertIn("gc.k_first      = g.own_gdn_k_lo;", fp8)
             self.assertIn("rad_weight_shard_span(b, m.w_lm_head, g.vocab_off", fp8)
-            self.assertIn("g.attn_world != g.world || g.tp_owned", (root / "arch/common/rad_block_attn_gated_fp8.h").read_text())
+            self.assertIn("g.attn_world != g.world || g.tp_owned", (root / "arch/common/rad_block_attn_gated_q.h").read_text())
+            cxx = shutil.which("g++") or shutil.which("clang++")
+            self.assertIsNotNone(cxx, "requires C++ compiler for TP span contract")
+            inc = root / "bc-include"
+            inc.mkdir()
+            (inc / "arch").symlink_to(root / "arch/common", target_is_directory=True)
+            flags = [cxx, "-std=c++17", "-I", str(root / "abi"), "-I", str(inc)]
+            for plugin in ("qwen35_bf16", "qwen35_fp8"):
+                built = subprocess.run([*flags, "-fsyntax-only", str(root / "arch" / plugin / (plugin + ".cpp"))],
+                                       capture_output=True, text=True, timeout=30)
+                self.assertEqual(built.returncode, 0, built.stderr[-6000:])
+            exe = root / "dense-span-test"
+            fixture = Path(__file__).parent / "fixtures/radiance_tp_dense_span_test.cpp"
+            built = subprocess.run([*flags, "-O0", str(fixture), "-o", str(exe)],
+                                   capture_output=True, text=True, timeout=30)
+            self.assertEqual(built.returncode, 0, built.stderr[-6000:])
+            ran = subprocess.run([str(exe)], capture_output=True, text=True, timeout=5)
+            self.assertEqual(ran.returncode, 0, ran.stderr[-6000:])
+
 
 
 if __name__ == "__main__":

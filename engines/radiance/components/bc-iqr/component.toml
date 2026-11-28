@@ -5,7 +5,7 @@ schema = 1
 name = "bc-iqr"
 engine = "radiance"
 targets = ["gfx1100", "gfx1201"]
-built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
+built-against = "3b13fd32663ef52252a7f0be255523480aa22ffe"
 outputs = ["kernels/libbciqr.so"]
 
 [build]
@@ -20,4 +20,4 @@ patch-provided-files = []
 protocol-flags = []
 owned-flags = []
 runtime-env = []
-abi-version = 43
+abi-version = 44

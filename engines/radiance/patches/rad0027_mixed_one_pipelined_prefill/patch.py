@@ -107,7 +107,7 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
     ),
 ))
 
-ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none",
+ATTN = FilePatch(path="arch/common/rad_block_attn_gated_q.h", language="none",
                  description="VTP31 mixed one-sequence cut", edits=(
     _edit(
         "mx1-attn-one",
@@ -161,7 +161,7 @@ ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none",
     ),
 ))
 
-GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", description="VTP31 mixed one-sequence cut",
+GDN = FilePatch(path="arch/common/rad_block_gdn_q.h", language="none", description="VTP31 mixed one-sequence cut",
                 edits=(
     _edit(
         "mx1-gdn-one",

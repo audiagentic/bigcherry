@@ -1,0 +1,712 @@
+{
+  "kind": "configuration-bound-serving-screen-not-qualified",
+  "source_slice": "90bca121c9dcee4cac6cf2b41a8d7b3e",
+  "notes": [
+    "Fresh managed launch each arm, 75/50/75 ms targets, 8 streams, FP8 KV, pipeline on/min256, batch 2048, interleave off, prefix cache disabled. Same benchmark workload and seed as VTP59 ABBA screen; 75ms repeated, 50ms matched-build control. Matched enhanced owner automatically derived native scheduler expectations; diagnostics before and after; no production default changed or numerical quality qualification.",
+    "All six reports match prior prompt hashes and actual input/output token counts. 75ms short workload repeats closely, long workload has two distinct latency regimes; no claim of stable long improvement or numerical parity. 50ms single matched-build control; no production promotion."
+  ],
+  "arms": [
+    {
+      "effective_tuning": {
+        "--tp": {
+          "value": "3",
+          "source": "models.qwen27b.tp"
+        },
+        "--tp-wire": {
+          "value": "exact",
+          "source": "models.qwen27b.tp-wire"
+        },
+        "--tp-wire-min-kb": {
+          "value": "128",
+          "source": "default"
+        },
+        "--pipelined-prefill": {
+          "value": "on",
+          "source": "models.qwen27b.pipelined-prefill"
+        },
+        "--pipelined-prefill-min-rows": {
+          "value": "256",
+          "source": "models.qwen27b.pipelined-prefill-min-rows"
+        },
+        "--tp-ownership": {
+          "value": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+          "source": "models.qwen27b.tp-ownership"
+        },
+        "--tune-pin": {
+          "value": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+          "source": "models.qwen27b.tune-pin"
+        },
+        "--max-num-batched-tokens": {
+          "value": "2048",
+          "source": "models.qwen27b.max-num-batched-tokens"
+        },
+        "--busy-prefill-chunk": {
+          "value": "auto",
+          "source": "default"
+        },
+        "--prefill-governor": {
+          "value": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+          "source": "default"
+        },
+        "--prefill-interleave": {
+          "value": "off",
+          "source": "models.qwen27b.prefill-interleave"
+        },
+        "--mixed-step-target-ms": {
+          "value": "75",
+          "source": "models.qwen27b.mixed-step-target-ms"
+        },
+        "--long-prefill-token-threshold": {
+          "value": "0 (off)",
+          "source": "default"
+        },
+        "--prefill-room-gate": {
+          "value": "off",
+          "source": "default"
+        },
+        "--preempt-wait-ms": {
+          "value": "5000",
+          "source": "default"
+        },
+        "--max-num-seqs": {
+          "value": "8",
+          "source": "models.qwen27b.max-num-seqs"
+        },
+        "--kv-cache-dtype": {
+          "value": "fp8",
+          "source": "models.qwen27b.kv-cache-dtype"
+        },
+        "--attn-prefill-fp8": {
+          "value": "off",
+          "source": "default"
+        },
+        "--state-cache-dtype": {
+          "value": "f32",
+          "source": "default"
+        },
+        "--no-prefix-cache": {
+          "value": "prefix caching off",
+          "source": "models.qwen27b.no-prefix-cache"
+        }
+      },
+      "expected_tuning": {
+        "--tp": "3",
+        "--max-num-batched-tokens": "2048",
+        "--kv-cache-dtype": "fp8",
+        "--tp-wire": "exact",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "256",
+        "--prefill-interleave": "off",
+        "--max-num-seqs": "8",
+        "--no-prefix-cache": "prefix caching off",
+        "--mixed-step-target-ms": "75",
+        "--prefill-room-gate": "off",
+        "--long-prefill-token-threshold": "0 (off)",
+        "--preempt-wait-ms": "5000"
+      },
+      "run_id": "93485d05-fb1d-4f62-b396-dd46b45b6b72",
+      "manifest_sha256": "91ed64f2faf73a20542c83d6a7c512e6851ef1939dade8a601216eecdbb38939",
+      "identity": {
+        "engine": "radiance",
+        "build_id": "8b5663b196835b170fda66fedf3458a7",
+        "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+        "source_revision": "source_slice:90bca121c9dcee4cac6cf2b41a8d7b3e",
+        "model": "15313e3fef8c8bf41bf2548427a192a338faeb72742c53cdcb79e9311c9946f7",
+        "layout": "qwen27b-tp3"
+      },
+      "receipt_sha256": {
+        "native_tuning_start": "3807dba41ddb73218d4ad1ac2680cb4f155b1f18cf94be3d896f7ef71b8fb2c9",
+        "native_tuning_end": "244d10edcdcfa93714ddb0cd0462e5435b8d4e6fa98de3963d77d4b52cd799c1"
+      },
+      "arm": "latency-auto-qwen27b-tp3-75-a",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 188.774,
+              "ttft_ms_max_median": 14574.3,
+              "event_gap_ms_p95_median": 41.509,
+              "decode_ms_per_step_median": 37.4369,
+              "draft_acceptance_median": 0.6155,
+              "requests_running_mean_median": 7.724
+            }
+          },
+          "ok": true,
+          "raw_sha256": "f0e4b55ff11880d0ebd5d1b949ee0333ea42c86c8015a70770be95377da07d9c"
+        },
+        {
+          "prompt_target": 512,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 279.875,
+              "ttft_ms_max_median": 1979.32,
+              "event_gap_ms_p95_median": 40.065,
+              "decode_ms_per_step_median": 35.9415,
+              "draft_acceptance_median": 0.6876,
+              "requests_running_mean_median": 6.188
+            }
+          },
+          "ok": true,
+          "raw_sha256": "c1d57e0d28a8ce6bcbb4b08d136443e7a5f1a5221a8d110debce84551ad9154f"
+        }
+      ]
+    },
+    {
+      "effective_tuning": {
+        "--tp": {
+          "value": "3",
+          "source": "models.qwen27b.tp"
+        },
+        "--tp-wire": {
+          "value": "exact",
+          "source": "models.qwen27b.tp-wire"
+        },
+        "--tp-wire-min-kb": {
+          "value": "128",
+          "source": "default"
+        },
+        "--pipelined-prefill": {
+          "value": "on",
+          "source": "models.qwen27b.pipelined-prefill"
+        },
+        "--pipelined-prefill-min-rows": {
+          "value": "256",
+          "source": "models.qwen27b.pipelined-prefill-min-rows"
+        },
+        "--tp-ownership": {
+          "value": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+          "source": "models.qwen27b.tp-ownership"
+        },
+        "--tune-pin": {
+          "value": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+          "source": "models.qwen27b.tune-pin"
+        },
+        "--max-num-batched-tokens": {
+          "value": "2048",
+          "source": "models.qwen27b.max-num-batched-tokens"
+        },
+        "--busy-prefill-chunk": {
+          "value": "auto",
+          "source": "default"
+        },
+        "--prefill-governor": {
+          "value": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+          "source": "default"
+        },
+        "--prefill-interleave": {
+          "value": "off",
+          "source": "models.qwen27b.prefill-interleave"
+        },
+        "--mixed-step-target-ms": {
+          "value": "50",
+          "source": "models.qwen27b.mixed-step-target-ms"
+        },
+        "--long-prefill-token-threshold": {
+          "value": "0 (off)",
+          "source": "default"
+        },
+        "--prefill-room-gate": {
+          "value": "off",
+          "source": "default"
+        },
+        "--preempt-wait-ms": {
+          "value": "5000",
+          "source": "default"
+        },
+        "--max-num-seqs": {
+          "value": "8",
+          "source": "models.qwen27b.max-num-seqs"
+        },
+        "--kv-cache-dtype": {
+          "value": "fp8",
+          "source": "models.qwen27b.kv-cache-dtype"
+        },
+        "--attn-prefill-fp8": {
+          "value": "off",
+          "source": "default"
+        },
+        "--state-cache-dtype": {
+          "value": "f32",
+          "source": "default"
+        },
+        "--no-prefix-cache": {
+          "value": "prefix caching off",
+          "source": "models.qwen27b.no-prefix-cache"
+        }
+      },
+      "expected_tuning": {
+        "--tp": "3",
+        "--max-num-batched-tokens": "2048",
+        "--kv-cache-dtype": "fp8",
+        "--tp-wire": "exact",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "256",
+        "--prefill-interleave": "off",
+        "--max-num-seqs": "8",
+        "--no-prefix-cache": "prefix caching off",
+        "--mixed-step-target-ms": "50",
+        "--prefill-room-gate": "off",
+        "--long-prefill-token-threshold": "0 (off)",
+        "--preempt-wait-ms": "5000"
+      },
+      "run_id": "5333982f-2477-40bf-a76d-975c951afcbf",
+      "manifest_sha256": "5fa09756f706952e99931b0cb133a70afa088021c38a41684003eabf498efc87",
+      "identity": {
+        "engine": "radiance",
+        "build_id": "8b5663b196835b170fda66fedf3458a7",
+        "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+        "source_revision": "source_slice:90bca121c9dcee4cac6cf2b41a8d7b3e",
+        "model": "15313e3fef8c8bf41bf2548427a192a338faeb72742c53cdcb79e9311c9946f7",
+        "layout": "qwen27b-tp3"
+      },
+      "receipt_sha256": {
+        "native_tuning_start": "36b6915e94d455fe94714dfead8bf912060fc17fb0589c169c383a7f3cee9ad2",
+        "native_tuning_end": "94c6ddc5e6111d77ce7e20c4ae6fb8b8db5c792e010070d53d9c1fa797cc352a"
+      },
+      "arm": "latency-auto-qwen27b-tp3-50-control",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 180.289,
+              "ttft_ms_max_median": 15767.68,
+              "event_gap_ms_p95_median": 161.219,
+              "decode_ms_per_step_median": 37.6837,
+              "draft_acceptance_median": 0.6144,
+              "requests_running_mean_median": 7.297
+            }
+          },
+          "ok": true,
+          "raw_sha256": "ffcfd8ebeea14d349ab1b7466176f121d40ce093ee293c293f03d6e3f43031a3"
+        },
+        {
+          "prompt_target": 512,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 270.253,
+              "ttft_ms_max_median": 2157.15,
+              "event_gap_ms_p95_median": 165.666,
+              "decode_ms_per_step_median": 34.9058,
+              "draft_acceptance_median": 0.6897,
+              "requests_running_mean_median": 5.312
+            }
+          },
+          "ok": true,
+          "raw_sha256": "9cdf31b53ecadba5ccd8b0d9f5275a05f348292af79ecea9f60ac8ea6606c809"
+        }
+      ]
+    },
+    {
+      "effective_tuning": {
+        "--tp": {
+          "value": "3",
+          "source": "models.qwen27b.tp"
+        },
+        "--tp-wire": {
+          "value": "exact",
+          "source": "models.qwen27b.tp-wire"
+        },
+        "--tp-wire-min-kb": {
+          "value": "128",
+          "source": "default"
+        },
+        "--pipelined-prefill": {
+          "value": "on",
+          "source": "models.qwen27b.pipelined-prefill"
+        },
+        "--pipelined-prefill-min-rows": {
+          "value": "256",
+          "source": "models.qwen27b.pipelined-prefill-min-rows"
+        },
+        "--tp-ownership": {
+          "value": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+          "source": "models.qwen27b.tp-ownership"
+        },
+        "--tune-pin": {
+          "value": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+          "source": "models.qwen27b.tune-pin"
+        },
+        "--max-num-batched-tokens": {
+          "value": "2048",
+          "source": "models.qwen27b.max-num-batched-tokens"
+        },
+        "--busy-prefill-chunk": {
+          "value": "auto",
+          "source": "default"
+        },
+        "--prefill-governor": {
+          "value": "kind=arrival;order=arrival;long_tokens=0;age_ms=0",
+          "source": "default"
+        },
+        "--prefill-interleave": {
+          "value": "off",
+          "source": "models.qwen27b.prefill-interleave"
+        },
+        "--mixed-step-target-ms": {
+          "value": "75",
+          "source": "models.qwen27b.mixed-step-target-ms"
+        },
+        "--long-prefill-token-threshold": {
+          "value": "0 (off)",
+          "source": "default"
+        },
+        "--prefill-room-gate": {
+          "value": "off",
+          "source": "default"
+        },
+        "--preempt-wait-ms": {
+          "value": "5000",
+          "source": "default"
+        },
+        "--max-num-seqs": {
+          "value": "8",
+          "source": "models.qwen27b.max-num-seqs"
+        },
+        "--kv-cache-dtype": {
+          "value": "fp8",
+          "source": "models.qwen27b.kv-cache-dtype"
+        },
+        "--attn-prefill-fp8": {
+          "value": "off",
+          "source": "default"
+        },
+        "--state-cache-dtype": {
+          "value": "f32",
+          "source": "default"
+        },
+        "--no-prefix-cache": {
+          "value": "prefix caching off",
+          "source": "models.qwen27b.no-prefix-cache"
+        }
+      },
+      "expected_tuning": {
+        "--tp": "3",
+        "--max-num-batched-tokens": "2048",
+        "--kv-cache-dtype": "fp8",
+        "--tp-wire": "exact",
+        "--tp-ownership": "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12",
+        "--tune-pin": "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1",
+        "--pipelined-prefill": "on",
+        "--pipelined-prefill-min-rows": "256",
+        "--prefill-interleave": "off",
+        "--max-num-seqs": "8",
+        "--no-prefix-cache": "prefix caching off",
+        "--mixed-step-target-ms": "75",
+        "--prefill-room-gate": "off",
+        "--long-prefill-token-threshold": "0 (off)",
+        "--preempt-wait-ms": "5000"
+      },
+      "run_id": "65ed5e24-f721-45a6-85e8-bb909fb441af",
+      "manifest_sha256": "c855c6c1db17da41d35c5f59530c8149b2b5ab06ab34eb0bc2f029cd763baea9",
+      "identity": {
+        "engine": "radiance",
+        "build_id": "8b5663b196835b170fda66fedf3458a7",
+        "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+        "source_revision": "source_slice:90bca121c9dcee4cac6cf2b41a8d7b3e",
+        "model": "15313e3fef8c8bf41bf2548427a192a338faeb72742c53cdcb79e9311c9946f7",
+        "layout": "qwen27b-tp3"
+      },
+      "receipt_sha256": {
+        "native_tuning_start": "d2940a8b8d697153799b5c2bada50d53b3bf42a2d946fd40afc0860e7fd6f23e",
+        "native_tuning_end": "5cc9dfbc98dd76ea725190e78d70491f3a24722ddb1ee18b2de4e36126f31072"
+      },
+      "arm": "latency-auto-qwen27b-tp3-75-repeat",
+      "profile": "qwen27b-tp3.yaml",
+      "build_plan_id": "927a24bf85c2ac29d3dbe0b779063323",
+      "binary_sha256": "54801e0ce19fd5e36c40a5882dc4b2d29d9389e8ec2f448a20120356ad2a1bfd",
+      "ok": true,
+      "owner_exit": 0,
+      "stop_exit": 0,
+      "reports": [
+        {
+          "prompt_target": 4096,
+          "max_tokens": 512,
+          "seed": 1,
+          "prompt_sha256": [
+            "52ebb1b2ce693491d9850be5261cc60559b51443c2d932a476729fc8f88ceb63",
+            "a54edbca1d68f8d0c240a0c908efcb13583e87ab35de0cb0bdcbc271072f58ff",
+            "2427d99c5ac4ce799bf2c803dffbf4268e857c94976ca8096cb37923b6d8b4f2",
+            "bddf3f4f8565a310298978a880036d4446a034d0cb677b7920b648e9f2ad54be",
+            "72905a87194250a9d4d43fdd9b9c71725e61ddde858b10ff6c2515f5b6361795",
+            "3b53c616b118d3dc77298d12c8999f7dce811199790219135051b649742b6018",
+            "6c9517b2f9458e483b44f6b6cb6ff96dda60e45094f3631c5d53cc3f2fd9ea7f",
+            "5e259c0efc3b9b55734c0b546c2a3aa4cb088c4295e1e318c3e2e77489672a4e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              4066,
+              4045,
+              4029,
+              4049,
+              4066,
+              4100,
+              4028,
+              4078
+            ]
+          ],
+          "output_tokens": [
+            [
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512,
+              512
+            ]
+          ],
+          "preemptions": [
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 180.855,
+              "ttft_ms_max_median": 15762.77,
+              "event_gap_ms_p95_median": 162.438,
+              "decode_ms_per_step_median": 37.857,
+              "draft_acceptance_median": 0.6239,
+              "requests_running_mean_median": 7.275
+            }
+          },
+          "ok": true,
+          "raw_sha256": "51973f9ee08f88d1ed07e7d44e640d715d955f6ab7290a8c33e8bef1e7557d65"
+        },
+        {
+          "prompt_target": 512,
+          "max_tokens": 128,
+          "seed": 1,
+          "prompt_sha256": [
+            "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+            "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+            "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+            "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+            "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+            "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+            "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+            "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+          ],
+          "actual_prompt_tokens": [
+            [
+              501,
+              510,
+              509,
+              503,
+              513,
+              520,
+              503,
+              525
+            ]
+          ],
+          "output_tokens": [
+            [
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128,
+              128
+            ]
+          ],
+          "preemptions": [
+            0.0
+          ],
+          "summary": {
+            "8": {
+              "reps_ok": 1,
+              "aggregate_tps_median": 279.928,
+              "ttft_ms_max_median": 1980.44,
+              "event_gap_ms_p95_median": 40.445,
+              "decode_ms_per_step_median": 35.6205,
+              "draft_acceptance_median": 0.6947,
+              "requests_running_mean_median": 6.125
+            }
+          },
+          "ok": true,
+          "raw_sha256": "4bcfb64ddc8de5a7ff87051372eb9334ba9b61dff37a3f4853f0238bca25fb3b"
+        }
+      ]
+    }
+  ]
+}

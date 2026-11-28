@@ -3,8 +3,8 @@
 // rad0065's Fused template parameter) applied and libr3's native rewrite blocks for gfx1100 inlined under `#if defined(__gfx1100__)
 // // bc-gfx11` with the other text in the `#else`. Extracted family: upstream keeps its own header for the int8 rows; this copy is
 // reviewed structurally at a bump (origins.toml), not merged as text.
-// r4d_gemm_8a8_prefill.h -- the int8 and fp8 prefill tile's body (gemm_8a8_prefill_body), shared
-// by r4d_gemm_fp8a8.hip's tiles and r4d_gemm_iqr.hip's, which decodes its weight in the body's
+// r4d_gemm_8a8_prefill.h -- the int8 prefill tile's body (gemm_8a8_prefill_body), shared
+// by r4d_gemm_i8a8.hip's tiles and r4d_gemm_iqr.hip's, which decodes its weight in the body's
 // `begin` hook. Included inside an anonymous namespace after the includer's kWave (32) and kBlock
 // (128), with r4d_fp8_wmma.h's names in scope.
 
@@ -103,14 +103,14 @@ struct PrefillPlain {
  * columns is SB / kPFK staged tiles; the int32 sums run over all of them before the one fold
  * (|sum| <= 256 * 127 * 127 < 2^24, exact in the f32 conversion), so at 256 the tile folds half as
  * often. */
-template <bool I8, int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
+template <int RB, class Pre, bool ROWF = false, uint32_t SB = kBlock, bool Fused = false>
 __device__ __forceinline__ void gemm_8a8_prefill_body(
     const uint8_t* __restrict__ A, const float* __restrict__ Sa, const uint8_t* __restrict__ W,
     const uint16_t* __restrict__ Sw, uint16_t* __restrict__ C, uint32_t M, uint32_t K, uint32_t N,
     uint32_t a_ld, uint32_t sa_ld, uint32_t sw_ld, const Pre& pre,
     const float* __restrict__ Rs = nullptr, const float* __restrict__ Cf = nullptr) {
     static_assert(!ROWF || RB == 32, "a row's scale and a block's factor fold as RB 32's one scale");
-    static_assert(SB == kBlock || (I8 && RB == 0 && SB == 256u), "a 256 group is the per-row int8 tile's");
+    static_assert(SB == kBlock || (RB == 0 && SB == 256u), "a 256 group is the per-row int8 tile's");
     constexpr uint32_t kTPB = SB / kPFK;   // staged tiles a scale block
     constexpr uint32_t P = lds_pitch<kPFK>();
     static_assert(kPBM * 2u == kPWaves * kWave, "two threads stage an activation row");
@@ -157,7 +157,6 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
     // Activation rows this wave reads from the staged tile, and the lane's column in each.
     const uint32_t arow = wa * kPTA * 16u;
 
-    static_assert(!RB || I8, "RB is the int8 tile's");
     static_assert(RB == 0 || RB == 8 || RB == 32, "a weight scale per 8 or 32 rows");
     static_assert(RB != 32 || kPTW * 16 == 32, "RB 32 is a wave's rows");
     constexpr uint32_t kCI = RB == 8 ? kPTW : 1u;   // corr's tiles: one per tile, or the wave's
@@ -208,7 +207,6 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
 #pragma unroll
         for (uint32_t ks = 0; ks < kPFK / kK; ++ks) {
 #if defined(__gfx1100__)  // bc-gfx11
-            if constexpr (I8) {
                 // libr3 native: gfx11 rows for both operands, the accumulator in the gfx11 layout
                 r3_i4 b11[kPTA];
 #else  // bc-gfx11
@@ -240,22 +238,9 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
                             true, a11, true, b11[j],
                             __builtin_bit_cast(r3_i8, (half == 0u && ks == 0u) ? rb_first<RB>() : raw[i][j]),
                             false));
-                }
-            } else {
-                i2v bf[kPTA];
-#pragma unroll
-                for (uint32_t j = 0; j < kPTA; ++j) bf[j] = frag<kPFK>(s_a[half % 2u], arow + j * 16u, ks * kK, lane);
-#pragma unroll
-                for (uint32_t i = 0; i < kPTW; ++i) {
-                    const i2v af = frag_of(cur[i], ks);
-#pragma unroll
-                    for (uint32_t j = 0; j < kPTA; ++j)
-                        raw[i][j] = mma8<I8>(af, bf[j],
-                                             (half == 0u && ks == 0u) ? rb_first<RB>() : raw[i][j]);
-                }
 #else  // bc-gfx11
                 for (uint32_t j = 0; j < kPTA; ++j)
-                    raw[i][j] = mma8<I8>(af, bf[j],
+                    raw[i][j] = mma_i8(af, bf[j],
                                          (half == 0u && ks == 0u) ? rb_first<RB>() : raw[i][j]);
 #endif  // bc-gfx11
             }
@@ -264,14 +249,14 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
 
     for (uint32_t kb = 0; kb < nkb; ++kb) {
         if constexpr (Fused) {
-            static_assert(I8 && SB == kBlock && kTPB == 2u);
+            static_assert(SB == kBlock && kTPB == 2u);
             pre.prepare(n0, kb);
         }
         // The weight's scales for this block, read ahead of the two tiles that hide them: one bf16
         // for the block's 128 rows, or with I8 one per row, a lane's eight rows of a tile adjacent
         // in the tile-major [N/16][K/128][16] plane.
         float ws = 0.0f;
-        uint4 w8[I8 && !RB ? kPTW : 1u];
+        uint4 w8[!RB ? kPTW : 1u];
         float wb[RB == 8 ? kPTW : 1u];
         if constexpr (ROWF) {
             ws = Cf[kb];
@@ -282,21 +267,18 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
 #pragma unroll
             for (uint32_t i = 0; i < kPTW; ++i)
                 wb[i] = bscale(Sw[((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u]);
-        } else if constexpr (I8) {
+        } else {
 #pragma unroll
             for (uint32_t i = 0; i < kPTW; ++i)
                 w8[i] = *(const uint4*)(Sw + ((size_t)(wt0 + i) * nkb + kb) * 16u + (lane >> 4) * 8u);
-        } else {
-            ws = bscale(Sw[(size_t)(n0 / kBlock) * sw_ld + kb]);
         }
         tile(kb, 0u, w0, w1);
         tile(kb, 1u, w1, w0);
         if constexpr (kTPB == 4u) {
             tile(kb, 2u, w0, w1);
             tile(kb, 3u, w1, w0);
-#if defined(__gfx1100__)  // bc-gfx11
         }
-        if constexpr (I8) {
+#if defined(__gfx1100__)  // bc-gfx11
             // libr3 native: the block's sums are in the gfx11 layout; the fold reads the gfx12 one
 #pragma unroll
             for (uint32_t i = 0; i < kPTW; ++i)
@@ -304,7 +286,6 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
                 for (uint32_t j = 0; j < kPTA; ++j)
                     raw[i][j] = __builtin_bit_cast(f8v, r3_acc_i32_11_to_12(__builtin_bit_cast(r3_i8, raw[i][j]), lane));
 #endif  // bc-gfx11
-        }
         if constexpr (RB != 0) {
             if (kb % kRbFlush == 0u && kb) {   // the last kRbFlush blocks' bias, before this fold
 #pragma unroll
@@ -336,18 +317,13 @@ __device__ __forceinline__ void gemm_8a8_prefill_body(
                     continue;
                 }
                 float s[8];
-                if constexpr (I8) {
-                    const uint32_t d[4] = { w8[i].x, w8[i].y, w8[i].z, w8[i].w };
-#pragma unroll
-                    for (uint32_t t = 0; t < 8; ++t)
-                        s[t] = as * bscale((uint16_t)(d[t / 2] >> (16 * (t % 2))));
-                } else {
-#pragma unroll
-                    for (uint32_t t = 0; t < 8; ++t) s[t] = ws * as;
-                }
+                const uint32_t d[4] = { w8[i].x, w8[i].y, w8[i].z, w8[i].w };
 #pragma unroll
                 for (uint32_t t = 0; t < 8; ++t)
-                    out[i][j][t] = __builtin_fmaf(acc_val<I8>(raw[i][j][t]), s[t], out[i][j][t]);
+                    s[t] = as * bscale((uint16_t)(d[t / 2] >> (16 * (t % 2))));
+#pragma unroll
+                for (uint32_t t = 0; t < 8; ++t)
+                    out[i][j][t] = __builtin_fmaf(acc_i32(raw[i][j][t]), s[t], out[i][j][t]);
             }
         }
     }

@@ -1,0 +1,22 @@
+{
+  "profile": "qwen27b-tp3.yaml",
+  "build_plan_id": "69cccadc518f5282d312b0d84a08bc01",
+  "binary_sha256": "846835ee051e8fa6659f9f538950bbff58307acbdbb86e6fab7904339866a6a7",
+  "model_bytes": 30876340224,
+  "plugins": {
+    "libbciqr.so": "369550ef13f872bd9cfd97a78442412d85863b7341f9cec35052755a6ba3e935",
+    "libr3.so": "7db4dcc99bf272ab8c85aee103ce66fe9ba796ee1685092b4e8fbd41d801df70",
+    "libr4d.so": "f3cba1b4bc47ddac0467f7b50120c04b4242bfd6e75b9c74f80024c2b9db2c59",
+    "libref.so": "022dbfa0cf6f0208013339b65feae9497e6659fa7e848ad95bee6e21c68254dc"
+  },
+  "requests": [],
+  "shutdown": {
+    "method": "sigint",
+    "requested": true,
+    "forced": false,
+    "returncode": 2,
+    "error": null
+  },
+  "raw_result_sha256": "4706eb1ab82cbbe7b1214ecc16aedd82678472fc54ff74acc6d12b416d5f96cb",
+  "server_log_sha256": "e1712387965b0d560205d50bb0c96473e6efcf581dc4545e8f51aa83483f5ad2"
+}

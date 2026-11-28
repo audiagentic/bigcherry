@@ -203,7 +203,7 @@ def test_history_metric_is_scoped_and_reports_baseline_and_trailing_drift(tmp_pa
     assert history["points"][-1]["baseline_drift"]
     assert history["points"][-1]["trailing_drift"]
     assert not history["points"][3]["trailing_drift"]
-    with pytest.raises(results.ResultsError, match="phase"):
+    with pytest.raises(results.ResultsError, match="group.name"):
         results.history(store, engine="dummy", layout="tp3", workload="long", metric="tokens_per_second")
 
 

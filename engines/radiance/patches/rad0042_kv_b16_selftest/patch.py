@@ -186,7 +186,7 @@ PATCHES = (
         _edit("host-packed-values", "    for (int64_t r0 = 0; r0 < nelem; r0 += rowe) {\n        uint8_t* row = &kv[(size_t)r0];\n",
               _B16_FILL, "value == 0x80", mode="insert_after"),
         _edit("packed-tensor-dtype", _DTYPE, "const uint32_t kvdt = selftest_kv_dtype(kvq, kv_is_fp8);",
-              "const uint32_t kvdt = selftest_kv_dtype(kvq, kv_is_fp8);", count=3),
+              "const uint32_t kvdt = selftest_kv_dtype(kvq, kv_is_fp8);", count=4),
         _edit("mixed-packed-tensor", "T(d_kv, RAD_I8, { ns * mb, kv_heads, bs, rowe }),",
               "T(d_kv, selftest_kv_dtype(kvq, true), { ns * mb, kv_heads, bs, rowe }),",
               "T(d_kv, selftest_kv_dtype(kvq, true)"),

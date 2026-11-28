@@ -459,7 +459,8 @@ def run_phase_drift(*, engine: str, vendor_root: Path, target_ref: str) -> None:
 
     resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
     try:
-        checks = adapter(engine).source_drift_checks(ProjectContext.resolve(engine=engine), vendor_root)
+        context = ProjectContext.resolve(engine=engine)
+        checks = adapter(engine).source_drift_checks(context, vendor_root)
     except (ValueError, OSError) as exc:
         raise PinBumpStop(
             "drift",
@@ -479,6 +480,8 @@ def run_phase_drift(*, engine: str, vendor_root: Path, target_ref: str) -> None:
                 evidence={"check": check.id, "error": str(exc)},
                 recommended_actions=[f"fix the cause, then {resume}"],
             ) from exc
+        # rules for sources a managed patch creates are checked on the patched tree by the composition gate
+        failures, _ = adapter(engine).split_patch_created(context, vendor_root, failures)
         if failures:
             count = sum(len(problems) for problems in failures.values())
             raise PinBumpStop(
@@ -1199,6 +1202,7 @@ def run_phase_compile(
     recipe_report_path: Path,
     target_ref: str,
     platform_name: str | None,
+    canonical_build: Callable[[], Path] | None = None,
 ) -> str:
     """Run the engine's compile checks (its adapter's ``compile_checks``) and return the checked tree OID.
 
@@ -1206,8 +1210,11 @@ def run_phase_compile(
 
     resume = f"python -m bigcherry --engine {engine} pin-bump {target_ref} --resume"
     try:
+        kwargs: dict[str, Any] = {"platform_name": platform_name}
+        if canonical_build is not None:
+            kwargs["canonical_build"] = canonical_build
         checks = adapter(engine).compile_checks(
-            ProjectContext.resolve(engine=engine), vendor_root, workdir, platform_name=platform_name)
+            ProjectContext.resolve(engine=engine), vendor_root, workdir, **kwargs)
     except (ValueError, OSError) as exc:
         raise PinBumpStop(
             "compile",
@@ -1453,7 +1460,8 @@ def run_phase_cpu_smoke(*, engine: str, build_dir: Path | None, out_dir: Path, t
         ) from exc
 
 
-def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root: Path) -> None:
+def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root: Path,
+                     state: PinBumpState | None = None) -> None:
     """MEN17 (`--accept`): the engine's hardware acceptance against its stored baselines, after the CPU smoke.
 
     Needs the GPUs; with none visible the bump STOPs rather than recording an acceptance that did not happen. The
@@ -1478,7 +1486,12 @@ def run_phase_accept(*, engine: str, out_dir: Path, target_ref: str, vendor_root
         ) from exc
     try:
         layout = _engines.load(_paths.REPO_ROOT, engine)
-        passed, results, evidence = acceptance.accept(_paths.REPO_ROOT, layout, None, out_dir)
+        candidate = None
+        if state is not None and state.lane_build_status == "passed":
+            candidate = acceptance.CandidateRuntime(Path(state.lane_build_dir), state.lane_build_plan_id,
+                                                    state.lane_build_binary_sha256, state.to_sha)
+        passed, results, evidence = acceptance.accept(_paths.REPO_ROOT, layout, None, out_dir,
+                                                      candidate=candidate)
     except (acceptance.AcceptanceError, _engines.EngineError, FileExistsError) as exc:
         raise PinBumpStop(
             "cpu-smoke", "ACCEPT_UNRUNNABLE", f"hardware acceptance could not run: {exc}",
@@ -2247,6 +2260,18 @@ def _run_phases(
             state.advance(report_dir, "apply", "compile")
 
         if state.next_phase == "compile":
+            canonical_outcome: LaneBuildOutcome | None = None
+            canonical_lane = f"{selector_name}:{build_name}:{platform_name}"
+
+            def build_for_compile() -> Path:
+                nonlocal canonical_outcome
+                if canonical_outcome is None:
+                    _commit_release_records(repo_root=repo_root, target_ref=target_ref)
+                    canonical_outcome = run_phase_lane_build(
+                        engine=engine, lane=canonical_lane, run_id=f"pin-bump-{state.run_id[:12]}",
+                        target_ref=target_ref)
+                return canonical_outcome.build_dir
+
             if skip_compile:
                 compile_tree_oid = _compile_tree_oid(
                     engine, vendor_root, state.selector_patch_ids
@@ -2261,8 +2286,18 @@ def _run_phases(
                     recipe_report_path=recipe_report_path,
                     target_ref=target_ref,
                     platform_name=platform_name,
+                    **({"canonical_build": build_for_compile}
+                       if not skip_cpu_smoke
+                       and cpu_smoke_build is None and build_name and platform_name else {}),
                 )
                 state.compile_status = "passed"
+                if canonical_outcome is not None:
+                    state.lane_build_status = "passed"
+                    state.lane_build_name = build_name or ""
+                    state.lane_build_lane = canonical_lane
+                    state.lane_build_plan_id = canonical_outcome.build_plan_id
+                    state.lane_build_dir = str(canonical_outcome.build_dir)
+                    state.lane_build_binary_sha256 = canonical_outcome.binary_sha256
             state.compile_platform = platform_name or ""
             state.compile_tree_oid = compile_tree_oid
             state.advance(report_dir, "compile", "evidence")
@@ -2292,8 +2327,20 @@ def _run_phases(
                 # The lane build refuses a dirty controller tree and the records written so far are this run's own:
                 # commit exactly those (idempotent) before it, not only at the end.
                 _commit_release_records(repo_root=repo_root, target_ref=target_ref)
-                outcome = run_phase_lane_build(
-                    engine=engine, lane=lane, run_id=f"pin-bump-{state.run_id[:12]}", target_ref=target_ref)
+                if state.lane_build_status == "passed":
+                    # The compile gates already checked this exact canonical build.
+                    binary = Path(state.lane_build_dir) / engines.load(paths.REPO_ROOT, engine).serve.binary
+                    if (state.lane_build_lane != lane or not state.lane_build_plan_id
+                            or not binary.is_file()
+                            or _sha256_file(binary) != state.lane_build_binary_sha256):
+                        raise PinBumpStop("lane-build", "LANE_BUILD_FAILED",
+                                          "the canonical build checked during compile is missing or changed",
+                                          recommended_actions=["restore the checked build or start a fresh bump"])
+                    outcome = LaneBuildOutcome(state.lane_build_plan_id, Path(state.lane_build_dir),
+                                               state.lane_build_binary_sha256)
+                else:
+                    outcome = run_phase_lane_build(
+                        engine=engine, lane=lane, run_id=f"pin-bump-{state.run_id[:12]}", target_ref=target_ref)
                 state.lane_build_status = "passed"
                 state.lane_build_lane = lane
                 state.lane_build_plan_id = outcome.build_plan_id
@@ -2316,7 +2363,7 @@ def _run_phases(
                 run_phase_cpu_smoke(engine=engine, build_dir=Path(state.lane_build_dir) if state.lane_build_dir else None, out_dir=report_dir / "cpu-smoke", target_ref=target_ref)
                 state.cpu_smoke_status = "passed"
             if accept and state.accept_status != "passed":
-                run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root)
+                run_phase_accept(engine=engine, out_dir=report_dir / "accept", target_ref=target_ref, vendor_root=vendor_root, state=state)
                 state.accept_status = "passed"
             state.advance(report_dir, "cpu-smoke", "reaudit")
 

@@ -77,8 +77,8 @@ struct NativeEngineSettings {
     std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;   // rope_scaling empty: model-defined
     bool prefix_cache;
     std::optional<uint32_t> prefill_interleave;
-    // The tuning options the YAML states (resolver key tuning.NAME, strings except pipelined_prefill_min_rows, an
-    // integer). The engine's strict reader validated their form; the resolver validates their type and range.
+    // The native tuning projection (kNativeTuningFields). The engine validates YAML;
+    // the resolver validates the manifest field types and ranges.
     std::map<std::string, nlohmann::json> tuning;
 };
 // One serving config as its native YAML states it, read by the engine's own parser through the device-free inspector

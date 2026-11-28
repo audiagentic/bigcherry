@@ -49,7 +49,7 @@ KEY = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP31
     ),
 ))
 
-ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none", description="VTP31 mixed cut",
+ATTN = FilePatch(path="arch/common/rad_block_attn_gated_q.h", language="none", description="VTP31 mixed cut",
                  edits=(
     _edit(
         "mxp-attn-takes",
@@ -97,7 +97,7 @@ ATTN = FilePatch(path="arch/common/rad_block_attn_gated_fp8.h", language="none",
     ),
 ))
 
-GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", description="VTP31 mixed cut", edits=(
+GDN = FilePatch(path="arch/common/rad_block_gdn_q.h", language="none", description="VTP31 mixed cut", edits=(
     _edit(
         "mxp-gdn-takes",
         "        const bool seqs = pieces && pieces->seq_cut > 0 && pieces->seq_cut < batch->n_seq &&\n"

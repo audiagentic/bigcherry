@@ -204,8 +204,11 @@ PATCHES = (
               "#if G8_BLOCK_SIZE == 4 && (R4D_ATTN_GQA == 12 || R4D_ATTN_GQA == 6)\nG8_BYTE_ENTRIES(b16f8,"),
     )),
     FilePatch(path="libr4d/r4d_attn_paged_h256_gqa6.hip", language="none", edits=(
-        _edit("b16-page16-layout-template", "template <int KVP, int XOPT = 0>",
-              "template <int KVP, int XOPT = 0, RadKVLayout Layout = RAD_KVQ_NONE>", count=2),
+        # Only the two supported chain/prefill entries, not the upstream tree launcher.
+        _edit("b16-page16-layout-template", "template <int KVP, int XOPT = 0>\nstatic int prefill_launch(",
+              "template <int KVP, int XOPT = 0, RadKVLayout Layout = RAD_KVQ_NONE>\nstatic int prefill_launch("),
+        _edit("b16-page16-decode-layout-template", "template <int KVP, int XOPT = 0>\nstatic int decode_launch(",
+              "template <int KVP, int XOPT = 0, RadKVLayout Layout = RAD_KVQ_NONE>\nstatic int decode_launch("),
         _edit("b16-page16-prefill-split", "KVP, P_OPT | XOPT | O_PSPLIT>",
               "KVP, P_OPT | XOPT | O_PSPLIT, 0, Layout>"),
         _edit("b16-page16-prefill", "KVP, P_OPT | XOPT>", "KVP, P_OPT | XOPT, 0, Layout>"),

@@ -50,6 +50,7 @@ class _Handler(BaseHTTPRequestHandler):
             lines = [
                 "# TYPE radiance:engine_steps_decode_total counter",
                 f"radiance:engine_steps_decode_total {cls.steps}",
+                "radiance:engine_steps_mixed_total 0",
                 f"radiance:engine_step_seconds_decode_total {cls.steps * cls.delay}",
                 f"radiance:decode_tokens_total {cls.tokens}",
                 f"radiance:draft_tokens_total {cls.tokens * 3}",
@@ -294,3 +295,27 @@ class StreamBench(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_mixed_step_counters_do_not_claim_pure_decode_throughput():
+    before = {k: 0 for k in sb._COUNTERS}
+    after = dict(before)
+    after.update({"radiance:engine_steps_decode_total": 2,
+                  "radiance:engine_steps_mixed_total": 1,
+                  "radiance:engine_step_seconds_decode_total": 0.2,
+                  "radiance:engine_step_seconds_total": 0.5,
+                  "radiance:decode_tokens_total": 30,
+                  "radiance:prefill_tokens_total": 100})
+    result = sb.engine_delta(before, after, [])
+    assert result["decode_ms_per_step"] == 100
+    assert result["decode_rate_status"] == "mixed_steps_present"
+    assert "decode_tps_engine" not in result
+    assert "decode_tokens_per_step" not in result
+    assert result["input_output_tps_engine_all_steps"] == 260
+    after["radiance:engine_steps_mixed_total"] = 0
+    assert sb.engine_delta(before, after, [])["decode_tps_engine"] == 150
+    del after["radiance:engine_steps_mixed_total"]
+    assert "decode_tps_engine" not in sb.engine_delta(before, after, [])
+    after["radiance:engine_steps_mixed_total"] = 0
+    before["radiance:engine_steps_mixed_total"] = 1
+    assert "decode_tps_engine" not in sb.engine_delta(before, after, [])

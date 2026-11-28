@@ -1,0 +1,256 @@
+upstream revision: 3b13fd32663ef52252a7f0be255523480aa22ffe
+  previous:        b6b8751cccb0e834a13ae9e5afca824ee9a487aa
+
+PATCH                                         STATUS
+rad0008_hc_upmix_rt_sweep                     CLEAN
+rad0012_helper_kernel_config                  CLEAN
+rad0016_vtp14_rank_code_selection             FAILED_NEEDS_RECONCILIATION
+  core/rad_core.h :: edit n1-rowmask
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N1: per-rank kernel code eligibility
+  core/plugin/loader.cpp :: edit n1-row-mask
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N1: per-rank kernel code eligibility
+rad0017_vtp14_n3_shared_rendezvous            BLOCKED_BY_DEPENDENCY
+  BLOCKED (requires rad0016_vtp14_rank_code_selection)
+rad0018_vtp14_n2_tp_ownership                 FAILED_NEEDS_RECONCILIATION
+  abi/rad_builder.h :: edit n2-ctx-field
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership
+  arch/common/rad_block_attn_gated.h :: edit n2-attn-spans
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership
+  arch/common/rad_block_gdn.h :: edit n2-gdn-spans
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership
+  arch/common/rad_block_mlp.h :: edit n2-mlp-spans
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership
+rad0019_vtp14_n2_tp_ownership_fp8             FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_attn_gated_fp8.h :: edit n2f-attn-spans
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_block_mlp_fp8.h :: edit n2f-mlp-gate-up
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_block_mlp_fp8.h :: edit n2f-mlp-down
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_fp8.h :: edit n2f-dense-span
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_fp8.h :: edit n2f-dense-scale-view-field
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_fp8.h :: edit n2f-dense-scale-view-probe
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_fp8.h :: edit n2f-span-parts-wref
+    target-file-missing
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+  arch/common/rad_arch.h :: edit n2f-drafter-geom
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14 N2: asymmetric tensor-parallel ownership, fp8 plugin
+rad0020_vtp14_tp3_pipelined_prefill           FAILED_NEEDS_RECONCILIATION
+  abi/rad_builder.h :: edit pipe-ctx-fields
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14: pipelined prefill as configuration
+rad0021_vtp14_weighted_twoshot_3rank          FAILED_NEEDS_RECONCILIATION
+  libr4d/r4d_ar_entry.hip :: edit ts3w-launch
+    anchor-no-match: expected 1, found 0
+    rationale: VTP14: link-weighted three-rank two-shot
+rad0022_tune_pin                              CLEAN
+rad0023_ar_timeline                           CLEAN
+rad0024_ts3_decode                            FAILED_NEEDS_RECONCILIATION
+  libr4d/r4d_ar_entry.hip :: edit ts3d-weights
+    anchor-no-match: expected 1, found 0
+    rationale: VTP31: weighted two-shot for three-rank host decode
+rad0025_multiseq_pipelined_prefill            FAILED_NEEDS_RECONCILIATION
+  abi/rad_runtime.h :: edit msp-abi
+    anchor-no-match: expected 1, found 0
+    rationale: VTP31: pipelined prefill over several sequences
+  core/runtime/ctx.cpp :: edit msp-key-size
+    anchor-no-match: expected 1, found 0
+    rationale: VTP31: pipelined prefill over several sequences
+  arch/common/rad_fp8.h :: edit msp-pieces
+    target-file-missing
+    rationale: VTP31: pipelined prefill over several sequences
+  arch/common/rad_block_attn_gated_fp8.h :: edit msp-attn-takes
+    target-file-missing
+    rationale: VTP31: pipelined prefill over several sequences
+  arch/common/rad_block_attn_gated_fp8.h :: edit msp-attn-seqs
+    target-file-missing
+    rationale: VTP31: pipelined prefill over several sequences
+  arch/common/rad_block_gdn_fp8.h :: edit msp-gdn-takes
+    target-file-missing
+    rationale: VTP31: pipelined prefill over several sequences
+  arch/common/rad_block_gdn_fp8.h :: edit msp-gdn-seqs
+    target-file-missing
+    rationale: VTP31: pipelined prefill over several sequences
+  arch/common/rad_block_gdn_fp8.h :: edit msp-gdn-close
+    target-file-missing
+    rationale: VTP31: pipelined prefill over several sequences
+rad0026_mixed_pipelined_prefill               FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_attn_gated_fp8.h :: edit mxp-attn-takes
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step
+  arch/common/rad_block_attn_gated_fp8.h :: edit mxp-attn-seqs
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step
+  arch/common/rad_block_gdn_fp8.h :: edit mxp-gdn-takes
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step
+  arch/common/rad_block_gdn_fp8.h :: edit mxp-gdn-dec
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step
+  arch/common/rad_block_gdn_fp8.h :: edit mxp-gdn-seqs
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step
+  arch/common/rad_block_gdn_fp8.h :: edit mxp-gdn-gnorm
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step
+rad0027_mixed_one_pipelined_prefill           FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_attn_gated_fp8.h :: edit mx1-attn-one
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+  arch/common/rad_block_attn_gated_fp8.h :: edit mx1-attn-phase
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+  arch/common/rad_block_attn_gated_fp8.h :: edit mx1-attn-launch
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+  arch/common/rad_block_gdn_fp8.h :: edit mx1-gdn-one
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+  arch/common/rad_block_gdn_fp8.h :: edit mx1-gdn-phase
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+  arch/common/rad_block_gdn_fp8.h :: edit mx1-gdn-prep
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+  arch/common/rad_block_gdn_fp8.h :: edit mx1-gdn-prefill-piece
+    target-file-missing
+    rationale: VTP31: pipelined prefill over a mixed step of one prefill sequence
+rad0028_rank_consistent_block_drafts          FAILED_NEEDS_RECONCILIATION
+  arch/qwen35_fp8/qwen35_fp8.cpp :: edit rcd-buf
+    anchor-no-match: expected 1, found 0
+    rationale: VTP31: every rank verifies rank 0's block draft
+rad0029_rank_own_split                        FAILED_NEEDS_RECONCILIATION
+  core/engine_bringup.cpp :: edit own-split
+    anchor-no-match: expected 1, found 0
+    rationale: long-anchor: the insertion closes the cheaper-rank loop and its block, so the anchor spans both closing braces and the next loop header. VTP33: the rank that sets the common token count uses its own card's memory
+rad0030_int8_pipelined_prefill                FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_fp8.h :: edit plain-norm-fed-pair
+    target-file-missing
+    rationale: VTP37: pipelined prefill on a rotated-int8 trunk
+  arch/common/rad_block_mlp_fp8.h :: edit iq8r-mlp-fold-input-scale
+    target-file-missing
+    rationale: VTP37: pipelined prefill on a rotated-int8 trunk
+  arch/common/rad_block_mlp_fp8.h :: edit iq8r-mlp-fold-output-scale
+    target-file-missing
+    rationale: VTP37: pipelined prefill on a rotated-int8 trunk
+rad0031_ts_timeline                           BLOCKED_BY_DEPENDENCY
+  BLOCKED (requires rad0021_vtp14_weighted_twoshot_3rank)
+rad0032_ts3_duplex                            FAILED_NEEDS_RECONCILIATION
+  libr4d/r4d_ar_entry.hip :: edit ts3p-launch
+    anchor-no-match: expected 1, found 0
+    rationale: long-anchor: the anchor is one whole launch statement; VTP36: three-rank two-shot pieces and duplex weights
+rad0033_ts3_once                              FAILED_NEEDS_RECONCILIATION
+  libr4d/r4d_ar_entry.hip :: edit ts3o-entry
+    anchor-no-match: expected 1, found 0
+    rationale: VTP36: host-staged three-rank two-shot writes its reduced shard once
+rad0036_prefill_governor                      FAILED_NEEDS_RECONCILIATION
+  core/sched/scheduler.cpp :: edit scheduler_cpp-6
+    anchor-no-match: expected 1, found 0
+    rationale: long-anchor: the whole diff hunk is the anchor; VTP42: prefill governor hook
+rad0046_retained_moe_rows                     CLEAN
+rad0048_abi44_kv_contract                     FAILED_NEEDS_RECONCILIATION
+  abi/rad_builder.h :: edit abi44-build-context
+    anchor-no-match: expected 1, found 0
+    rationale: Extend the reviewed Radiance ABI43 headers once for BigCherry ABI44
+  tests/abi_layout_test.cpp :: edit abi44-test-context-size
+    anchor-no-match: expected 1, found 0
+    rationale: Extend the reviewed Radiance ABI43 headers once for BigCherry ABI44
+rad0049_qwen4exp_e4m3_kv                      BLOCKED_BY_DEPENDENCY
+  BLOCKED (requires rad0048_abi44_kv_contract)
+rad0050_b16_kv_runtime_contract               FAILED_NEEDS_RECONCILIATION
+  core/config.cpp :: edit b16-config-help
+    anchor-no-match: expected 1, found 0
+    rationale: Carry the selected packed KV layout to the resident pool
+rad0051_b16_kv_kernels                        FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_attn_gated_fp8.h :: edit b16-arch-q4-no-resolve
+    target-file-missing
+    rationale: Attach the packed KV contract to the reviewed ABI44 composition
+  arch/common/rad_block_attn_gated_fp8.h :: edit b16-arch-no-stream-store
+    target-file-missing
+    rationale: Attach the packed KV contract to the reviewed ABI44 composition
+  arch/common/rad_block_attn_gated_fp8.h :: edit b16-arch-no-stream-fold
+    target-file-missing
+    rationale: Attach the packed KV contract to the reviewed ABI44 composition
+  libref/ref_attn.cpp :: edit b16-ref-attention-refusal
+    anchor-match-count: expected 1, found 2
+    rationale: Add the resident packed KV path at the matching native attachment
+rad0052_b16_kv_geometries                     FAILED_NEEDS_RECONCILIATION
+  libr4d/r4d_attn_paged_h256_gqa6.hip :: edit b16-page16-layout-template
+    anchor-match-count: expected 2, found 3
+    rationale: Attach the remaining historical B16 and independent DFlash2 geometry
+rad0053_v4_kv_layouts                         FAILED_NEEDS_RECONCILIATION
+  core/config.cpp :: edit list-cli-cache-names
+    anchor-no-match: expected 1, found 0
+    rationale: Restore historical packed KV without changing native cache layout
+rad0054_attn_prefill_fp8                      FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_attn_gated_fp8.h :: edit prefill-mode-op-params
+    target-file-missing
+    rationale: Restore independent prefill precision control on ABI44
+  arch/common/rad_block_attn_gated_fp8.h :: edit prefill-mode-op-key
+    target-file-missing
+    rationale: Restore independent prefill precision control on ABI44
+rad0064_owned_weighted_head                   BLOCKED_BY_DEPENDENCY
+  BLOCKED (requires rad0019_vtp14_n2_tp_ownership_fp8)
+rad0070_managed_native_entry                  CLEAN
+rad0002_moe_remote_handoff                    FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_moe_fp8.h :: edit include-bc-moe-remote-block
+    target-file-missing
+    rationale: The device include is unique in this header and sits with architecture dependencies.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-member
+    target-file-missing
+    rationale: The output op declaration is the unique home of the block's per-layer mailbox state.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-declare
+    target-file-missing
+    rationale: The end of the residual add declaration: reg[] (the runtime slots) is final and the gathered output buffers exist.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-declare-publish
+    target-file-missing
+    rationale: Declare scratch and publish at their issue position, with a separate E4M3 pair when the local pair differs.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-after-route-inverse
+    target-file-missing
+    rationale: The remasked scatter must write the same inverse slot table as the original scatter.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-after-route
+    target-file-missing
+    rationale: n4 is the first routed-GEMM code after the router, scatter and rotated quantisation, so routes and the exact q/s operand are ready.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-merge
+    target-file-missing
+    rationale: The pass's single gather guard: a handed-off step merges instead of gathering.
+  arch/common/rad_block_moe_fp8.h :: edit bc-remote-issues-ar
+    target-file-missing
+    rationale: issues_ar is the one place every caller (pass and the pipelined prefill callers) asks whether the block runs its own all-reduce; a handed-off step that does not fuse must when a HyperConn write follows, since that write then leaves the reduction (RAD49).
+  arch/common/rad_block_hc.h :: edit include-bc-moe-remote-block-hc
+    anchor-no-match: expected 1, found 0
+    rationale: The fp8 include is the unique architecture dependency line in this header.
+rad0004_moe_remote_diagnostics                FAILED_NEEDS_RECONCILIATION
+  arch/common/rad_block_moe_fp8.h :: edit diag-include
+    target-file-missing
+    rationale: rad0002's extension-point include is the unique anchor; the diagnostic header rides beside it.
+  arch/common/rad_block_moe_fp8.h :: edit diag-member
+    target-file-missing
+    rationale: The diagnostic state sits beside the extension point's own member.
+  arch/common/rad_block_moe_fp8.h :: edit diag-declare
+    target-file-missing
+    rationale: The diagnostic ops are declared right after the mailbox ops they accompany.
+  arch/common/rad_block_moe_fp8.h :: edit diag-after-down
+    target-file-missing
+    rationale: The shared-down issue is the first code line after every routed and protected down writer, so mask-only can snapshot the engine rows before masking and restore local row order after the diagnostic rescatter.
+rad0011_plan_memory                           CLEAN
+rad0055_step_phase_trace                      CLEAN
+
+summary: 35 total, 8 clean, 0 not-applicable, 23 failed, 4 blocked, 0 quarantined
+RECONCILIATION REQUIRED

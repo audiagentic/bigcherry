@@ -22,7 +22,7 @@ class OwnershipTests(unittest.TestCase):
 
     def test_layers_of_the_real_tree_list_a_unit_a_patch_and_the_rewrite_share(self):
         layers = u.layers("radiance")
-        self.assertEqual(layers["r4d_gemm_fp8a8"], ["patch:rad0061_iq8r_f32_scale", "rewrite:libr3"])
+        self.assertEqual(layers["r4d_gemm_i8a8"], ["patch:rad0061_iq8r_f32_scale", "rewrite:libr3"])
         self.assertNotIn("r4d_gemm_iqr", layers, "the IQR GEMM family is owned by the bc-iqr overlay: no patch or rewrite edits it")
 
 

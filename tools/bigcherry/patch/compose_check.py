@@ -151,16 +151,28 @@ def affected_units(tree: Path, touched: list[str]) -> list[str]:
 
 
 # ------------------------------------------------------------------------------------------------------ gates
-def compiler() -> Path | None:
-    # The SDK the environment names (ROCM_PATH, set by the build environment from the host's rocm-sdks), then the
-    # compiler on PATH; no unversioned default root.
+def compiler(engine: str) -> Path | None:
+    """Find the same named ROCm SDK as the recipe, never a generic PATH clang.
+
+    An explicit ROCM_PATH selects the SDK for an already-resolved build environment.
+    For a standalone check, a unique SDK root from the engine's platforms suffices.
+    Missing or ambiguous SDK configuration is a skipped compile, not a fallback.
+    """
     base = os.environ.get("ROCM_PATH")
-    if base:
-        candidate = Path(base) / "lib" / "llvm" / "bin" / "clang++"
-        if candidate.is_file():
-            return candidate
-    found = shutil.which("clang++")
-    return Path(found) if found else None
+    if not base:
+        from ..core import config
+        from ..core.context import ProjectContext
+        try:
+            recipes = config.load(ProjectContext.resolve(engine=engine).config_path)
+        except (OSError, ValueError):
+            return None
+        roots = {platform.sdk_root for platform in recipes.platforms.values()
+                 if platform.sdk_root}
+        if len(roots) != 1:
+            return None
+        base = roots.pop()
+    candidate = Path(base) / "lib" / "llvm" / "bin" / "clang++"
+    return candidate if candidate.is_file() else None
 
 
 def gate1(engine: str, tree: Path) -> dict[str, list[str]]:
@@ -168,7 +180,7 @@ def gate1(engine: str, tree: Path) -> dict[str, list[str]]:
 
     failures: dict[str, list[str]] = {}
     for component in components.load_all(paths.REPO_ROOT, engine).values():
-        if (component.root / radiance_bump.REWRITE_SCRIPT).is_file():
+        if (component.root / radiance_bump.REWRITE_SCRIPT).is_file() or component.name == "libr2":
             failures.update(radiance_bump.rewrite_drift(component, tree))
     return failures
 
@@ -223,7 +235,7 @@ def skipped_by_libr3(engine: str) -> set[str]:
 
 
 def compile_gate(engine: str, tree: Path, touched: list[str], arches: list[str], mode: str, report: Report) -> None:
-    clang = compiler()
+    clang = compiler(engine)
     if clang is None:
         report.skipped = "no ROCm clang++ found (set ROCM_PATH): compile gates skipped"
         return

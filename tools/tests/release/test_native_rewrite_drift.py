@@ -98,6 +98,38 @@ class RewriteCheckScriptTests(unittest.TestCase):
         self.assertIn("native/k.hip.rw: block 1", done.stderr)
         self.assertFalse(out.exists())
 
+    def test_include_fragments_are_rewritten_refreshed_and_removed(self):
+        root = _tmp(self)
+        component = _component(root)
+        source = root / "src/libr4d"
+        fragment = source / "rows.inc"
+        fragment.write_text("launch(a);\n")
+        (source / "uses.cpp").write_text('#include "rows.inc"\n')
+        out = root / "out"
+        argv = [sys.executable, str(component.root / "r3_rewrite.py"),
+                "--source", str(source), "--out", str(out),
+                "--rules", str(component.root / "rewrites.txt"),
+                "--native", str(component.root / "native")]
+        for content in ("launch(a);\n", "launch(a);\nint n = 1;\n"):
+            fragment.write_text(content)
+            done = subprocess.run(argv, capture_output=True, text=True)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            self.assertEqual((out / fragment.name).read_text(),
+                             content.replace("launch(a);", "launch_gfx11(a);"))
+        (source / "rows.def").write_text("int n = 2;\n")
+        (source / "uses.cpp").write_text('#include "rows.def"\n')
+        self.assertIn("local include not copied: rows.def",
+                      radiance_bump.rewrite_drift(component, root / "src")["libfix/uses.cpp"])
+        (source / "uses.cpp").write_text('#include "r4d_missing.inc"\n')
+        self.assertIn("missing local include: r4d_missing.inc",
+                      radiance_bump.rewrite_drift(component, root / "src")["libfix/uses.cpp"])
+        (source / "uses.cpp").unlink()
+        fragment.unlink()
+        done = subprocess.run(argv, capture_output=True, text=True)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertFalse((out / "rows.inc").exists())
+        self.assertFalse((out / "uses.cpp").exists())
+
     def test_a_script_that_does_not_answer_is_a_check_that_could_not_run(self):
         component = _component(_tmp(self))
         broken = subprocess.CompletedProcess([], 2, stdout="", stderr="usage: boom")
@@ -138,10 +170,23 @@ class AdapterTests(unittest.TestCase):
 
 
 class DriftPhaseTests(unittest.TestCase):
-    def phase(self, checks):
+    def phase(self, checks, set_aside=()):
+        def split(context, source, failures):
+            return {f: p for f, p in failures.items() if f not in set_aside}, sorted(set(set_aside) & set(failures))
+
         with patch.object(pin_bump, "adapter") as get:
             get.return_value.source_drift_checks.return_value = tuple(checks)
+            get.return_value.split_patch_created.side_effect = split
             return pin_bump.run_phase_drift(engine="radiance", vendor_root=Path("/vendor"), target_ref="v1.8.0")
+
+    def test_rules_for_patch_created_sources_are_not_pristine_drift(self):
+        made = {"libr3/native/bc_made.h.rw": ["libr4d has no source bc_made.h"]}
+        self.assertIsNone(self.phase([DriftCheck("libr3-native-rewrite", "NATIVE_REWRITE_DRIFT", "fix", lambda: made)],
+                                     set_aside=made))
+        other = {**made, "libr3/native/a.rw": ["block 1 ..."]}
+        with self.assertRaises(pin_bump.PinBumpStop) as ctx:
+            self.phase([DriftCheck("libr3-native-rewrite", "NATIVE_REWRITE_DRIFT", "fix", lambda: other)], set_aside=made)
+        self.assertEqual(ctx.exception.evidence["failures"], {"libr3/native/a.rw": ["block 1 ..."]})
 
     def test_phase_sits_between_pull_and_audit(self):
         phases = pin_bump.PHASES

@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_225429_fix-managed-helper-backed-nume_3305",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp"
+  ],
+  "plan-item-ids": [
+    "MEN17"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Retain quality-specific sealed engine inputs through finite child cleanup; native fake verifies parent descriptor identity after exec.",
+  "timestamp-utc": "2026-11-27T22:54:29.847447Z",
+  "user-summary-candidate": "Fix managed helper-backed numerical qualification failing its own admission check."
+}

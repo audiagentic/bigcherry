@@ -1,0 +1,100 @@
+Native composition checkpoint — Radiance 2.3.0, SDK 7.2.4
+
+Catalog rebase — exit 0
+upstream revision: 3b13fd32663ef52252a7f0be255523480aa22ffe
+  previous:        b6b8751cccb0e834a13ae9e5afca824ee9a487aa
+
+PATCH                                         STATUS
+rad0008_hc_upmix_rt_sweep                     CLEAN
+rad0010_routing_evidence                      CLEAN
+rad0012_helper_kernel_config                  CLEAN
+rad0016_vtp14_rank_code_selection             CLEAN
+rad0017_vtp14_n3_shared_rendezvous            CLEAN
+rad0018_vtp14_n2_tp_ownership                 CLEAN
+rad0019_vtp14_n2_tp_ownership_fp8             CLEAN
+rad0020_vtp14_tp3_pipelined_prefill           CLEAN
+rad0021_vtp14_weighted_twoshot_3rank          CLEAN
+rad0022_tune_pin                              CLEAN
+rad0023_ar_timeline                           CLEAN
+rad0024_ts3_decode                            CLEAN
+rad0025_multiseq_pipelined_prefill            CLEAN
+rad0026_mixed_pipelined_prefill               CLEAN
+rad0027_mixed_one_pipelined_prefill           CLEAN
+rad0028_rank_consistent_block_drafts          CLEAN
+rad0029_rank_own_split                        CLEAN
+rad0030_int8_pipelined_prefill                CLEAN
+rad0031_ts_timeline                           CLEAN
+rad0032_ts3_duplex                            CLEAN
+rad0033_ts3_once                              CLEAN
+rad0036_prefill_governor                      CLEAN
+rad0043_expert_stats_protected                CLEAN
+rad0044_expert_route_record                   CLEAN
+rad0045_expert_route_replay                   CLEAN
+rad0046_retained_moe_rows                     CLEAN
+rad0048_abi44_kv_contract                     CLEAN
+rad0049_qwen4exp_e4m3_kv                      CLEAN
+rad0050_b16_kv_runtime_contract               CLEAN
+rad0051_b16_kv_kernels                        CLEAN
+rad0052_b16_kv_geometries                     CLEAN
+rad0053_v4_kv_layouts                         CLEAN
+rad0042_kv_b16_selftest                       CLEAN
+rad0054_attn_prefill_fp8                      CLEAN
+rad0060_ltx2_tp3_linear_declare               CLEAN
+rad0061_iq8r_f32_scale                        CLEAN
+rad0062_iq6r_converter_gpu_arch               CLEAN
+rad0063_vhead_world_ranks                     CLEAN
+rad0064_owned_weighted_head                   CLEAN
+rad0070_managed_native_entry                  CLEAN
+rad0002_moe_remote_handoff                    CLEAN
+rad0004_moe_remote_diagnostics                CLEAN
+rad0011_plan_memory                           CLEAN
+rad0055_step_phase_trace                      CLEAN
+
+summary: 44 total, 44 clean, 0 not-applicable, 0 failed, 0 blocked, 0 quarantined
+report: <report-dir>/rebase-all-current.json
+
+
+Production focal syntax — exit 0
+compose-check: 28 compile pass(es) clean
+compose-check: PASS
+{"gate1": {}, "compile_failures": [], "checked": ["gfx1100 r4d_ar_entry (host pass, syntax)", "gfx1100 r4d_ar_entry (device pass, syntax)", "gfx1100 r4d_attn_paged_h256_gqa6 (host pass, syntax)", "gfx1100 r4d_attn_paged_h256_gqa6 (device pass, syntax)", "gfx1100 r4d_gemm_i8a8 (host pass, syntax)", "gfx1100 r4d_gemm_i8a8 (device pass, syntax)", "gfx1100 r4d_gemm_mxfp4a8_gemv (host pass, syntax)", "gfx1100 r4d_gemm_mxfp4a8_gemv (device pass, syntax)", "gfx1100 r4d_logits_gemm_i8 (host pass, syntax)", "gfx1100 r4d_logits_gemm_i8 (device pass, syntax)", "gfx1201 r4d_ar_entry (host pass, syntax)", "gfx1201 r4d_ar_entry (device pass, syntax)", "gfx1201 r4d_attn_paged_h256_gqa6 (host pass, syntax)", "gfx1201 r4d_attn_paged_h256_gqa6 (device pass, syntax)", "gfx1201 r4d_gemm_i8a8 (host pass, syntax)", "gfx1201 r4d_gemm_i8a8 (device pass, syntax)", "gfx1201 r4d_gemm_iqr (host pass, syntax)", "gfx1201 r4d_gemm_iqr (device pass, syntax)", "gfx1201 r4d_gemm_iqr_p1 (host pass, syntax)", "gfx1201 r4d_gemm_iqr_p1 (device pass, syntax)", "gfx1201 r4d_gemm_iqr_p2 (host pass, syntax)", "gfx1201 r4d_gemm_iqr_p2 (device pass, syntax)", "gfx1201 r4d_gemm_iqr_p3 (host pass, syntax)", "gfx1201 r4d_gemm_iqr_p3 (device pass, syntax)", "gfx1201 r4d_gemm_mxfp4a8_gemv (host pass, syntax)", "gfx1201 r4d_gemm_mxfp4a8_gemv (device pass, syntax)", "gfx1201 r4d_logits_gemm_i8 (host pass, syntax)", "gfx1201 r4d_logits_gemm_i8 (device pass, syntax)"], "skipped": null}
+
+
+Owned IQR (HIP passes; first host command missing SDK include) — exit 1
+SDK /opt/rocm-7.2.4/lib/llvm/bin/clang++ units 6
+gfx1100 bc_iqr_embed.hip host 0
+gfx1100 bc_iqr_embed.hip device 0
+gfx1100 bc_iqr_gemm.hip host 0
+gfx1100 bc_iqr_gemm.hip device 0
+gfx1100 bc_iqr_gemm_p1.hip host 0
+gfx1100 bc_iqr_gemm_p1.hip device 0
+gfx1100 bc_iqr_gemm_p2.hip host 0
+gfx1100 bc_iqr_gemm_p2.hip device 0
+gfx1100 bc_iqr_gemm_p3.hip host 0
+gfx1100 bc_iqr_gemm_p3.hip device 0
+gfx1100 bc_iqr_vocab.hip host 0
+gfx1100 bc_iqr_vocab.hip device 0
+gfx1201 bc_iqr_embed.hip host 0
+gfx1201 bc_iqr_embed.hip device 0
+gfx1201 bc_iqr_gemm.hip host 0
+gfx1201 bc_iqr_gemm.hip device 0
+gfx1201 bc_iqr_gemm_p1.hip host 0
+gfx1201 bc_iqr_gemm_p1.hip device 0
+gfx1201 bc_iqr_gemm_p2.hip host 0
+gfx1201 bc_iqr_gemm_p2.hip device 0
+gfx1201 bc_iqr_gemm_p3.hip host 0
+gfx1201 bc_iqr_gemm_p3.hip device 0
+gfx1201 bc_iqr_vocab.hip host 0
+gfx1201 bc_iqr_vocab.hip device 0
+plugin host 1 engines/radiance/components/bc-iqr/bc_iqr_plugin.cpp:18:10: fatal error: 'hip/hip_runtime_api.h' file not found
+   18 | #include <hip/hip_runtime_api.h>
+      |          ^~~~~~~~~~~~~~~~~~~~~~~
+1 error generated.
+
+
+
+Corrected plugin host and diagnostic syntax — exit 0
+plugin host 0
+compose-check: 12 compile pass(es) clean
+compose-check: PASS
+{"gate1": {}, "compile_failures": [], "checked": ["gfx1100 r4d_gemm_i8a8 (host pass, syntax)", "gfx1100 r4d_gemm_i8a8 (device pass, syntax)", "gfx1201 r4d_gemm_i8a8 (host pass, syntax)", "gfx1201 r4d_gemm_i8a8 (device pass, syntax)", "gfx1201 r4d_gemm_iqr (host pass, syntax)", "gfx1201 r4d_gemm_iqr (device pass, syntax)", "gfx1201 r4d_gemm_iqr_p1 (host pass, syntax)", "gfx1201 r4d_gemm_iqr_p1 (device pass, syntax)", "gfx1201 r4d_gemm_iqr_p2 (host pass, syntax)", "gfx1201 r4d_gemm_iqr_p2 (device pass, syntax)", "gfx1201 r4d_gemm_iqr_p3 (host pass, syntax)", "gfx1201 r4d_gemm_iqr_p3 (device pass, syntax)"], "skipped": null}

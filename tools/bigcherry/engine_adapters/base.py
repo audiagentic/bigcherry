@@ -164,6 +164,8 @@ class CpuSmokeSpec:
     #: inherited variables whose name starts with one of these are removed before the server starts, so an ambient
     #: engine setting (device list, layer count, dispatch controls) cannot reach the smoke
     env_unset_prefixes: tuple[str, ...] = ()
+    # Native-config engines generate their launch arguments after the runner picks a port.
+    argument_builder: Callable[[Path, str, int], tuple[str, ...]] | None = None
 
 
 def build_cpu_smoke(
@@ -232,17 +234,26 @@ class EngineAdapter(ABC):
     @abstractmethod
     def compile_checks(
         self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+        canonical_build: Callable[[], Path] | None = None,
     ) -> tuple[BumpCheck, ...]:
         """The checks pin-bump's compile phase runs on the patched tree ``source_dir`` (``workdir`` is scratch space for
         them), in order; the first failing check STOPs the bump. ``platform_name`` is the recipe ``[platform.*]`` named by
         ``--platform``; a gate that builds configures exactly as ``bigcherry build`` does for that platform and raises
-        ValueError when it is missing or unknown, a gate that does not build ignores it."""
+        ValueError when it is missing or unknown, a gate that does not build ignores it. An optional
+        canonical_build callback supplies the planner-built runtime to a component gate instead of a scratch build."""
 
     @abstractmethod
     def source_drift_checks(self, context: ProjectContext, source_dir: Path) -> tuple[DriftCheck, ...]:
         """Checks of BigCherry's own source against the freshly pulled upstream tree ``source_dir`` (MEN19), run by
         pin-bump's drift phase before any patch work; empty when the engine has nothing derived from upstream text. Each
         reports what no longer matches, per file, so one bump shows the whole port."""
+
+    def split_patch_created(
+        self, context: ProjectContext, source_dir: Path, failures: dict[str, list[str]],
+    ) -> tuple[dict[str, list[str]], list[str]]:
+        """Drift failures minus those of rules whose target source a registered managed patch creates (judged on the patched
+        tree, not pristine upstream), and the set-aside rule files. Engines with no such rules set nothing aside."""
+        return failures, []
 
     @abstractmethod
     def audit_checks(self, context: ProjectContext) -> tuple[Callable[[Any], None], ...]:

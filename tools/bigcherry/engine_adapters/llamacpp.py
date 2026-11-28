@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import json
 from typing import TYPE_CHECKING, Any
@@ -67,6 +68,7 @@ class LlamaCppAdapter(EngineAdapter):
 
     def compile_checks(
         self, context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None,
+        canonical_build: Callable[[], Path] | None = None,
     ) -> tuple[BumpCheck, ...]:
         """The ggml-cuda call-site contracts of the patched tree, compiled with clang++ (PA44-A)."""
         from ..build import source_compile_check

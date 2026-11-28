@@ -55,6 +55,9 @@ The stage that scales worst with stream count is identified with numbers, and a 
 
 Depends on ENG01 for the engine-side breakdown.
 
+RV4754: baseline affected cohorts under MEN17/VTP59; full work-per-step decomposition and optimization sweep after release. Do not require broad cross-model scaling campaign to accept a stable baseline.
+
 ## Change Log
 
 - 2026-11-10T13:11:41.863773+00:00 (created-by): Created by agent
+- 2026-11-27T15:13:50.508524+00:00 (updated-by): Updated: section:notes

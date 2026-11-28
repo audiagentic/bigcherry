@@ -1,0 +1,35 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_062954_radiance-23-production-patch_2729",
+  "files": [
+    "docs/evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md",
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "engines/radiance/patches/rad0004_moe_remote_diagnostics/patch.py",
+    "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py",
+    "engines/radiance/patches/rad0045_expert_route_replay/patch.py",
+    "engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/patch.py",
+    "engines/radiance/tests/fixtures/3b13fd3/arch/common/rad_arch.h",
+    "engines/radiance/tests/fixtures/3b13fd3/arch/common/rad_block_hc.h",
+    "engines/radiance/tests/fixtures/3b13fd3/arch/common/rad_block_moe_q.h",
+    "engines/radiance/tests/fixtures/3b13fd3/core/CMakeLists.txt",
+    "engines/radiance/tests/fixtures/3b13fd3/core/engine.cpp",
+    "engines/radiance/tests/fixtures/3b13fd3/core/engine.h",
+    "engines/radiance/tests/fixtures/3b13fd3/core/engine_bringup.cpp",
+    "engines/radiance/tests/fixtures/3b13fd3/core/fleet/fleet.cpp",
+    "engines/radiance/tests/fixtures/3b13fd3/core/main.cpp",
+    "engines/radiance/tests/fixtures/3b13fd3/core/place/planner.cpp",
+    "engines/radiance/tests/fixtures/3b13fd3/core/runtime/ctx.cpp",
+    "engines/radiance/tests/fixtures/3b13fd3/core/runtime/ctx.h",
+    "engines/radiance/tests/fixtures/3b13fd3/tests/CMakeLists.txt",
+    "engines/radiance/tests/fixtures/3b13fd3/tests/arch_fakes.h",
+    "tools/tests/lab/test_ltx_tp3_builder_patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "MEN24"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reconciled remote MoE and diagnostic attachment points against native 2.3 quantized architecture, refreshed exact-pin fixtures; 34 production packages compose, 43 of 44 catalog packages compose; host tests pass, device qualification outstanding.",
+  "timestamp-utc": "2026-11-27T06:29:54.408018Z",
+  "user-summary-candidate": "Radiance 2.3 production patch composition passes; remote expert and diagnostic contracts preserved at host gates, device qualification pending."
+}

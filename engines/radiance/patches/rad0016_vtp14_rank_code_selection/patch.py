@@ -87,9 +87,9 @@ def _created(path: str, source: str, guard: str) -> FilePatch:
 RAD_CORE = FilePatch(path="core/rad_core.h", language="none", description="VTP14 N1 row mask and config", edits=(
     _edit(
         "n1-rowmask",
-        "    bool                 chain_fenced = false;\n"
+        "    bool                 fetches_rows = false;\n"
         "};",
-        "    bool                 chain_fenced = false;\n"
+        "    bool                 fetches_rows = false;\n"
         "    /* BC_VTP14_N1_ROW_RANKS: bit r is set when rank r's card runs this device row's code\n"
         "     * (Registry::set_code_devices). All ones on the one-device path and for host rows. Fixed at\n"
         "     * load, read-only while the rank threads select. */\n"
@@ -224,9 +224,9 @@ LOADER = FilePatch(path="core/plugin/loader.cpp", language="none", description="
     ),
     _edit(
         "n1-row-mask",
-        "        row.chain_fenced = chains == 2;\n"
+        "        row.fetches_rows = fetches && fetches(sr.second) != 0;\n"
         "        set_->rows.push_back(row);",
-        "        row.chain_fenced = chains == 2;\n"
+        "        row.fetches_rows = fetches && fetches(sr.second) != 0;\n"
         "        /* BC_VTP14_N1_ROW_MASK: published once at load, read-only during selection. */\n"
         "        if (sr.first->domain == RAD_DOMAIN_DEVICE) row.code_ranks = code_mask;\n"
         "        set_->rows.push_back(row);",

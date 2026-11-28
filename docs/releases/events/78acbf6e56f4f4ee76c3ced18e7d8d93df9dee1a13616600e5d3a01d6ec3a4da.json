@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_071845_preserve-rdna2-helper-build-in_3901",
+  "files": [
+    "engines/radiance/components/libr2/units.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/IMPLEMENTATION.md"
+  ],
+  "plan-item-ids": [
+    "MEN24"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Update RDNA2 inventory for renamed fused quantization unit; isolated gfx1030 component configure passes.",
+  "timestamp-utc": "2026-11-27T07:18:45.957865Z",
+  "user-summary-candidate": "Preserve RDNA2 helper build inventory with Radiance 2.3."
+}

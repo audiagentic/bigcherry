@@ -1,0 +1,34 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261127_080139_restore-actual-cpu-smoke-testi_3152",
+  "files": [
+    "docs/evidence/2026-11-27-radiance-230-bump/FIRST-RUNTIME-TESTS.md",
+    "docs/evidence/2026-11-27-radiance-230-bump/cpu-smoke-iq8r.json",
+    "docs/evidence/2026-11-27-radiance-230-bump/gfx1201-base-gemm_i8a8_nt_m16.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/gfx1201-base-gemm_iq8r_nt_m16.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/gfx1201-base-gemm_iq8r_tiled.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/gfx1201-base-gemm_iqr_tiled.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/gfx1201-base-logits_gemm_i8.txt",
+    "docs/evidence/2026-11-27-radiance-230-bump/gfx1201-base-selftest.json",
+    "docs/evidence/2026-11-27-radiance-230-bump/tiny-iq8r.recipe",
+    "docs/planning/active/run-multi-engine/MEN15.md",
+    "docs/planning/active/run-multi-engine/MEN24.md",
+    "engines/radiance/components/libr3/native/r4d_ds41_ggml.hip.rw",
+    "engines/radiance/engine.toml",
+    "engines/radiance/tests/fixtures/cpu-smoke.yaml",
+    "tools/bigcherry/campaign/cpu_smoke.py",
+    "tools/bigcherry/engine_adapters/base.py",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/tuning/server_runner.py",
+    "tools/tests/campaign/test_cpu_smoke.py"
+  ],
+  "plan-item-ids": [
+    "MEN15",
+    "MEN24",
+    "RCS26"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Use native YAML CPU smoke fixture, pin same-source IQ8R tiny fixture, record actual CPU inference and gfx1201 base numerical checks; isolate RDNA3 unsupported cache prefetch hint in native rewrite.",
+  "timestamp-utc": "2026-11-27T08:01:39.566402Z",
+  "user-summary-candidate": "Restore actual CPU smoke testing at Radiance 2.3 and preserve the initial candidate GPU numerical evidence."
+}

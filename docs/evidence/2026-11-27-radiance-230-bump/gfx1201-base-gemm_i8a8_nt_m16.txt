@@ -1,0 +1,15 @@
+  ok    gemm_i8a8_nt_m16 i8 codes and tile-major scales invert
+  ok    quant_act_i8g vs a host quantiser, M=5 K=384
+  ok    gemm_i8a8_nt_m16 numeric M=5 N=272 K=384
+  ok    gemm_i8a8_nt_m16 i8 codes and tile-major scales invert
+  ok    quant_act_i8g vs a host quantiser, M=40 K=6144
+  ok    gemm_i8a8_nt_m16 numeric M=40 N=2560 K=6144
+  ok    gemm_i8a8_nt_m16 i8 codes and tile-major scales invert
+  ok    quant_act_i8g vs a host quantiser, M=64 K=640
+  ok    gemm_i8a8_nt_m16 numeric M=64 N=512 K=640
+  ok    gemm_i8a8_nt_m16: i8a8 and i8a8h each take only their own encoding
+        rel_l2 vs f32: i8a8 0.0136, i8a8h 0.0118, rotated weight with the plain quantiser 1.0020
+  ok    gemm_i8a8_nt_m16 i8a8h + had_quant_act_i8g vs the f32 it approximates, M=1 N=256 K=1024
+  ok    gemm_i8a8_nt_m16: i8a8 and i8a8h each take only their own encoding
+        rel_l2 vs f32: i8a8 0.0116, i8a8h 0.0092, rotated weight with the plain quantiser 0.9893
+  ok    gemm_i8a8_nt_m16 i8a8h + had_quant_act_i8g vs the f32 it approximates, M=16 N=256 K=1024

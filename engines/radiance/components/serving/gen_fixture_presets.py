@@ -27,6 +27,8 @@ NATIVE = {
     "p2p": "tuning.p2p", "pipelined-prefill": "tuning.pipelined_prefill",
     "pipelined-prefill-min-rows": "tuning.pipelined_prefill_min_rows", "prefill-governor": "tuning.prefill_governor",
     "prefill-interleave": "tuning.prefill_interleave", "tp-ownership": "tuning.tp_ownership", "tune-pin": "tuning.tune_pin",
+    "attn-prefill-fp8": "tuning.attn_prefill_fp8", "busy-prefill-chunk": "tuning.busy_prefill_chunk",
+    "state-cache-dtype": "tuning.state_cache_dtype", "tp-wire-min-kb": "tuning.tp_wire_min_kb",
 }
 
 
@@ -54,6 +56,10 @@ def preset(path: Path) -> str:
             lines.append(f'        p.{table}["{key}"] = {cpp(value)};')
     for key, value in model.items():
         if key in NATIVE:
+            # The manifest's existing busy-chunk field carries native MODE text,
+            # even when the YAML authors its positive token limit as an integer.
+            if key == "busy-prefill-chunk" and type(value) is int:
+                value = str(value)
             lines.append(f'        p.sets.push_back({cpp(NATIVE[key] + "=" + json.dumps(value))});')
     lines += ["        return p;", "    }"]
     return "\n".join(lines)

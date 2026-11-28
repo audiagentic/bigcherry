@@ -131,6 +131,9 @@ int main() {
             rad::fleet::FleetConfig headroom = fleet();
             headroom.card_headroom_mib[0] = 512;
             expect_refused(headroom, "card-headroom");
+            rad::fleet::FleetConfig waived = fleet();
+            waived.models[0].cfg.proceed_incompatible = true;
+            expect_refused(waived, "cannot waive engine capability checks");
             rad::fleet::FleetConfig exposed = fleet();
             exposed.models[0].cfg.host = "0.0.0.0";
             expect_refused(exposed, "loopback");

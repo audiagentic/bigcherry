@@ -125,6 +125,7 @@ class ComponentGate:
     def __init__(
         self, context: ProjectContext, source_dir: Path, workdir: Path, runner: Runner, abi_reader: AbiReader,
         platform_name: str | None, lister: runtime_bundle.TestLister,
+        canonical_build: Callable[[], Path] | None = None,
     ):
         self.engine = context.engine
         self.layout = context.layout
@@ -136,6 +137,7 @@ class ComponentGate:
         self.declared = components.load_all(paths.REPO_ROOT, context.engine)
         self.platform = _build_platform(context.engine, platform_name) if self.declared else None
         self.built = False
+        self.canonical_build = canonical_build
 
     @property
     def home(self) -> Path:
@@ -144,6 +146,14 @@ class ComponentGate:
     def build(self) -> list[str]:
         """Configure and build the engine for the components' GPU targets, then build the components (runtime_bundle)."""
         if not self.declared:
+            return []
+        if self.canonical_build is not None:
+            # The planner already built the selected engine and every declared runtime component.
+            # ABI and component tests below consume that exact build, not a second scratch build.
+            self.build_dir = self.canonical_build()
+            if not self.home.is_dir():
+                return [f"canonical lane has no runtime home: {self.home}"]
+            self.built = True
             return []
         platform = self.platform
         targets = sorted({*platform.targets, *(t for component in self.declared.values() for t in component.targets)})
@@ -237,7 +247,7 @@ class CompositionGates:
         from ..patch import compose_check
 
         engine = self.context.engine
-        if compose_check.compiler() is None:
+        if compose_check.compiler(engine) is None:
             raise BumpCheckError("no ROCm clang++ (set ROCM_PATH): the composition compile gate cannot run")
         source = engines.load(paths.REPO_ROOT, engine).promotion_source
         ids = compose_check.production_ids(engine, source) if source else []
@@ -250,8 +260,9 @@ class CompositionGates:
 def compile_checks(
     context: ProjectContext, source_dir: Path, workdir: Path, *, platform_name: str | None, runner: Runner = run_checked,
     abi_reader: AbiReader = read_plugin_abi, lister: runtime_bundle.TestLister = runtime_bundle.ctest_tests,
+    canonical_build: Callable[[], Path] | None = None,
 ) -> tuple[BumpCheck, ...]:
-    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister)
+    gate = ComponentGate(context, source_dir, workdir, runner, abi_reader, platform_name, lister, canonical_build)
     composition = CompositionGates(context, source_dir)
     cmake_hint = "install cmake and ninja (Ubuntu/Debian: sudo apt-get install cmake ninja-build) on a host with the ROCm toolchain"
     return (
@@ -284,6 +295,8 @@ def rewrite_drift(component: components.Component, source_dir: Path, runner: Rew
     """The component's rewrite script in its no-write mode against ``source_dir``: failing rules and blocks by file name,
     prefixed with the component. BumpCheckError when the script cannot run or does not answer with the JSON document."""
     script = component.root / REWRITE_SCRIPT
+    if component.name == "libr2":
+        script = component.root.parent / "libr3" / REWRITE_SCRIPT
     argv = [sys.executable, str(script), "--check", "--source", str(source_dir / REWRITE_SOURCE),
             "--rules", str(component.root / REWRITE_RULES)]
     if (component.root / REWRITE_NATIVE).is_dir():
@@ -301,6 +314,42 @@ def rewrite_drift(component: components.Component, source_dir: Path, runner: Rew
     if (result.returncode == 0) != (not failures):
         raise BumpCheckError(f"{component.name}: {REWRITE_SCRIPT} --check exited {result.returncode} but reported {len(failures)} failing file(s)")
     return {f"{component.name}/{name}": list(problems) for name, problems in sorted(failures.items())}
+
+
+_NO_SOURCE = re.compile(r"^(?P<tree>[^\s]+) has no source (?P<name>\S+)$")
+
+
+def split_patch_created(
+    context: "ProjectContext", root: Path, failures: dict[str, list[str]],
+) -> tuple[dict[str, list[str]], list[str]]:
+    """Split off rules whose target source does not exist upstream but is created by a registered managed patch.
+
+    A rule file for such a source cannot be judged against pristine upstream: it applies to the patched tree, which
+    the composition anchor gate checks after the patches are rebased. Reporting it as drift against pristine upstream would fail every triage and bump at the pin
+    itself. Only a missing source that some registered patch declares is split off; any other missing source stays drift.
+    """
+    from ..patch import registry as patch_registry
+
+    registry = patch_registry.load_registry(context.engine, context.patches_root)
+    declared = {
+        Path(patch.path).as_posix()
+        for descriptor in registry.descriptors
+        for patch in patch_registry.load_implementation(context.engine, descriptor, root=context.patches_root)
+    }
+    kept: dict[str, list[str]] = {}
+    owned: set[str] = set()
+    for file, problems in failures.items():
+        remaining = []
+        for problem in problems:
+            match = _NO_SOURCE.match(problem)
+            path = f"{match['tree']}/{match['name']}" if match else ""
+            if match and path in declared and not (root / path).exists():
+                owned.add(file)
+            else:
+                remaining.append(problem)
+        if remaining:
+            kept[file] = remaining
+    return kept, sorted(owned)
 
 
 def source_drift_checks(context: ProjectContext, source_dir: Path, runner: RewriteRunner = _run_rewrite) -> tuple[DriftCheck, ...]:
@@ -388,11 +437,15 @@ def check_patch_state(ctx: AuditContext) -> None:
     root = paths.patches_root(ctx.engine)
     registry = patch_registry.load_registry(ctx.engine, root)
     applied, unapplied, partial, missing = [], [], [], []
-    for descriptor in registry.descriptors:
-        for file_patch in patch_registry.load_implementation(ctx.engine, descriptor, root=root):
+    implementations = [(descriptor, patch_registry.load_implementation(ctx.engine, descriptor, root=root))
+                       for descriptor in registry.descriptors]
+    # a file one patch creates and others then edit is absent from an unpatched tree: those edits are not applied, not missing
+    created = {file_patch.path for _, file_patches in implementations for file_patch in file_patches if file_patch.create}
+    for descriptor, file_patches in implementations:
+        for file_patch in file_patches:
             target = ctx.root / file_patch.path
             if not target.is_file():
-                (unapplied if file_patch.create else missing).append(f"{descriptor.patch_id}:{file_patch.path}")
+                (unapplied if file_patch.path in created else missing).append(f"{descriptor.patch_id}:{file_patch.path}")
                 continue
             text = target.read_text(encoding="utf-8", errors="replace")
             hits = [bool(re.search(edit.guard_pattern(), text, re.MULTILINE)) for edit in file_patch.edits]

@@ -95,7 +95,7 @@ struct BcMoeRemoteDiag {
                         brow_slice(w.ew, r0, rows, k),
                         brow_slice(w.h.x, r0, rows, g.n_embd),
                         brow_slice(q, r0, rows, g.n_embd),
-                        brow_slice(s, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                        brow_slice(s, r0, rows, g.n_embd / RAD_SCALE_GROUP),
                         brows(q, T));
             RAD_ISSUE_N(c_, m.op_scatter, rows, brow_slice(w.ids, r0, rows, k),
                         brows(w.sorted, rows * k), brows(w.eoff, c.n_expert + 1), ecnt);
@@ -128,7 +128,7 @@ PATCHES = (
         ),),
     ),
     FilePatch(
-        path="arch/common/rad_block_moe_fp8.h",
+        path="arch/common/rad_block_moe_q.h",
         description="Call the diagnostics from the MoE block, compiled only under BC_MOE_REMOTE_DIAG.",
         edits=(
             Edit(
