@@ -29,7 +29,7 @@ OBSERVED_ENV = (
     "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "RADIANCE_HOME",
     "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH", "HSA_OVERRIDE_GFX_VERSION",
 )
-COHORTS = {"dense": ("qwen27b-tp3", "qwen27b-tp3"),
+COHORTS = {"dense": ("qwen27b-tp3-q8", "qwen27b-tp3-q8"),
            "helper": ("flashnext-tp2xtx-r9700", "flashnext-tp2xtx-r9700")}
 ORDER = (("A", "B"), ("B", "A"), ("A", "B"), ("B", "A"))
 CANARY_PROMPT = "The capital of France is"

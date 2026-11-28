@@ -40,8 +40,8 @@ models:
 x-bigcherry:
   schema: 1
   power: {profile: efficient}
-  description: "qwen27b-tp3-long with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding"
-  variant-of: "qwen27b-tp3-long"
+  description: "qwen27b-tp3-long-q8 with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding"
+  variant-of: "qwen27b-tp3-long-q8"
   differs: ["models.qwen27b.kv-cache-dtype"]
   ranks:
     - {arch: "gfx1100", count: 2}

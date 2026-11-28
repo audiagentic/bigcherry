@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 TOOL = ROOT / "tools/lab/radiance/arm_yaml.py"
 CONFIGS = ROOT / "engines/radiance/configs"
 BASE = CONFIGS / "flashnext-4gpu.yaml"
-QWEN = CONFIGS / "qwen27b-tp3-long.yaml"
+QWEN = CONFIGS / "qwen27b-tp3-long-q8.yaml"
 
 
 def run(tmp_path, *sets, base=BASE):
@@ -107,9 +107,9 @@ def test_the_real_inspector_sees_an_arm_as_the_base_except_at_the_set_paths(tmp_
     base_dir = tmp_path / "base"
     arm_dir = tmp_path / "arm"
     base_dir.mkdir(), arm_dir.mkdir()
-    base = base_dir / "qwen27b-tp3-long.yaml"
+    base = base_dir / "qwen27b-tp3-long-q8.yaml"
     base.write_bytes(QWEN.read_bytes())
-    arm = arm_dir / "qwen27b-tp3-long.yaml"
+    arm = arm_dir / "qwen27b-tp3-long-q8.yaml"
     subprocess.run([sys.executable, str(TOOL), "--base", str(base), "--out", str(arm),
                     "--set", "models.qwen27b.kv-cache-dtype=bf16_i8"], check=True, capture_output=True)
     before, after = flat(resolved(base)), flat(resolved(arm))

@@ -23,7 +23,7 @@ x-bigcherry:                        # what BigCherry owns and Radiance has no op
   schema: 1
   power: {profile: efficient}  # named intent, not implicit application
   description: "..."
-  variant-of: qwen27b-tp3      # optional: provenance of a variant, with differs
+  variant-of: qwen27b-tp3-q8      # optional: provenance of a variant, with differs
   differs: [models.qwen27b.max-model-len]
   ranks: [{arch: "gfx1100", count: 2}, {arch: "gfx1201", count: 1}]
   helpers: [{arch: "gfx1030", count: 1, placement: "tail"}]       # helper configs

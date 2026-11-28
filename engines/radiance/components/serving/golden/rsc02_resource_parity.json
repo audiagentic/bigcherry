@@ -1376,7 +1376,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7647264769
       },
-      "name": "qwen27b-tp3"
+      "name": "qwen27b-tp3-q8"
     },
     {
       "config_source": "qwen27b.toml",
@@ -1460,7 +1460,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7647264769
       },
-      "name": "qwen27b-tp3-iq6r"
+      "name": "qwen27b-tp3-q6bc"
     },
     {
       "config_source": "qwen27b.toml",
@@ -1544,7 +1544,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7665090561
       },
-      "name": "qwen27b-tp3-capacity"
+      "name": "qwen27b-tp3-q8-capacity"
     },
     {
       "config_source": "qwen27b.toml",
@@ -1628,7 +1628,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7718567937
       },
-      "name": "qwen27b-tp3-long"
+      "name": "qwen27b-tp3-long-q8"
     },
     {
       "config_source": "qwen27b.toml",
@@ -1712,7 +1712,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7718567937
       },
-      "name": "qwen27b-tp3-long-iq6r"
+      "name": "qwen27b-tp3-long-q6bc"
     },
     {
       "config_source": "qwen27b.toml",
@@ -1796,7 +1796,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7736393729
       },
-      "name": "qwen27b-tp3-long-bf16"
+      "name": "qwen27b-tp3-long-q8-bf16"
     },
     {
       "config_source": "qwen27b.toml",
@@ -1880,7 +1880,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7736393729
       },
-      "name": "qwen27b-tp3-long-bf16i8"
+      "name": "qwen27b-tp3-long-q8-bf16i8"
     },
     {
       "config_source": "flashnext.toml",
@@ -3258,7 +3258,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7932477441
       },
-      "name": "qwen27b-tp3"
+      "name": "qwen27b-tp3-q8"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3342,7 +3342,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7932477441
       },
-      "name": "qwen27b-tp3-iq6r"
+      "name": "qwen27b-tp3-q6bc"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3426,7 +3426,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7950303233
       },
-      "name": "qwen27b-tp3-capacity"
+      "name": "qwen27b-tp3-q8-capacity"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3510,7 +3510,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 8003780609
       },
-      "name": "qwen27b-tp3-long"
+      "name": "qwen27b-tp3-long-q8"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3594,7 +3594,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 8003780609
       },
-      "name": "qwen27b-tp3-long-iq6r"
+      "name": "qwen27b-tp3-long-q6bc"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3678,7 +3678,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 8021606401
       },
-      "name": "qwen27b-tp3-long-bf16"
+      "name": "qwen27b-tp3-long-q8-bf16"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3762,7 +3762,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 8021606401
       },
-      "name": "qwen27b-tp3-long-bf16i8"
+      "name": "qwen27b-tp3-long-q8-bf16i8"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3846,7 +3846,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 7736393729
       },
-      "name": "qwen27b-tp3-long-iq6r-bf16i8"
+      "name": "qwen27b-tp3-long-q6bc-bf16i8"
     },
     {
       "config_source": "qwen27b.toml",
@@ -3930,7 +3930,7 @@
         "staging_bytes": 209715203,
         "unowned_expert_bytes": 8021606401
       },
-      "name": "qwen27b-tp3-long-iq6r-bf16i8"
+      "name": "qwen27b-tp3-long-q6bc-bf16i8"
     }
   ],
   "profile": "tools/tests/campaign/test_rsc11_inventory.py and tools/tests/serving/test_power_plan.py BDF/VRAM FACTS; synthetic measured-byte inputs",

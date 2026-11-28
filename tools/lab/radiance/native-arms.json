@@ -51,7 +51,7 @@
    ]
   },
   "27b-native-kld/reference": {
-   "base": "qwen27b-tp3",
+   "base": "qwen27b-tp3-q8",
    "set": [
     "models.qwen27b.max-num-seqs=1",
     "models.qwen27b.num-speculative-tokens=0",

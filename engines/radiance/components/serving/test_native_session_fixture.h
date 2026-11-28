@@ -123,7 +123,7 @@ inline serving::Resolved resolve_fixture(serving::Options options, const Json& f
     return serving::resolve(options, facts, native);
 }
 
-/* The plan inputs that admit `fleet.yaml` for the fixture config "qwen27b-tp3" on the fake host, serving the
+/* The plan inputs that admit `fleet.yaml` for the fixture config "qwen27b-tp3-q8" on the fake host, serving the
  * fake engine on `port`. `scratch` holds this start's own files (site, YAML, work root); `behaviour` is the fake
  * engine's behaviour for its serving run. `host` is the write_fake_host tree.
  *
@@ -136,7 +136,7 @@ struct NativeSessionPlan {
     Json resolved_values;
 };
 
-/* engine_only: the fixture config qwen27b-tp3 (three ranks, no helper). helpers: flashnext-2xtx, the gfx1201
+/* engine_only: the fixture config qwen27b-tp3-q8 (three ranks, no helper). helpers: flashnext-2xtx, the gfx1201
  * engine with both gfx1100 cards as head helpers (fake workers, a shared-memory handoff, measured helper footprints). */
 enum class SessionLayout { engine_only, helpers };
 
@@ -166,7 +166,7 @@ inline NativeSessionPlan native_session_inputs(const fs::path& host, const fs::p
     in.options.site = site;
     in.options.configs = {fs::path(BC_CONFIGS_DIR)};
     in.options.model_root = host / "model-root"; // the site's model wins; the root is still required
-    in.options.sets = {"layout.name=\"qwen27b-tp3\"", "memory.host_pool_mib=1024"};
+    in.options.sets = {"layout.name=\"qwen27b-tp3-q8\"", "memory.host_pool_mib=1024"};
     in.self = host / "bc-serve-test";
     if (!fs::exists(in.self)) fs::create_symlink(BC_SERVE_EXE, in.self);
     in.engine_binary = BC_FAKE_ENGINE;
@@ -204,7 +204,7 @@ inline NativeSessionPlan native_session_inputs(const fs::path& host, const fs::p
         {"TEST_NATIVE_INSPECT_TP", "3"},
         {"TEST_NATIVE_INSPECT_TP_WIRE", "exact"},
         {"TEST_NATIVE_INSPECT_XBIGCHERRY",
-         Json{{"schema", 1}, {"description", "qwen27b-tp3 fixture"},
+         Json{{"schema", 1}, {"description", "qwen27b-tp3-q8 fixture"},
               {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}})},
               {"memory", {{"host-pool-mib", 0}, {"host-kv-mib", 0}}}}
              .dump()},
@@ -221,7 +221,7 @@ inline NativeSessionPlan native_session_inputs(const fs::path& host, const fs::p
         {"TEST_NATIVE_INSPECT_KERNELS", kernels.dump()}};
     if (!behaviour.empty()) overrides["TEST_FAKE_BEHAVIOUR"] = behaviour.dump();
     in.native_admission = ss::NativeAdmissionRequest{out.yaml, root, std::move(overrides)};
-    in.named_config = "qwen27b-tp3";
+    in.named_config = "qwen27b-tp3-q8";
     return out;
 }
 

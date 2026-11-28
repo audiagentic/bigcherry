@@ -55,7 +55,7 @@ models:
 x-bigcherry:
   schema: 1
   description: "Qwen3.8-27B IQ8R over XTX, XTX, R9700 (native TP3), 6,6,4 split, 262,144 tokens a session"
-  variant-of: qwen27b-tp3      # optional provenance, see Variants
+  variant-of: qwen27b-tp3-q8      # optional provenance, see Variants
   differs: [models.qwen27b.max-model-len]
   ranks: [{arch: gfx1100, count: 2}, {arch: gfx1201, count: 1}]
   memory: {host-pool-mib: 0, host-kv-mib: 0}   # explicit overrides of derived values; normally omitted

@@ -5,7 +5,7 @@ server:
   kernels: libbciqr,libr3,libr4d,libref
 models:
   qwen27b:
-    model: radiance/bigcherry/qwen3.8-27b-iq6r-v4-w3/qwen3.8-27b-iq6r-v4-df2-w3.rad
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
     tp: 3
     tp-wire: exact
     max-model-len: 262144
@@ -13,7 +13,7 @@ models:
     max-num-batched-tokens: 2048
     checkpoint-interval: 4096
     placement: expert_tiered
-    kv-cache-dtype: fp8
+    kv-cache-dtype: bf16_i8
     # A dense model has no n-gram table to keep in RAM.
     ngram-placement: disk
     num-speculative-tokens: 3
@@ -40,9 +40,9 @@ models:
 x-bigcherry:
   schema: 1
   power: {profile: efficient}
-  description: "qwen27b-tp3-long with the IQR-V4 container: about 5% more pageable tokens than IQ8R"
-  variant-of: "qwen27b-tp3-long"
-  differs: ["models.qwen27b.model"]
+  description: "qwen27b-tp3-long-q8 with bf16 keys and int8 values (bf16_i8): 818,896 tokens, the bf16 cache's decode speed"
+  variant-of: "qwen27b-tp3-long-q8"
+  differs: ["models.qwen27b.kv-cache-dtype"]
   ranks:
     - {arch: "gfx1100", count: 2}
     - {arch: "gfx1201", count: 1}

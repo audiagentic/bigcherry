@@ -97,7 +97,7 @@ The two configurations in the S15 acceptance matrix are:
 
 | Cohort | Bash control A | Native candidate B | Compulsory evidence |
 | --- | --- | --- | --- |
-| Dense TP | `launch-flashnext-best.sh start --layout qwen27b-tp3 --build BUILD` | `bc-serve serve qwen27b-tp3 --configs DIR --site SITE --model-root ROOT --run-dir RUN --engine-binary BUILD/bin/radiance --power-profile PROFILE` | Three ordered engine ranks; disk ngram, KV, MTP replay, returned canary and shutdown |
+| Dense TP | `launch-flashnext-best.sh start --layout qwen27b-tp3-q8 --build BUILD` | `bc-serve serve qwen27b-tp3-q8 --configs DIR --site SITE --model-root ROOT --run-dir RUN --engine-binary BUILD/bin/radiance --power-profile PROFILE` | Three ordered engine ranks; disk ngram, KV, MTP replay, returned canary and shutdown |
 | Helper | `launch-flashnext-best.sh start --layout flashnext-tp2xtx-r9700 --build BUILD` | `bc-serve serve flashnext-tp2xtx-r9700 --configs DIR --site SITE --model-root ROOT --run-dir RUN --engine-binary BUILD/bin/radiance --power-profile PROFILE` | Real engine/helper ranks, heat producer/consumer format, histogram, owner map, live policy, measured plan and startup admission |
 
 Here `DIR`, `SITE`, `ROOT`, `BUILD`, `RUN`, and `PROFILE` are

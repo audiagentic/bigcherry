@@ -12,11 +12,11 @@ PYTHONPATH=tools python3 -m bigcherry build --lane radiance:stock:linux-radiance
 
 ```sh
 # Waits for the release's three assets, installs into a fresh root, verifies, starts flashnext-4gpu and
-# qwen27b-tp3 (one short GPU lease each), runs the canary, stops, prints one result line, deletes its temp files.
+# qwen27b-tp3-q8 (one short GPU lease each), runs the canary, stops, prints one result line, deletes its temp files.
 bash tools/lab/radiance/gate-e.sh bc-radiance-2020.11.2 --wait --result gate-e-result.txt
 ```
 
-The line has the Gate E evidence table's columns (release, archive id, flashnext start seconds, qwen27b-tp3 start seconds, PASS or FAIL with reasons). See `gate-e.sh` for the checks.
+The line has the Gate E evidence table's columns (release, archive id, flashnext start seconds, qwen27b-tp3-q8 start seconds, PASS or FAIL with reasons). See `gate-e.sh` for the checks.
 
 ## CI-seeded ccache (BU01)
 

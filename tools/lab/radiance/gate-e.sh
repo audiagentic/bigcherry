@@ -1,6 +1,6 @@
 #!/bin/bash
 # Gate E for a published radiance release: install it into an isolated root, verify the root, then start, canary and
-# stop two production layouts (flashnext-4gpu and qwen27b-tp3), one short GPU lease per start.
+# stop two production layouts (flashnext-4gpu and qwen27b-tp3-q8), one short GPU lease per start.
 #
 # Usage:
 #   bash tools/lab/radiance/gate-e.sh TAG [--wait [--wait-timeout MIN]] [--result FILE] [--keep]
@@ -19,7 +19,7 @@
 # and serve exit codes 0).
 #
 # Output, one line to stdout (and to --result):
-#   TAG | archive id (first 8) | flashnext-4gpu to running (s) | qwen27b-tp3 to running (s) | PASS or FAIL: reasons
+#   TAG | archive id (first 8) | flashnext-4gpu to running (s) | qwen27b-tp3-q8 to running (s) | PASS or FAIL: reasons
 # the same columns as the Gate E evidence table. Exit 0 only if every check passed.
 #
 # Needs: gh (authenticated), agent-lease, curl, the ROCm SDK at $ROCM_PATH (default /opt/rocm-7.2.4) and the model
@@ -28,7 +28,7 @@ set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 
 REPO=${GATE_E_REPO:-audiagentic/bigcherry}
-LAYOUTS=(flashnext-4gpu qwen27b-tp3)
+LAYOUTS=(flashnext-4gpu qwen27b-tp3-q8)
 TAG="" WAIT=0 WAIT_MIN=240 RESULT="" KEEP=0
 
 usage() {
@@ -155,7 +155,7 @@ fi
 
 # ---- 4. the result line ----------------------------------------------------------------------------------------------
 if [ ${#FAILS[@]} -eq 0 ]; then verdict=PASS; else verdict="FAIL: $(IFS='; '; echo "${FAILS[*]}")"; fi
-line="${TAG#bc-radiance-} | $ID | ${SECS[flashnext-4gpu]:--} s | ${SECS[qwen27b-tp3]:--} s | $verdict"
+line="${TAG#bc-radiance-} | $ID | ${SECS[flashnext-4gpu]:--} s | ${SECS[qwen27b-tp3-q8]:--} s | $verdict"
 echo "$line"
 [ -z "$RESULT" ] || echo "$line" >>"$RESULT"
 [ ${#FAILS[@]} -eq 0 ]
