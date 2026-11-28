@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.85.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.84.1...bc-platform-1.85.0) (2026-11-28)
+
+
+### New and changed
+
+* **unit-harness:** Flash-Next expert GEMM family (moe_gemm_w4a8i8) ([#1760](https://github.com/audiagentic/bigcherry/issues/1760)) ([32bfa64](https://github.com/audiagentic/bigcherry/commit/32bfa64cce8341bda1b89e4dfee046bdeb008f44))
+* **unit-harness:** int8 trunk family for Flash-Next's engine rows ([#1757](https://github.com/audiagentic/bigcherry/issues/1757)) ([c7de26e](https://github.com/audiagentic/bigcherry/commit/c7de26e924fe144fe135fce6a27cf6d86f8bc29e))
+
 ## [1.84.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.84.0...bc-platform-1.84.1) (2026-11-28)
 
 
