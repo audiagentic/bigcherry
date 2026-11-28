@@ -61,6 +61,23 @@ Each probe binds release tag, archive id, effective config receipt and prompt ha
 
 Created 2026-11-28 by owner decision: finish the 2.3 bump against a no-regression gate versus installed 2.2, then investigate the historical gap. Inputs: docs/evidence/2026-11-27-radiance-230-bump/tp3-historical-recovery.json, historical-cohort-reconciliation.json. Measure with ms/step and TTFT separately; cross-version aggregate t/s follows draft acceptance. Short gpu leases with --wait. Suggested owner: bigcherry-2.
 
+2026-11-28, bisect run (bigcherry-2, 15:45-16:35 AEDT). 2020.8.5's 360.8 t/s is a stored record (ab-tp2 T1/T2 seed1, 2026-11-23), not a sealed release identity.
+Setup: qwen27b-tp3 (XTX, XTX, R9700), the 2020.8.5 shipped native config pinned for every arm (exact wire, depth 3, max-num-seqs 8, pipelined prefill min rows 256, the all-reduce pin, fp8 KV), power profile stock in every arm, prompt SHA-256 matching the seed1 cohort; one managed start per arm, seeds 1-3, 8 streams, 512/192, 3 reps, temperature 0; ABAB, one short gpu lease per arm. 2020.24.1 adds libbciqr ahead of libr3 in the kernel list (since 2020.17 the IQR rows live only there) and ships power efficient, pinned back to stock here.
+Installability: GitHub retention has removed the bundles of most releases in range. Only 2020.11.1 and 2020.20.0..24.1 keep an archive, and 2020.11.1 has no receipt, so bc-release install refuses it. 2020.11.4 was installed from a cached tag download with its receipt, and 2020.24.1 from its release assets, each into its own isolated root. 2020.8.5 has no archive at all, so it was built from source with the release lane (radiance:stock:linux-radiance) in a standalone clone at the tag, under the work root. That is diagnostic evidence, not a release install.
+
+| arm | decode ms/step | TTFT max ms | draft acceptance | running mean | aggregate t/s (context) |
+|---|---|---|---|---|---|
+| probe 1: 2020.11.4 (n=6) | 31.41 | 2227 | 0.707 | 5.00 | 350.0 |
+| probe 1: 2020.24.1 (n=6) | 31.72 | 2253 | 0.711 | 4.97 | 347.2 |
+| probe 2: 2020.8.5 fresh lane build (n=6) | 31.86 | 2261 | 0.714 | 4.97 | 346.7 |
+| probe 2: 2020.11.4 (n=6) | 31.35 | 2260 | 0.708 | 4.98 | 348.0 |
+| stored 2020.8.5 record (T1/T2 seed1) | 31.9-32.1 | about 2050 | 0.70-0.72 | 5.1-5.6 | 360.8 |
+
+Medians over seeds 1-3 and both launches; decode ms/step spread within an arm is 1.5-2.0 ms (one 24.1 seed-2 run at 37.2 ms; its TTFT was 1632 ms). Seed 1 alone: fresh 2020.8.5 353.6 and 351.5 t/s, 2020.11.4 348.6 to 352.7, 2020.24.1 348.4 and 353.3.
+Reading: the fresh 2020.8.5 build is level with 2020.11.4 and 2020.24.1 on decode step, TTFT, acceptance and running requests. The 2020.8.5 code does not reproduce its own stored 360.8 today; the record's higher figure is mostly a lower TTFT max (about 2050 against about 2250 ms, so more running requests per step), not decode time. No release in 2020.8.5..2020.24.1 introduces the short-prompt loss, so there is no boundary pair to bisect. One caveat: the 2020.8.5 arm is a local lane build, not the CI archive the record ran on (that archive is gone).
+Power: the 24.1 shipped efficient profile could not be measured. bc-serve refuses to apply it (BC_CFG_CALIBRATION_INVALID: no verified apply, readback and restore receipt for these settings on this board and driver, qualify with --allow-power-apply --qualify-power). The two stock arms of that pair (2020.24.1, seeds 1-3 x 2 launches) give a median of 31.75 ms/step, 2259 ms TTFT and 346.1 t/s, consistent with probe 1. The latest production qwen27b-tp3 run's power receipt shows profile stock, mode observe, so production does not run efficient on the cards either.
+Scratch, results and the isolated roots are in <work-root>/vtp61 (probe1, probe2, power); the roots and the build directory are deleted once the power question is settled.
+
 ## Change Log
 
 - 2026-11-27T23:02:09.372590+00:00 (created-by): Created by agent
