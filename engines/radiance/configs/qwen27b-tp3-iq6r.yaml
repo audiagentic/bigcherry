@@ -42,7 +42,7 @@ x-bigcherry:
   schema: 1
   power: {profile: efficient}
   variant-of: "qwen27b-tp3"
-  differs: ["models.qwen27b.model"]
+  differs: ["models.qwen27b.model", "models.qwen27b.max-num-batched-tokens"]
   description: "Qwen3.8-27B IQR-V4 (6-bit trellis, 22.8 GiB) over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
   ranks:
     - {arch: "gfx1100", count: 2}

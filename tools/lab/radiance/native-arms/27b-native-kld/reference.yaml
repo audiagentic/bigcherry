@@ -13,7 +13,11 @@ models:
     tp-wire: exact
     max-model-len: 8192
     max-num-seqs: 1
-    max-num-batched-tokens: 2048
+    # VTP59 (2026-11-28, 2030.0.0, docs/evidence/2026-11-28-vtp59-post-bump-concurrency): eight 512-token prompts fit one
+    # step: 8x512/192 378.2 against 345.5 t/s, TTFT max 1.61 against 2.25 s, p95 gap level (40 ms); 8x4K/512 154.5 against
+    # 149.5, gap 31.0 against 34.5 ms; KL mean 0.00129 against 0.00138. Interleave 0 with a 75 ms target was not latency-safe
+    # here (8x4K/512 p95 gap 164 ms). The variants keep 2048 (not measured) and list it in differs.
+    max-num-batched-tokens: 4096
     checkpoint-interval: 4096
     placement: expert_tiered
     kv-cache-dtype: fp8
@@ -39,6 +43,7 @@ models:
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
+  power: {profile: efficient}
   description: "Qwen3.8-27B IQ8R over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
   ranks:
     - {arch: "gfx1100", count: 2}
