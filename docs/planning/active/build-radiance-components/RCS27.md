@@ -76,6 +76,9 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 
 2026-11-28 Flash-Next: saved the flashnext-4gpu engine /graph on bc-radiance-2030.1.0 (gfx1201, world 1, 77 device rows). Its int8 trunk runs gemm_i8a8_nt_m16 (M <= 64) and gemm_i8a8_tiled (above) at group 128 on six (N, K) shapes. Added family i8a8 (r4d_gemm_i8a8 with the quantiser and keyed blocks; case quant_act_i8g, which runs every int8 trunk check) with those shapes and an output hash per GEMM; replay through --perfw8. gfx1201 on bc-radiance-2030.2.0: 218 kernels unchanged, 71 shapes hash-equal, selftest 0/0, checks_passed. Remaining Flash-Next engine rows without a family: the w4nl64a8i8h expert GEMM (moe_gemm_w4a8i8), bc-gfx12 HC rows, MTP/ngram/QSA rows, attention, GDN, router and sampling.
 
+
+2026-11-28 Flash-Next experts: added family moe_w4a8i8 (r4d_moe; case moe_gemm_w4a8i8) with Flash-Next's expert geometry from its /graph (gate/up 1280 x 2560 in two parts, down 2560 x 640 over sorted rows, w4nl64a8i8h, top 10, 16 experts to keep the host decode affordable) at 8, 64 and 600 tokens. Families may now pass their own case format (`cases`) and name skips that are the case's contract (`expected_skips`; here the 640-expert shapes' 'no run map past 512 experts'); any other skip still fails. gfx1201 on bc-radiance-2030.2.0: 197 kernels unchanged, 399 outputs hash-equal (including the selftest's 4096/8192-token down passes), selftest 0/0, checks_passed. A SIGSEGV seen while writing the family was the injected case's own bug (routed rows passed as tokens at top 10); buffered selftest output made it look like upstream's large pass, which passes in every environment tried.
+
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent
@@ -84,3 +87,4 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 - 2026-11-28T06:21:30.682022+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T07:25:59.101118+00:00 (updated-by): Updated: section:notes
 - 2026-11-28T08:33:47.490967+00:00 (updated-by): Updated: section:notes
+- 2026-11-28T09:24:04.635107+00:00 (updated-by): Updated: section:notes

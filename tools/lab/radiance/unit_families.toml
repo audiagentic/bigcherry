@@ -108,6 +108,25 @@ shapes = [[16384, 2560], [2560, 6144], [12288, 2560]]
 rows_m = [65, 128, 129, 512, 2048]
 bits = [8]
 
+# The grouped MoE GEMM over 4-bit non-linear experts against an int8 activation (moe_gemm_w4a8i8, w4nl64a8i8h): Flash-Next's
+# expert projections, gate/up in two parts and the sorted-row down projection.
+[family.moe_w4a8i8]
+units = ["r4d_moe"]
+support_units = ["r4d_quant_act_fp8", "r4d_keyed"]
+kernels = "moe_w4|moe_gemm_w4"
+case = "moe_gemm_w4a8i8"
+rows = ["moe_gemm_w4a8i8"]
+# the case's 640-expert shapes refuse the aligned prefill form by contract (its run map stops at 512 experts)
+expected_skips = ["no run map past 512 experts, so no aligned launch"]
+# No replay: changed expert code stays inconclusive until a timing command is configured.
+
+[family.moe_w4a8i8.hash]
+# Flash-Next's expert geometry "N0:K0:N1:K1:parts:experts:sorted:tokens": gate/up 1280 x 2560 in two parts and the down
+# projection 2560 x 640 over sorted rows, at decode, draft and prefill token counts. Sixteen experts keep the host decode
+# affordable; the per-expert geometry, and so the kernel path, is the model's.
+cases = ["1280:2560:1280:2560:2:16:0:8", "1280:2560:1280:2560:2:16:0:64", "1280:2560:1280:2560:2:16:0:600",
+         "2560:640:2560:640:1:16:1:8", "2560:640:2560:640:1:16:1:64", "2560:640:2560:640:1:16:1:600"]
+
 # Overlays: an owned plugin whose rows are listed ahead of the base library. The harness builds the plugin, runs the base's
 # selftest case through the overlay row (selftest rows are found by `row-prefix` + name), and compares with the base alone.
 [overlay.iqr_embed]
