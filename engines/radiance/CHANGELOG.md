@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.4.0...bc-radiance-2030.5.0) (2026-11-28)
+
+
+### New and changed
+
+* **radiance:** IQR-V4 TP3 long config with a bf16-key, int8-value cache ([#1767](https://github.com/audiagentic/bigcherry/issues/1767)) ([20421c6](https://github.com/audiagentic/bigcherry/commit/20421c673975f4976988595b2aef3403de1fecdd))
+
 ## [2030.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.3.0...bc-radiance-2030.4.0) (2026-11-28)
 
 

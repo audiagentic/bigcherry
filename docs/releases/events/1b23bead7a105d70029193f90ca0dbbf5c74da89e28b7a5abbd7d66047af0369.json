@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261128_114446_iqr-v4-on-three-cards-can-run_1173",
+  "files": [
+    "engines/radiance/configs/qwen27b-tp3-long-iq6r-bf16i8.yaml",
+    "engines/radiance/components/serving/test_config_presets.inc",
+    "engines/radiance/components/serving/release_archive.cpp",
+    "engines/radiance/components/serving/golden/rsc02_resource_parity.json",
+    "engines/radiance/components/serving/resources_parity_test.cpp",
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/tests/core/test_rsc02_resources_parity.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "New serving config qwen27b-tp3-long-iq6r-bf16i8: the IQR-V4 (6-bit) container on TP3 (XTX, XTX, R9700) at 262,144-token sessions with a bf16_i8 cache; the pool pages 993,258 tokens. Registered in the release profiles, generated resolver presets and the resource parity fixture. Smoke: start, one completion, clean stop on bc-radiance-2030.4.0.",
+  "timestamp-utc": "2026-11-28T11:44:46.842363Z",
+  "user-summary-candidate": "IQR-V4 on three cards can run with a 16-bit key / 8-bit value cache: about 993,000 tokens at full session length."
+}

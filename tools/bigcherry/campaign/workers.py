@@ -570,16 +570,40 @@ def make_build_worker(
                 compile_inputs_hash = actual_inputs
             # CI time: hold a stable-path slot for the whole configure and compile so ccache sees the same command for an
             # unchanged unit in every build (ccache_paths); without a free slot the build runs plain ccache.
+            # BC_LANE_STAGE splits a cold CI build across runners (BU06): "engine" compiles the engine and its runtime
+            # targets, "component:NAME[,NAME]" compiles those components against a header-only prefix laid out from the
+            # configured engine. Either stops with LaneStageComplete before any metadata or provenance is written; the
+            # unstaged lane build that follows (on the merged compiler cache) is the only one that records a build.
+            stage = os.environ.get("BC_LANE_STAGE", "")
+            if stage and stage != "engine" and not stage.startswith("component:"):
+                raise campaign_build.CampaignBuildError(f"unknown BC_LANE_STAGE {stage!r}")
             with ccache_paths.stable_paths(context.work_root, source_root, build_dir):
                 with build_logs.stage("configure"):
                     run_logged(configure_args, cwd=source_root, check=True)
                 if has_generate_stage:
                     generated_tree.verify_tree(cmake_generated_root, tree_document)
+                if stage.startswith("component:"):
+                    runtime_bundle.build_runtime(
+                        context.engine, source_root=source_root, build_dir=build_dir, platform=platform,
+                        only=tuple(stage.split(":", 1)[1].split(",")), engine_built=False,
+                    )
+                    marker = runtime_bundle.stage_marker(context.work_root, stage)
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(build_plan.build_plan_id + "\n", encoding="utf-8")
+                    raise runtime_bundle.LaneStageComplete(stage)
                 run_logged(
                     campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
                     cwd=source_root,
                     check=True,
                 )
+                if stage == "engine":
+                    runtime_bundle.build_runtime(
+                        context.engine, source_root=source_root, build_dir=build_dir, platform=platform, only=(),
+                    )
+                    marker = runtime_bundle.stage_marker(context.work_root, stage)
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(build_plan.build_plan_id + "\n", encoding="utf-8")
+                    raise runtime_bundle.LaneStageComplete(stage)
 
                 # The engine's runtime beside the binary (plugins, components); nothing for an engine without one.
                 # RAD18: forward the platform's compiler-launcher options (e.g. ccache) -- each component is

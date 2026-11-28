@@ -3763,6 +3763,174 @@
         "unowned_expert_bytes": 8021606401
       },
       "name": "qwen27b-tp3-long-bf16i8"
+    },
+    {
+      "config_source": "qwen27b.toml",
+      "expected": {
+        "owner_map_digest": "ca90448e05e5a0ded74a442232109935b365ad5cfda007b951e016e03d76fd3f",
+        "host_pool_mib": 8605,
+        "host_kv_mib": 0,
+        "host": {
+          "components": [
+            {
+              "name": "embedding",
+              "bytes": 2097169,
+              "source": "engine plan"
+            },
+            {
+              "name": "unowned_experts",
+              "bytes": 7736393729,
+              "source": "published owner map"
+            },
+            {
+              "name": "staging",
+              "bytes": 209715203,
+              "source": "engine plan"
+            },
+            {
+              "name": "pool_margin",
+              "bytes": 1073741824,
+              "source": "calibrated margin"
+            },
+            {
+              "name": "ngram_ram",
+              "bytes": 0,
+              "source": "engine plan"
+            },
+            {
+              "name": "checkpoints",
+              "bytes": 0,
+              "source": "engine plan"
+            },
+            {
+              "name": "other_engine",
+              "bytes": 0,
+              "source": "engine plan"
+            },
+            {
+              "name": "retained_kv",
+              "bytes": 0,
+              "source": "target * bytes per token"
+            },
+            {
+              "name": "host_reserve",
+              "bytes": 8589934592,
+              "source": "host reserve policy"
+            }
+          ],
+          "available_bytes": 146800640000,
+          "committed_bytes": 17612931072,
+          "remaining_bytes": 129187708928,
+          "pin_available_bytes": 125829120000,
+          "pin_committed_bytes": 9022996480
+        },
+        "helpers": []
+      },
+      "hardware_profile": "test_rsc11_inventory.FACTS",
+      "input": {
+        "available_mib": 150000,
+        "cgroup_room_mib": 140000,
+        "checkpoint_bytes": 0,
+        "concurrent_sessions": 8,
+        "context_tokens": 262144,
+        "embedding_bytes": 2097169,
+        "helpers": [],
+        "kv_bytes_per_token": 1,
+        "margin_mib": 1024,
+        "ngram_ram_bytes": 0,
+        "other_engine_bytes": 0,
+        "owner_map_digest": "ca90448e05e5a0ded74a442232109935b365ad5cfda007b951e016e03d76fd3f",
+        "pin_room_mib": 120000,
+        "reserve_mib": 8192,
+        "retained_tokens": 0,
+        "staging_bytes": 209715203,
+        "unowned_expert_bytes": 7736393729
+      },
+      "name": "qwen27b-tp3-long-iq6r-bf16i8"
+    },
+    {
+      "config_source": "qwen27b.toml",
+      "expected": {
+        "owner_map_digest": "ca90448e05e5a0ded74a442232109935b365ad5cfda007b951e016e03d76fd3f",
+        "host_pool_mib": 8877,
+        "host_kv_mib": 0,
+        "host": {
+          "components": [
+            {
+              "name": "embedding",
+              "bytes": 2097169,
+              "source": "engine plan"
+            },
+            {
+              "name": "unowned_experts",
+              "bytes": 8021606401,
+              "source": "published owner map"
+            },
+            {
+              "name": "staging",
+              "bytes": 209715203,
+              "source": "engine plan"
+            },
+            {
+              "name": "pool_margin",
+              "bytes": 1073741824,
+              "source": "calibrated margin"
+            },
+            {
+              "name": "ngram_ram",
+              "bytes": 0,
+              "source": "engine plan"
+            },
+            {
+              "name": "checkpoints",
+              "bytes": 0,
+              "source": "engine plan"
+            },
+            {
+              "name": "other_engine",
+              "bytes": 0,
+              "source": "engine plan"
+            },
+            {
+              "name": "retained_kv",
+              "bytes": 0,
+              "source": "target * bytes per token"
+            },
+            {
+              "name": "host_reserve",
+              "bytes": 8589934592,
+              "source": "host reserve policy"
+            }
+          ],
+          "available_bytes": 146800640000,
+          "committed_bytes": 17898143744,
+          "remaining_bytes": 128902496256,
+          "pin_available_bytes": 125829120000,
+          "pin_committed_bytes": 9308209152
+        },
+        "helpers": []
+      },
+      "hardware_profile": "test_power_plan.layout.FACTS",
+      "input": {
+        "available_mib": 150000,
+        "cgroup_room_mib": 140000,
+        "checkpoint_bytes": 0,
+        "concurrent_sessions": 8,
+        "context_tokens": 262144,
+        "embedding_bytes": 2097169,
+        "helpers": [],
+        "kv_bytes_per_token": 1,
+        "margin_mib": 1024,
+        "ngram_ram_bytes": 0,
+        "other_engine_bytes": 0,
+        "owner_map_digest": "ca90448e05e5a0ded74a442232109935b365ad5cfda007b951e016e03d76fd3f",
+        "pin_room_mib": 120000,
+        "reserve_mib": 8192,
+        "retained_tokens": 0,
+        "staging_bytes": 209715203,
+        "unowned_expert_bytes": 8021606401
+      },
+      "name": "qwen27b-tp3-long-iq6r-bf16i8"
     }
   ],
   "profile": "tools/tests/campaign/test_rsc11_inventory.py and tools/tests/serving/test_power_plan.py BDF/VRAM FACTS; synthetic measured-byte inputs",
