@@ -496,5 +496,235 @@
   "decode": "stream-bench 1,2,4,8 streams, 512-token prompts, 256 tokens, seeds 7/21/42, one round each, temperature 0",
   "long": "1 stream, 258000 requested prompt tokens (255743 measured), 256 tokens, seed 5",
   "tokens_per_decoding_step": "decode tokens over decode plus mixed steps, summed across streams"
+ },
+ "after_1780_tp3_27b": {
+  "release": "bc-radiance-2030.5.2",
+  "binary_sha256": {
+   "bin/radiance": "b6651cf4297bd0eac342507266f8a77ab20bb06783fe581233509cc50f074b00",
+   "radiance_home/bin/bc-serve": "8cb842e0bfa63ab652c88211f7edbf69b479e86e1b6237e7ab2989b807d475a9"
+  },
+  "change": "#1780: bc-iqr's 6-bit gated tile runs the native gfx1100 path",
+  "power": "profile stock",
+  "method": "tp3_27b decode workload at the config's draft depth 3; 512 prompt tokens, 256 generated, seeds 7/21/42, streams 1,2,4,8; arm order A1 B1 B2 A2, one gpu lease an arm; an arm value is the median over seeds, a model value the mean of its two arms",
+  "model_means": {
+   "iq8r": {
+    "1": {
+     "decode_ms_per_step": 20.393,
+     "aggregate_tps": 123.915
+    },
+    "2": {
+     "decode_ms_per_step": 21.6085,
+     "aggregate_tps": 220.2095
+    },
+    "4": {
+     "decode_ms_per_step": 25.4276,
+     "aggregate_tps": 323.5005
+    },
+    "8": {
+     "decode_ms_per_step": 36.2766,
+     "aggregate_tps": 415.6625
+    }
+   },
+   "iq6r": {
+    "1": {
+     "decode_ms_per_step": 22.2165,
+     "aggregate_tps": 112.55
+    },
+    "2": {
+     "decode_ms_per_step": 23.3392,
+     "aggregate_tps": 184.739
+    },
+    "4": {
+     "decode_ms_per_step": 26.3404,
+     "aggregate_tps": 300.5715
+    },
+    "8": {
+     "decode_ms_per_step": 37.9141,
+     "aggregate_tps": 373.926
+    }
+   }
+  },
+  "arms": {
+   "A1": {
+    "config": "qwen27b-tp3-long",
+    "streams": {
+     "1": {
+      "decode_ms_per_step": 20.3733,
+      "aggregate_tps": 124.044,
+      "event_gap_ms_p95": 20.547,
+      "draft_acceptance_by_seed_file_order": [
+       0.6473,
+       0.5934,
+       0.6288
+      ]
+     },
+     "2": {
+      "decode_ms_per_step": 21.4789,
+      "aggregate_tps": 220.286,
+      "event_gap_ms_p95": 21.895,
+      "draft_acceptance_by_seed_file_order": [
+       0.6217,
+       0.7895,
+       0.7495
+      ]
+     },
+     "4": {
+      "decode_ms_per_step": 25.5762,
+      "aggregate_tps": 330.486,
+      "event_gap_ms_p95": 26.277,
+      "draft_acceptance_by_seed_file_order": [
+       0.6835,
+       0.6846,
+       0.7302
+      ]
+     },
+     "8": {
+      "decode_ms_per_step": 36.2309,
+      "aggregate_tps": 422.897,
+      "event_gap_ms_p95": 38.745,
+      "draft_acceptance_by_seed_file_order": [
+       0.7052,
+       0.6795,
+       0.7245
+      ]
+     }
+    }
+   },
+   "B1": {
+    "config": "qwen27b-tp3-long-iq6r",
+    "streams": {
+     "1": {
+      "decode_ms_per_step": 22.2007,
+      "aggregate_tps": 112.407,
+      "event_gap_ms_p95": 22.533,
+      "draft_acceptance_by_seed_file_order": [
+       0.5771,
+       0.6007,
+       0.725
+      ]
+     },
+     "2": {
+      "decode_ms_per_step": 23.3472,
+      "aggregate_tps": 183.665,
+      "event_gap_ms_p95": 24.031,
+      "draft_acceptance_by_seed_file_order": [
+       0.6419,
+       0.6004,
+       0.6199
+      ]
+     },
+     "4": {
+      "decode_ms_per_step": 26.3389,
+      "aggregate_tps": 295.101,
+      "event_gap_ms_p95": 27.541,
+      "draft_acceptance_by_seed_file_order": [
+       0.64,
+       0.6493,
+       0.6139
+      ]
+     },
+     "8": {
+      "decode_ms_per_step": 37.8527,
+      "aggregate_tps": 365.836,
+      "event_gap_ms_p95": 41.715,
+      "draft_acceptance_by_seed_file_order": [
+       0.5903,
+       0.6231,
+       0.5758
+      ]
+     }
+    }
+   },
+   "B2": {
+    "config": "qwen27b-tp3-long-iq6r",
+    "streams": {
+     "1": {
+      "decode_ms_per_step": 22.2324,
+      "aggregate_tps": 112.693,
+      "event_gap_ms_p95": 22.45,
+      "draft_acceptance_by_seed_file_order": [
+       0.5771,
+       0.6,
+       0.725
+      ]
+     },
+     "2": {
+      "decode_ms_per_step": 23.3313,
+      "aggregate_tps": 185.813,
+      "event_gap_ms_p95": 23.818,
+      "draft_acceptance_by_seed_file_order": [
+       0.6439,
+       0.6007,
+       0.622
+      ]
+     },
+     "4": {
+      "decode_ms_per_step": 26.3418,
+      "aggregate_tps": 306.042,
+      "event_gap_ms_p95": 27.035,
+      "draft_acceptance_by_seed_file_order": [
+       0.6438,
+       0.6475,
+       0.6139
+      ]
+     },
+     "8": {
+      "decode_ms_per_step": 37.9755,
+      "aggregate_tps": 382.016,
+      "event_gap_ms_p95": 40.478,
+      "draft_acceptance_by_seed_file_order": [
+       0.6193,
+       0.6662,
+       0.5926
+      ]
+     }
+    }
+   },
+   "A2": {
+    "config": "qwen27b-tp3-long",
+    "streams": {
+     "1": {
+      "decode_ms_per_step": 20.4127,
+      "aggregate_tps": 123.786,
+      "event_gap_ms_p95": 20.661,
+      "draft_acceptance_by_seed_file_order": [
+       0.6473,
+       0.5934,
+       0.6288
+      ]
+     },
+     "2": {
+      "decode_ms_per_step": 21.7381,
+      "aggregate_tps": 220.133,
+      "event_gap_ms_p95": 22.24,
+      "draft_acceptance_by_seed_file_order": [
+       0.6215,
+       0.7947,
+       0.7495
+      ]
+     },
+     "4": {
+      "decode_ms_per_step": 25.2789,
+      "aggregate_tps": 316.515,
+      "event_gap_ms_p95": 26.823,
+      "draft_acceptance_by_seed_file_order": [
+       0.6676,
+       0.6706,
+       0.7062
+      ]
+     },
+     "8": {
+      "decode_ms_per_step": 36.3223,
+      "aggregate_tps": 408.428,
+      "event_gap_ms_p95": 39.965,
+      "draft_acceptance_by_seed_file_order": [
+       0.6989,
+       0.6866,
+       0.7251
+      ]
+     }
+    }
+   }
+  }
  }
 }

@@ -46,6 +46,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2030.1.0 | 7f9b4c15 | 279 s | 23 s | test tooling only (unit harness IQ8R family, selftest rewrite); no runtime change, so the slower helper-expert load is host-side |
 | 2030.1.1 | 22950467 | 233 s | 21 s | qwen27b TP2 and TP3 batch 4096, TP2 pipelined prefill (VTP59) |
 | 2030.5.0 | b15faf97 | 218 s | 24 s | IQR-V4 TP3 long config with a bf16-key, int8-value cache (2030.2.0 to 2030.4.0 reused archive 22950467) |
+| 2030.5.2 | 3b772879 | 192 s | 23 s | bc-iqr's 6-bit gated tile on the native gfx1100 path; MTP guard exempts profile-ops starts (2030.5.1 not run, superseded) |
 
 ## How to read this, and when Gate E need not be run again
 

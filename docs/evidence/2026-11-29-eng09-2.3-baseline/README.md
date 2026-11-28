@@ -98,3 +98,29 @@ Draft acceptance varies by prompt:
   starting point for the IQ6R optimisation; the gap is in the decode step, not in prefill.
 - Not covered yet: the upstream 4-bit (q4) and upstream 6-bit (q6) models. Their vocabulary heads are cut for one or two
   ranks, which this TP3 start refuses. They follow in a later PR.
+
+## After #1780: IQ6R against IQ8R on 2030.5.2
+
+#1780 moved bc-iqr's 6-bit gated tile to the native gfx1100 path. The TP3 decode measurement was repeated on release
+bc-radiance-2030.5.2 on 2026-11-29, 01:57 to 02:02 AEDT:
+
+- the same workload as the decode table above (512-token prompts, 256 tokens, seeds 7, 21 and 42, the configs' draft
+  depth of 3, stock power);
+- four arms in the order IQ8R, IQ6R, IQ6R, IQ8R, one gpu lease an arm;
+- an arm value is the median over seeds; the table is the mean of a model's two arms.
+
+| Streams | IQ8R tokens/s | IQ8R ms/step | IQ6R tokens/s | IQ6R ms/step |
+|---|---|---|---|---|
+| 1 | 123.9 | 20.39 | 112.5 | 22.22 |
+| 2 | 220.2 | 21.61 | 184.7 | 23.34 |
+| 4 | 323.5 | 25.43 | 300.6 | 26.34 |
+| 8 | 415.7 | 36.28 | 373.9 | 37.91 |
+
+- One stream: IQ6R went from 23.4 to 22.2 ms/step (107.3 to 112.5 tokens/s). IQ8R did not move (20.4). The IQ6R gap fell
+  from +3.0 to +1.8 ms/step (+15% to +9%).
+- Eight streams: no change for either model (IQ6R 37.8 before, 37.9 now).
+- Aggregate tokens/s at eight streams differs by about 4% between the two arms of one model (IQ8R 422.9 and 408.4, IQ6R
+  365.8 and 382.0), so ms/step is the steadier figure there.
+- Pool capacity is unchanged: 1,442,463 (IQ8R) and 1,520,927 (IQ6R) tokens a rank.
+
+The earlier 2030.5.0 values are from one arm a model. Per-arm values are in `summary.json`, key `after_1780_tp3_27b`.
