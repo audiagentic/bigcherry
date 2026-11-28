@@ -1,0 +1,11 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261128_141333_faster-iqr-v4-6-bit-decode-on_6193",
+  "files": [
+    "engines/radiance/components/bc-iqr/bc_iqr_gemm.hip"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-iqr's iqr_m16_kernel excluded the 6-bit gated unchained specialisations from the native gfx1100 WMMA path (an exclusion carried over from the libr3 rewrite), so they ran the half-fragment compatibility path. Removed: every 6-bit gated form compiles natively with no spills or private memory and equal or fewer registers. gfx1100 unit harness (overlay iqr_gemm_m64): 396 outputs hash-equal, selftest failures 0/0; --perfiqr at the TP3 XTX gate_up shape (13312 x 5120): 6-bit gated 107.8/107.8/108.8/110.0 -> 81.8/82.3/83.3/85.4 us at M = 2/4/8/16, now below the separate m64 + quantiser; M = 1, every 7-bit case and the plain rows unchanged.",
+  "timestamp-utc": "2026-11-28T14:13:33.069165Z",
+  "user-summary-candidate": "Faster IQR-V4 6-bit decode on RX 7900 XTX: the fused gate-up row is 24% quicker during speculative verification."
+}

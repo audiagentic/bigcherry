@@ -137,6 +137,9 @@ struct EngineStart {
     std::string heat_session_nonce;
     // Native launches retain the admitted working directory and exact environment across child starts.
     std::shared_ptr<const NativeEngineLaunch> native_launch;
+    // The admitted native YAML turns on per-op timing (models.<id>.profile-ops, as the engine's inspector parsed it):
+    // the runtime MTP replay guard exempts the start, as it does a lab experiment's profile_ops.
+    bool native_profile_ops = false;
     // Set when this start reused the work root's stored measurement: if the engine then fails to come up on that
     // plan, the owner drops the entry so the next start measures afresh.
     std::filesystem::path reused_store;
