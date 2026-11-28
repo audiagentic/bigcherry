@@ -64,7 +64,7 @@ int main() {
         }
         const Json fixture = Json::parse(file);
         const Json& cases = fixture.at("cases");
-        assert(cases.is_array() && cases.size() == 40);
+        assert(cases.is_array() && cases.size() == 42);
         bool flash = false, qwen = false, tail = false, dense = false, kv = false;
         for (const Json& row : cases) {
             const std::string name = row.at("name").get<std::string>();
