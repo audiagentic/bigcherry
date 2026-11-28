@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.3.0...bc-radiance-2030.4.0) (2026-11-28)
+
+
+### New and changed
+
+* **unit-harness:** Flash-Next expert GEMM family (moe_gemm_w4a8i8) ([#1760](https://github.com/audiagentic/bigcherry/issues/1760)) ([32bfa64](https://github.com/audiagentic/bigcherry/commit/32bfa64cce8341bda1b89e4dfee046bdeb008f44))
+
 ## [2030.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.2.0...bc-radiance-2030.3.0) (2026-11-28)
 
 
