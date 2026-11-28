@@ -44,6 +44,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.24.1 | 2512de74 | 217 s | 27 s | heat-guard unit test joins its helper threads before asserting |
 | 2030.0.0 | b06d608f | 180 s | 23 s | first release on upstream Radiance 2.3.0 (plugin ABI 45, all 44 patches ported) |
 | 2030.1.0 | 7f9b4c15 | 279 s | 23 s | test tooling only (unit harness IQ8R family, selftest rewrite); no runtime change, so the slower helper-expert load is host-side |
+| 2030.1.1 | 22950467 | 233 s | 21 s | qwen27b TP2 and TP3 batch 4096, TP2 pipelined prefill (VTP59) |
 
 ## How to read this, and when Gate E need not be run again
 
