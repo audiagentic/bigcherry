@@ -802,70 +802,27 @@ def ci_asset(root: Path, tag: str, stage: Path) -> tuple[dict, Path, Path]:
     return asset, archive, checksum
 
 
-def fetch(record: dict, root: Path, work_root: Path, sdk: Path,
-          tag: str | None = None) -> Path:
-    assets = record.get("runtime_assets", {})
-    if tag is None:
-        released = re.findall(r"release (\d+\.\d+\.\d+)", record.get("notes", ""))
-        if not released:
-            raise BundleError("release record has no completed release to fetch")
-        tag = "bc-radiance-" + released[-1]
-    asset = assets.get(tag)
-    if not isinstance(asset, dict):
-        raise BundleError("release record has no prebuilt runtime asset for selected release")
-    if not isinstance(tag, str) or not tag.startswith("bc-radiance-"):
-        raise BundleError("release tag missing from record")
-    # Validate names before passing record-derived patterns to gh download.
-    if (asset.get("schema") != SCHEMA
-        or not ARCHIVE_NAME.fullmatch(asset.get("name", ""))
-        or asset.get("checksum_name") != asset["name"] + ".sha256"
-        or not re.fullmatch(r"[0-9a-f]{64}", asset.get("sha256", ""))):
-        raise BundleError("unsafe release asset receipt")
+def fetch(root: Path, work_root: Path, sdk: Path, tag: str) -> Path:
+    """Download a release's CI-made bundle, verify it against its published receipt and restore it under the work root."""
+    if not tag.startswith("bc-radiance-"):
+        raise BundleError(f"not a bc-radiance release tag: {tag!r}")
     stage_dir = work_root / "release-assets" / "downloads"
     stage_dir.mkdir(parents=True, exist_ok=True)
     stage = Path(tempfile.mkdtemp(prefix="bu01-release-", dir=stage_dir))
     try:
-        download(root, tag, (asset["name"], asset["checksum_name"]), stage)
-        return restore(stage / asset["name"], stage / asset["checksum_name"],
-                       asset, root, work_root, sdk, tag=tag)
+        asset, archive, checksum = ci_asset(root, tag, stage)
+        return restore(archive, checksum, asset, root, work_root, sdk, tag=tag)
     finally:
         shutil.rmtree(stage)
 
 
-def publish(record: dict, root: Path, work_root: Path, tag: str) -> None:
-    asset = record.get("runtime_assets", {}).get(tag)
-    if not isinstance(asset, dict):
-        raise BundleError("release record lacks verified runtime asset for this release")
-    files = work_root / "release-assets" / tag
-    archive = files / asset["name"]
-    checksums = files / asset["checksum_name"]
-    if not archive.is_file() or digest(archive) != asset["sha256"]:
-        raise BundleError("locally packaged runtime asset missing or changed after record commit")
-    if not checksums.is_file() or checksums.read_text().strip() != f"{asset['sha256']}  {asset['name']}":
-        raise BundleError("runtime checksum file missing or changed")
-    result = subprocess.run(["gh", "release", "view", tag, "--json", "assets"],
+def latest_tag(root: Path) -> str:
+    """The newest published bc-radiance release."""
+    result = subprocess.run(["gh", "release", "list", "--limit", "50", "--json", "tagName,publishedAt"],
                             cwd=root, capture_output=True, text=True)
     if result.returncode:
-        raise BundleError(f"could not inspect release assets: {result.stderr.strip()[-400:]}")
-    existing = {entry["name"] for entry in json.loads(result.stdout).get("assets", [])}
-    names = {asset["name"], asset["checksum_name"]}
-    if existing & names:
-        if not names.issubset(existing):
-            raise BundleError("release already has only part of the runtime bundle; resolve manually")
-        stage = Path(tempfile.mkdtemp(prefix="bu01-verify-upload-", dir=files))
-        try:
-            result = subprocess.run(["gh", "release", "download", tag,
-                                     "-p", asset["name"], "-p", asset["checksum_name"],
-                                     "-D", str(stage)],
-                                    cwd=root, capture_output=True, text=True)
-            if result.returncode or digest(stage / asset["name"]) != asset["sha256"]:
-                raise BundleError("existing release asset digest differs from record")
-            if (stage / asset["checksum_name"]).read_text() != checksums.read_text():
-                raise BundleError("existing release checksum differs from record")
-            return
-        finally:
-            shutil.rmtree(stage)
-    result = subprocess.run(["gh", "release", "upload", tag, str(archive), str(checksums)],
-                            cwd=root, capture_output=True, text=True)
-    if result.returncode:
-        raise BundleError(f"gh release upload failed: {result.stderr.strip()[-400:]}")
+        raise BundleError(f"could not list releases: {result.stderr.strip()[-400:]}")
+    tags = [r for r in json.loads(result.stdout) if r.get("tagName", "").startswith("bc-radiance-")]
+    if not tags:
+        raise BundleError("no bc-radiance release is published")
+    return max(tags, key=lambda r: r.get("publishedAt") or "")["tagName"]

@@ -31,23 +31,11 @@ class ReleaseIntegrationTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_existing_release_retries_asset_verification(self):
-        receipt = {"schema": "bigcherry-radiance-runtime-v1"}
-        record = {"runtime_assets": {self.plan.release_tag: receipt}}
-        (self.repo / "releases/v1.16.0.json").write_text(json.dumps(record))
-        with mock.patch.object(pr, "_tag_exists", return_value=True), \
-             mock.patch.object(pr, "_asset_environment",
-                               return_value=(self.repo / "work", self.repo / "sdk")), \
-             mock.patch.object(pr._runtime_assets, "publish") as publish:
-            self.assertFalse(pr.phase_release(self.plan))
-            publish.assert_called_once_with(record, self.repo, self.repo / "work",
-                                            self.plan.release_tag)
-
-    def test_no_receipt_refuses_already_tagged_release(self):
+    def test_an_already_tagged_release_is_done_and_uploads_nothing(self):
         (self.repo / "releases/v1.16.0.json").write_text(json.dumps({}))
-        with mock.patch.object(pr, "_tag_exists", return_value=True):
-            with self.assertRaisesRegex(pr.PinReleaseError, "no recorded runtime bundle"):
-                pr.phase_release(self.plan)
+        with mock.patch.object(pr, "_tag_exists", return_value=True), \
+             mock.patch.object(pr, "_run", side_effect=AssertionError("no command may run")):
+            self.assertFalse(pr.phase_release(self.plan))
 
     def test_patch_promote_releases_without_a_lab_staged_bundle(self):
         # CI bundles the release after release-please publishes it, so promotion goes ahead with no recorded bundle.

@@ -35,18 +35,16 @@ For offline verification, `python3 tools/lab/radiance/ci_ccache.py import --sour
 
 ## Verified release bundles (BU01)
 
-The release record phase resolves and builds the **current** `radiance:stock:linux-radiance` lane before packaging; it will not reuse the historical pin-bump receipt after a patch promotion. `patch-promote --release` defers tagging until the exact release asset has been staged through `pin-release`. The next release is the first opportunity to validate real GitHub asset upload and stock-host reuse.
-
-After a new Radiance `pin-release`, the release record's `runtime_assets[bc-radiance-<version>]` identifies the exact pin-bump lane build plan, source-tree IDs, ROCm SDK version, binary SHA-256, manifest SHA-256 and tarball SHA-256. The release phase attaches a deterministic `radiance-<plan>.tar.gz` and matching `.sha256` file to the GitHub release; retries verify an existing attachment rather than overwriting it.
+A Radiance release's runtime bundle is made by CI: the release workflow builds the tag, verifies the bundle and attaches it with its receipt (`<bundle>.receipt.json`). `pin-release` records the release and its notes; it does not build or upload a bundle.
 
 ```sh
-# Stock pinned Radiance checkout, using GitHub CLI and the configured ROCm SDK:
+# The newest published release, using GitHub CLI and the configured ROCm SDK:
 bash tools/lab/radiance/fetch-release-bundle.sh
-# A specific recorded release:
+# A specific release:
 bash tools/lab/radiance/fetch-release-bundle.sh --tag bc-radiance-1160.0.0
 ```
 
-The command first attempts to download and verify both release assets, the entire runtime file manifest, source/config tree identity, compiler platform version and the recorded engine executable. It extracts into a staging directory and atomically moves the validated files under `BC_WORK_ROOT/builds/<source-slice>/<plan>`; `rad_build` then reuses it without compiling. A missing asset, digest mismatch, SDK drift or branch changes means **no prebuilt binary is trusted**: the wrapper falls back to `rad_build` and logs the compile to `artifacts/logs/manual/bu01-fallback-build.log`. Unlike `rad_build` itself, the fetch command requires a network connection and GitHub CLI credentials. It never replaces an existing build-store directory. This prebuilt path remains unvalidated against a published GitHub release until the next release run.
+The command downloads the release's CI bundle and its receipt and verifies the archive digest, the receipt's source trees, the entire runtime file manifest, source/config tree identity, compiler platform version and the recorded engine executable. It extracts into a staging directory and atomically moves the validated files under `BC_WORK_ROOT/builds/<source-slice>/<plan>`; `rad_build` then reuses it without compiling. A missing asset, digest mismatch, SDK drift or branch changes means **no prebuilt binary is trusted**: the wrapper falls back to `rad_build` and logs the compile to `artifacts/logs/manual/bu01-fallback-build.log`. Unlike `rad_build` itself, the fetch command requires a network connection and GitHub CLI credentials. It never replaces an existing build-store directory.
 
 ## Launch and quality
 

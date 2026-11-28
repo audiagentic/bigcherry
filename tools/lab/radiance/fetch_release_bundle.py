@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
@@ -25,17 +23,14 @@ def fetch(*, tag: str | None) -> Path:
     if changed.stdout.strip():
         raise runtime_assets.BundleError(
             "engine/config tree has local edits; branch build must compile, not reuse a release binary")
-    recipes = tomllib.loads((ROOT / "engines/radiance/recipes.toml").read_text())
-    pin = recipes["pinned"]
-    record = json.loads((ROOT / "releases" / f"{pin}.json").read_text())
     sdk = lane_sdk_root(ROOT / "engines/radiance/recipes.toml", "linux-radiance")
     work = ProjectContext.resolve(engine="radiance", project_root=ROOT).work_root
-    return runtime_assets.fetch(record, ROOT, work, Path(sdk), tag=tag)
+    return runtime_assets.fetch(ROOT, work, Path(sdk), tag or runtime_assets.latest_tag(ROOT))
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--tag", help="specific bc-radiance-<version> release; default is latest recorded")
+    parser.add_argument("--tag", help="specific bc-radiance-<version> release; default is the newest published")
     args = parser.parse_args()
     try:
         path = fetch(tag=args.tag)
