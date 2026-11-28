@@ -40,6 +40,8 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.22.0 | 3715e346 | 244 s | 21 s | the plan check reports a host-pressure mismatch as a room refusal (exit 4) and the owner keeps the stored plan; kernel qualification resolved from build groups |
 | 2020.23.0 | 0637ce74 | 230 s | 21 s | a KL quality start scores the trunk with speculative depth 0; native qualification scope bound to physical evidence |
 | 2020.23.1 | 60448148 | 231 s | 21 s | reversible RDNA4 shader offsets in both power owners |
+| 2020.24.0 | 09b02984 | 196 s | 25 s | the first release build aborted in a heat-guard unit test (fixed by #1729); the rerun published |
+| 2020.24.1 | 2512de74 | 217 s | 27 s | heat-guard unit test joins its helper threads before asserting |
 
 ## How to read this, and when Gate E need not be run again
 
