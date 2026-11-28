@@ -254,6 +254,57 @@ def resolve_group_plan(inventory: dict[str, str], excluded: set[str], family_spe
             "runs": runs, "uncovered_units": sorted(selected - covered)}
 
 
+def ninja_unit_deps(build: Path, inventory: dict[str, str]) -> dict[str, list[str]]:
+    """Per inventory unit, the files its object depends on, from a libr3 build's own Ninja dependency log
+    (`ninja -t deps`: what the compiler reported reading, not an include scan)."""
+    done = subprocess.run(["ninja", "-C", str(build), "-t", "deps"], capture_output=True, text=True)
+    if done.returncode:
+        raise HarnessError(f"ninja -t deps failed in {build}: {done.stderr.strip()[-300:]}")
+    deps: dict[str, list[str]] = {}
+    current = None
+    for line in done.stdout.splitlines():
+        head = re.match(r"^(\S.*?): #deps \d+, deps mtime \d+ \((\w+)\)$", line)
+        if head:
+            unit = re.search(r"(?:^|/)units/([A-Za-z0-9_]+)\.(?:hip|cpp)\.o$", head.group(1))
+            if unit and head.group(2) != "VALID":
+                raise HarnessError(f"stale dependency record for {head.group(1)}; rebuild before planning")
+            current = unit.group(1) if unit and unit.group(1) in inventory else None
+            if current is not None:
+                deps[current] = []
+        elif line.startswith("    ") and current is not None:
+            deps[current].append(line.strip())
+    if not deps:
+        raise HarnessError(f"{build} has no libr3 unit dependency records")
+    return deps
+
+
+def depends_on(dep: str, touched: str) -> bool:
+    """Whether a recorded dependency is the composed upstream path ``touched``: libr3 compiles libr4d sources as copies
+    under r4d-src/, other upstream files by their path under the source tree."""
+    dep = dep.replace("\\", "/")
+    if touched.startswith("libr4d/"):
+        return dep.endswith("r4d-src/" + touched[len("libr4d/"):])
+    return dep.endswith("/" + touched)
+
+
+def compiler_selection(build: Path, inventory: dict[str, str], touched: list[str]) -> dict:
+    """Affected units from compiler dependency records. A changed path no unit records (a build file, the registry, a
+    removed or new file) cannot be scoped this way and widens to the full inventory."""
+    if not touched or any(not isinstance(f, str) or not f or Path(f).is_absolute() or ".." in Path(f).parts for f in touched):
+        raise HarnessError("invalid/empty affected path inventory")
+    deps = ninja_unit_deps(build, inventory)
+    units, unrecorded = set(), []
+    for path in sorted(set(touched)):
+        hit = {unit for unit, files in deps.items() if any(depends_on(d, path) for d in files)}
+        units |= hit
+        if not hit:
+            unrecorded.append(path)
+    widen = bool(unrecorded) or not units
+    return {"touched": sorted(set(touched)), "compiler_units": sorted(units), "unrecorded": unrecorded,
+            "units": sorted(inventory if widen else units),
+            "scope": "full_inventory_conservative" if widen else "compiler_dependencies"}
+
+
 def affected_selection(tree: Path, inventory: dict[str,str], touched: list[str]) -> dict:
     """Conservative pin/compose scope. Local includes are a lower bound, not a compiler depfile."""
     from bigcherry.patch import compose_check
@@ -374,7 +425,10 @@ def stage_plan(args) -> int:
         if triage.get("engine")!=ENGINE or not isinstance(triage.get("changed_files"),list):
             raise HarnessError("invalid existing pin-triage report")
         touched.extend(triage["changed_files"])
-    affected=affected_selection(tree,inventory,touched) if touched else None
+    if touched and args.deps_build:
+        affected=compiler_selection(Path(args.deps_build),inventory,touched)
+    else:
+        affected=affected_selection(tree,inventory,touched) if touched else None
     graph_scope=model_graph_scope(Path(args.model_graph)) if args.model_graph else None
     requested=set(args.row or [])
     if len(requested)!=len(args.row or []):
@@ -1526,6 +1580,8 @@ def main(argv: list[str] | None = None) -> int:
     plan_p.add_argument("--unit", action="append", help="select an affected upstream unit; repeat as needed")
     plan_p.add_argument("--touched",action="append",help="composed upstream changed path; unknown/header scope widens")
     plan_p.add_argument("--pin-triage",help="existing pin-triage --json report; imports changed_files")
+    plan_p.add_argument("--deps-build",help="a libr3 build of the same composed source: scope changed paths by its compiler "
+                                           "dependency records instead of the local include scan")
     plan_p.add_argument("--model-graph",help="saved Radiance /graph JSON (declared bands, not execution proof)")
     plan_p.add_argument("--row",action="append",help="exact observed/model-selected runtime row name; repeat, no inferred coverage")
     build_p = commands.add_parser("build", help="build the units and check resource records (no card)")

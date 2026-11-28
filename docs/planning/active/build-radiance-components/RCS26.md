@@ -59,9 +59,13 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 
 RV4754: use existing affected owner/row/family metadata for necessary baseline selection and coverage; broad catalogue redesign after baseline. No new composition framework.
 
+
+2026-11-28 compiler dependency evidence: `unit_harness.py plan --deps-build <libr3 build>` scopes changed paths by that build's Ninja dependency log (what the compiler read per unit object) instead of the local include scan. On the 2.3.0 canonical build (130 units, 124 recorded objects): libr4d/r4d_gemm_8a8_prefill.h affects 1 unit, r4d_keyed.h 6, abi/rad_abi.h 118; a path no object records (CMakeLists, registry, removed or new files) still widens to the full inventory, and a stale record refuses. Remaining: wiring the plan into pin-bump/compose gates automatically, and the lexical exception audit.
+
 ## Change Log
 
 - 2026-11-26T01:36:23.064898+00:00 (created-by): Created by agent
 - 2026-11-26T01:37:48.639355+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-26T05:06:55.737981+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:14:17.841665+00:00 (updated-by): Updated: section:notes
+- 2026-11-28T09:26:51.890443+00:00 (updated-by): Updated: section:notes
