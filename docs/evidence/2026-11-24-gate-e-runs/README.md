@@ -42,6 +42,7 @@ canaries answered, and both stopped cleanly (stop and serve exit codes 0).
 | 2020.23.1 | 60448148 | 231 s | 21 s | reversible RDNA4 shader offsets in both power owners |
 | 2020.24.0 | 09b02984 | 196 s | 25 s | the first release build aborted in a heat-guard unit test (fixed by #1729); the rerun published |
 | 2020.24.1 | 2512de74 | 217 s | 27 s | heat-guard unit test joins its helper threads before asserting |
+| 2030.0.0 | b06d608f | 180 s | 23 s | first release on upstream Radiance 2.3.0 (plugin ABI 45, all 44 patches ported) |
 
 ## How to read this, and when Gate E need not be run again
 
