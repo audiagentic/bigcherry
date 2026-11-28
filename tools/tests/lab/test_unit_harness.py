@@ -4,6 +4,7 @@ import re
 import sys
 import unittest
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 from pathlib import Path
 
@@ -125,6 +126,26 @@ class HarnessTests(unittest.TestCase):
                 "replay_configured": False, "required_replay": [], "replay": []}
         self.assertEqual(uh.configured_measurement_outcome({**base, "code_changed": []})[0], "checks_passed")
         self.assertEqual(uh.configured_measurement_outcome({**base, "code_changed": ["k"]})[0], "inconclusive")
+
+    def test_compiler_dependency_scope(self):
+        log = ("CMakeFiles/libr3.dir/units/r4d_a.hip.o: #deps 3, deps mtime 1 (VALID)\n"
+               "    units/r4d_a.hip\n    r4d-src/r4d_a.hip\n    r4d-src/r4d_shared.h\n\n"
+               "CMakeFiles/libr3.dir/units/r4d_b.hip.o: #deps 2, deps mtime 1 (VALID)\n"
+               "    r4d-src/r4d_b.hip\n    ../../src/abi/rad_abi.h\n\n"
+               "CMakeFiles/other.dir/x.cpp.o: #deps 1, deps mtime 1 (VALID)\n    r4d-src/r4d_shared.h\n\n")
+        inventory = {"r4d_a": "g", "r4d_b": "g", "r4d_c": "g"}
+        done = SimpleNamespace(returncode=0, stdout=log, stderr="")
+        with patch.object(uh.subprocess, "run", return_value=done):
+            one = uh.compiler_selection(Path("/b"), inventory, ["libr4d/r4d_shared.h"])
+            abi = uh.compiler_selection(Path("/b"), inventory, ["abi/rad_abi.h"])
+            build = uh.compiler_selection(Path("/b"), inventory, ["libr4d/CMakeLists.txt"])
+        self.assertEqual((one["scope"], one["units"]), ("compiler_dependencies", ["r4d_a"]))
+        self.assertEqual(abi["units"], ["r4d_b"])
+        self.assertEqual((build["scope"], build["units"], build["unrecorded"]),
+                         ("full_inventory_conservative", ["r4d_a", "r4d_b", "r4d_c"], ["libr4d/CMakeLists.txt"]))
+        stale = SimpleNamespace(returncode=0, stdout=log.replace("(VALID)", "(STALE)", 1), stderr="")
+        with patch.object(uh.subprocess, "run", return_value=stale), self.assertRaises(uh.HarnessError):
+            uh.compiler_selection(Path("/b"), inventory, ["libr4d/r4d_shared.h"])
 
     def test_only_named_skips_are_expected(self):
         _, fails = uh.parse_hashes("  skip  x -- no run map past 512 experts, so no aligned launch\n  skip  y -- other\n")
