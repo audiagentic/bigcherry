@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.1.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.1.0...bc-radiance-2030.1.1) (2026-11-28)
+
+
+### Performance
+
+* **radiance:** qwen27b TP2 and TP3 batch 4096, TP2 pipelined prefill (VTP59) ([#1747](https://github.com/audiagentic/bigcherry/issues/1747)) ([fef265b](https://github.com/audiagentic/bigcherry/commit/fef265bec534c9d1a5c2e82ed77adef84814da83))
+
 ## [2030.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.0.0...bc-radiance-2030.1.0) (2026-11-28)
 
 
