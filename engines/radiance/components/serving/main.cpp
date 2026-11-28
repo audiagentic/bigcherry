@@ -504,7 +504,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     }
     bc::serving::power::LinuxSensor sensor(opts.sys_root / "sys");
     auto power = std::make_shared<ss::ManifestPower>(
-        hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply, config_name);
+        hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, config_name);
     // Keep the fence until the native session owner and its transaction exit.
     auto power_lock = std::make_shared<bc::serving::power::detail::FileDescriptor>();
     ss::Session session;

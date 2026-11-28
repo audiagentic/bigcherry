@@ -90,7 +90,7 @@ std::optional<pid_t> parent_of(pid_t pid, const std::filesystem::path& proc) {
         return {};
     return parent;
 }
-bool unexpired(std::string_view input) {
+bool utc_instant(std::string_view input) {
     // The lease timestamp must be a complete UTC RFC3339 instant. Never
     // accept a numeric prefix followed by arbitrary text or a local offset.
     if (input.size() < 20 || input[4] != '-' || input[7] != '-' || input[10] != 'T' || input[13] != ':' ||
@@ -130,12 +130,11 @@ bool unexpired(std::string_view input) {
     utc.tm_min = *minute;
     utc.tm_sec = *second;
     const std::tm expected = utc;
-    const auto expires = ::timegm(&utc);
-    // timegm normalizes impossible dates; reject those before trusting expiry.
+    // timegm normalizes impossible dates; reject those.
+    (void)::timegm(&utc);
     return utc.tm_year == expected.tm_year && utc.tm_mon == expected.tm_mon &&
            utc.tm_mday == expected.tm_mday && utc.tm_hour == expected.tm_hour &&
-           utc.tm_min == expected.tm_min && utc.tm_sec == expected.tm_sec &&
-           expires > std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+           utc.tm_min == expected.tm_min && utc.tm_sec == expected.tm_sec;
 }
 
 } // namespace
@@ -146,8 +145,11 @@ bool owner_has_gpu_lease(const std::filesystem::path& leases, const std::filesys
         return false;
     const auto data = nlohmann::json::parse(bytes, nullptr, false);
     if (!data.is_object() || !data.contains("expires") || !data["expires"].is_string() ||
-        !data.contains("pids") || !data["pids"].is_array() || !unexpired(data["expires"].get<std::string>()))
+        !data.contains("pids") || !data["pids"].is_array() || !utc_instant(data["expires"].get<std::string>()))
         return false;
+    // An expired lease whose holder is still alive (agent-lease calls it overrun) is still held: agent-lease frees only a
+    // lease whose processes are gone, so no one else can take the cards. Requiring an unexpired lease here would refuse
+    // the restore of a model that outlived its ttl and leave the cards tuned.
     const char* instance = std::getenv("AGENT_INSTANCE");
     if (instance == nullptr || *instance == '\0' || !data.contains("instance") ||
         !data["instance"].is_string() || data["instance"] != instance)
@@ -176,9 +178,9 @@ bool owner_has_gpu_lease(const std::filesystem::path& leases, const std::filesys
 }
 
 ManifestPower::ManifestPower(power::Hardware& hardware, power::Records& records, power::Sensor& sensor,
-                             power::SessionPower::Predicate lease, bool allow_apply, std::string workload)
+                             power::SessionPower::Predicate lease, std::string workload)
     : hardware_(hardware), records_(records), sensor_(sensor), lease_(std::move(lease)),
-      allow_apply_(allow_apply), workload_(std::move(workload)) {}
+      workload_(std::move(workload)) {}
 
 v2::Status ManifestPower::begin(const v2::Manifest& manifest, v2::PlanUse use) {
     if (transaction_)
@@ -190,8 +192,8 @@ v2::Status ManifestPower::begin(const v2::Manifest& manifest, v2::PlanUse use) {
     const auto plan = power::bind(manifest, selected.value());
     if (!plan)
         return plan.error();
-    if (plan.value().mode == power::Mode::apply && !allow_apply_)
-        return refusal("hardware power apply requires explicit --allow-power-apply");
+    // Whether to apply was decided once, by the S10 plan (the profile's default_mode or --allow-power-apply); the lease,
+    // the probe ranges, the qualifying receipt and the readback still gate every write.
     for (const auto& bdf : manifest.spec.processes.engine.device.gpus) {
         const auto pci = power::PciAddress::parse(bdf);
         if (!pci)

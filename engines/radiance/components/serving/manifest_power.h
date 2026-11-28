@@ -21,7 +21,7 @@ struct PowerExecution {
 class ManifestPower final {
   public:
     ManifestPower(power::Hardware& hardware, power::Records& records, power::Sensor& sensor,
-                  power::SessionPower::Predicate lease, bool allow_apply, std::string workload = {});
+                  power::SessionPower::Predicate lease, std::string workload = {});
     // `plan` is the S10 output (a strictly read, typed manifest); its digest is a record in the receipt, not an input.
     v2::Status begin(const v2::Manifest& plan, v2::PlanUse use);
     v2::Status verify_serving(const std::filesystem::path& manifest);
@@ -37,7 +37,7 @@ class ManifestPower final {
     power::Records& records_;
     power::Sensor& sensor_;
     power::SessionPower::Predicate lease_;
-    bool allow_apply_, verified_exit_ = false;
+    bool verified_exit_ = false;
     std::string workload_;   // the config that ran; receipt evidence only
     std::unique_ptr<power::SessionPower> transaction_;
     std::optional<PowerExecution> execution_;

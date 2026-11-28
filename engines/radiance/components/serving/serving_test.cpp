@@ -2606,8 +2606,13 @@ void power_profile_selection() {
     };
     Json unknown = good; unknown["profiles"]["cap"]["surprise"] = 1;
     refused(unknown, "surprise");
+    assert(!loaded.value().at("cap").apply_by_default);
     Json applies = good; applies["profiles"]["cap"]["default_mode"] = "apply";
-    refused(applies, "default_mode");
+    assert(v2::decode_power_profiles(applies).value().at("cap").apply_by_default);
+    Json other_mode = good; other_mode["profiles"]["cap"]["default_mode"] = "always";
+    refused(other_mode, "default_mode");
+    Json stock_applies = good; stock_applies["profiles"]["stock"]["default_mode"] = "apply";
+    refused(stock_applies, "stock");
     Json stock_rules = good;
     stock_rules["profiles"]["stock"]["rules"] = good.at("profiles").at("cap").at("rules");
     refused(stock_rules, "stock");

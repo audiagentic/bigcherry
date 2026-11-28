@@ -106,10 +106,11 @@ Result<PowerProfiles> decode_power_profiles(const json &doc) {
     const std::string at = "profiles." + p.key();
     if (!std::regex_match(p.key(), name_form)) return bad(at, "invalid profile name");
     if (auto e = closed(p.value(), at, {"default_mode", "rules"})) return *e;
-    if (p.value().contains("default_mode") && p.value().at("default_mode") != "observe")
-      return bad(at + ".default_mode", "a named profile observes; only an explicit operator apply writes");
+    const json mode = p.value().contains("default_mode") ? p.value().at("default_mode") : json("observe");
+    if (mode != "observe" && mode != "apply") return bad(at + ".default_mode", "observe or apply");
     S10PowerProfile profile;
     profile.name = p.key();
+    profile.apply_by_default = mode == "apply";
     if (p.value().contains("rules")) {
       const json &rules = p.value().at("rules");
       if (!rules.is_array()) return bad(at + ".rules", "expected a list");
@@ -149,8 +150,8 @@ Result<PowerProfiles> decode_power_profiles(const json &doc) {
     }
     out.emplace(p.key(), std::move(profile));
   }
-  if (!out.count("stock") || !out.at("stock").rules.empty())
-    return bad("profiles.stock", "stock must exist and have no settings rules");
+  if (!out.count("stock") || !out.at("stock").rules.empty() || out.at("stock").apply_by_default)
+    return bad("profiles.stock", "stock must exist, observe and have no settings rules");
   return out;
 }
 
@@ -211,8 +212,10 @@ Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, 
                   "power profile " + w.power_profile + " is not in engines/radiance/power-profiles.yaml");
     in.profile = w.power_rules;
   }
-  // A named profile observes unless the operator explicitly asked to apply (--allow-power-apply); stock never writes.
-  in.mode = w.power_apply && w.power_profile != "stock" ? PowerMode::kApply : PowerMode::kObserve;
+  // A named profile applies when its default_mode is apply or the operator asked to (--allow-power-apply), and observes
+  // otherwise; stock never writes. Applying still needs the probe, a qualifying receipt, the lease and the shared owner.
+  in.mode = (w.power_apply || in.profile.apply_by_default) && w.power_profile != "stock" ? PowerMode::kApply
+                                                                                          : PowerMode::kObserve;
   in.power = w.power_evidence;
   for (const auto &[bdf, settings] : in.power.site_overrides)
     if (std::none_of(m.spec.facts.gpus.begin(), m.spec.facts.gpus.end(), [&](const GpuFact &g) { return g.bdf == bdf; }))

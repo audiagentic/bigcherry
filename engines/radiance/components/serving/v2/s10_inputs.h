@@ -16,7 +16,7 @@ struct WriterInputs {
   nlohmann::json calibration_records; // array of P2 store records (calibration_store.py); may be empty
   std::string power_profile;          // the named profile (x-bigcherry.power.profile); "stock" observes
   S10PowerProfile power_rules;        // that profile's rules from the loaded profile file; empty for stock
-  bool power_apply = false;           // --allow-power-apply with a non-stock profile: the plan applies, else it observes
+  bool power_apply = false;           // --allow-power-apply: a non-stock profile applies even when its default_mode observes
   S10PowerEvidence power_evidence;    // site overrides, the capability probe and the receipt qualification
   int64_t now_unix_s = 0;
 };

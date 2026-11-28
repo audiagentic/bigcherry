@@ -76,7 +76,7 @@ struct NativeWriterRequest {
     std::filesystem::path plan_cache;     // measured only
     std::string power_profile;            // x-bigcherry.power.profile of the config
     v2::S10PowerProfile power_rules;      // that profile's rules from the profile file (empty for stock)
-    bool power_apply = false;             // --allow-power-apply: a non-stock profile applies instead of observing
+    bool power_apply = false;             // --allow-power-apply: a non-stock profile applies even when it defaults to observe
     v2::S10PowerEvidence power_evidence;  // site overrides, the capability probe, the receipt qualification
     nlohmann::json calibration_records = nlohmann::json::array();   // P2 records for S10
     std::string manifest_name;            // names the manifest in the P1 record's run id
