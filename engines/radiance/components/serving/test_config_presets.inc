@@ -355,6 +355,35 @@
         p.sets.push_back("tuning.tune_pin=\"all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1\"");
         return p;
     }
+    if (name == "qwen27b-tp3-long-iq6r-bf16i8") {
+        Preset p;
+        p.name = "qwen27b-tp3-long-iq6r-bf16i8";
+        p.description = "qwen27b-tp3-long-iq6r with bf16 keys and int8 values (bf16_i8): 993,258 tokens, the bf16 cache's decode speed";
+        p.model = "radiance/bigcherry/qwen3.8-27b-iq6r-v4-w3/qwen3.8-27b-iq6r-v4-df2-w3.rad";
+        p.tp_wire = "exact";
+        p.ranks.push_back({"gfx1100", 2});
+        p.ranks.push_back({"gfx1201", 1});
+        p.memory["host-pool-mib"] = 0;
+        p.memory["host-kv-mib"] = 0;
+        p.sets.push_back("service.max_context=262144");
+        p.sets.push_back("service.max_sessions=8");
+        p.sets.push_back("engine.max_num_batched_tokens=2048");
+        p.sets.push_back("engine.checkpoint_interval=4096");
+        p.sets.push_back("engine.placement=\"expert_tiered\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"bf16_i8\"");
+        p.sets.push_back("engine.ngram_placement=\"disk\"");
+        p.sets.push_back("engine.num_speculative_tokens=3");
+        p.sets.push_back("engine.prefix_resume=\"nearest\"");
+        p.sets.push_back("engine.rope_scaling=\"none\"");
+        p.sets.push_back("tuning.p2p=\"off\"");
+        p.sets.push_back("tuning.pipelined_prefill=\"on\"");
+        p.sets.push_back("tuning.pipelined_prefill_min_rows=256");
+        p.sets.push_back("tuning.prefill_governor=\"kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000\"");
+        p.sets.push_back("tuning.prefill_interleave=2");
+        p.sets.push_back("tuning.tp_ownership=\"kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12\"");
+        p.sets.push_back("tuning.tune_pin=\"all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1\"");
+        return p;
+    }
     if (name == "qwen27b-tp3-long-iq6r") {
         Preset p;
         p.name = "qwen27b-tp3-long-iq6r";
