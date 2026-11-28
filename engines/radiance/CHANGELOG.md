@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.2.0...bc-radiance-2030.3.0) (2026-11-28)
+
+
+### New and changed
+
+* **unit-harness:** int8 trunk family for Flash-Next's engine rows ([#1757](https://github.com/audiagentic/bigcherry/issues/1757)) ([c7de26e](https://github.com/audiagentic/bigcherry/commit/c7de26e924fe144fe135fce6a27cf6d86f8bc29e))
+
 ## [2030.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2030.1.1...bc-radiance-2030.2.0) (2026-11-28)
 
 
