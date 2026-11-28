@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.84.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.84.0...bc-platform-1.84.1) (2026-11-28)
+
+
+### Fixes
+
+* **release:** pin-release no longer builds or uploads a runtime bundle; the bundle is CI's ([#1755](https://github.com/audiagentic/bigcherry/issues/1755)) ([ccde261](https://github.com/audiagentic/bigcherry/commit/ccde261e12a32bbeb2346f869867ae4306a08aba))
+
 ## [1.84.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.83.0...bc-platform-1.84.0) (2026-11-28)
 
 
