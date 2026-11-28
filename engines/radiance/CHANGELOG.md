@@ -1,5 +1,12 @@
 # Changelog
 
+## [2030.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.24.1...bc-radiance-2030.0.0) (2026-11-28)
+
+
+### Fixes
+
+* **radiance:** build on upstream Radiance 2.3.0; source descriptions follow the pin ([9cd7264](https://github.com/audiagentic/bigcherry/commit/9cd72640e0467dc5eda4e8dd4e7779fcb2614e5c))
+
 ## [2020.24.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.24.0...bc-radiance-2020.24.1) (2026-11-27)
 
 
