@@ -31,8 +31,10 @@ jobs:
             --jq '.actions_caches[] | "\(.id) \(.ref) \(.created_at) \(.key)"')
           delete() { gh api -X DELETE "repos/$REPO/actions/caches/$1" > /dev/null && echo "deleted $2 ($3)"; }
           # main's entries: keep the newest two of each kind
-          for kind in radiance-ccache radiance-upstream; do
-            printf '%s\n' "$caches" | awk -v k="$kind" '$2 == "refs/heads/main" && $4 ~ "^" k "-[0-9]+$"' \
+          # the compiler cache key carries the upstream pin (radiance-ccache-<pin>-<run>); the newest two are kept whatever
+          # their pin, since a new pin's first build restores the previous one's for the units that did not change
+          for pattern in "^radiance-ccache-[0-9a-f]+-[0-9]+$" "^radiance-upstream-[0-9]+$"; do
+            printf '%s\n' "$caches" | awk -v p="$pattern" '$2 == "refs/heads/main" && $4 ~ p' \
               | sort -k3,3r | tail -n +3 | while read -r id ref created key; do delete "$id" "$key" "$ref"; done
           done
           # a closed pull request's caches are never read again

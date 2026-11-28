@@ -255,7 +255,8 @@ jobs:
       - env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          PREFIX: radiance-ccache-pr${{ github.event.pull_request.number }}-
+          # every compiler cache saved under this PR's ref is this PR's (radiance-ccache-<pin>-pr<N>-<run>)
+          PREFIX: radiance-ccache-
           REF: refs/pull/${{ github.event.pull_request.number }}/merge
         run: |
           set -euo pipefail
