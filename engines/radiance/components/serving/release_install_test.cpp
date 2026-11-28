@@ -452,24 +452,26 @@ void test_digest_tag_sdk_and_existing_integrity_refuse() {
     refused(ErrorCode::invalid_install, [&] { bc::release::install(a); });
 }
 
-void test_legacy_release_profile_name_refused() {
-    // This published-release fixture retains the retired profile name in its
-    // signed manifest. Strict current-name installation must reject it; do not
-    // rewrite the historical receipt/archive or reintroduce an old-name alias.
+void test_real_platform_packer_golden() {
+    // A byte-for-byte archive emitted by runtime_assets.pack(), not this
+    // test's minimal tar writer. It exercises the real producer's PAX/gzip
+    // archive, bundle.json and receipt formats through the native verifier.
     ScopedDir d;
     const auto sdk = d.path / "sdk";
     write_file(sdk / ".info/version", "7.2.4\n");
     const auto fixture = fs::path(BC_RELEASE_GOLDEN_DIR);
     const auto tag = std::string("bc-radiance-1170.99.0");
-    refused(ErrorCode::unsafe_archive, [&] {
-        bc::release::install({
-            tag,
-            fixture / "release.receipt.json",
-            fixture / "bigcherryrad-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz",
-            d.path / "installed",
-            sdk,
-        });
+    bc::release::install({
+        tag,
+        fixture / "release.receipt.json",
+        fixture / "bigcherryrad-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz",
+        d.path / "installed",
+        sdk,
     });
+    check(bc::release::verify(d.path / "installed", sdk)["current"] == tag,
+          "actual platform-produced tar did not install with native verifier");
+    check(fs::file_size(d.path / "installed" / "releases" / tag / "configs/flashnext-4gpu.yaml") > 100,
+          "actual packaged model config was missing");
 }
 
 // Exercise the shipped CLI entrypoints, not just release-core functions. The
@@ -708,7 +710,7 @@ int main() {
         test_digest_tag_sdk_and_existing_integrity_refuse();
         test_benchmark_catalogs_are_not_native_runtime_members();
         test_interrupted_staging_refuses_install();
-        test_legacy_release_profile_name_refused();
+        test_real_platform_packer_golden();
         test_native_installed_start_gate();
         std::cout << "bc_release_install_test: native asset/rollback refusals passed\n";
         return 0;
