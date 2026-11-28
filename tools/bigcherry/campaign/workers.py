@@ -587,6 +587,9 @@ def make_build_worker(
                         context.engine, source_root=source_root, build_dir=build_dir, platform=platform,
                         only=tuple(stage.split(":", 1)[1].split(",")), engine_built=False,
                     )
+                    marker = runtime_bundle.stage_marker(context.work_root, stage)
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(build_plan.build_plan_id + "\n", encoding="utf-8")
                     raise runtime_bundle.LaneStageComplete(stage)
                 run_logged(
                     campaign_build.cmake_build_args(build_dir, targets=cmake_targets),
@@ -597,6 +600,9 @@ def make_build_worker(
                     runtime_bundle.build_runtime(
                         context.engine, source_root=source_root, build_dir=build_dir, platform=platform, only=(),
                     )
+                    marker = runtime_bundle.stage_marker(context.work_root, stage)
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    marker.write_text(build_plan.build_plan_id + "\n", encoding="utf-8")
                     raise runtime_bundle.LaneStageComplete(stage)
 
                 # The engine's runtime beside the binary (plugins, components); nothing for an engine without one.

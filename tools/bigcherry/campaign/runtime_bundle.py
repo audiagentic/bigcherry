@@ -62,6 +62,12 @@ class RuntimeBundleError(RuntimeError):
     """A runtime target or component did not build, or did not produce a declared output."""
 
 
+def stage_marker(work_root: Path, stage: str) -> Path:
+    """The file a staged lane build writes when its stage completed. The campaign pipeline records a stage's exception
+    as text, so the CLI recognises a finished stage by this file, not by the error."""
+    return work_root / "lane-stage" / (re.sub(r"[^A-Za-z0-9_.-]", "_", stage) + ".done")
+
+
 class LaneStageComplete(Exception):
     """A staged lane build (BC_LANE_STAGE) finished its stage. It publishes nothing: no build metadata, no provenance, no
     artifact; it only fills the compiler cache. The full, unstaged lane build is the one that records a build."""
