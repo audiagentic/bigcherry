@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.86.0...bc-platform-1.87.0) (2026-11-28)
+
+
+### New and changed
+
+* **radiance:** IQR-V4 TP3 long config with a bf16-key, int8-value cache ([#1767](https://github.com/audiagentic/bigcherry/issues/1767)) ([20421c6](https://github.com/audiagentic/bigcherry/commit/20421c673975f4976988595b2aef3403de1fecdd))
+
 ## [1.86.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.85.0...bc-platform-1.86.0) (2026-11-28)
 
 
