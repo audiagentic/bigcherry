@@ -139,7 +139,9 @@ jobs:
         with:
           path: work/.ccache
           key: radiance-ccache-${{ github.run_id }}
+          # a pull request first takes its own last cache (pr-ci keeps one per PR), then main's newest
           restore-keys: |
+            radiance-ccache-pr${{ github.event.pull_request.number }}-
             radiance-ccache-
 
       - name: Build in the ROCm image
@@ -229,6 +231,16 @@ jobs:
         with:
           path: work/.ccache
           key: radiance-ccache-${{ github.run_id }}
+
+      # A pull request keeps one cache of its own, readable only by its later runs (GitHub scopes PR caches to the PR), so
+      # a rerun or a follow-up push is warm even when the PR changes what main's cache holds (a pin bump recompiles nearly
+      # everything). pr-ci deletes the PR's older entry after this save, so the PR holds one entry, not one per run.
+      - name: Save ccache (one entry per pull request)
+        if: success() && github.event_name == 'pull_request'
+        uses: actions/cache/save@v4
+        with:
+          path: work/.ccache
+          key: radiance-ccache-pr${{ github.event.pull_request.number }}-${{ github.run_id }}
 
       - name: Save the upstream radiance clone (main only)
         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')

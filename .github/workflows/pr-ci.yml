@@ -243,6 +243,33 @@ jobs:
       packages: write
     uses: ./.github/workflows/radiance-build.yml
 
+  radiance-cache-prune:
+    # Keep one ccache entry per pull request: delete this PR's entries other than the one the radiance build just saved.
+    needs: radiance
+    if: ${{ needs.radiance.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PREFIX: radiance-ccache-pr${{ github.event.pull_request.number }}-
+          REF: refs/pull/${{ github.event.pull_request.number }}/merge
+        run: |
+          set -euo pipefail
+          entries=$(gh api "repos/$REPO/actions/caches?key=$PREFIX&ref=$REF&per_page=100" \
+            --jq '.actions_caches | sort_by(.created_at) | .[] | "\(.id) \(.key)"')
+          newest=$(printf '%s\n' "$entries" | tail -n 1 | cut -d' ' -f2)
+          printf '%s\n' "$entries" | while read -r id key; do
+            if [ -n "$id" ] && [ "$key" != "$newest" ]; then
+              gh api -X DELETE "repos/$REPO/actions/caches/$id"
+              echo "deleted $key"
+            fi
+          done
+          echo "kept $newest"
+
   ci-pass:
     # The single required gate. Skipped jobs (area not touched) count as passing; failed or cancelled do not.
     if: always()
