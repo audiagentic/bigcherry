@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261128_152554_qwen-27b-three-card-config-nam_7320",
+  "files": [
+    "engines/radiance/configs",
+    "engines/radiance/components/serving/release_archive.cpp",
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/lab/radiance/gate-e.sh"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The eight Qwen 3.8 27B TP3 serving configs carry the weight width in their names (q8, q6bc for BigCherry's 6-bit conversion). No aliases. The q6bc configs name the model file qwen3.8-27b-iq6r-v4-bc-df2-tp3.rad.",
+  "timestamp-utc": "2026-11-28T15:25:54.883299Z",
+  "user-summary-candidate": "Qwen 27B three-card config names now show the weight width: qwen27b-tp3 is qwen27b-tp3-q8, qwen27b-tp3-iq6r is qwen27b-tp3-q6bc. Saved launches must use the new names, and the 6-bit model file must be renamed to match."
+}

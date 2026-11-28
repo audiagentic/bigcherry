@@ -1287,7 +1287,7 @@ void serve_has_no_lab_options() {
          std::vector<std::vector<std::string>>{{"--calibration-run"}, {"--lab-experiment", "x.json"},
                                                {"--live-policy", "x.json"}, {"--calibration-prompts-a", "a"},
                                                {"--calibration-prompts-b", "b"}, {"--calibration-store", "s"}}) {
-        std::vector<std::string> args = {"serve", "qwen27b-tp3", "--run-dir", "lab-option-run"};
+        std::vector<std::string> args = {"serve", "qwen27b-tp3-q8", "--run-dir", "lab-option-run"};
         args.insert(args.end(), option.begin(), option.end());
         const auto result = run_bc_serve(args);
         if (result.exit_code == 0 || result.output.find("serve: unknown option " + option.front()) == std::string::npos)
@@ -1358,7 +1358,7 @@ void quality_lab_experiment_file(Fixture& t) {
     const std::string good = t.file("lab-cli-good.json", R"({"placement":{"mode":"forced_churn","forced":{
         "repeat":1,"steps":[{"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})").string();
     const auto quality = [&](const std::string& file) {
-        return run_bc_serve({"quality", "qwen27b-tp3", "--run-dir", (t.root / "lab-cli-run").string(),
+        return run_bc_serve({"quality", "qwen27b-tp3-q8", "--run-dir", (t.root / "lab-cli-run").string(),
                              "--lab-experiment", file});
     };
     const auto refusal = quality(bad);
@@ -1369,7 +1369,7 @@ void quality_lab_experiment_file(Fixture& t) {
     if (accepted.output.find("--lab-experiment") != std::string::npos)
         throw std::runtime_error("quality refused a valid forced placement file: " + accepted.output);
     for (const char* cmd : {"serve", "start"}) {
-        const auto served = run_bc_serve({cmd, "qwen27b-tp3", "--run-dir", (t.root / "lab-cli-run").string(),
+        const auto served = run_bc_serve({cmd, "qwen27b-tp3-q8", "--run-dir", (t.root / "lab-cli-run").string(),
                                           "--lab-experiment", good});
         if (served.exit_code == 0 || served.output.find(std::string(cmd) + ": unknown option --lab-experiment") ==
                                          std::string::npos)
@@ -1403,7 +1403,7 @@ void session_engine_plan(Fixture& t) {
     in.options.site = site;
     in.options.configs = {configs};
     in.options.model_root = t.root / "model-root"; // the site's model wins; the root is still required
-    in.options.sets = {"layout.name=\"qwen27b-tp3\"", "memory.host_pool_mib=1024"};
+    in.options.sets = {"layout.name=\"qwen27b-tp3-q8\"", "memory.host_pool_mib=1024"};
     in.self = t.root / "bc-serve-test";
     fs::create_symlink(BC_SERVE_EXE, in.self);
     in.engine_binary = BC_FAKE_ENGINE;
@@ -1443,7 +1443,7 @@ void session_engine_plan(Fixture& t) {
             {"TEST_NATIVE_INSPECT_TP", "3"},
             {"TEST_NATIVE_INSPECT_TP_WIRE", "exact"},
             {"TEST_NATIVE_INSPECT_XBIGCHERRY",
-             Json{{"schema", 1}, {"description", "qwen27b-tp3 fixture"},
+             Json{{"schema", 1}, {"description", "qwen27b-tp3-q8 fixture"},
                   {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}})},
                   {"memory", {{"host-pool-mib", 0}, {"host-kv-mib", 0}}}}   // a dense model: the engine sizes its own
                  .dump()},
@@ -1459,7 +1459,7 @@ void session_engine_plan(Fixture& t) {
              std::to_string(session_resolved.values.at("service").at("max_sessions").get<int>())},
             {"TEST_NATIVE_INSPECT_KERNELS", expected_kernels.dump()}};
         gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root, std::move(native_overrides)};
-        gated.named_config = "qwen27b-tp3";
+        gated.named_config = "qwen27b-tp3-q8";
         // An installed start names its runtime home with `--set engine.radiance_home=...` (main.cpp adds it), so it is
         // an operator set. Which build runs a start is not part of what the stored plan is keyed by.
         const std::string runtime_home_set =
@@ -2534,7 +2534,7 @@ void card_selection(Fixture& t) {
         return std::string();
     };
     auto opts = t.standard();
-    bc::serving::fixture::use(opts, "qwen27b-tp3");
+    bc::serving::fixture::use(opts, "qwen27b-tp3-q8");
     const auto forward = tresolve(opts, t.facts);
     const auto engine = bdfs_of(forward.values.at("layout").at("engine_cards"));
     assert(engine.size() == 3 && arch_of(engine[0]) == "gfx1100" && arch_of(engine[1]) == "gfx1100" &&

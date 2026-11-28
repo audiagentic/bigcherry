@@ -88,14 +88,14 @@ NATIVE_RELEASE_PROFILES = (
     "flashnext-tp2xtx-r9700.yaml",
     "flashnext-tp2xtx.yaml",
     "qwen27b-2xtx.yaml",
-    "qwen27b-tp3-capacity.yaml",
-    "qwen27b-tp3-iq6r.yaml",
-    "qwen27b-tp3-long-bf16.yaml",
-    "qwen27b-tp3-long-bf16i8.yaml",
-    "qwen27b-tp3-long-iq6r-bf16i8.yaml",
-    "qwen27b-tp3-long-iq6r.yaml",
-    "qwen27b-tp3-long.yaml",
-    "qwen27b-tp3.yaml",
+    "qwen27b-tp3-long-q6bc-bf16i8.yaml",
+    "qwen27b-tp3-long-q6bc.yaml",
+    "qwen27b-tp3-long-q8-bf16.yaml",
+    "qwen27b-tp3-long-q8-bf16i8.yaml",
+    "qwen27b-tp3-long-q8.yaml",
+    "qwen27b-tp3-q6bc.yaml",
+    "qwen27b-tp3-q8-capacity.yaml",
+    "qwen27b-tp3-q8.yaml",
 )
 OPTIONAL_NATIVE_PROFILES = NATIVE_RELEASE_PROFILES
 NATIVE_PROFILE_MEMBERS = frozenset(f"configs/{name}" for name in OPTIONAL_NATIVE_PROFILES)

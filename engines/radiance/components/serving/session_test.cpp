@@ -1681,7 +1681,7 @@ void native_only_planning_refusals() {
         native.inputs.options.configs = {fs::path(BC_CONFIGS_DIR)};
         const std::string why = plan_refusal(native, scratch / "no-yaml-run");
         assert(why.find("native config YAML") != std::string::npos);
-        native.inputs.named_config = "qwen27b-tp3";
+        native.inputs.named_config = "qwen27b-tp3-q8";
         assert(plan_refusal(native, scratch / "named-no-yaml-run").find("native config YAML") != std::string::npos);
     }
     {

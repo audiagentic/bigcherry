@@ -192,7 +192,7 @@ selected provenance (including local calibration) and the actual one-
 session minimum. If the existing algorithm suffices once correctly ordered,
 refactor it into a pure reusable feasibility step before final admission.
 Only extend the solver where evidence or generic policy requires it.
-The failed experiment used the short qwen27b-tp3 base with changed L,
+The failed experiment used the short qwen27b-tp3-q8 base with changed L,
 S, dtype and YaRN; it did not include long-profile prefill-governor or
 prefill-interleave settings. Reproduce on that exact archived input,
 then compare matched long-bf16i8 baseline and extended variant with

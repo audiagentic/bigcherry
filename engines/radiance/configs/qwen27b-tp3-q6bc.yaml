@@ -5,11 +5,11 @@ server:
   kernels: libbciqr,libr3,libr4d,libref
 models:
   qwen27b:
-    # IQR-V4 (6-bit computed trellis, head cut for three ranks): this file is qwen27b-tp3's layout with our IQR-V4 container; the original comment follows.
+    # IQR-V4 (6-bit computed trellis, head cut for three ranks): this file is qwen27b-tp3-q8's layout with our IQR-V4 container; the original comment follows.
     # Upstream's IQ8R container: int8 weights, 256-wide scale groups, the DFlash drafter inside. Against a bf16-weights
     # reference (rad-kld-corpus-4, 8240 positions, fp8 KV) the 6,6,4 split below has KLD mean 0.00128, top-1 97.27%, perplexity
     # x1.0005, better than the retired w8a8 bar (0.00139, 96.77%) (RUM06 slice 27b, 2026-11-21).
-    model: radiance/bigcherry/qwen3.8-27b-iq6r-v4-w3/qwen3.8-27b-iq6r-v4-df2-w3.rad
+    model: radiance/bigcherry/qwen3.8-27b-iq6r-v4-w3/qwen3.8-27b-iq6r-v4-bc-df2-tp3.rad
     tp: 3
     tp-wire: exact
     max-model-len: 8192
@@ -41,7 +41,7 @@ models:
 x-bigcherry:
   schema: 1
   power: {profile: efficient}
-  variant-of: "qwen27b-tp3"
+  variant-of: "qwen27b-tp3-q8"
   differs: ["models.qwen27b.model", "models.qwen27b.max-num-batched-tokens"]
   description: "Qwen3.8-27B IQR-V4 (6-bit trellis, 22.8 GiB) over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096"
   ranks:

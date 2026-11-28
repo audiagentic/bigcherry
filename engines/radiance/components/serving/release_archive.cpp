@@ -49,14 +49,14 @@ constexpr std::array<std::string_view, 19> kNativeProfiles = {
     "flashnext-tp2xtx-r9700",
     "flashnext-tp2xtx",
     "qwen27b-2xtx",
-    "qwen27b-tp3-capacity",
-    "qwen27b-tp3-iq6r",
-    "qwen27b-tp3-long-bf16",
-    "qwen27b-tp3-long-bf16i8",
-    "qwen27b-tp3-long-iq6r-bf16i8",
-    "qwen27b-tp3-long-iq6r",
-    "qwen27b-tp3-long",
-    "qwen27b-tp3",
+    "qwen27b-tp3-long-q6bc-bf16i8",
+    "qwen27b-tp3-long-q6bc",
+    "qwen27b-tp3-long-q8-bf16",
+    "qwen27b-tp3-long-q8-bf16i8",
+    "qwen27b-tp3-long-q8",
+    "qwen27b-tp3-q6bc",
+    "qwen27b-tp3-q8-capacity",
+    "qwen27b-tp3-q8",
 };
 bool is_native_profile(std::string_view name) {
     constexpr std::string_view head = "configs/", tail = ".yaml";

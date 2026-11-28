@@ -71,16 +71,16 @@ class InventoryContractTests(unittest.TestCase):
     def test_a_mixed_architecture_engine_keeps_its_ranks_in_order(self):
         # a layout's engine groups (XTX, XTX, R9700): bc-serve names the rank devices; the adapter keeps the order
         doc = explained(engines=BDFS[:3], helpers=())
-        doc["values"]["layout"].update(name="qwen27b-tp3", rank_devices=list(BDFS[:3]))
+        doc["values"]["layout"].update(name="qwen27b-tp3-q8", rank_devices=list(BDFS[:3]))
         with patch.object(ri, "_run", return_value=doc):
-            selection = ri.resolve("qwen27b-tp3")
+            selection = ri.resolve("qwen27b-tp3-q8")
         self.assertEqual(selection.engine_bdfs, BDFS[:3])
         self.assertEqual(selection.resolved.engine_indices, (8, 4, 2))
         self.assertEqual(selection.resolved.engine_arch, "gfx1100+gfx1201")
         self.assertEqual(selection.resolved.engine_plugin, "libr3.so,libr4d.so")
         del doc["values"]["layout"]["rank_devices"]
         with patch.object(ri, "_run", return_value=doc), self.assertRaisesRegex(ri.InventoryError, "rank devices"):
-            ri.resolve("qwen27b-tp3")
+            ri.resolve("qwen27b-tp3-q8")
 
     def test_malformed_and_duplicate_detector_bdfs_and_ordinals_fail_closed(self):
         for key, value, message in (

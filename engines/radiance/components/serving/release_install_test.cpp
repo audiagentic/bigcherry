@@ -172,7 +172,7 @@ class Fixture {
         add("configs/flashnext-4gpu.yaml",
             fault == Fault::native_profile_interpreter ? "# requires python3\ncards: [0]\n" : "cards: [0]\n",
             fault == Fault::native_profile_executable ? 0755 : 0644);
-        add("configs/qwen27b-tp3-long.yaml", "cards: [0, 1, 2]\n");
+        add("configs/qwen27b-tp3-long-q8.yaml", "cards: [0, 1, 2]\n");
         if (fault == Fault::unknown_profile)
             add("configs/unreviewed.yaml", "cards: [0]\n");
         add("heat/flashnext-mixed.hot-first", "mixed production heat seed\n");
@@ -216,7 +216,7 @@ class Fixture {
         tar_member(zip, Member{"bundle.json", bytes});
         for (const auto& [name, member] : members) {
             Member entry = member;
-            if (fault == Fault::entry_mode && name == "configs/qwen27b-tp3-long.yaml")
+            if (fault == Fault::entry_mode && name == "configs/qwen27b-tp3-long-q8.yaml")
                 entry.mode = 0755; // disagrees with manifest (not a chmod-based test)
             tar_member(zip, entry);
         }
@@ -371,7 +371,7 @@ void test_tamper_refuses_rollback_without_switch() {
     const auto b = f.make("bc-radiance-1170.34.0");
     bc::release::install(a);
     bc::release::install(b);
-    write_file(a.root / "releases" / a.tag / "configs/qwen27b-tp3-long.yaml", "tampered config");
+    write_file(a.root / "releases" / a.tag / "configs/qwen27b-tp3-long-q8.yaml", "tampered config");
     refused(ErrorCode::digest_mismatch, [&] { bc::release::rollback(a.root, a.sdk); });
     const auto index = bc::release::read_json(a.root / "index.json");
     check(index["current"] == b.tag && index["previous"] == a.tag, "corrupt previous displaced active engine");
@@ -415,7 +415,7 @@ void test_optional_native_profile() {
     bc::release::install(request);
     const auto profile = request.root / "releases" / request.tag / "configs/flashnext-4gpu.yaml";
     check(read_file(profile) == "cards: [0]\n", "native profile bytes changed during installation");
-    check(read_file(request.root / "releases" / request.tag / "configs/qwen27b-tp3-long.yaml") ==
+    check(read_file(request.root / "releases" / request.tag / "configs/qwen27b-tp3-long-q8.yaml") ==
               "cards: [0, 1, 2]\n", "a second native profile was not installed");
     check(bc::release::verify(request.root, request.sdk)["current"] == request.tag,
           "native profile bundle failed verification");
@@ -549,7 +549,7 @@ void test_native_installed_start_gate() {
     // package intentionally has no named configs, so resolution refuses
     // with a named-config error after the installed-prefix gate.
     const int valid = run_cli(serve,
-                              {"serve", "qwen27b-tp3", "--run-dir", run.string(), "--site",
+                              {"serve", "qwen27b-tp3-q8", "--run-dir", run.string(), "--site",
                                (d.path / "missing-site.toml").string()},
                               log);
     check(valid != 0 && read_file(log).find("release refusal") == std::string::npos &&
@@ -561,7 +561,7 @@ void test_native_installed_start_gate() {
     for (const std::vector<std::string> bypass :
          {std::vector<std::string>{"--engine-binary", "/bin/true"},
           std::vector<std::string>{"--set", "engine.radiance_home=\"/tmp/not-the-install\""}}) {
-        std::vector<std::string> args = {"serve", "qwen27b-tp3", "--run-dir", run.string()};
+        std::vector<std::string> args = {"serve", "qwen27b-tp3-q8", "--run-dir", run.string()};
         args.insert(args.end(), bypass.begin(), bypass.end());
         const int rc = run_cli(serve, args, log);
         check(rc != 0 && read_file(log).find("installed release refusal") != std::string::npos,
@@ -573,7 +573,7 @@ void test_native_installed_start_gate() {
     const std::string original_install_receipt = read_file(installed / "install.json");
     fs::remove(installed / "install.json");
     for (const auto& mode : {"serve", "start"}) {
-        const int rc = run_cli(serve, {mode, "qwen27b-tp3", "--run-dir", run.string()}, log);
+        const int rc = run_cli(serve, {mode, "qwen27b-tp3-q8", "--run-dir", run.string()}, log);
         check(rc != 0 && read_file(log).find("installed release refusal") != std::string::npos,
               std::string(mode) + " did not refuse the missing receipt: " + read_file(log));
     }
@@ -583,12 +583,12 @@ void test_native_installed_start_gate() {
     check(bc::release::verify(a.root, a.sdk)["current"] == a.tag, "restored fixture is not verified");
     const auto b = f.make("bc-radiance-1170.71.0", Fault::none, true);
     bc::release::install(b);
-    const int retired = run_cli(serve, {"start", "qwen27b-tp3", "--run-dir", run.string()}, log);
+    const int retired = run_cli(serve, {"start", "qwen27b-tp3-q8", "--run-dir", run.string()}, log);
     check(retired != 0 && read_file(log).find("not the verified current tag") != std::string::npos,
           "retained old prefix started despite current tag change: " + read_file(log));
     const auto current_serve = b.root / "releases" / b.tag / "radiance_home/bin/bc-serve";
-    write_file(b.root / "releases" / b.tag / "configs/qwen27b-tp3-long.yaml", "cards: [9]\n");
-    const int tampered = run_cli(current_serve, {"serve", "qwen27b-tp3", "--run-dir", run.string()}, log);
+    write_file(b.root / "releases" / b.tag / "configs/qwen27b-tp3-long-q8.yaml", "cards: [9]\n");
+    const int tampered = run_cli(current_serve, {"serve", "qwen27b-tp3-q8", "--run-dir", run.string()}, log);
     check(tampered != 0 && read_file(log).find("BC_RELEASE_3") != std::string::npos,
           "tampered current release reached serving: " + read_file(log));
 }
