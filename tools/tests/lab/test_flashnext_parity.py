@@ -21,7 +21,8 @@ sys.path.insert(0, str(ROOT / "tools" / "lab" / "radiance"))
 import flashnext_parity as fp
 from bigcherry.__main__ import main as bigcherry_main
 
-WORKLOAD = {"COLD_FILLS": 8, "DOC_FILLS": 6, "LONG_SEEDS": "7 8", "LONG_SEEDS_COUNT": 2, "DECODE_STREAMS": "1 6"}
+WORKLOAD = {"COLD_FILLS": 8, "DOC_FILLS": 6, "LONG_SEEDS": "7 8", "LONG_SEEDS_COUNT": 2, "DECODE_STREAMS": "1 6",
+            "SESS8_COVARIATE": fp.SESS8_COVARIATE}
 # seed 7 is a different workload from seed 8: slower decode and prefill, by content (identical in every launch)
 LONG = {7: (43.0, 120000.0), 8: (27.0, 100000.0)}
 
@@ -36,8 +37,14 @@ def stream_record(rounds):
     return {"schema": "bigcherry.stream-benchmark.v1", "ok": True, "rounds": out}
 
 
-def eng(ms, acc=0.7, tps=2.5):
-    return {"decode_ms_per_step": ms, "draft_acceptance": acc, "decode_tokens_per_step": tps}
+def eng(ms, acc=0.7, tps=2.5, mixed=0):
+    """Engine deltas of a round of 100 decode steps plus `mixed` mixed steps at `tps` decode tokens per decoding step;
+    like stream-bench, the pure-decode tokens per step is reported only without mixed steps."""
+    out = {"decode_ms_per_step": ms, "draft_acceptance": acc, "decode_tokens_total": tps * (100 + mixed),
+           "engine_steps_decode_total": 100.0, "engine_steps_mixed_total": float(mixed)}
+    if not mixed:
+        out["decode_tokens_per_step"] = tps
+    return out
 
 
 def write_launch(out: Path, i: int, scale: float, policy=True, committed=5, sess=None):
@@ -216,6 +223,39 @@ class LaunchMetricsTests(unittest.TestCase):
         with self.assertRaises(fp.ParityError):
             fp.launch_metrics(out / "launch-2", WORKLOAD)
 
+    def test_mixed_steps_use_decode_tokens_over_decoding_steps(self):
+        # 2.3: the cold sess8 round and the 6-stream rounds have mixed steps, so stream-bench gives no pure-decode
+        # tokens per step; the sess8 covariate counts decode tokens over decode plus mixed steps, and records the count.
+        out = make_run(self.dir / "run", [1.0])
+        d = out / "launch-1"
+        w = lambda name, obj: (d / name).write_text(json.dumps(obj))
+        w("sess8.json", stream_record([([3000.0] * 8, 13600, eng(40.0, tps=2.0, mixed=45)),
+                                       ([500.0] * 8, 13600, eng(60.0, tps=2.0, mixed=1))]))
+        w("decode6.json", stream_record([([100.0] * 6, 900, eng(30.0, 0.60, mixed=2)),
+                                         ([100.0] * 6, 900, eng(30.0, 0.62))]))
+        values, _, detail = fp.launch_metrics(d, WORKLOAD)
+        self.assertAlmostEqual(values["sess8_tokens_per_step"], 2.0)
+        self.assertEqual(values["sess8_mixed_steps"], 45)
+        self.assertEqual(detail["decode6_tokens_per_step"], [None, 2.5])
+
+    def test_a_reused_plan_still_gives_each_launch_its_own_run_id(self):
+        manifest = {"metadata": {"instance_id": "plan-1"}}
+        first = fp.launch_run_id(manifest, {"captured_at": "2026-11-28T12:55:21Z"})
+        second = fp.launch_run_id(manifest, {"captured_at": "2026-11-28T13:04:30Z"})
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("plan-1@"))
+
+    def test_another_covariate_definition_is_refused(self):
+        out = make_run(self.dir / "run", [1.0])
+        for workload in ({k: v for k, v in WORKLOAD.items() if k != "SESS8_COVARIATE"},
+                         {**WORKLOAD, "SESS8_COVARIATE": "pure-decode"}):
+            with self.assertRaisesRegex(fp.ParityError, "SESS8_COVARIATE"):
+                fp.launch_metrics(out / "launch-1", workload)
+
+    def test_script_records_the_covariate_definition(self):
+        self.assertIn(f"SESS8_COVARIATE={fp.SESS8_COVARIATE}", SCRIPT.read_text())
+        self.assertIn("--set SESS8_COVARIATE=$SESS8_COVARIATE", SCRIPT.read_text())
+
 
 class HelperTests(unittest.TestCase):
     def test_warmup_plan(self):
@@ -348,7 +388,7 @@ class RunRecordsTests(unittest.TestCase):
         self.assertEqual(publish.call_args.kwargs["power_settings"]["effective"], {"profile": "stock"})
         self.assertEqual(
             run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
-            "sole-writer-launch-1",
+            "sole-writer-launch-1@2026-11-19T00:00:00Z",
         )
         self.assertFalse((out / "parity.json").exists())
 
