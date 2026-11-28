@@ -57,7 +57,13 @@ Every cell measured on the installed 2.3 release with recorded build identity; d
 
 ## Notes
 
-
+2026-11-29: measured on the installed bc-radiance-2030.5.0, stock power (plan profile stock, mode observe). Evidence: docs/evidence/2026-11-29-eng09-2.3-baseline (#1776).
+- Flash-Next 4 cards: two launches. Every gated metric is within 1.5% of the 2020.11.2 baseline: decode 24.5 / 47.4 / 28.6 ms/step at 1 / 6 / 8 streams, cold TTFT 8.33 s, 256K prefill about 3,000 t/s. New baseline docs/reference/engines/radiance/baselines/flashnext-4gpu-parity-2.3.json. The parity tool needed two fixes for 2.3 (#1773): the 8-session covariate counts mixed steps, and each launch gets its own run id when the stored plan is reused.
+- TP3 27B (XTX, XTX, R9700), 262,144-token sessions:
+  - IQ8R: 1,442,463 pool tokens a rank. TTFT 0.79 / 3.18 / 13.7 s at 2K / 8K / 32K, 175 s at 256K. Decode 123 / 216 / 317 / 408 t/s at 1 / 2 / 4 / 8 streams (20.4 to 36.5 ms/step).
+  - IQ6R (ours): 1,520,927 pool tokens. Prefill level or slightly faster (32K 13.4 s, 256K 172 s). Decode 107 / 178 / 282 / 377 t/s (23.4 to 37.8 ms/step).
+- Tuning opportunity: the IQ6R decode step is 15% slower than IQ8R at one stream despite fewer weight bytes; that is the target of the IQ6R optimisation.
+- Open: upstream q4 and q6. Their vocabulary heads are not cut for TP3, so the TP3 start refuses them; the owner is deciding. Their rows follow separately.
 
 ## Change Log
 
