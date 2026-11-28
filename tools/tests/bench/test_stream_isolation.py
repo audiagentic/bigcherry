@@ -11,6 +11,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     corrupt_when_batched = False
     running = 0
     lock = threading.Lock()
+    arrived = threading.Condition(lock)
+    # how long a request waits for a companion: a group's requests are sent together, so they overlap well inside
+    # this; a solo request just waits it out (without the wait, a loaded runner could finish a group one at a time)
+    companion_wait_s = 0.5
 
     def log_message(self, *a):
         pass
@@ -23,9 +27,10 @@ class _Handler(http.server.BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         prompt = body["messages"][0]["content"]
         reply = "answer:" + prompt[-12:]
-        with _Handler.lock:
+        with _Handler.arrived:
             _Handler.running += 1
-            batched = _Handler.running > 1
+            _Handler.arrived.notify_all()
+            batched = _Handler.arrived.wait_for(lambda: _Handler.running > 1, timeout=_Handler.companion_wait_s)
         try:
             if _Handler.corrupt_when_batched and batched:
                 reply = reply[:10] + "XX"
