@@ -1,0 +1,20 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261128_110731_ci-builds-after-a-radiance-pin_4534",
+  "files": [
+    ".github/workflows/radiance-build.yml",
+    ".github/workflows/radiance-cache-prune.yml",
+    ".github/workflows/pr-ci.yml",
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/bigcherry/campaign/workers.py",
+    "tools/bigcherry/cli/build.py",
+    "tools/tests/campaign/test_runtime_bundle_stages.py"
+  ],
+  "plan-item-ids": [
+    "BU06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Cold Radiance CI builds fan out: compiler-cache keys carry the upstream pin; a lookup-only probe detects a cold pin; staged lane builds (BC_LANE_STAGE=engine | component:NAMES) compile the engine and components on parallel runners against a header-only engine prefix and hand on the cache entries they wrote; the build job merges them and runs warm. Warm builds stay one job. Cache prune follows the new key format.",
+  "timestamp-utc": "2026-11-28T11:07:31.520937Z",
+  "user-summary-candidate": "CI builds after a Radiance pin bump run in parallel jobs instead of one hour-long job."
+}
