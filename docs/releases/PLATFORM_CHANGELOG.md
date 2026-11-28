@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.82.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.82.1...bc-platform-1.82.2) (2026-11-28)
+
+
+### Fixes
+
+* **release:** pin-release finds the record of a hash pin through its tag ([af692d7](https://github.com/audiagentic/bigcherry/commit/af692d7341e6692e3180f12c5b530dfb711b94bb))
+
 ## [1.82.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.82.0...bc-platform-1.82.1) (2026-11-27)
 
 
