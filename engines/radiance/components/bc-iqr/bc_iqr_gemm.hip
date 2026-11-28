@@ -379,8 +379,7 @@ void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restric
     // form/NT/chain specialisations with a qualified resource record.
     constexpr bool kNative =
         F::KIND != kTrellisMad ||
-        (NT <= 4u && (NT <= 2u || CH::on) && !(F::SC == kRowF32 && F::B == 3u && NT == 1u && CH::on) &&
-         !(F::B == 6u && GATED && !CH::on));
+        (NT <= 4u && (NT <= 2u || CH::on) && !(F::SC == kRowF32 && F::B == 3u && NT == 1u && CH::on));
 #endif  // bc-gfx11
     constexpr bool BIAS = F::SC == kRowF32;
     constexpr uint32_t NW = (GATED ? 2u : 1u) * KW;
