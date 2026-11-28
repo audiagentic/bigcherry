@@ -2539,7 +2539,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& runtime = engine_report.at("settings");
     if (!exact_keys(runtime, {"max_batched_tokens", "checkpoint_interval", "placement",
                               "ngram_placement", "kv_dtype", "speculative_tokens", "rope_scaling",
-                              "prefix_resume", "prefix_cache", "prefill_interleave"}))
+                              "prefix_resume", "prefix_cache", "profile_ops", "prefill_interleave"}))
         throw PlanFailed("native config inspector: report omitted typed runtime settings");
     const auto bounded = [&](const char* field, uint32_t min, uint32_t max = UINT32_MAX) {
         const Json& value = runtime.at(field);
@@ -2570,6 +2570,9 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     if (!runtime.at("prefix_cache").is_boolean())
         throw PlanFailed("native config inspector: invalid prefix cache setting");
     settings.prefix_cache = runtime.at("prefix_cache").get<bool>();
+    if (!runtime.at("profile_ops").is_boolean())
+        throw PlanFailed("native config inspector: unrepresentable profile_ops");
+    settings.profile_ops = runtime.at("profile_ops").get<bool>();
     if (!runtime.at("prefill_interleave").is_null())
         settings.prefill_interleave = bounded("prefill_interleave", 0);
     const Json& scheduler = engine_report.at("scheduler");
@@ -3389,6 +3392,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     out.summary["native_scheduler"] = {{"snapshot_sha256", native_inspection.snapshot_sha256},
                                        {"parsed", native_inspection.receipt.at("engine").at("scheduler")}};
     const auto& settings = native_inspection.settings;
+    out.native_profile_ops = settings.profile_ops;
     const Resolved native_resolved = resolve(in.options, facts, &settings);
     // A lab experiment measures afresh and leaves the named store alone: its manifest is a lab one, which neither
     // replays nor stands in for the production plan.
@@ -3421,6 +3425,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             try {
                 EngineStart reused = replay_stored_manifest(replay, run_dir, hooks, &admission);
                 reused.reused_store = cache->index;
+                reused.native_profile_ops = settings.profile_ops;
                 lap("replay");
                 std::cerr << plan_reuse_line(reuse) << '\n';
                 reused.plan_reuse = plan_reuse_json(reuse);
