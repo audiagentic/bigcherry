@@ -95,6 +95,15 @@ Results against bc-radiance-2030.5.0, on gfx1201 (R9700) and gfx1100 (XTX, libr3
 - negative control: the same oracle without the zero points misses by 0.70 to 1.24, so it tells a wrong decode apart;
 - the gfx1100 and gfx1201 output hashes are identical. This settles libr3's note that the emulated w2a8 byte layout was assumed.
 No replay: the family's kernel code is identical to the release, and there is no timing command for the head yet.
+
+2026-11-29 gap 1, IQR 512-row runs (Qwen 27B IQR-V4 ffn_gate_up) in the unit harness:
+- forms: the iqr case gains a run length (256 by default, existing hash names unchanged) and the 6/7-bit 512-row trellis forms; the gated row gains 6 and 7 bits at M 1/4/16, n 6656, K 5120 at 512-row runs; UH_IQR_RUN sets the run of the --perfiqr planes.
+- U6/U7: BF16-scale storage is covered by the case's existing bf16s forms.
+- family iqr, gfx1201 against bc-radiance-2030.5.0: 655 hashes equal (100 at run=512), selftest failures 0/0.
+- family iqr, gfx1100: the release's gfx1100 base library has no IQR rows (bc-iqr owns them), so there is no release reference. The candidate has 0 selftest failures and all 655 output hashes equal gfx1201's, including the 100 at run=512.
+- overlay iqr_gemm_m64, gfx1100 (bc-iqr of main with #1780, against that family build): 480 hashes equal, 18 gated, 6 of them at run=512, byte-equal to the unfused chain; selftest failures 0/0; checks_passed.
+- run length is a runtime value in bc-iqr (same kernel instantiations). Cold --perfiqr 13312x5120, XTX, stock, 256-row against 512-row runs, ABBA: gated and plain times within 0.8 us at B 6/7, M 1/4/16 (gated 6-bit: 67.1, 76.8, 79.9 us).
+
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent
@@ -110,3 +119,4 @@ No replay: the family's kernel code is identical to the release, and there is no
 
 2026-11-28 coverage map of the required forms on 2.3 (GPT read-only review). Verified: M64/gated IQR (iqr_gemm_m64), group256 IQ8R (iq8r), Flash-Next w4nl64a8i8h engine form (moe_w4a8i8). Real tests exist but need linking to selected provider/device: E4M3 HC/MTP/ngram (hc_read_e4m3, mtp_enter, ngram_*, r3_ngram_test --selftest, r3_e4m3_f16_test), protected BF16 experts (moe_gemm_bf16 F64 oracle plus worker topology tests). Remaining gaps, smallest additions, in order: (1) U6/U7 run512 and the BF16-scale variant in family.iqr (the selftest's trellis uses 256-row runs); (2) the DFlash U4 I8-table drafter at real draft M/N/K in the IQR overlay's form matrix; (3) a draft_u2 family: gemm_w2a8_nt is execution-only today, needs an output oracle and hashes for the U2/F16/U8 layout; (4) iqr_vocab with model-derived class partitions and rank spans; (5) a bc-gfx12 HC overlay entry on hc_read_e4m3 (decode; prefill delegates upstream); (6) one assertion in the existing worker tests that protected BF16 experts stay on their provider; (7) packed-cache rows (fp8v4/k6v4 stores, fused vs standalone, page boundaries, refusal) by extending the selected selftest cases. Items 1 to 3 sit on the IQ6R decode path that ENG09 found 15% slower than IQ8R, so they go first.
 - 2026-11-28T13:25:13.949344+00:00 (updated-by): Updated: section:notes_append
+- 2026-11-28T15:17:04.940789+00:00 (updated-by): Updated: section:notes

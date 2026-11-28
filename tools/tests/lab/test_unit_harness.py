@@ -47,8 +47,28 @@ class HarnessTests(unittest.TestCase):
                 + uh.MOE_FUNCTION + ") {\n" + uh.MOE_HASH_ANCHOR + "}\nstatic void other() {}\n"
                 + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR
                 + uh.OWNED_GEMM_ANCHOR + uh.OWNED_GATED_ANCHOR + uh.GATED_HASH_ANCHOR + uh.GATED_CASES_ANCHOR + uh.PIN_ANCHOR
+                + uh.RUN_STRUCT_ANCHOR + uh.RUN_FUNCTION + ") {\n" + uh.RUN_NAME_ANCHOR + uh.RUN_TABLE_ANCHOR
+                + uh.RUN_WINDOW_ANCHOR + "}\nstatic void after_iqr() {}\n" + uh.RUN_FORMS_ANCHOR
+                + uh.V4_PLANES_SIG + uh.V4_PLANES_RUN_ANCHOR + "}\nstatic void after_v4() {}\n"
+                + uh.GATED_SIG + uh.GATED_NAME_ANCHOR + uh.GATED_PLANES_ANCHOR
                 + uh.W2A8_FUNC_ANCHOR + uh.W2A8_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
+        # the IQR case's run length: 256 by default (existing forms and names unchanged), 512 for the IQR-V4 gate_up forms
+        self.assertIn(uh.RUN_STRUCT_NEW, edited)
+        self.assertIn(uh.RUN_NAME + uh.RUN_NAME_ANCHOR, edited)
+        self.assertIn(uh.RUN_TABLE_NEW, edited)
+        self.assertIn(uh.RUN_WINDOW_NEW, edited)
+        self.assertNotIn(uh.RUN_TABLE_ANCHOR, edited)
+        self.assertIn("{ 6, 6, 0, 16, 1, false, true, true, 512 }", edited)
+        self.assertIn("{ 6, 7, 0, 16, 1, false, true, true, 512 }", edited)
+        # the gated row and the --perfiqr planes: a run argument (env UH_IQR_RUN by default) and the gate_up run512 cases
+        self.assertIn(uh.V4_PLANES_SIG_NEW, edited)
+        self.assertIn(uh.V4_PLANES_RUN_NEW, edited)
+        self.assertIn(uh.GATED_SIG_NEW, edited)
+        self.assertIn(uh.GATED_NAME_ANCHOR + uh.GATED_NAME_RUN, edited)
+        self.assertIn(uh.GATED_PLANES_NEW, edited)
+        self.assertIn(uh.GATED_CASES_BLOCK + uh.RUN_GATED_CASES, edited)
+        self.assertEqual(13312 % 512, 0)
         # the draft head's numeric case is defined ahead of the function it precedes, and called after its execution-only case
         self.assertIn(uh.W2A8_FUNC + uh.W2A8_FUNC_ANCHOR, edited)
         self.assertIn(uh.W2A8_CASES_ANCHOR + uh.W2A8_CASES_BLOCK, edited)
@@ -72,6 +92,10 @@ class HarnessTests(unittest.TestCase):
             uh.inject_selftest(text.replace(uh.IQ8R_HASH_ANCHOR, ""))
         with self.assertRaises(uh.HarnessError):
             uh.inject_selftest("nothing")
+        with self.assertRaises(uh.HarnessError):   # the run-length edits are made inside iqr_gemm_case only
+            uh.inject_selftest(text.replace(uh.RUN_WINDOW_ANCHOR, ""))
+        with self.assertRaises(uh.HarnessError):
+            uh.inject_selftest(text + uh.RUN_FORMS_ANCHOR)
         with self.assertRaises(uh.HarnessError):
             uh.inject_selftest(text.replace(uh.W2A8_CASES_ANCHOR, ""))   # the draft head's case anchor is required
         with self.assertRaises(uh.HarnessError):
