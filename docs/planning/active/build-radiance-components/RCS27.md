@@ -82,6 +82,19 @@ Detailed design and boundaries: docs/design/radiance-kernel-group-qualification.
 
 2026-11-28 bc-iqr M64/gated rows (qwen27b selects bc_gemm_iqr_nt_m64 and bc_gemm_iqr_gated): tried running the iqr_gemm overlay through the selftest's broader `gemm_iqr` case on gfx1100 against a harness-built base IQR reference (bc-radiance-2030.4.0 tree). Not shippable as is: (1) the gated check needs gated_had_quant_i8g, so r4d_fused_quant must be in both the base reference and the overlay's base stage (every gated case reported rows absent); (2) `gemm_iqr` runs every upstream IQR form (about 1000 hashed outputs on the reference), while the owned rows serve only the production forms, so the overlay hashed 21 and the rest read as missing. Tiled replay over the run was level (0.996 to 1.007), and no compared hash differed. Next: a selection restricted to the owned forms (V4 trellis-mad B=6/7) for the M64 and gated checks, plus r4d_fused_quant in the overlay base; the code change was not merged.
 
+
+2026-11-29 gap (3), the draft_u2 family: gemm_w2a8_nt (the DFlash2/MTP draft head) had only the selftest's execution-only gemm_case. The harness now injects a numeric case:
+- U2 codes, an f16 scale and a u8 zero per 128 of K (the IQ6R container's drafter head encoding), stored through the row's own layout hook;
+- an exact int8 activation written in quant_act_i8's fragment order, with its f32 row scale and [K/128][Mpad] group sums;
+- a double-precision oracle over sampled columns, and a hash of every output;
+- the row's refusals: no group sums, N not a multiple of 16, and a plain bf16 weight at the layout hook.
+Shapes: the case's own 512 x 1024 at M 1/4/16, plus the 27B drafter head's TP3 shards of the 248,320-token vocabulary (82816 and 82688 x 5120) at M 1, 2, 3, 4 and 16.
+Results against bc-radiance-2030.5.0, on gfx1201 (R9700) and gfx1100 (XTX, libr3's port through the int8 WMMA emulation):
+- 48 kernels resource-unchanged, 10 outputs hash-equal, selftest failures 0/0, checks_passed;
+- rel_l2 1.5e-3 to 1.9e-3 against the oracle (bf16 rounding);
+- negative control: the same oracle without the zero points misses by 0.70 to 1.24, so it tells a wrong decode apart;
+- the gfx1100 and gfx1201 output hashes are identical. This settles libr3's note that the emulated w2a8 byte layout was assumed.
+No replay: the family's kernel code is identical to the release, and there is no timing command for the head yet.
 ## Change Log
 
 - 2026-11-26T01:36:30.551307+00:00 (created-by): Created by agent

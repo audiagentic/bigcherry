@@ -46,8 +46,13 @@ class HarnessTests(unittest.TestCase):
         text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR + uh.I8A8_CASES_ANCHOR + uh.I8A8_HASH_ANCHOR + uh.MOE_LARGE_PASSES
                 + uh.MOE_FUNCTION + ") {\n" + uh.MOE_HASH_ANCHOR + "}\nstatic void other() {}\n"
                 + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR
-                + uh.OWNED_GEMM_ANCHOR + uh.OWNED_GATED_ANCHOR + uh.GATED_HASH_ANCHOR + uh.GATED_CASES_ANCHOR + uh.PIN_ANCHOR)
+                + uh.OWNED_GEMM_ANCHOR + uh.OWNED_GATED_ANCHOR + uh.GATED_HASH_ANCHOR + uh.GATED_CASES_ANCHOR + uh.PIN_ANCHOR
+                + uh.W2A8_FUNC_ANCHOR + uh.W2A8_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
+        # the draft head's numeric case is defined ahead of the function it precedes, and called after its execution-only case
+        self.assertIn(uh.W2A8_FUNC + uh.W2A8_FUNC_ANCHOR, edited)
+        self.assertIn(uh.W2A8_CASES_ANCHOR + uh.W2A8_CASES_BLOCK, edited)
+        self.assertIn("UNITHASH gemm_w2a8_nt N=%lld K=%lld M=%lld", edited)
         # the owned-form selection sits after each row's own selection, the gated hash before its verdict
         self.assertIn(uh.OWNED_GEMM_ANCHOR.splitlines(keepends=True)[0] + uh.OWNED_GEMM_SKIP, edited)
         self.assertIn(uh.OWNED_GATED_ANCHOR.splitlines(keepends=True)[0] + uh.OWNED_GATED_SKIP, edited)
@@ -67,6 +72,10 @@ class HarnessTests(unittest.TestCase):
             uh.inject_selftest(text.replace(uh.IQ8R_HASH_ANCHOR, ""))
         with self.assertRaises(uh.HarnessError):
             uh.inject_selftest("nothing")
+        with self.assertRaises(uh.HarnessError):
+            uh.inject_selftest(text.replace(uh.W2A8_CASES_ANCHOR, ""))   # the draft head's case anchor is required
+        with self.assertRaises(uh.HarnessError):
+            uh.inject_selftest(text + uh.W2A8_FUNC_ANCHOR)              # and must be unambiguous
 
     def test_families_are_well_formed(self):
         for name, fam in uh.families().items():
@@ -76,6 +85,14 @@ class HarnessTests(unittest.TestCase):
         owned = uh.overlays()["iqr_gemm_m64"]
         self.assertTrue({"r4d_fused_quant", "r4d_quant_act_fp8"} <= set(owned["base-units"]))   # the gated chain's quantiser
         self.assertIn("13312:5120:64", uh.hash_cases(owned["hash"]).split(","))
+        draft = uh.families()["draft_u2"]
+        self.assertEqual(draft["case"], "gemm_w2a8_nt")
+        self.assertNotIn("expected_skips", draft)                    # no skip is part of this case's contract
+        u2 = uh.hash_cases(draft["hash"]).split(",")
+        # the 27B drafter head's TP3 shards of the 248,320-token vocabulary at K 5120, M 1..4 and 16, grouped by shard
+        self.assertEqual(u2[:5], ["82816:5120:1", "82816:5120:2", "82816:5120:3", "82816:5120:4", "82816:5120:16"])
+        self.assertIn("82688:5120:16", u2)
+        self.assertEqual(2 * 82816 + 82688, 248320)
         cases = uh.hash_cases(uh.families()["iqr"]["hash"]).split(",")
         self.assertIn("5376:2560:129", cases)
         self.assertEqual(len(cases), len(set(cases)))

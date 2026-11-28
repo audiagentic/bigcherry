@@ -84,6 +84,28 @@ rows = [1, 8, 9, 33, 64]
 tail_rows = [1, 64]
 tail_shape = [82688, 5120]
 
+# The DFlash2/MTP draft head (gemm_w2a8_nt): unsigned 2-bit codes with an f16 scale and a u8 zero point per 128 of K
+# (asymmetric), against an int8 activation with an f32 scale a row and its group sums. The 27B drafter's head over the
+# 248,320-token vocabulary, one TP3 rank's shard each. The case (injected by the harness) checks every output against a
+# double-precision oracle over sampled columns, hashes it, and checks the row's refusals (no group sums, N not a
+# multiple of 16, a plain bf16 weight at the layout hook). On gfx1100 the unit is libr3's port through the int8 WMMA
+# emulation, whose layouts had no output check before this case.
+[family.draft_u2]
+units = ["r4d_gemm_w2a8_nt"]
+support_units = []
+kernels = "w2a8"
+case = "gemm_w2a8_nt"
+rows = ["gemm_w2a8_nt"]
+# No replay: changed draft head code stays inconclusive until a timing command is configured.
+
+[family.draft_u2.hash]
+# The 248,320-token head in TP3 shards (82816, 82816, 82688) at K = 5120, at the decode and draft row counts 1 to 4 and
+# a 16-row verify.
+shapes = [[82816, 5120]]
+rows = [1, 2, 3, 4, 16]
+tail_rows = [1, 16]
+tail_shape = [82688, 5120]
+
 # The int8 trunk rows at group 128 (int8 codes with a bf16 scale per row per 128 of K, int8 activations with an f32 scale
 # per 128): Flash-Next's engine trunk, the 16-token row up to 64 rows and the tiled row above.
 [family.i8a8]
