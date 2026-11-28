@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.87.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.87.1...bc-platform-1.87.2) (2026-11-28)
+
+
+### Fixes
+
+* **radiance:** bc-iqr's 6-bit gated tile runs the native gfx1100 path ([#1780](https://github.com/audiagentic/bigcherry/issues/1780)) ([a60d0fb](https://github.com/audiagentic/bigcherry/commit/a60d0fb7c2c45f7f00ed46054298c0164ed6d9d6))
+
 ## [1.87.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.87.0...bc-platform-1.87.1) (2026-11-28)
 
 
