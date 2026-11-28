@@ -238,6 +238,13 @@ class LaunchMetricsTests(unittest.TestCase):
         self.assertEqual(values["sess8_mixed_steps"], 45)
         self.assertEqual(detail["decode6_tokens_per_step"], [None, 2.5])
 
+    def test_a_reused_plan_still_gives_each_launch_its_own_run_id(self):
+        manifest = {"metadata": {"instance_id": "plan-1"}}
+        first = fp.launch_run_id(manifest, {"captured_at": "2026-11-28T12:55:21Z"})
+        second = fp.launch_run_id(manifest, {"captured_at": "2026-11-28T13:04:30Z"})
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.startswith("plan-1@"))
+
     def test_another_covariate_definition_is_refused(self):
         out = make_run(self.dir / "run", [1.0])
         for workload in ({k: v for k, v in WORKLOAD.items() if k != "SESS8_COVARIATE"},
@@ -381,7 +388,7 @@ class RunRecordsTests(unittest.TestCase):
         self.assertEqual(publish.call_args.kwargs["power_settings"]["effective"], {"profile": "stock"})
         self.assertEqual(
             run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
-            "sole-writer-launch-1",
+            "sole-writer-launch-1@2026-11-19T00:00:00Z",
         )
         self.assertFalse((out / "parity.json").exists())
 

@@ -78,6 +78,13 @@ class ParityError(RuntimeError):
     pass
 
 
+def launch_run_id(manifest: dict, start_facts: dict) -> str:
+    """One launch's run id: the plan's instance id and the launch's owner start. A named start reuses its stored measured
+    plan, so the second launch of a run serves the first one's manifest (same instance id); the start time tells them
+    apart."""
+    return f"{manifest['metadata']['instance_id']}@{start_facts['captured_at']}"
+
+
 def _load(path: Path):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -664,7 +671,7 @@ def publish_launch_record(
     }
     return measurement_producers.publish(
         work_root=work_root,
-        run_id=manifest["metadata"]["instance_id"],
+        run_id=launch_run_id(manifest, facts),
         # The sealed owner start receipt marks the actual measurement start (the argv was selected earlier).
         recorded_at=facts["captured_at"],
         identity=identity,
