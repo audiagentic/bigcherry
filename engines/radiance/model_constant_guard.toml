@@ -546,3 +546,9 @@ path = "tools/lab/radiance/iq6r_v4_staged_convert.py"
 anchor = '(STAGES_ROOT / f"stage-{i-2:02d}.rad").unlink(missing_ok=True)'
 category = "E"
 reason = "IQ6R-V4 experimental lane artifact and checkpoint naming (XDP10/XDP11); naming only, no model shape or execution selection"
+
+[[allow]]
+path = "tools/lab/radiance/unit_harness.py"
+anchor = "i8_logits_numeric(pl, 2560, 2560, M);"
+category = "B"
+reason = "lab harness: the selftest text its int8 head edit anchors on, not an execution path of the product"

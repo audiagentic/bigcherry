@@ -14,6 +14,8 @@ support_units = ["r4d_gemm_i8a8", "r4d_gemm_w8a8_tiled", "r4d_keyed"]
 kernels = "iqr_prefill_kernel|iqr_fused|iqr_gemm"
 # The selftest case: its own oracle checks, then the hash of the output of every IQR case it runs.
 case = "gemm_iqr_tiled"
+# every row the case checks
+rows = ["gemm_iqr_tiled"]
 
 [family.iqr.hash]
 # Extra cases on top of the case's own matrix, "N:K:M" each: the V4 trunk shapes at every row count around a tile edge,
@@ -42,6 +44,9 @@ units = ["r4d_gemm_i8a8"]
 support_units = ["r4d_quant_act_fp8", "r4d_fused_quant", "r4d_model_bf16", "r4d_keyed"]
 kernels = "i8a8|iq8r"
 case = "gemm_iq8r_tiled"
+# every row the case checks: the two GEMMs by output hash and oracle, the quantiser and fused producers by the case's own oracles
+rows = ["gemm_iq8r_nt_m16", "gemm_iq8r_tiled", "had_quant_act_iq8r", "rmsnorm_had_quant_iq8r", "gated_had_quant_iq8r",
+        "gate_had_quant_iq8r"]
 
 [family.iq8r.hash]
 # The 27B trunk shapes per tensor-parallel rank (K a multiple of 256, N of 128), row counts around the tile edges, a ragged
@@ -59,6 +64,24 @@ shapes = [[13312, 5120], [5120, 6656], [6144, 5120], [5376, 2560]]
 rows_m = [65, 96, 128, 160, 256, 512, 2048]
 # --perfw8 has no bit-width argument; one placeholder value keeps the replay grid's shape
 bits = [8]
+
+# The int8 vocabulary head Qwen 27B selects (logits_gemm_i8) and the drafter's rescoring over the same stored head
+# (logit_rerank_i8): int8 codes with a bf16 scale per row per 128 columns, an f32 output plane.
+[family.head_i8]
+units = ["r4d_logits_gemm_i8", "r4d_rowtopk_bf16"]
+support_units = ["r4d_keyed"]
+kernels = "lm_wmma|mvm_kernel|r4dchain_lm|logit_rerank"
+case = "logits_gemm_i8"
+rows = ["logits_gemm_i8", "logit_rerank_i8"]
+# No replay: --perfvocab also needs the bc-iqr vocabulary and IQR head rows. Changed head code therefore stays
+# inconclusive until a timing command is added; identical code passes on the hash and the case's oracle.
+
+[family.head_i8.hash]
+# The three tensor-parallel vocabulary shards of the 248320-token head at K = 5120, at decode, draft and verify row counts.
+shapes = [[82816, 5120]]
+rows = [1, 8, 9, 33, 64]
+tail_rows = [1, 64]
+tail_shape = [82688, 5120]
 
 # Overlays: an owned plugin whose rows are listed ahead of the base library. The harness builds the plugin, runs the base's
 # selftest case through the overlay row (selftest rows are found by `row-prefix` + name), and compares with the base alone.

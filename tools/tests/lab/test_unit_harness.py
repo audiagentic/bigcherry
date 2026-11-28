@@ -42,7 +42,7 @@ class HarnessTests(unittest.TestCase):
         self.assertEqual([uh.classify(r, 0.04) for r in (0.5, 1.0, 1.1)], ["win", "same", "regress"])
 
     def test_selftest_edit_needs_both_anchors_once(self):
-        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR
+        text = (uh.DEVICE_ANCHOR + uh.SYM_ANCHOR + uh.HASH_ANCHOR + uh.CASES_ANCHOR + uh.IQ8R_SHAPES_ANCHOR + uh.IQ8R_HASH_ANCHOR + uh.HEAD_CASES_ANCHOR + uh.HEAD_HASH_ANCHOR
                 + uh.FIND_ANCHOR + uh.EMBED_ANCHOR + uh.EMBED_CASES_ANCHOR + uh.VOCAB_ANCHOR + uh.VOCAB_CASES_ANCHOR)
         edited = uh.inject_selftest(text)
         self.assertIn("uh_extra[uh_i]", edited)                      # the IQ8R case's extra shapes and output hash
@@ -62,7 +62,7 @@ class HarnessTests(unittest.TestCase):
         for name, fam in uh.families().items():
             self.assertTrue(fam["units"], name)
             self.assertIn("hash", fam)
-            self.assertIn("replay", fam)
+            self.assertIn("rows", fam)
         cases = uh.hash_cases(uh.families()["iqr"]["hash"]).split(",")
         self.assertIn("5376:2560:129", cases)
         self.assertEqual(len(cases), len(set(cases)))
@@ -117,6 +117,12 @@ class HarnessTests(unittest.TestCase):
             self.assertEqual(uh.configured_measurement_outcome({**base, **changes})[0], "inconclusive")
         self.assertEqual(uh.configured_measurement_outcome({**base, "hash": uh.compare_hashes({"a": "1"}, {"a": "2"})})[0], "rejected")
         self.assertEqual(uh.configured_measurement_outcome({**base, "replay": [{**point, "converged": True, "verdict": "regress"}]})[0], "rejected")
+
+    def test_a_family_without_replay_passes_only_on_identical_code(self):
+        base = {"hash": uh.compare_hashes({"a": "1"}, {"a": "1"}), "selftest_failures": {"ref": 0, "cand": 0},
+                "replay_configured": False, "required_replay": [], "replay": []}
+        self.assertEqual(uh.configured_measurement_outcome({**base, "code_changed": []})[0], "checks_passed")
+        self.assertEqual(uh.configured_measurement_outcome({**base, "code_changed": ["k"]})[0], "inconclusive")
 
     def test_identical_family_code_needs_no_replay(self):
         same = {"hash": uh.compare_hashes({"a": "1"}, {"a": "1"}), "selftest_failures": {"ref": 0, "cand": 0},
