@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from argparse import Namespace
 from pathlib import Path
@@ -81,6 +82,12 @@ def _cmd_build_new(args: Namespace, logs) -> int:
         return 2
 
     store = ArtifactStore(context.work_root / "artifacts-store")
+    # BC_LANE_STAGE (BU06): a staged build succeeds only if its stage wrote its marker during this run
+    from ..campaign.runtime_bundle import stage_marker
+    stage = os.environ.get("BC_LANE_STAGE", "")
+    stage_done = stage_marker(context.work_root, stage) if stage else None
+    if stage_done is not None:
+        stage_done.unlink(missing_ok=True)
 
     selectors: tuple[campaign_config.CampaignLaneSelector, ...] = ()
     profile_name = None
@@ -199,7 +206,10 @@ def _cmd_build_new(args: Namespace, logs) -> int:
     failed = 0
     for lid in sorted(results):
         result = results[lid]
-        if isinstance(result, Exception):
+        if stage and isinstance(result, Exception) and stage_done.is_file():
+            # a staged CI build (BC_LANE_STAGE) stops on purpose after filling the compiler cache; it records no build
+            print(f"{lid}: lane stage {stage} complete (build_plan_id={stage_done.read_text().strip()})")
+        elif isinstance(result, Exception):
             log_paths = ", ".join([str(logs.root / "build.log"), *logs.failure_paths(lid)])
             print(f"{lid}: FAILED -- {result}; logs: {log_paths}", file=sys.stderr)
             failed += 1

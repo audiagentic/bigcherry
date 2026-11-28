@@ -62,6 +62,45 @@ class RuntimeBundleError(RuntimeError):
     """A runtime target or component did not build, or did not produce a declared output."""
 
 
+def stage_marker(work_root: Path, stage: str) -> Path:
+    """The file a staged lane build writes when its stage completed. The campaign pipeline records a stage's exception
+    as text, so the CLI recognises a finished stage by this file, not by the error."""
+    return work_root / "lane-stage" / (re.sub(r"[^A-Za-z0-9_.-]", "_", stage) + ".done")
+
+
+class LaneStageComplete(Exception):
+    """A staged lane build (BC_LANE_STAGE) finished its stage. It publishes nothing: no build metadata, no provenance, no
+    artifact; it only fills the compiler cache. The full, unstaged lane build is the one that records a build."""
+
+    def __init__(self, stage: str):
+        super().__init__(f"lane stage {stage} complete")
+        self.stage = stage
+
+
+#: the CMake install steps a component needs from the engine: its headers and its package files. They read only source and
+#: configure-time files, so a staged component build can lay them out before the engine compiles (the components use
+#: radiance::abi, an interface target, and RadAddPlugin; none links an engine library).
+_DEV_DESTINATIONS = ("include/", "lib/cmake/")
+
+
+def install_development_files(build_dir: Path, prefix: Path, runner: Runner = run_checked) -> None:
+    """Run only the configured engine's header and package-file install steps (from CMake's own cmake_install.cmake
+    scripts) into ``prefix``."""
+    steps = []
+    for script in sorted(build_dir.rglob("cmake_install.cmake")):
+        if "components" in script.relative_to(build_dir).parts:
+            continue
+        text = script.read_text(encoding="utf-8", errors="replace")
+        for match in re.finditer(r'file\(INSTALL DESTINATION "\$\{CMAKE_INSTALL_PREFIX\}/([^"]*)"(?:[^()"]|"[^"]*")*\)', text):
+            if match.group(1).startswith(_DEV_DESTINATIONS) or match.group(1) in ("include", "lib/cmake"):
+                steps.append(match.group(0))
+    if not steps:
+        raise RuntimeBundleError(f"{build_dir} has no header or package install steps; was it configured?")
+    script = build_dir / "bc-dev-install.cmake"
+    script.write_text("\n".join(steps) + "\n", encoding="utf-8")
+    runner(["cmake", f"-DCMAKE_INSTALL_PREFIX={prefix}", "-P", str(script)], build_dir)
+
+
 def build_runtime(
     engine: str,
     *,
@@ -69,6 +108,8 @@ def build_runtime(
     build_dir: Path,
     platform: campaign_config.Platform,
     runner: Runner = run_checked,
+    only: tuple[str, ...] | None = None,
+    engine_built: bool = True,
 ) -> dict[str, str]:
     """Build ``engine``'s runtime targets and components into ``build_dir``. Returns {component: content digest}.
 
@@ -83,9 +124,14 @@ def build_runtime(
     c_compiler, cxx_compiler = platform.c_compiler, platform.cxx_compiler
     launcher_options = tuple((k, resolve_launcher(v)) for k, v in platform.options if k.endswith("_COMPILER_LAUNCHER"))
     built: dict[str, str] = {}
-    if layout.runtime_targets:
+    if layout.runtime_targets and engine_built:
         runner(["cmake", "--build", str(build_dir), "-j", "--target", *layout.runtime_targets], source_root)
     declared = components.load_all(paths.REPO_ROOT, engine)
+    if only is not None:
+        unknown = set(only) - set(declared)
+        if unknown:
+            raise RuntimeBundleError(f"no such component(s): {', '.join(sorted(unknown))}")
+        declared = {name: component for name, component in declared.items() if name in only}
     if not declared:
         return built
     if not layout.runtime_home:
@@ -102,7 +148,10 @@ def build_runtime(
     prefix = build_dir / "runtime-prefix"
     if prefix.exists():
         shutil.rmtree(prefix)
-    runner(["cmake", "--install", str(build_dir), "--prefix", str(prefix)], source_root)
+    if engine_built:
+        runner(["cmake", "--install", str(build_dir), "--prefix", str(prefix)], source_root)
+    else:
+        install_development_files(build_dir, prefix, runner)
     serving_edition = _cache_value(build_dir, "BC_SERVING_CONTRACT_VERSION") if engine == engines.RADIANCE else None
     for name, component in sorted(declared.items()):
         component_build = component_build_dir(build_dir, name, component.root)

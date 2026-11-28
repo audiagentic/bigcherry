@@ -83,6 +83,10 @@ on:
         description: Disable ccache to benchmark an identical cold source build
         type: boolean
         default: false
+      fan_out:
+        description: Build through the parallel stage jobs even when a cache for this pin exists (with cold, the stages start empty)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -101,8 +105,121 @@ jobs:
   image:
     uses: ./.github/workflows/radiance-build-image.yml
 
+  # A cold build (no compiler cache for this upstream pin: every pin bump) takes about an hour as one job, the engine and
+  # then each component in turn. The components need only the configured engine's headers and package files, so a cold
+  # build fans out: the engine and the large components compile at once on separate runners (BC_LANE_STAGE), each
+  # hands on the cache entries it wrote, and the build job below merges them and runs as a warm build. A warm build
+  # stays one job; the probe is a lookup-only cache check (BU06).
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      pin: ${{ steps.pin.outputs.pin }}
+      fan_out: ${{ steps.decide.outputs.fan_out }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          sparse-checkout: engines/radiance/recipes.toml
+          sparse-checkout-cone-mode: false
+      - id: pin
+        run: echo "pin=$(sed -n 's/^pinned = "\(.*\)"/\1/p' engines/radiance/recipes.toml | head -1 | cut -c1-12)" >> "$GITHUB_OUTPUT"
+      - id: lookup
+        uses: actions/cache/restore@v4
+        with:
+          path: work/.ccache
+          key: radiance-ccache-${{ steps.pin.outputs.pin }}-${{ github.run_id }}
+          restore-keys: |
+            radiance-ccache-${{ steps.pin.outputs.pin }}-pr${{ github.event.pull_request.number }}-
+            radiance-ccache-${{ steps.pin.outputs.pin }}-
+          lookup-only: true
+      - id: decide
+        env:
+          MATCHED: ${{ steps.lookup.outputs.cache-matched-key }}
+          FORCE: ${{ inputs.fan_out || 'false' }}
+          COLD: ${{ inputs.cold || 'false' }}
+        run: |
+          # a forced single-job cold benchmark (cold without fan_out) keeps its one job
+          if [ "$FORCE" = "true" ] || { [ -z "$MATCHED" ] && [ "$COLD" != "true" ]; }; then fan_out=true; else fan_out=false; fi
+          echo "cache for this pin: ${MATCHED:-none}; fan out: $fan_out"
+          echo "fan_out=$fan_out" >> "$GITHUB_OUTPUT"
+
+  stages:
+    needs: [image, probe]
+    if: needs.probe.outputs.fan_out == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: true
+      matrix:
+        # the engine (with its plugins) and the components; the small components share one runner
+        stage: ["engine", "component:libr3", "component:libr2", "component:bc-iqr", "component:moe-remote,serving,bc-gfx12,ngram-helper"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          fetch-depth: 0
+      - name: Pull the build image
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker pull '${{ needs.image.outputs.image }}'
+      - name: Restore the upstream radiance clone
+        uses: actions/cache/restore@v4
+        with:
+          path: work/upstream
+          key: radiance-upstream-${{ github.run_id }}
+          restore-keys: |
+            radiance-upstream-
+      - name: Restore ccache
+        if: inputs.cold != true
+        uses: actions/cache/restore@v4
+        with:
+          path: work/.ccache
+          key: radiance-ccache-${{ needs.probe.outputs.pin }}-${{ github.run_id }}
+          restore-keys: |
+            radiance-ccache-${{ needs.probe.outputs.pin }}-pr${{ github.event.pull_request.number }}-
+            radiance-ccache-${{ needs.probe.outputs.pin }}-
+            radiance-ccache-
+      - name: Build the stage in the ROCm image
+        env:
+          BC_LANE_STAGE: ${{ matrix.stage }}
+        run: |
+          docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BC_LANE_STAGE -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
+            git config --global --add safe.directory /src
+            git config --global --add safe.directory /src/work/upstream/radiance.git
+            export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 PYTHONPATH=tools
+            # the same cache settings as the build job, so its commands hit what this stage writes
+            export CCACHE_DIR=/src/work/.ccache CCACHE_BASEDIR=/src CCACHE_NOHASHDIR=true CCACHE_COMPILERCHECK=content
+            mkdir -p work/upstream work/.ccache
+            ccache --max-size 0
+            touch /src/work/.ccache-stage-marker
+            if [ -d work/upstream/radiance.git ]; then
+              git -C work/upstream/radiance.git worktree prune
+              pin=$(sed -n "s/^pinned = \"\(.*\)\"/\1/p" engines/radiance/recipes.toml | head -1)
+              git -C work/upstream/radiance.git cat-file -e "$pin^{commit}" 2>/dev/null \
+                || git -C work/upstream/radiance.git fetch --prune origin "+refs/*:refs/*" || echo "::warning::upstream fetch failed"
+            else
+              git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
+            fi
+            python3 -m bigcherry build --lane radiance:stock:linux-radiance | tee work/lane-stage.log
+            grep -q "lane stage $BC_LANE_STAGE complete" work/lane-stage.log
+            ccache -s
+            # hand on only what this stage wrote
+            cd work/.ccache && find . -type f -newer /src/work/.ccache-stage-marker ! -path "./tmp/*" -print0 \
+              | tar --null -cf /src/work/ccache-stage.tar --files-from=-
+          '
+      - name: Hand on the stage's compiler cache
+        uses: actions/upload-artifact@v4
+        with:
+          name: ccache-stage-${{ strategy.job-index }}
+          path: work/ccache-stage.tar
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
   build:
-    needs: image
+    needs: [image, probe, stages]
+    if: ${{ !cancelled() && needs.image.result == 'success' && needs.probe.result == 'success' && (needs.stages.result == 'success' || needs.stages.result == 'skipped') }}
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
@@ -138,17 +255,34 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: work/.ccache
-          key: radiance-ccache-${{ github.run_id }}
-          # a pull request first takes its own last cache (pr-ci keeps one per PR), then main's newest
+          key: radiance-ccache-${{ needs.probe.outputs.pin }}-${{ github.run_id }}
+          # this pin's cache first (the pull request's own, then main's), then any newest one
           restore-keys: |
-            radiance-ccache-pr${{ github.event.pull_request.number }}-
+            radiance-ccache-${{ needs.probe.outputs.pin }}-pr${{ github.event.pull_request.number }}-
+            radiance-ccache-${{ needs.probe.outputs.pin }}-
             radiance-ccache-
+
+      - name: Fetch the stages' compiler cache
+        if: needs.probe.outputs.fan_out == 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: ccache-stage-*
+          path: work/ccache-stages
+
+      - name: Merge the stages' compiler cache
+        if: needs.probe.outputs.fan_out == 'true'
+        run: |
+          mkdir -p work/.ccache
+          for t in work/ccache-stages/*/ccache-stage.tar; do tar -xf "$t" -C work/.ccache; done
+          rm -rf work/ccache-stages
+          du -sh work/.ccache
 
       - name: Build in the ROCm image
         env:
           BUILD_LANE: ${{ inputs.build_lane || 'radiance:stock:linux-radiance' }}
           CI_COMPILE_JOBS: ${{ inputs.compile_jobs || 'default' }}
-          CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
+          # after a fan-out the build is warm by construction: never disable the cache the stages filled
+          CI_FORCE_COLD: ${{ needs.probe.outputs.fan_out == 'true' && 'false' || inputs.cold || 'false' }}
         run: |
           docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BUILD_LANE -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
@@ -230,7 +364,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: work/.ccache
-          key: radiance-ccache-${{ github.run_id }}
+          key: radiance-ccache-${{ needs.probe.outputs.pin }}-${{ github.run_id }}
 
       # A pull request keeps one cache of its own, readable only by its later runs (GitHub scopes PR caches to the PR), so
       # a rerun or a follow-up push is warm even when the PR changes what main's cache holds (a pin bump recompiles nearly
@@ -240,7 +374,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: work/.ccache
-          key: radiance-ccache-pr${{ github.event.pull_request.number }}-${{ github.run_id }}
+          key: radiance-ccache-${{ needs.probe.outputs.pin }}-pr${{ github.event.pull_request.number }}-${{ github.run_id }}
 
       - name: Save the upstream radiance clone (main only)
         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
