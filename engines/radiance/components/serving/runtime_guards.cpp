@@ -252,6 +252,11 @@ HistogramVerdict histogram_verdict_startup(const fs::path& rank_file, std::chron
     return verdict;
 }
 
+bool start_is_profiled(const v2::Manifest& manifest, bool native_profile_ops) {
+    return native_profile_ops || (manifest.spec.experiment && manifest.spec.experiment->engine &&
+                                  manifest.spec.experiment->engine->profile_ops.has_value());
+}
+
 ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_view log) {
     if (manifest_depth <= 1)
         return ReplayVerdict::disabled;
@@ -267,8 +272,7 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
     if (!loaded)
         return loaded.error();
     auto manifest = std::move(loaded.value());
-    const bool profiled = manifest.spec.experiment && manifest.spec.experiment->engine &&
-                          manifest.spec.experiment->engine->profile_ops.has_value();
+    const bool profiled = start_is_profiled(manifest, plan.native_profile_ops);
     auto log = read_engine_log(engine_log);
     if (!log)
         return log.error();

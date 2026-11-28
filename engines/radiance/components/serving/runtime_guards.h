@@ -55,6 +55,9 @@ HistogramVerdict histogram_verdict_startup(const std::filesystem::path& rank_fil
 // The typed manifest depth decides whether evidence is required; text cannot
 // override manifest authority.
 ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_view engine_log);
+/* Per-op timing restores synchronisations under which a recorded draft pass need not appear: a start is profiled when
+ * its admitted native YAML sets profile-ops (EngineStart::native_profile_ops) or its lab experiment sets profile_ops. */
+bool start_is_profiled(const v2::Manifest& manifest, bool native_profile_ops);
 
 class RuntimeGuards final {
   public:

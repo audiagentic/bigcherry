@@ -283,6 +283,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                                        {"rope_scaling", cfg.rope_scaling},
                                        {"prefix_resume", cfg.prefix_exact ? "exact" : "nearest"},
                                        {"prefix_cache", cfg.prefix_cache},
+                                       {"profile_ops", cfg.profile_ops},
                                        {"prefill_interleave", cfg.prefill_interleave_set && cfg.prefill_interleave >= 0
                                            ? nlohmann::json(cfg.prefill_interleave) : nlohmann::json(nullptr)}}}}}
         };
