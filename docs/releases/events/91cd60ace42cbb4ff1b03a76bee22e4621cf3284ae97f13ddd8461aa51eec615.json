@@ -1,0 +1,16 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261128_121417_the-kernel-test-harness-now-ch_4470",
+  "files": [
+    "tools/lab/radiance/unit_harness.py",
+    "tools/lab/radiance/unit_families.toml",
+    "tools/tests/lab/test_unit_harness.py"
+  ],
+  "plan-item-ids": [
+    "RCS27"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Unit harness overlay iqr_gemm_m64: bc-iqr's gemm_iqr_nt_m64 and gemm_iqr_gated rows checked on the owned forms only (V4 computed trellis, 6/7-bit) with gated output hashes, a gated layout refusal probe and Qwen 27B gate_up cases; base and iqr reference carry the gated chain's quantiser units. Overlay runs pin the base plugin's int8 split so the reference sums in the IQR row's order.",
+  "timestamp-utc": "2026-11-28T12:14:17.961411Z",
+  "user-summary-candidate": "The kernel test harness now checks the decode-size IQR rows and the gated gate-up row that Qwen 27B serves."
+}
