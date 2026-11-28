@@ -1,0 +1,429 @@
+{
+ "kind": "vtp61-release-bisect",
+ "item": "VTP61",
+ "streams": 8,
+ "prompt_tokens": 512,
+ "max_tokens": 192,
+ "reps_per_seed": 3,
+ "seeds": [
+  1,
+  2,
+  3
+ ],
+ "order": "ABAB, one managed start per arm",
+ "probes": {
+  "probe1": {
+   "r114": {
+    "release": "bc-radiance-2020.11.4",
+    "source": "cached tag download with receipt, bc-release install into an isolated root",
+    "archive": "bigcherryrad-6fe8e142f41d935cc88fa95dcdaf11de",
+    "engine_sha256": "3f62658361090642449297ef02c063199d527e4f25a7bee615fa03e3a647d05a",
+    "bc_serve_sha256": "070129d6edeae85601d0563b4799c14bdaa7bc560eeec6f741ec7c4883b1a9b4",
+    "runs": [
+     {
+      "launch": "r114-1",
+      "seed": 1,
+      "decode_ms_per_step": 31.595,
+      "ttft_ms_max": 2192.04,
+      "draft_acceptance": 0.712,
+      "requests_running_mean": 4.947,
+      "event_gap_ms_p95": 39.345,
+      "aggregate_tps": 352.728
+     },
+     {
+      "launch": "r114-1",
+      "seed": 2,
+      "decode_ms_per_step": 31.737,
+      "ttft_ms_max": 2233.66,
+      "draft_acceptance": 0.683,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 39.376,
+      "aggregate_tps": 347.731
+     },
+     {
+      "launch": "r114-1",
+      "seed": 3,
+      "decode_ms_per_step": 30.596,
+      "ttft_ms_max": 2271.47,
+      "draft_acceptance": 0.755,
+      "requests_running_mean": 4.75,
+      "event_gap_ms_p95": 39.3,
+      "aggregate_tps": 353.126
+     },
+     {
+      "launch": "r114-2",
+      "seed": 1,
+      "decode_ms_per_step": 31.99,
+      "ttft_ms_max": 2207.9,
+      "draft_acceptance": 0.703,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 39.375,
+      "aggregate_tps": 349.558
+     },
+     {
+      "launch": "r114-2",
+      "seed": 2,
+      "decode_ms_per_step": 31.219,
+      "ttft_ms_max": 2220.74,
+      "draft_acceptance": 0.686,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 39.308,
+      "aggregate_tps": 346.567
+     },
+     {
+      "launch": "r114-2",
+      "seed": 3,
+      "decode_ms_per_step": 30.382,
+      "ttft_ms_max": 2282.44,
+      "draft_acceptance": 0.756,
+      "requests_running_mean": 4.789,
+      "event_gap_ms_p95": 39.282,
+      "aggregate_tps": 350.391
+     }
+    ],
+    "median": {
+     "decode_ms_per_step": 31.407,
+     "ttft_ms_max": 2227.2,
+     "draft_acceptance": 0.708,
+     "requests_running_mean": 5.0,
+     "event_gap_ms_p95": 39.326,
+     "aggregate_tps": 349.975
+    },
+    "n": 6
+   },
+   "r241": {
+    "release": "bc-radiance-2020.24.1",
+    "source": "release assets, bc-release install into an isolated root",
+    "archive": "bigcherryrad-2512de74e548b195140341c6ab17aa5b",
+    "engine_sha256": "6f7d7dd8a515105778cd3c1c1a5f55d9eb2d3e89feeab678c1651acec3015d1d",
+    "bc_serve_sha256": "67c69c4015b29b7556943d710ab451ca338c7e520222d9294cf5be4f911afd45",
+    "runs": [
+     {
+      "launch": "r241-1",
+      "seed": 1,
+      "decode_ms_per_step": 31.864,
+      "ttft_ms_max": 2223.21,
+      "draft_acceptance": 0.721,
+      "requests_running_mean": 5.0,
+      "event_gap_ms_p95": 39.964,
+      "aggregate_tps": 348.366
+     },
+     {
+      "launch": "r241-1",
+      "seed": 2,
+      "decode_ms_per_step": 31.641,
+      "ttft_ms_max": 2283.67,
+      "draft_acceptance": 0.698,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 39.813,
+      "aggregate_tps": 346.088
+     },
+     {
+      "launch": "r241-1",
+      "seed": 3,
+      "decode_ms_per_step": 30.993,
+      "ttft_ms_max": 2312.01,
+      "draft_acceptance": 0.743,
+      "requests_running_mean": 4.842,
+      "event_gap_ms_p95": 39.889,
+      "aggregate_tps": 342.67
+     },
+     {
+      "launch": "r241-2",
+      "seed": 1,
+      "decode_ms_per_step": 31.807,
+      "ttft_ms_max": 2126.79,
+      "draft_acceptance": 0.701,
+      "requests_running_mean": 4.947,
+      "event_gap_ms_p95": 39.995,
+      "aggregate_tps": 353.325
+     },
+     {
+      "launch": "r241-2",
+      "seed": 2,
+      "decode_ms_per_step": 37.162,
+      "ttft_ms_max": 1632.23,
+      "draft_acceptance": 0.692,
+      "requests_running_mean": 5.278,
+      "event_gap_ms_p95": 40.036,
+      "aggregate_tps": 372.915
+     },
+     {
+      "launch": "r241-2",
+      "seed": 3,
+      "decode_ms_per_step": 30.341,
+      "ttft_ms_max": 2303.64,
+      "draft_acceptance": 0.754,
+      "requests_running_mean": 4.789,
+      "event_gap_ms_p95": 39.928,
+      "aggregate_tps": 345.214
+     }
+    ],
+    "median": {
+     "decode_ms_per_step": 31.724,
+     "ttft_ms_max": 2253.44,
+     "draft_acceptance": 0.711,
+     "requests_running_mean": 4.973,
+     "event_gap_ms_p95": 39.946,
+     "aggregate_tps": 347.227
+    },
+    "n": 6
+   }
+  },
+  "probe2": {
+   "b085": {
+    "release": "bc-radiance-2020.8.5",
+    "source": "release lane radiance:stock:linux-radiance, local build from a clone at the tag (no archive exists)",
+    "build_plan_id": "339bada30607693032f63857191c77b4",
+    "radiance_pin": "b6b8751cccb0e834a13ae9e5afca824ee9a487aa",
+    "engine_sha256": "c27b3d20e025569713c5d093f18563da2fffcf3df9a3fab32655fbee0436d120",
+    "bc_serve_sha256": "6eceae57fbfbc03ac8354579ca9956015f8ebd9b229f4fcad138692aacbde68f",
+    "runs": [
+     {
+      "launch": "b085-1",
+      "seed": 1,
+      "decode_ms_per_step": 31.907,
+      "ttft_ms_max": 2164.87,
+      "draft_acceptance": 0.715,
+      "requests_running_mean": 4.947,
+      "event_gap_ms_p95": 39.518,
+      "aggregate_tps": 353.618
+     },
+     {
+      "launch": "b085-1",
+      "seed": 2,
+      "decode_ms_per_step": 32.045,
+      "ttft_ms_max": 2234.99,
+      "draft_acceptance": 0.694,
+      "requests_running_mean": 5.211,
+      "event_gap_ms_p95": 39.763,
+      "aggregate_tps": 347.416
+     },
+     {
+      "launch": "b085-1",
+      "seed": 3,
+      "decode_ms_per_step": 30.541,
+      "ttft_ms_max": 2350.39,
+      "draft_acceptance": 0.751,
+      "requests_running_mean": 4.789,
+      "event_gap_ms_p95": 39.775,
+      "aggregate_tps": 345.97
+     },
+     {
+      "launch": "b085-2",
+      "seed": 1,
+      "decode_ms_per_step": 31.877,
+      "ttft_ms_max": 2162.5,
+      "draft_acceptance": 0.714,
+      "requests_running_mean": 5.0,
+      "event_gap_ms_p95": 39.68,
+      "aggregate_tps": 351.503
+     },
+     {
+      "launch": "b085-2",
+      "seed": 2,
+      "decode_ms_per_step": 31.839,
+      "ttft_ms_max": 2286.2,
+      "draft_acceptance": 0.687,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 39.824,
+      "aggregate_tps": 340.893
+     },
+     {
+      "launch": "b085-2",
+      "seed": 3,
+      "decode_ms_per_step": 30.646,
+      "ttft_ms_max": 2318.46,
+      "draft_acceptance": 0.747,
+      "requests_running_mean": 4.895,
+      "event_gap_ms_p95": 39.867,
+      "aggregate_tps": 346.015
+     }
+    ],
+    "median": {
+     "decode_ms_per_step": 31.858,
+     "ttft_ms_max": 2260.595,
+     "draft_acceptance": 0.714,
+     "requests_running_mean": 4.973,
+     "event_gap_ms_p95": 39.769,
+     "aggregate_tps": 346.716
+    },
+    "n": 6
+   },
+   "r114": {
+    "release": "bc-radiance-2020.11.4",
+    "source": "cached tag download with receipt, bc-release install into an isolated root",
+    "archive": "bigcherryrad-6fe8e142f41d935cc88fa95dcdaf11de",
+    "engine_sha256": "3f62658361090642449297ef02c063199d527e4f25a7bee615fa03e3a647d05a",
+    "bc_serve_sha256": "070129d6edeae85601d0563b4799c14bdaa7bc560eeec6f741ec7c4883b1a9b4",
+    "runs": [
+     {
+      "launch": "r114-1",
+      "seed": 1,
+      "decode_ms_per_step": 32.021,
+      "ttft_ms_max": 2221.53,
+      "draft_acceptance": 0.708,
+      "requests_running_mean": 4.947,
+      "event_gap_ms_p95": 39.239,
+      "aggregate_tps": 348.592
+     },
+     {
+      "launch": "r114-1",
+      "seed": 2,
+      "decode_ms_per_step": 31.478,
+      "ttft_ms_max": 2257.99,
+      "draft_acceptance": 0.693,
+      "requests_running_mean": 5.0,
+      "event_gap_ms_p95": 39.327,
+      "aggregate_tps": 347.335
+     },
+     {
+      "launch": "r114-1",
+      "seed": 3,
+      "decode_ms_per_step": 30.026,
+      "ttft_ms_max": 2314.12,
+      "draft_acceptance": 0.738,
+      "requests_running_mean": 4.842,
+      "event_gap_ms_p95": 39.217,
+      "aggregate_tps": 346.459
+     },
+     {
+      "launch": "r114-2",
+      "seed": 1,
+      "decode_ms_per_step": 31.502,
+      "ttft_ms_max": 2260.88,
+      "draft_acceptance": 0.709,
+      "requests_running_mean": 5.158,
+      "event_gap_ms_p95": 39.463,
+      "aggregate_tps": 346.285
+     },
+     {
+      "launch": "r114-2",
+      "seed": 2,
+      "decode_ms_per_step": 31.026,
+      "ttft_ms_max": 2260.11,
+      "draft_acceptance": 0.693,
+      "requests_running_mean": 4.95,
+      "event_gap_ms_p95": 39.469,
+      "aggregate_tps": 348.894
+     },
+     {
+      "launch": "r114-2",
+      "seed": 3,
+      "decode_ms_per_step": 31.231,
+      "ttft_ms_max": 2302.01,
+      "draft_acceptance": 0.742,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 39.464,
+      "aggregate_tps": 355.016
+     }
+    ],
+    "median": {
+     "decode_ms_per_step": 31.355,
+     "ttft_ms_max": 2260.495,
+     "draft_acceptance": 0.708,
+     "requests_running_mean": 4.975,
+     "event_gap_ms_p95": 39.395,
+     "aggregate_tps": 347.963
+    },
+    "n": 6
+   }
+  },
+  "power": {
+   "stock": {
+    "release": "bc-radiance-2020.24.1",
+    "source": "as r241 (power pair, stock arms)",
+    "archive": "bigcherryrad-2512de74e548b195140341c6ab17aa5b",
+    "engine_sha256": "6f7d7dd8a515105778cd3c1c1a5f55d9eb2d3e89feeab678c1651acec3015d1d",
+    "bc_serve_sha256": "67c69c4015b29b7556943d710ab451ca338c7e520222d9294cf5be4f911afd45",
+    "runs": [
+     {
+      "launch": "stock-1",
+      "seed": 1,
+      "decode_ms_per_step": 32.076,
+      "ttft_ms_max": 2160.53,
+      "draft_acceptance": 0.707,
+      "requests_running_mean": 5.0,
+      "event_gap_ms_p95": 39.811,
+      "aggregate_tps": 350.378
+     },
+     {
+      "launch": "stock-1",
+      "seed": 2,
+      "decode_ms_per_step": 31.662,
+      "ttft_ms_max": 2252.59,
+      "draft_acceptance": 0.693,
+      "requests_running_mean": 5.158,
+      "event_gap_ms_p95": 39.926,
+      "aggregate_tps": 346.855
+     },
+     {
+      "launch": "stock-1",
+      "seed": 3,
+      "decode_ms_per_step": 30.669,
+      "ttft_ms_max": 2663.62,
+      "draft_acceptance": 0.747,
+      "requests_running_mean": 4.8,
+      "event_gap_ms_p95": 40.138,
+      "aggregate_tps": 341.309
+     },
+     {
+      "launch": "stock-2",
+      "seed": 1,
+      "decode_ms_per_step": 31.833,
+      "ttft_ms_max": 2266.94,
+      "draft_acceptance": 0.691,
+      "requests_running_mean": 5.053,
+      "event_gap_ms_p95": 40.024,
+      "aggregate_tps": 343.929
+     },
+     {
+      "launch": "stock-2",
+      "seed": 2,
+      "decode_ms_per_step": 31.802,
+      "ttft_ms_max": 2290.67,
+      "draft_acceptance": 0.701,
+      "requests_running_mean": 5.0,
+      "event_gap_ms_p95": 39.903,
+      "aggregate_tps": 345.335
+     },
+     {
+      "launch": "stock-2",
+      "seed": 3,
+      "decode_ms_per_step": 31.213,
+      "ttft_ms_max": 2247.91,
+      "draft_acceptance": 0.755,
+      "requests_running_mean": 4.842,
+      "event_gap_ms_p95": 39.88,
+      "aggregate_tps": 353.393
+     }
+    ],
+    "median": {
+     "decode_ms_per_step": 31.732,
+     "ttft_ms_max": 2259.765,
+     "draft_acceptance": 0.704,
+     "requests_running_mean": 5.0,
+     "event_gap_ms_p95": 39.915,
+     "aggregate_tps": 346.095
+    },
+    "n": 6
+   }
+  }
+ },
+ "prompt_sha256": [
+  "ed882f0fb3834110c6eaf90a90d9035443611dd1ef8dfc260fbe4bb1a839b0e3",
+  "5ce1adc4c13cff2b3ef74f53a0a8700b45c21e969b4735311dfdea16101353de",
+  "ddabf6623caee22c8dcd5e85db5aad323c729d1212b304cdce9da358619a1eaa",
+  "bbcdbc5b487004f9da93a2802ed0c83695a5b0f8b57bdbebd885ccd1f9befdfa",
+  "f98e82b61fe09225409ed53d9328a8705b0148150b0d8afdc6e1004524269fe8",
+  "5a8f651415ca896a935f20957c6b10e1ecaa7f6e25027ee0c63b7c30142a59fa",
+  "f7612f8142415e07836b215a0431ad757b5ef34e037e147ba4ff10445f38d20f",
+  "7b4292c3c49fc159eb7cc395d210d2cb312afdc6167c29711aac6b8cf4e3c84e"
+ ],
+ "stored_record_2020_8_5": {
+  "source": "historical-cohort-reconciliation.json TP3 (ab-tp2 T1/T2 seed1)",
+  "aggregate_tps": 360.8315,
+  "ttft_ms_max": 2053.02,
+  "event_gap_ms_p95": 38.5305
+ }
+}
