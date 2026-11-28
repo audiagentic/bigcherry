@@ -1,0 +1,44 @@
+name: Radiance cache prune
+
+# The repository's Actions cache budget is 10 GB; past it GitHub evicts the oldest entries, which has cost cold
+# Radiance builds (no ccache restored). Builds restore only the newest entry of each kind, so after every main build
+# this keeps the newest two (one spare for a build restoring at that moment) and drops the caches of closed PRs.
+on:
+  workflow_run:
+    workflows: ["Radiance build"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  actions: write
+  pull-requests: read
+
+concurrency:
+  group: radiance-cache-prune
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          caches=$(gh api --paginate "repos/$REPO/actions/caches?per_page=100" \
+            --jq '.actions_caches[] | "\(.id) \(.ref) \(.created_at) \(.key)"')
+          delete() { gh api -X DELETE "repos/$REPO/actions/caches/$1" > /dev/null && echo "deleted $2 ($3)"; }
+          # main's entries: keep the newest two of each kind
+          for kind in radiance-ccache radiance-upstream; do
+            printf '%s\n' "$caches" | awk -v k="$kind" '$2 == "refs/heads/main" && $4 ~ "^" k "-[0-9]+$"' \
+              | sort -k3,3r | tail -n +3 | while read -r id ref created key; do delete "$id" "$key" "$ref"; done
+          done
+          # a closed pull request's caches are never read again
+          printf '%s\n' "$caches" | awk '$2 ~ "^refs/pull/[0-9]+/merge$"' | while read -r id ref created key; do
+            number=${ref#refs/pull/}; number=${number%/merge}
+            state=$(gh api "repos/$REPO/pulls/$number" --jq .state 2>/dev/null || echo unknown)
+            if [ "$state" = closed ]; then delete "$id" "$key" "$ref"; fi
+          done
+          gh api "repos/$REPO/actions/cache/usage" --jq '"cache: \(.active_caches_count) entries, \(.active_caches_size_in_bytes / 1048576 | floor) MiB"'
