@@ -287,7 +287,7 @@ def resolve_rows(rows, family_specs, origin_specs):
     for row in rows:
         matches=[]
         for name,spec in sorted(family_specs.items()):
-            if row==spec["case"] or row in spec.get("replay",{}).get("rows",[]):
+            if row==spec["case"] or row in spec.get("rows",[]) or row in spec.get("replay",{}).get("rows",[]):
                 matches.append({"kind":"family","name":name,"units":spec["units"],
                                 "oracle_case":spec["case"]})
         for name,origin in sorted(origin_specs.items()):
@@ -548,6 +548,29 @@ IQ8R_HASH_PRINT = ('        {\n'
                    '        if (uh_extra[uh_i]) continue;\n')
 
 
+# The int8 vocabulary head (i8_logits_numeric): extra "N:K:M" heads from UH_HASH_CASES (the case's own host oracle runs on
+# them too; it is a parallel O(N*K*M) loop, minutes at a 27B shard) and a hash of every head output.
+HEAD_CASES_ANCHOR = ("        for (const int64_t M : { (int64_t)1, (int64_t)8 })\n"
+                     "            i8_logits_numeric(pl, 2560, 2560, M);\n")
+HEAD_CASES_BLOCK = ('        if (const char* uh_cases = std::getenv("UH_HASH_CASES"))\n'
+                    '            for (const char* s = uh_cases; *s;) {\n'
+                    '                long long un = 0, uk = 0, um = 0; int used = 0;\n'
+                    '                if (std::sscanf(s, "%lld:%lld:%lld%n", &un, &uk, &um, &used) < 3) break;\n'
+                    '                i8_logits_numeric(pl, un, uk, um);\n'
+                    '                s += used;\n'
+                    "                if (*s == ',') ++s;\n"
+                    '            }\n')
+HEAD_HASH_ANCHOR = ("    std::vector<float> got((size_t)M * N);\n"
+                    "    st_memcpy(got.data(), d_y, got.size() * 4, hipMemcpyDeviceToHost);\n"
+                    "    double num = 0, den = 0;\n")
+HEAD_HASH_PRINT = ('    {\n'
+                   '        uint64_t uh = 1469598103934665603ull;\n'
+                   '        for (float hv : got) { uint32_t hb; std::memcpy(&hb, &hv, 4); uh ^= hb; uh *= 1099511628211ull; }\n'
+                   '        std::printf("UNITHASH logits_gemm_i8 N=%lld K=%lld M=%lld %016llx\\n", (long long)N, (long long)K,\n'
+                   '                    (long long)M, (unsigned long long)uh);\n'
+                   '    }\n')
+
+
 # A plugin that carries only some units has no entry point for the rest: the loader notes the absence and goes on
 # (the rows without a kernel then return "unsupported", like libr3's own stubbed rows).
 SYM_ANCHOR = '    if (e || !p) { std::printf("  FAIL  dlsym(%s): %s\\n", n, e ? e : "null"); ++g_fail; return false; }\n'
@@ -698,6 +721,13 @@ def inject_selftest(text: str) -> str:
             raise HarnessError("the selftest changed: the harness's IQ8R edit anchor is not found exactly once "
                                f"({anchor.splitlines()[0].strip()!r})")
     text = text.replace(IQ8R_SHAPES_ANCHOR, IQ8R_SHAPES_NEW, 1)
+    for anchor in (HEAD_CASES_ANCHOR, HEAD_HASH_ANCHOR):
+        if text.count(anchor) != 1:
+            raise HarnessError("the selftest changed: the harness's int8 head edit anchor is not found exactly once "
+                               f"({anchor.splitlines()[0].strip()!r})")
+    text = text.replace(HEAD_CASES_ANCHOR, HEAD_CASES_ANCHOR + HEAD_CASES_BLOCK, 1)
+    head = HEAD_HASH_ANCHOR.splitlines(keepends=True)
+    text = text.replace(HEAD_HASH_ANCHOR, head[0] + head[1] + HEAD_HASH_PRINT + head[2], 1)
     lines = IQ8R_HASH_ANCHOR.splitlines(keepends=True)
     text = text.replace(IQ8R_HASH_ANCHOR, lines[0] + lines[1] + IQ8R_HASH_PRINT + lines[2], 1)
     for anchor in (FIND_ANCHOR, EMBED_ANCHOR, EMBED_CASES_ANCHOR, VOCAB_ANCHOR, VOCAB_CASES_ANCHOR):
@@ -1144,7 +1174,9 @@ def stage_measure(out: Path, *, bdf: str, replay_iters: int = 15, tol: float = 0
           f"{len(result['hash']['missing_in_candidate'])} missing in the candidate; selftest failures: ref {len(ref_fail)}, candidate {len(cand_fail)}")
     # Replay times changed code: when no kernel of the family differs from the reference, there is nothing to time.
     result["code_changed"] = state.get("code_changed")
-    changed_rows = list(fam["replay"]["rows"]) if state.get("code_changed") != [] else []
+    # A family without a timing command can still pass on identical code; changed code then cannot be certified.
+    result["replay_configured"] = "replay" in fam
+    changed_rows = list(fam["replay"]["rows"]) if "replay" in fam and state.get("code_changed") != [] else []
     result["required_replay"] = [{"row": row, **point} for row in changed_rows for point in replay_points(fam["replay"])]
     result["replay"] = []
     if changed_rows and not skip_replay:
@@ -1187,7 +1219,9 @@ def configured_measurement_outcome(measure: dict) -> tuple[str, list[str]]:
     required = measure.get("required_replay", [])
     actual = measure["replay"]
     code_identical = measure.get("code_changed") == [] and not required and not actual
-    if (not required and not code_identical) or len({key(p) for p in required}) != len(required) or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
+    if measure.get("replay_configured") is False and measure.get("code_changed") != []:
+        incomplete.append("kernel code changed and the family has no replay configured")
+    elif (not required and not code_identical) or len({key(p) for p in required}) != len(required) or len({key(p) for p in actual}) != len(actual) or {key(p) for p in required} != {key(p) for p in actual}:
         incomplete.append("configured replay coverage incomplete")
     if any(p.get("mode") not in REPLAY_MODES or type(p.get("converged")) is not bool or p.get("verdict") not in ("win","same","regress") for p in actual):
         incomplete.append("invalid replay verdict")
