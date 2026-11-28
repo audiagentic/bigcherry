@@ -840,6 +840,11 @@ GATED_HASH_PRINT = ('    {\n'
                     '        for (const std::vector<uint8_t>* v : { &q, &sc, &yb })\n'
                     '            for (uint8_t c : *v) { uh ^= c; uh *= 1099511628211ull; }\n'
                     '        std::printf("UNITHASH %s %016llx\\n", nm, (unsigned long long)uh);\n'
+                    '        {   /* a plain bf16 table is not an IQR weight: the gated row must refuse it as the base does */\n'
+                    '            Planes pp; pp.enc = rad_enc_plain(RAD_BF16); pp.size(256, 256);\n'
+                    '            std::vector<uint8_t> po; RadLayout pl2{};\n'
+                    '            std::printf("UNITLAYOUT plain_bf16 rc=%d\\n", stored(rg, lp, 2, pp, { "codes" }, &po, &pl2));\n'
+                    '        }\n'
                     '    }\n')
 GATED_CASES_ANCHOR = "            iqr_gated_case(pl, 4, 9, 17408, 5120);\n"
 GATED_CASES_BLOCK = ('            if (const char* uh_g = std::getenv("UH_GATED_CASES"))\n'
