@@ -552,3 +552,27 @@ path = "tools/lab/radiance/unit_harness.py"
 anchor = "i8_logits_numeric(pl, 2560, 2560, M);"
 category = "B"
 reason = "lab harness: the selftest text its int8 head edit anchors on, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_families.toml"
+anchor = "shapes = [[12288, 2560], [16384, 2560], [1280, 2560], [512, 2560], [2560, 6144], [2560, 640]]"
+category = "B"
+reason = "lab harness input: the int8 trunk shapes the i8a8 family is hashed at, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_families.toml"
+anchor = "tail_shape = [16384, 2560]"
+category = "B"
+reason = "lab harness input: the i8a8 family's tail-row shape, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_families.toml"
+anchor = "shapes = [[16384, 2560], [2560, 6144], [12288, 2560]]"
+category = "B"
+reason = "lab harness input: the trunk shapes the i8a8 family's replay times, not an execution path of the product"
+
+[[allow]]
+path = "tools/lab/radiance/unit_harness.py"
+anchor = "i8a8_numeric(pl, \"gemm_i8a8_tiled\", 2048, 512, 2560);"
+category = "B"
+reason = "lab harness: the selftest text its int8 trunk edit anchors on, not an execution path of the product"
