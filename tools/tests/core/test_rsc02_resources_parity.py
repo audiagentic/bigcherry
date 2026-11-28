@@ -40,7 +40,7 @@ def test_native_python_parity_all_checked_in_configs():
     configs = {p.stem for p in CONFIGS.glob("*.yaml")}   # one native YAML per named config
     assert {c["name"] for c in fixture["cases"]} == set(configs)
     assert all(sum(c["name"] == name for c in fixture["cases"]) == 2 for name in configs)
-    assert len(fixture["cases"]) == 42
+    assert len(fixture["cases"]) == 38
     assert {c["hardware_profile"] for c in fixture["cases"]} == {
         "test_rsc11_inventory.FACTS", "test_power_plan.layout.FACTS"
     }

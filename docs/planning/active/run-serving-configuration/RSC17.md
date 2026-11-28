@@ -85,3 +85,8 @@ RV4754: do not start full shared-mode allocation/retention schema migration unti
 - 2026-11-27T07:29:21.650576+00:00 (updated-by): Updated: section:notes, section:validation
 - 2026-11-27T07:30:28.167324+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:12:42.204283+00:00 (updated-by): Updated: section:notes
+
+## Notes Append
+
+2026-11-28 narrowed after the 2.3 re-evaluation (see RSC16). Remaining slices, startup-only, low runtime risk: (1) exact rank ledger: rad0011 plan-memory, the native vram_budget seam, serving/rank_demand.cpp (unequal ranks, reserves, scratch, prefetch, held-out bytes, MiB boundaries); (2) shared startup capacity: fix the ordering where Engine::plan resolves the common split and rad0011's refit can refuse before rad0029 applies the better own split; an exact integer per-group page vector instead of the scalar inverse in KVManager::pool_mib_for_tokens/paged_split (a 65-token full-attention target needs 5 pages of 16, not 4); the native L/S/C option (omitted = legacy, auto = maximum safe packed capacity, numeric C = minimum) reusing vram_budget_resolve, no second solver; (3) versioned receipts: post-carve/backed/ready distinguished, replay of version-1 measurements, host-retention geometry migrated to TierExec slot layout or the shared-mode retention combination refused (TP3 profiles have zero host-KV, the first target). Each slice: component tests plus one live start; first investigation is the R9700 ledger, the only rank whose room raises shared capacity.
+- 2026-11-28T12:55:27.574087+00:00 (updated-by): Updated: section:notes_append

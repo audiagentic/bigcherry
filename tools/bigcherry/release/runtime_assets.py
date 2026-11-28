@@ -94,8 +94,6 @@ NATIVE_RELEASE_PROFILES = (
     "qwen27b-tp3-long-bf16i8.yaml",
     "qwen27b-tp3-long-iq6r-bf16i8.yaml",
     "qwen27b-tp3-long-iq6r.yaml",
-    "qwen27b-tp3-long-q4.yaml",
-    "qwen27b-tp3-long-q6.yaml",
     "qwen27b-tp3-long.yaml",
     "qwen27b-tp3.yaml",
 )

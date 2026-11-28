@@ -93,3 +93,8 @@ RV4754 baseline-first decision: keep full new L/S/C shared capacity as post-base
 - RV4751
 - 2026-11-27T07:29:37.209550+00:00 (updated-by): Updated: section:notes
 - 2026-11-27T15:12:34.555899+00:00 (updated-by): Updated: section:notes
+
+## Notes Append
+
+2026-11-28 re-evaluation against the 2.3 baseline (owner: no performance cost, use the most VRAM that helps; GPT deep review). 2.3 plus our patches already delivers most of the original design: rank-local weights and KV pools (rad0029, Engine::plan), asymmetric TP3 KV with one logical block table (Engine::configure_kv), native reserves and spare-room accounting (vram_budget_resolve, vram_budget_rank_spare_mib), MiB serving-pool refit, actual-demand KV growth and window recycling (KVManager, Scheduler), prefix-aware prefill with bounded preemption, host checkpoint retention. TP3 (XTX, XTX, R9700, IQR-V4, bf16_i8): the own split pages 993,258 tokens against 564,098 for the common split (+76%). The limit is the R9700 (0 MiB further KV room); the XTX ranks keep about 1,366 MiB that would add no shared tokens, and the '6500 MiB stay unclaimed' line belongs to the native pre-split that rad0029 replaces, so it is not reclaimable on top. Direction: keep the 2.3 allocator and scheduler (no new allocator, scheduler, extra synchronisation, unconditional room gate or ragged block-table ABI); reclaim VRAM only where it raises the limiting rank (investigate the R9700 ledger) or measurably helps speed. RSC16 stays the acceptance owner and closes after RSC17 and RSC18 are proved; one integrated candidate plus one managed live start (a long request with short requests progressing) and the legacy comparison.
+- 2026-11-28T12:55:22.635825+00:00 (updated-by): Updated: section:notes_append
